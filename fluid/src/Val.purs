@@ -26,7 +26,7 @@ import Expr (Elim, Stmt, fv)
 import File (class LoadFile, FileCxt)
 import Foreign.Object (foldMap)
 import GaloisConnection (GaloisConnection(..))
-import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
+import Graph (class TypeName, class Vertices, DVertex, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class BoundedMeetSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, topOf, (∧), (∨))
 import Pretty.Doc (Doc, text)
@@ -61,6 +61,12 @@ val doc_opt = new (flip Val doc_opt)
 
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
+
+intermediateVertices :: Set DVertex -> Set DVertex
+intermediateVertices = Set.filter \(DVertex (_ × vd)) ->
+   case asVal vd of
+      Just (Val _ (Just _) _) -> true
+      _ -> false
 
 data Fun a
    = Closure (Env a) (Dict (Elim a)) (Elim a)
