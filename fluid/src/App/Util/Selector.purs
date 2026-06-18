@@ -10,6 +10,8 @@ import Data.Newtype (over)
 import Data.Profunctor.Strong (first, second)
 import Data.Tuple (fst) as T
 import DataType (Ctr, cBarChart, cCons, cLineChart, cLinePlot, cMultiView, cNil, cPair, cParagraph, cScatterPlot, cJust, f_points, f_segments, f_stackedBars, f_z)
+import Dict (Dict)
+import Graph (Vertex(..))
 import Lattice (class Neg, 𝔹, neg)
 import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, definitely, error, (×))
@@ -138,6 +140,10 @@ dictVal s δv = unsafePartial $ case _ of
 envVal :: Var -> Setter (Env (SelStates 𝔹)) (Val (SelStates 𝔹))
 envVal x δv γ =
    assert (x ∈ γ) $ first (\v' -> update (const v') x γ) (δv (get x γ))
+
+intermediateVertex :: Vertex -> Setter (Dict (Val (SelStates 𝔹))) (Val (SelStates 𝔹))
+intermediateVertex (Vertex v) δv d =
+   first (\v' -> update (const v') v d) (δv (get v d))
 
 listCell :: Int -> Setter (Val (SelStates 𝔹)) 𝔹
 listCell n δα = unsafePartial $ case _ of
