@@ -63,7 +63,10 @@ asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
 
 intermediateVertices :: Set DVertex -> Set DVertex
-intermediateVertices = Set.filter \(DVertex (_ × vd)) ->
+intermediateVertices = Set.filter hasDoc
+
+hasDoc :: DVertex -> Boolean
+hasDoc (DVertex (_ × vd)) =
    case asVal vd of
       Just (Val _ (Just _) _) -> true
       _ -> false

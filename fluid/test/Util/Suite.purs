@@ -4,6 +4,7 @@ import Prelude
 
 import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
 import App.Util (SelectionType(..), Selector, isInert, isPersistent, isTransient, selStates)
+import App.Util.Selector (IntermediateVals)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import Control.Monad.Error.Class (class MonadError, catchError)
@@ -37,6 +38,14 @@ type TestBwdSpec =
    , bwd_expect :: Selector Env
    , δv :: Selector Val
    , fwd_expect :: String
+   }
+
+type TestBwdIntermediateSpec =
+   { file :: String
+   , bwd_expect :: Selector Env
+   , δv :: Selector Val
+   , fwd_expect :: String
+   , intermediate_expect :: Selector IntermediateVals
    }
 
 type TestLinkedOutputsSpec =

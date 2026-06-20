@@ -20,6 +20,7 @@ import Util.Set ((∈))
 import Val (BaseVal(..), DictRep(..), Env, Val(..), matrixGet, matrixPut)
 
 type SelSetter f g = Setter (f (SelStates 𝔹)) (g (SelStates 𝔹))
+type IntermediateVals a = Dict (Val a)
 
 sel𝔹 :: forall f a. Functor f => SetSel (f (SelStates 𝔹)) -> f a -> f 𝔹
 sel𝔹 sel template = getPersistent <$> γ'
