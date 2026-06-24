@@ -69,7 +69,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) primitives { δv: identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing } (n × is_bench)
+      test (File file) primitives { δv: identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, intermediate_expect: Nothing } (n × is_bench)
 
 bwdSuite :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array TestBwdSpec -> BenchSuite m
 bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) >>> show) &&& asTest)
@@ -78,7 +78,7 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
 
    asTest :: TestBwdSpec -> m BenchRow
    asTest { file, bwd_expect, δv, fwd_expect } = do
-      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect } (n × is_bench)
+      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect, intermediate_expect: Nothing } (n × is_bench)
 
 linkedOutputsTest :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, file } = do
