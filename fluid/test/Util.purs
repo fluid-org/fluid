@@ -11,7 +11,7 @@ import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
-import Data.Foldable (foldMap)
+import Data.Foldable (foldMap, for_)
 import Data.Set (member)
 import Data.String (null, trim)
 import Data.Tuple (fst)
@@ -91,6 +91,12 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, intermediate_expect }
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
    let { fwd, bwd } = graphGC graphed
+
+   when tracing.intermediates $
+      for_ (intermediateVertices (vertices g)) \(DVertex (Vertex vStr × vd)) ->
+         case asVal vd of
+            Just val -> log' $ "Intermediate vertex " <> vStr <> ":\n" <> prettyP (erase val)
+            Nothing -> pure unit
 
    let v = map (const top) outα :: Val 𝔹
    let out0 = fst (δv (const unselected <$> v)) <#> getPersistent

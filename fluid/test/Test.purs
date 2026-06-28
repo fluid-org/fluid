@@ -12,6 +12,7 @@ import Effect.Exception (Error)
 import File (class LoadFile, FileCxt(..))
 import Module.Web (runWebT)
 import Test.Specs.Bwd (bwd_cases)
+import Test.Specs.BwdIntermediate (bwdIntermediate_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Desugar (desugar_cases)
@@ -22,7 +23,7 @@ import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, intermediateBwdSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
@@ -57,5 +58,6 @@ benchmarks =
    , suite comments_cases
    , suite paragraph_cases
    , bwdSuite bwd_cases
+   , intermediateBwdSuite bwdIntermediate_cases
    , suite graphics_cases
    ]
