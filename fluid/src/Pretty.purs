@@ -335,6 +335,14 @@ instance Highlightable a => Pretty (Env a) where
       go ((x × v) : rest) =
          (text x <+> text "->" <+> pretty v <+> text ",") <++> go rest
 
+instance Highlightable a => Pretty (Dict (Val a)) where
+   pretty d = brackets $ go (toUnfoldable d)
+      where
+      go :: List (Var × Val a) -> Doc
+      go Nil = empty
+      go ((k × v) : rest) =
+         (text k <+> text "->" <+> pretty v <+> text ",") <++> go rest
+
 instance Highlightable a => Pretty (EnvStmt a) where
    pretty (EnvStmt γ s) = (pretty γ) <++> (pretty s)
 

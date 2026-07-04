@@ -151,7 +151,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, intermediate_expect }
          let templateDict = map (map (const (selStates false false false))) actualDict
          let expectedDict = map (map getPersistent) (fst (intermediateSel templateDict))
          unless (actualDict ≽ expectedDict) $
-            throw "intermediate_expect mismatch"
+            throw ("intermediate_expect mismatch:\nactual\n" <> prettyP actualDict <> "\nexpected\n" <> prettyP expectedDict)
 
 checkEq
    :: forall m a

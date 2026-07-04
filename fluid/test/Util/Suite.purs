@@ -42,7 +42,7 @@ type TestBwdSpec =
 
 type TestBwdIntermediateSpec =
    { file :: String
-   , bwd_expect :: Selector Env
+   , bwd_expect :: Maybe (Selector Env)
    , δv :: Selector Val
    , fwd_expect :: String
    , intermediate_expect :: Selector IntermediateVals
@@ -87,7 +87,7 @@ intermediateBwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (fo
 
    asTest :: TestBwdIntermediateSpec -> m BenchRow
    asTest { file, bwd_expect, δv, fwd_expect, intermediate_expect } = do
-      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect, intermediate_expect: Just intermediate_expect } (n × is_bench)
+      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect, intermediate_expect: Just intermediate_expect } (n × is_bench)
 
 linkedOutputsTest :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, file } = do
