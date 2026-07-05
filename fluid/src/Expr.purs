@@ -388,3 +388,41 @@ instance TypeName (RecDefs a) where
 
 instance TypeName (Expr a) where
    typeName _ = "Expr"
+
+stripDocStmt :: forall a. Stmt a -> Stmt a
+stripDocStmt (Return e) = Return (stripDocE e)
+stripDocStmt (Match e σ) = Match (stripDocE e) (stripDocEl σ)
+stripDocStmt (Def vd) = Def (stripDocVD vd)
+stripDocStmt (DefRec ρ) = DefRec (stripDocRD ρ)
+stripDocStmt Pass = Pass
+stripDocStmt (ExprStmt e) = ExprStmt (stripDocE e)
+stripDocStmt (Seq s1 s2) = Seq (stripDocStmt s1) (stripDocStmt s2)
+
+stripDocE :: forall a. Expr a -> Expr a
+stripDocE (Var x) = Var x
+stripDocE (Op op) = Op op
+stripDocE (Int α n) = Int α n
+stripDocE (Float α n) = Float α n
+stripDocE (Str α s) = Str α s
+stripDocE (Dictionary α ees) = Dictionary α (map (\(Pair e e') -> Pair (stripDocE e) (stripDocE e')) ees)
+stripDocE (Constr α c es) = Constr α c (map stripDocE es)
+stripDocE (Matrix α e1 xy e2) = Matrix α (stripDocE e1) xy (stripDocE e2)
+stripDocE (Lambda α σ) = Lambda α (stripDocEl σ)
+stripDocE (DProject e1 e2) = DProject (stripDocE e1) (stripDocE e2)
+stripDocE (App e1 e2) = App (stripDocE e1) (stripDocE e2)
+stripDocE (DocExpr _ e) = stripDocE e
+
+stripDocEl :: forall a. Elim a -> Elim a
+stripDocEl (ElimVar x κ) = ElimVar x (stripDocC κ)
+stripDocEl (ElimConstr m) = ElimConstr (map stripDocC m)
+stripDocEl (ElimDict xs κ) = ElimDict xs (stripDocC κ)
+
+stripDocC :: forall a. Cont a -> Cont a
+stripDocC (ContElim σ) = ContElim (stripDocEl σ)
+stripDocC (ContStmt s) = ContStmt (stripDocStmt s)
+
+stripDocVD :: forall a. VarDef a -> VarDef a
+stripDocVD (VarDef σ e) = VarDef (stripDocEl σ) (stripDocE e)
+
+stripDocRD :: forall a. RecDefs a -> RecDefs a
+stripDocRD (RecDefs α ρ) = RecDefs α (map stripDocEl ρ)

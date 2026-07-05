@@ -1,0 +1,31 @@
+\documentclass{article}
+\usepackage{booktabs}
+
+\title{Intermediate Value Performance Comparison}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l r r r r r r r r r}
+\toprule
+ & \multicolumn{3}{c}{With intermediates}
+ & \multicolumn{3}{c}{Without intermediates}
+ & \multicolumn{3}{c}{Ratio (with / without)} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+Example
+ & {Eval (ms)} & {Bwd (ms)} & {Vertices}
+ & {Eval (ms)} & {Bwd (ms)} & {Vertices}
+ & {Eval}      & {Bwd}      & {Vertices} \\
+\midrule
+conv.fld & 123.4 & 56.7 & 12345 & 120.1 & 54.2 & 12100 & 1.028 & 1.046 & 1.020 \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of backward-slicing performance with and without \texttt{@doc}-annotated intermediate values.
+         Each row is an average over multiple runs. Ratio $> 1$ means the intermediate version is slower/larger.}
+\label{tab:intermediate-perf}
+\end{table}
+
+\end{document}
