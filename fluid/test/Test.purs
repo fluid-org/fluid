@@ -11,6 +11,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import File (class LoadFile, FileCxt(..))
 import Module.Web (runWebT)
+import Test.Benchmark.Intermediate (benchmarkIntermediates)
 import Test.Specs.Bwd (bwd_cases)
 import Test.Specs.BwdIntermediate (bwdIntermediate_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases)
@@ -30,10 +31,10 @@ main :: Effect Unit
 main = run (second (runWebT (FileCxt { fluidSrcPaths })) <$> tests)
 
 tests :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-tests = allTests
+tests = scratchpad
 
 scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-scratchpad = second void <$> suite paragraph_cases (1 × false)
+scratchpad = [ "intermediate-perf" × benchmarkIntermediates 3 [ "conv.fld" ] ]
 
 filterSuite :: forall m r. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =

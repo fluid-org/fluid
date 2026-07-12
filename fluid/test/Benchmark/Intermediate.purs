@@ -13,6 +13,7 @@ import Data.Array (head, length, range)
 import Data.Foldable (for_, sum)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Number.Format (fixed, toStringWith)
 import Data.Set (size) as Set
 import Data.Traversable (for, traverse)
@@ -115,7 +116,7 @@ benchFile n file = do
            <> prettyP without.out
       )
 
-   pure { file: show file, withDoc, without }
+   pure { file: unwrap file, withDoc, without }
 
 -- Average timings across runs. Vertex/intermediate counts and output are
 -- deterministic, so the first run's values are reused. Empty input is a caller
