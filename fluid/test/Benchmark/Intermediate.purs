@@ -8,6 +8,7 @@ module Test.Benchmark.Intermediate where
 
 import Prelude
 
+import Control.Monad.Error.Class (catchError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array (head, length, range)
 import Data.Foldable (for_, sum)
@@ -18,9 +19,10 @@ import Data.Number.Format (fixed, toStringWith)
 import Data.Set (size) as Set
 import Data.Traversable (for, traverse)
 import Effect.Class.Console (log)
+import Effect.Exception (message)
 import Eval (GraphConfig, graphEval, graphGC)
 import Expr (Stmt, stripDocStmt)
-import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
+import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile)
 import Graph (size, vertices)
 import Lattice (Raw, erase, topOf, 𝔹)
 import Module (prepConfig)
@@ -47,10 +49,6 @@ type PerfRow =
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "fluid", Folder "test/fluid" ]
-
--- Directory holding the intermediate benchmark fixtures.
-benchFolder :: Folder
-benchFolder = Folder "slicing/intermediates"
 
 -- Run graph eval followed by a full backward slice, timing each phase. The
 -- backward slice selects the entire output (`topOf outα`) so the whole
@@ -89,7 +87,7 @@ benchFile
    -> File
    -> AffError m PerfRow
 benchFile n file = do
-   fluidSrc <- loadFile fluidSrcPaths (benchFolder </> file)
+   fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig primitives fluidSrc
    let eStripped = stripDocStmt e
 
@@ -147,6 +145,29 @@ benchmarkIntermediates n files = do
    for_ rows \row -> log (latexRow row)
    log "% --- end table body ---\n"
    for_ rows \row -> log (summaryLine row)
+
+-- Discovery probe: for each fixture, evaluate it once and report how many
+-- @doc-annotated intermediate vertices it produces (and total graph size),
+-- without any assertions. Files that fail to load/evaluate are reported rather
+-- than aborting the run, so a mixed candidate list can be surveyed in one pass.
+-- Use this to decide which fixtures make good intermediate-value benchmarks.
+probeIntermediates
+   :: forall m
+    . MonadReader FileCxt m
+   => LoadFile m
+   => Array String
+   -> AffError m Unit
+probeIntermediates files = do
+   log "\n-- intermediate-vertex probe (intermediate / total vertices) --"
+   for_ files \path ->
+      catchError (probeFile path) \err ->
+         log (path <> ": ERROR " <> message err)
+   where
+   probeFile path = do
+      fluidSrc <- loadFile fluidSrcPaths (File path)
+      { e, gconfig } <- prepConfig primitives fluidSrc
+      r <- runVariant gconfig e
+      log (path <> ": intermediate=" <> show r.interm <> " total=" <> show r.verts)
 
 latexRow :: PerfRow -> String
 latexRow { file, withDoc, without } =
