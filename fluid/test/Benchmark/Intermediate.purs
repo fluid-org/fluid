@@ -49,7 +49,6 @@ type PerfRow =
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "fluid", Folder "test/fluid" ]
 
-
 runVariant
    :: forall m
     . MonadReader FileCxt m
@@ -119,7 +118,6 @@ averageVariant rs = case head rs of
          }
    where
    n = toNumber (length rs)
-
 
 benchmarkIntermediates
    :: forall m

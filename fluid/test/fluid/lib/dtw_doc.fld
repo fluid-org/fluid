@@ -2,8 +2,9 @@ import lib.fnum
 
 # Documented copy of lib/dtw.fld, used to verify that the benchmark harness
 # strips @doc annotations from imported modules (not just the top-level
-# program). Doc comments here are basic strings for now; a later version will
-# embed semantic expressions. Keep in sync with lib/dtw.fld.
+# program). Doc comments embed semantic expressions (the cell's coordinates
+# and the cost components), so the annotations themselves participate in the
+# dependency graph and slicing. Keep in sync with lib/dtw.fld.
 
 def nextIndices(n, m, window):
   return [(i, j) for i in [0 .. n - 1] for j in [max(0, i - window) .. min(m - 1, i + window)]]
@@ -14,7 +15,7 @@ def costMatrixInit(rows, cols, window):
       return FNum(0)
     else:
       return Infty
-  return [| @doc(f"""Initial cost-matrix cell""") initV(n, m) for (n, m) in (rows, cols) |]
+  return [| @doc(f"""Initial cost-matrix cell ({n}, {m})""") initV(n, m) for (n, m) in (rows, cols) |]
 
 def minAndPrev((i, j), im1, jm1, ijm1):
   minim = minimal([im1, jm1, ijm1])
@@ -42,7 +43,7 @@ def localMinUpdate(seq1, seq2, cost, (costmatrix, indmatrix), (i, j)):
   jm1 = costmatrix ! (ip, j)
   im1jm1 = costmatrix ! (i, j)
   (prev, FNum(minim)) = minAndPrev((i, j), im1, jm1, im1jm1)
-  newVal = @doc(f"""Updated local-minimum cost""") FNum(dist + minim)
+  newVal = @doc(f"""Updated local-minimum cost at ({ip}, {jp}) = {dist} + {minim}""") FNum(dist + minim)
 
   return (matrixUpdate(costmatrix, (ip, jp), newVal), matrixUpdate(indmatrix, (ip, jp), prev))
 
