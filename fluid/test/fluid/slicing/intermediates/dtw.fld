@@ -1,0 +1,13 @@
+import lib.dtw_doc
+import slicing.dtw.dtw_inputs
+
+# Exercises @doc annotations that live in an imported module (lib.dtw_doc),
+# verifying the benchmark harness strips doc comments from libraries. See
+# docs/reports/intermediate-perf-notes.md.
+
+def d(x, y):
+  return (x - y) * (x - y)
+
+(costs, matched) = computeDTW(seq1, seq2, d, window)
+
+matched

@@ -34,7 +34,12 @@ tests :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => 
 tests = allTests
 
 scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-scratchpad = [ "intermediate-perf" × benchmarkIntermediates 3 [ "slicing/intermediates/conv.fld" ] ]
+scratchpad =
+   [ "intermediate-perf" × benchmarkIntermediates 3
+        [ "slicing/intermediates/dtw.fld"
+        , "slicing/intermediates/conv.fld"
+        ]
+   ]
 
 filterSuite :: forall m r. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =

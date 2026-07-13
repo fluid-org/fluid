@@ -15,7 +15,7 @@ import Desugarable (desug)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (GraphConfig, eval_primitives)
-import Expr (Module, Stmt, fv)
+import Expr (Module, Stmt, fv, stripDocModule, stripDocStmt)
 import File (class LoadFile, File(..), FileCxt(..), fluidExtension, loadFile)
 import Graph (vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -38,9 +38,26 @@ prelude :: ModuleName
 prelude = "lib/prelude"
 
 prepConfig :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Raw Env -> String -> m Config
-prepConfig primitives fluidSrc = do
+prepConfig = prepConfigWith identity identity
+
+prepConfigNoDoc :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Raw Env -> String -> m Config
+prepConfigNoDoc = prepConfigWith stripDocModule stripDocStmt
+
+prepConfigWith
+   :: forall m
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => (Raw Module -> Raw Module)
+   -> (Raw Stmt -> Raw Stmt)
+   -> Raw Env
+   -> String
+   -> m Config
+prepConfigWith stripMod stripStmt primitives fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   moduleCxt <- loadModuleGraph (prelude : imports)
+   moduleCxt0 <- loadModuleGraph (prelude : imports)
+   let moduleCxt = moduleCxt0 { modules = stripMod <$> moduleCxt0.modules }
    n × _ × primitives' × _ × topLevelEnv <- flip runAllocT 0 do
       primitives' <- alloc primitives
       modules' <- traverse alloc (moduleCxt.modules)
@@ -51,7 +68,7 @@ prepConfig primitives fluidSrc = do
       pure (primitives' × modules' × γ)
    sty <- checkProgram (keys topLevelEnv) s
    eTy <- desug sty
-   let e = (unit <$ eTy) :: Raw Stmt
+   let e = stripStmt ((unit <$ eTy) :: Raw Stmt)
    let gconfig = { n, primitives: primitives', γ: restrict (fv e) topLevelEnv }
    pure { s, e, gconfig }
 

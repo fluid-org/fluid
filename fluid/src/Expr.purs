@@ -426,3 +426,9 @@ stripDocVD (VarDef σ e) = VarDef (stripDocEl σ) (stripDocE e)
 
 stripDocRD :: forall a. RecDefs a -> RecDefs a
 stripDocRD (RecDefs α ρ) = RecDefs α (map stripDocEl ρ)
+
+stripDocModule :: forall a. Module a -> Module a
+stripDocModule (Module ds) = Module (stripDef <$> ds)
+   where
+   stripDef (Left vd) = Left (stripDocVD vd)
+   stripDef (Right ρ) = Right (stripDocRD ρ)

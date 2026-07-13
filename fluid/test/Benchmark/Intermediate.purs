@@ -21,18 +21,17 @@ import Data.Traversable (for, traverse)
 import Effect.Class.Console (log)
 import Effect.Exception (message)
 import Eval (GraphConfig, graphEval, graphGC)
-import Expr (Stmt, stripDocStmt)
+import Expr (Stmt)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile)
 import Graph (size, vertices)
 import Lattice (Raw, erase, topOf, 𝔹)
-import Module (prepConfig)
+import Module (prepConfig, prepConfigNoDoc)
 import Pretty (prettyP)
 import Primitive.Defs (primitives)
 import Test.Benchmark.Util (time)
 import Util (AffError, check, throw, (×))
 import Val (Val, intermediateVertices)
 
--- Result of running the eval + backward-slice pipeline for one program variant.
 type VariantResult =
    { evalMs :: Number -- graph evaluation time
    , bwdMs :: Number -- backward slice time (whole output selected)
@@ -50,9 +49,7 @@ type PerfRow =
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "fluid", Folder "test/fluid" ]
 
--- Run graph eval followed by a full backward slice, timing each phase. The
--- backward slice selects the entire output (`topOf outα`) so the whole
--- dependency graph is traversed — the natural worst case for the comparison.
+
 runVariant
    :: forall m
     . MonadReader FileCxt m
@@ -75,10 +72,6 @@ runVariant gconfig s' = do
       , out: erase outα
       }
 
--- Benchmark a single fixture, averaging timings over `n` iterations. Also
--- verifies that stripDocStmt did what it should: the stripped program has no
--- intermediate vertices, the original has at least one, and both produce the
--- same output value.
 benchFile
    :: forall m
     . MonadReader FileCxt m
@@ -88,12 +81,12 @@ benchFile
    -> AffError m PerfRow
 benchFile n file = do
    fluidSrc <- loadFile fluidSrcPaths file
-   { e, gconfig } <- prepConfig primitives fluidSrc
-   let eStripped = stripDocStmt e
+   withCfg <- prepConfig primitives fluidSrc
+   noDocCfg <- prepConfigNoDoc primitives fluidSrc
 
    runs <- for (range 1 n) \_ -> do
-      w <- runVariant gconfig e
-      wo <- runVariant gconfig eStripped
+      w <- runVariant withCfg.gconfig withCfg.e
+      wo <- runVariant noDocCfg.gconfig noDocCfg.e
       pure (w × wo)
 
    withDoc <- averageVariant (map (\(w × _) -> w) runs)
@@ -116,9 +109,6 @@ benchFile n file = do
 
    pure { file: unwrap file, withDoc, without }
 
--- Average timings across runs. Vertex/intermediate counts and output are
--- deterministic, so the first run's values are reused. Empty input is a caller
--- error (n < 1), reported rather than silently zeroed.
 averageVariant :: forall m. Array VariantResult -> AffError m VariantResult
 averageVariant rs = case head rs of
    Nothing -> throw "averageVariant: no runs (n must be >= 1)"
@@ -130,8 +120,7 @@ averageVariant rs = case head rs of
    where
    n = toNumber (length rs)
 
--- Run the full comparison over a set of fixtures and log the LaTeX table body
--- (paste into docs/reports/intermediate-perf.tex) plus a readable summary.
+
 benchmarkIntermediates
    :: forall m
     . MonadReader FileCxt m
@@ -146,11 +135,6 @@ benchmarkIntermediates n files = do
    log "% --- end table body ---\n"
    for_ rows \row -> log (summaryLine row)
 
--- Discovery probe: for each fixture, evaluate it once and report how many
--- @doc-annotated intermediate vertices it produces (and total graph size),
--- without any assertions. Files that fail to load/evaluate are reported rather
--- than aborting the run, so a mixed candidate list can be surveyed in one pass.
--- Use this to decide which fixtures make good intermediate-value benchmarks.
 probeIntermediates
    :: forall m
     . MonadReader FileCxt m
