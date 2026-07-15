@@ -8,29 +8,35 @@ module Test.Benchmark.Intermediate where
 
 import Prelude
 
+import App.Util (Selector, getPersistent, selStates, unselected)
+import App.Util.Selector (IntermediateVals)
 import Control.Monad.Error.Class (catchError)
 import Control.Monad.Reader (class MonadReader)
-import Data.Array (head, length, range)
-import Data.Foldable (for_, sum)
+import Data.Array (find, head, length, range)
+import Data.Foldable (foldMap, for_, sum)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Number.Format (fixed, toStringWith)
+import Data.Set (member)
 import Data.Set (size) as Set
 import Data.Traversable (for, traverse)
+import Data.Tuple (fst)
+import Dict (Dict, fromFoldable)
 import Effect.Class.Console (log)
 import Effect.Exception (message)
 import Eval (GraphConfig, graphEval, graphGC)
 import Expr (Stmt)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile)
-import Graph (size, vertices)
-import Lattice (Raw, erase, topOf, 𝔹)
+import Graph (DVertex'(..), Vertex(..), addresses, size, vertices)
+import Lattice (Raw, erase, topOf, 𝔹, (≽))
 import Module (prepConfig, prepConfigNoDoc)
 import Pretty (prettyP)
 import Primitive.Defs (primitives)
 import Test.Benchmark.Util (time)
+import Test.Specs.BwdIntermediate (bwdIntermediate_cases)
 import Util (AffError, check, throw, (×))
-import Val (Val, intermediateVertices)
+import Val (Val, asVal, intermediateVertices)
 
 type VariantResult =
    { evalMs :: Number -- graph evaluation time
@@ -106,7 +112,54 @@ benchFile n file = do
            <> prettyP without.out
       )
 
+   -- Correctness assertion. Runs OUTSIDE every `time` block above, so slicing
+   -- through the @doc intermediates is verified without perturbing the eval/bwd
+   -- measurements. Reuses the shared bwd-intermediate spec (matched by fixture
+   -- path) when one exists for this fixture.
+   for_ (find (\c -> intermediatesFolder <> c.file == unwrap file) bwdIntermediate_cases) \spec ->
+      checkIntermediateExpect withCfg.gconfig withCfg.e spec.δv spec.intermediate_expect
+
    pure { file: unwrap file, withDoc, without }
+
+intermediatesFolder :: String
+intermediatesFolder = "slicing/intermediates/"
+
+-- Backward-slice from a specific output selection (δv) and assert that the
+-- resulting selection over the @doc-annotated intermediate vertices matches
+-- `intermediateSel`. This mirrors the intermediate_expect check in
+-- Test.Util.testProperties, but is deliberately kept off the timed path.
+checkIntermediateExpect
+   :: forall m
+    . MonadReader FileCxt m
+   => LoadFile m
+   => GraphConfig
+   -> Raw Stmt
+   -> Selector Val
+   -> Selector IntermediateVals
+   -> AffError m Unit
+checkIntermediateExpect gconfig s' δv intermediateSel = do
+   graphed@{ g, outα } <- graphEval gconfig s'
+   let { bwd } = graphGC graphed
+   let v = map (const top) outα :: Val 𝔹
+   let out0 = fst (δv (const unselected <$> v)) <#> getPersistent
+   let _ × g' = bwd out0
+   let selected = addresses g'
+   let
+      pairs = foldMap
+         ( \(DVertex (Vertex vStr × vd)) -> case asVal vd of
+              Just val -> [ vStr × ((\a -> member a selected) <$> val) ]
+              Nothing -> []
+         )
+         (intermediateVertices (vertices g))
+   let actualDict = fromFoldable pairs :: Dict (Val 𝔹)
+   let templateDict = map (map (const (selStates false false false))) actualDict
+   let expectedDict = map (map getPersistent) (fst (intermediateSel templateDict))
+   unless (actualDict ≽ expectedDict) $
+      throw
+         ( "intermediate_expect mismatch:\nactual\n" <> prettyP actualDict
+              <> "\nexpected\n"
+              <> prettyP expectedDict
+         )
 
 averageVariant :: forall m. Array VariantResult -> AffError m VariantResult
 averageVariant rs = case head rs of
