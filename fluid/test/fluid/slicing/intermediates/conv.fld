@@ -1,15 +1,10 @@
-import lib.matrix
+import lib.matrix_doc
 
-def convolveIntermediate(image, kernel, lookup):
-  ((m, n), (i, j)) = (dims(image), dims(kernel))
-  (half_i, half_j) = (i |quot| 2, j |quot| 2)
-  area = i * j
-  def interMatrix(m_, n_):
-    return @doc(f"""Intermediate patch""")
-      [| lookup(m_ + i_ - half_i, n_ + j_ - half_j, image) * kernel ! (i_, j_) for (i_, j_) in (i, j) |]
-  return [| matrix_sum(interMatrix(m_, n_)) |quot| area for (m_, n_) in (m, n) |]
+# Exercises @doc annotations that live in an imported module (lib.matrix_doc),
+# verifying the benchmark harness strips doc comments from libraries. See
+# docs/reports/intermediate-perf-notes.md.
 
 inputImage = [| nth2(i, j, [[3, 1, 2], [0, 4, 1], [2, 1, 3]]) for (i, j) in (3, 3) |]
 kernel = [| nth2(i, j, [[1, 1, 0], [1, 2, 1], [0, 1, 1]]) for (i, j) in (3, 3) |]
 
-convolveIntermediate(inputImage, kernel, zero)
+convolve(inputImage, kernel, zero)

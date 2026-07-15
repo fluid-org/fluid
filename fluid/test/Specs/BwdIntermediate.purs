@@ -11,7 +11,7 @@ bwdIntermediate_cases =
      , bwd_expect: Nothing
      , δv: matrixElement 1 1 select
      , fwd_expect: ""
-     , intermediate_expect: intermediateVertex (Vertex "5209")
+     , intermediate_expect: intermediateVertex (Vertex "5286")
           ( matrix select'
                >.> matrixElement 0 0 select
                >.> matrixElement 0 1 select
