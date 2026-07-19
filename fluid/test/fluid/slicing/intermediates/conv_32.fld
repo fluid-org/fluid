@@ -1,0 +1,12 @@
+import lib.matrix_doc
+
+# 32x32 convolution fixture. Scales the intermediate-patch @doc example up so
+# the number of @doc-annotated intermediate patches (one per output pixel)
+# grows from 9 to 1024, lifting the with/without-@doc timing difference above
+# the run-to-run noise floor. The kernel stays 3x3; the image is generated
+# rather than written as a literal.
+
+inputImage = [| (i * 7 + j * 3) % 11 for (i, j) in (32, 32) |]
+kernel = [| nth2(i, j, [[1, 1, 0], [1, 2, 1], [0, 1, 1]]) for (i, j) in (3, 3) |]
+
+convolve(inputImage, kernel, zero)

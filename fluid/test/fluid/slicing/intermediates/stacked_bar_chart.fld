@@ -1,0 +1,10 @@
+import lib.graphics
+import dataset.renewables_restricted
+
+year = 2015
+
+def annotate(yearData):
+  return [ @doc(f"""{country}: {sum(map(snd, kvs))} GW total across {length(kvs)} energy types""") (country, kvs)
+    for (country, kvs) in yearData ]
+
+caption("Total renewables (GW) by country, " ++ num_to_str(year), stacked_bar_chart(True, colours1, 0.2, annotate(lookup(year, data))))

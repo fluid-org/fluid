@@ -31,13 +31,21 @@ main :: Effect Unit
 main = run (second (runWebT (FileCxt { fluidSrcPaths })) <$> tests)
 
 tests :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-tests = allTests
+tests = scratchpad
 
 scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
 scratchpad =
    [ "intermediate-perf" × benchmarkIntermediates 3
         [ "slicing/intermediates/dtw.fld"
         , "slicing/intermediates/conv.fld"
+        , "slicing/intermediates/edge_detect.fld"
+        , "slicing/intermediates/emboss.fld"
+        , "slicing/intermediates/gaussian.fld"
+        , "slicing/intermediates/line_chart.fld"
+        , "slicing/intermediates/grouped_bar_chart.fld"
+        , "slicing/intermediates/stacked_bar_chart.fld"
+        , "slicing/intermediates/bar_chart_line_chart.fld"
+        , "slicing/intermediates/stacked_bar_scatter_plot.fld"
         ]
    ]
 

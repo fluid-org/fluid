@@ -1,0 +1,12 @@
+import lib.graphics
+import dataset.renewables_restricted
+
+year1 = head(data)
+
+def addTotal(kvs):
+  return ("Total", sum(@doc(f"""Combined output across {length(kvs)} energy types""") map(snd, kvs))) :| kvs
+
+def countryData(country):
+  return map(second(compose(addTotal, lookup(country))), data)
+
+(lambda country: caption(country, line_chart(True, "black" :| colours1, fst(year1), countryData(country))))("China")
