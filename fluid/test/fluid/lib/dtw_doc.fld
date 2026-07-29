@@ -20,12 +20,12 @@ def costMatrixInit(rows, cols, window):
 def minAndPrev((i, j), im1, jm1, ijm1):
   minim = minimal([im1, jm1, ijm1])
   if minim |eq| im1:
-    return ((i, j + 1), minim)
+    return (@doc(f"""Backpointer from ({i}, {j}) toward ({i}, {j + 1})""") (i, j + 1), minim)
   else:
     if minim |eq| jm1:
-      return ((i + 1, j), minim)
+      return (@doc(f"""Backpointer from ({i}, {j}) toward ({i + 1}, {j})""") (i + 1, j), minim)
     else:
-      return ((i, j), minim)
+      return (@doc(f"""Backpointer from ({i}, {j}) toward ({i}, {j})""") (i, j), minim)
 
 def extractPath(indmatrix, (n, m), accum):
   if n == 0 and m == 0:

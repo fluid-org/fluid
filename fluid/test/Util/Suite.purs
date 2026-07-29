@@ -2,24 +2,27 @@ module Test.Util.Suite where
 
 import Prelude
 
-import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
-import App.Util (SelectionType(..), Selector, isInert, isPersistent, isTransient, selStates)
-import App.Util.Selector (IntermediateVals)
+import App.Fig (loadFig, loadFigWith, selectInput, selectOutput, selectionResult)
+import App.Util (SelectionType(..), Selector, getPersistent, isInert, isPersistent, isTransient, selStates)
+import App.Util.Selector (sel𝔹)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import Control.Monad.Error.Class (class MonadError, catchError)
 import Control.Monad.Reader (class MonadReader)
+import Control.Monad.Writer.Trans (runWriterT)
 import Data.Either (Either(..))
+import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (fst, uncurry)
 import Effect.Aff (Error, message)
 import Effect.Aff.Class (class MonadAff)
+import Pretty (prettyP)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
-import Lattice (botOf)
-import Module (prepConfig)
+import Lattice (botOf, (≽))
+import Module (prepConfig, prepConfigNoDoc)
 import Primitive.Defs (primitives)
-import Test.Benchmark.Util (BenchRow, logTimeWhen)
+import Test.Benchmark.Util (BenchRow, benchmark, divRow, logTimeWhen)
 import Test.Util (checkEq, test)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
@@ -41,11 +44,11 @@ type TestBwdSpec =
    }
 
 type TestBwdIntermediateSpec =
-   { file :: String
-   , bwd_expect :: Maybe (Selector Env)
+   { spec :: Options
    , δv :: Selector Val
-   , fwd_expect :: String
-   , intermediate_expect :: Selector IntermediateVals
+   , δ_in :: Bind (Selector Val)
+   , intermediate_expect :: Selector Env
+   , file :: String
    }
 
 type TestLinkedOutputsSpec =
@@ -69,7 +72,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) primitives { δv: identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, intermediate_expect: Nothing } (n × is_bench)
+      test (File file) primitives { δv: identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing } (n × is_bench)
 
 bwdSuite :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array TestBwdSpec -> BenchSuite m
 bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) >>> show) &&& asTest)
@@ -78,16 +81,30 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
 
    asTest :: TestBwdSpec -> m BenchRow
    asTest { file, bwd_expect, δv, fwd_expect } = do
-      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect, intermediate_expect: Nothing } (n × is_bench)
+      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect } (n × is_bench)
 
-intermediateBwdSuite :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array TestBwdIntermediateSpec -> BenchSuite m
-intermediateBwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) >>> show) &&& asTest)
+intermediateTest :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Int -> TestBwdIntermediateSpec -> m BenchRow
+intermediateTest n s = do
+   withDoc <- half prepConfig identity true
+   without <- half prepConfigNoDoc (_ <> "°") false
+   pure (withDoc <> without)
    where
-   folder = Folder "slicing/intermediates"
+   half prep decorate check = do
+      fluidSrc <- loadFile s.spec.fluidSrcPaths (File s.file)
+      _ × row <- runWriterT (replicateM n (iter prep decorate check fluidSrc))
+      pure (row `divRow` n)
 
-   asTest :: TestBwdIntermediateSpec -> m BenchRow
-   asTest { file, bwd_expect, δv, fwd_expect, intermediate_expect } = do
-      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect, intermediate_expect: Just intermediate_expect } (n × is_bench)
+   iter prep decorate check fluidSrc = do
+      fig <- benchmark (decorate "Eval") \_ -> loadFigWith prep s.spec fluidSrc
+      res <- benchmark (decorate "Demands") \_ -> pure (selectionResult (selectOutput s.δv fig))
+      when check do
+         let actual = getPersistent <$> res.ι
+         -- force the demanded intermediates
+         void (pure (prettyP actual))
+         let expected = sel𝔹 s.intermediate_expect res.ι
+         unless (actual ≽ expected) $
+            throw ("intermediate_expect mismatch (" <> s.file <> "):\nactual\n" <> prettyP actual <> "\nexpected\n" <> prettyP expected)
+      void $ benchmark (decorate "Suffices") \_ -> pure (selectionResult (uncurry selectInput s.δ_in fig))
 
 linkedOutputsTest :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, file } = do

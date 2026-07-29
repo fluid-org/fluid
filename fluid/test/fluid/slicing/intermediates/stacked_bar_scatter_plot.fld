@@ -24,8 +24,8 @@ def plot(year, countries):
 
   def plotCountry(country):
     rens_ = filter(isCountry(country), rens)
-    rensOut = sum(@doc(f"""{country} renewable output over {length(rens_)} sources""") map(lambda x: x.output, rens_))
-    rensCap = sum(@doc(f"""{country} renewable capacity over {length(rens_)} sources""") map(lambda x: x.capacity, rens_))
+    rensOut = @doc(f"""{country} renewable output over {length(rens_)} sources""") sum(map(lambda x: x.output, rens_))
+    rensCap = @doc(f"""{country} renewable capacity over {length(rens_)} sources""") sum(map(lambda x: x.capacity, rens_))
     x = head(filter(isCountry(country), nonRens))
     nonRensCap = ((x.nuclearCap + x.petrolCap) + x.gasCap) + x.coalCap
     return {

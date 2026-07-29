@@ -27,11 +27,11 @@ import Effect.Exception (Error)
 import Eval (graphEval, graphGC, withOp)
 import File (class LoadFile, File(..), FileCxt)
 import GaloisConnection (GaloisConnection(..), deMorgan)
-import Graph (class Graph, DVertex, DVertex', Vertex(..), VertexData, dvertices, runQuery, selectαs, select𝔹s, vertexData, vertices)
+import Graph (class Graph, DVertex, DVertex'(..), Vertex(..), VertexData, dvertices, runQuery, selectαs, select𝔹s, vertexData, vertices)
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
 import Lattice (class BoundedMeetSemilattice, Raw, 𝔹, botOf, erase, topOf)
-import Module (prepConfig)
+import Module (Config, prepConfig)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Primitive.Defs (primitives)
@@ -201,9 +201,19 @@ lift
    -> f (SelState 𝔹) × g
 lift selState_f f v = first (apply selState_f) (f (v <#> to𝔹))
 
+-- Identifies @doc-annotated intermediate vertices: those whose value carries a
+-- doc annotation. Shared by the web figures (App.LoadFigure) and the tests.
+docQuery :: VertexData -> Maybe (DVertex' (Val Vertex))
+docQuery = asVal >=> case _ of
+   v@(Val α (Just _) _) -> Just (DVertex (α × v))
+   _ -> Nothing
+
 loadFig :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
-loadFig options@{ inputs, linking } fluidSrc = do
-   { s, e, gconfig } <- prepConfig primitives fluidSrc
+loadFig = loadFigWith prepConfig
+
+loadFigWith :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => (Raw Env -> String -> m Config) -> Options -> String -> m Fig
+loadFigWith prep options@{ inputs, linking } fluidSrc = do
+   { s, e, gconfig } <- prep primitives fluidSrc
    eval@({ inα: EnvStmt γα _, outα, g: g0 }) <- graphEval gconfig e
    let
       opEval = withOp eval

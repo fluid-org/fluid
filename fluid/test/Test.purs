@@ -11,9 +11,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import File (class LoadFile, FileCxt(..))
 import Module.Web (runWebT)
-import Test.Benchmark.Intermediate (benchmarkIntermediates)
 import Test.Specs.Bwd (bwd_cases)
-import Test.Specs.BwdIntermediate (bwdIntermediate_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Desugar (desugar_cases)
@@ -24,30 +22,14 @@ import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, intermediateBwdSuite, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
 main = run (second (runWebT (FileCxt { fluidSrcPaths })) <$> tests)
 
 tests :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-tests = scratchpad
-
-scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-scratchpad =
-   [ "intermediate-perf" × benchmarkIntermediates 3
-        [ "slicing/intermediates/dtw.fld"
-        , "slicing/intermediates/conv.fld"
-        , "slicing/intermediates/edge_detect.fld"
-        , "slicing/intermediates/emboss.fld"
-        , "slicing/intermediates/gaussian.fld"
-        , "slicing/intermediates/line_chart.fld"
-        , "slicing/intermediates/grouped_bar_chart.fld"
-        , "slicing/intermediates/stacked_bar_chart.fld"
-        , "slicing/intermediates/bar_chart_line_chart.fld"
-        , "slicing/intermediates/stacked_bar_scatter_plot.fld"
-        ]
-   ]
+tests = allTests
 
 filterSuite :: forall m r. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =
@@ -72,6 +54,5 @@ benchmarks =
    , suite comments_cases
    , suite paragraph_cases
    , bwdSuite bwd_cases
-   , intermediateBwdSuite bwdIntermediate_cases
    , suite graphics_cases
    ]

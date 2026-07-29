@@ -7,7 +7,7 @@ def exclude(countries, yearData):
   return flip(map, yearData, second(filter(lambda (country, countryData): not(elem(country, countries)))))
 
 def annotate(yearData):
-  return [ @doc(f"""{country}: {sum(map(snd, kvs))} GW across {length(kvs)} energy types""") (country, kvs)
+  return [ (country, @doc(f"""{country}: {sum(map(snd, kvs))} GW across {length(kvs)} energy types""") [ (t, v) for (t, v) in kvs ])
     for (country, kvs) in yearData ]
 
 caption("Renewables (GW) by country and energy type, " ++ num_to_str(year), grouped_bar_chart(True, colours1, 0.2, annotate(exclude([], lookup(year, data)))))

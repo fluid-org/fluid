@@ -1,7 +1,7 @@
 import dataset.renewables
 
 def totalFor(c, rows):
-  return sum(@doc(f"""Total 2015 output for {c}""") [row.output for row in rows if row.country == c])
+  return @doc(f"""Total 2015 output for {c}""") sum([row.output for row in rows if row.country == c])
 
 data2015 = [row for row in renewables if row.year == 2015]
 countryData = [ { x: c, segments: [{ y: "output", z: totalFor(c, data2015) }] }

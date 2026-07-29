@@ -2,7 +2,7 @@ module App.LoadFigure where
 
 import Prelude hiding (absurd)
 
-import App.Fig (drawFig, drawFile, loadFig)
+import App.Fig (docQuery, drawFig, drawFile, loadFig)
 import App.Util (runAffs_)
 import App.View.Util (Filter, Options)
 import Data.Argonaut.Core (Json)
@@ -17,10 +17,8 @@ import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
 import File (File(..), FileCxt(..), Folder(..), loadFileFromPath)
-import Graph (DVertex'(..))
 import Module.Web (runWebT)
 import Util (definitely, definitely', error, (×))
-import Val (Val(..), asVal)
 
 -- TODO: remove this extra type
 type JsonOptions =
@@ -35,12 +33,7 @@ optionsFromJson :: JsonOptions -> Options
 optionsFromJson spec@{ inputs, query, linking, rowFilter } =
    { fluidSrcPaths: Folder <$> spec.fluidSrcPath
    , inputs
-   , query:
-        if query then
-           Just $ asVal >=> case _ of
-              v@(Val α (Just _) _) -> Just $ DVertex (α × v)
-              _ -> Nothing
-        else Nothing
+   , query: if query then Just docQuery else Nothing
    , linking
    , rowFilter
    }

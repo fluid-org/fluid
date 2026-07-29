@@ -4,7 +4,7 @@ import dataset.renewables_restricted
 year1 = head(data)
 
 def addTotal(kvs):
-  return ("Total", sum(@doc(f"""Combined output across {length(kvs)} energy types""") map(snd, kvs))) :| kvs
+  return ("Total", @doc(f"""Combined output {sum(map(snd, kvs))} GW across {length(kvs)} energy types""") sum(map(snd, kvs))) :| kvs
 
 def countryData(country):
   return map(second(compose(addTotal, lookup(country))), data)

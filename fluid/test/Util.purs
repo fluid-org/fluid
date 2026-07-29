@@ -2,37 +2,38 @@ module Test.Util where
 
 import Prelude hiding (absurd, compare)
 
-import App.Util (Selector, getPersistent, selStates, unselected)
-import App.Util.Selector (IntermediateVals, sel𝔹)
+import App.Util (Selector, getPersistent, unselected)
+import App.Util.Selector (sel𝔹)
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
+import Data.Int (toNumber)
 import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
-import Data.Foldable (foldMap, for_)
-import Data.Set (member)
+import Data.Foldable (for_)
+import Data.Set (size) as Set
 import Data.String (null, trim)
 import Data.Tuple (fst)
-import Dict (Dict, fromFoldable)
+import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, graphGC, toGC, withOp)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import GaloisConnection (GaloisConnection(..), dual)
-import Graph (DVertex'(..), Vertex(..), addresses, vertices)
+import Graph (DVertex'(..), Vertex(..), size, vertices)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, Raw, erase, topOf, 𝔹, (≽))
-import Module (prepConfig)
+import Module (Config, prepConfig, prepConfigNoDoc)
 import Parse (parseProgram)
 import Pretty (class Pretty, PrettyShow(..), compare, prettyP)
 import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
-import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordGraphSize)
+import Test.Benchmark.Util (BenchRow, benchmark, divRow, record)
 import Test.Util.Debug (testing, tracing)
 import Util (type (×), AffError, EffectError, Endo, Thunk, check, checkSatisfies, log', spyWhen, throw, throwLeft, withMsg, (×))
-import Val (class Ann, Env, EnvStmt(..), Val, asVal, intermediateVertices)
+import Val (class Ann, Env, EnvStmt(..), Val, asVal, docText, intermediateVertices)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -40,23 +41,55 @@ type SelectionSpec =
    { δv :: Selector Val
    , fwd_expect :: String -- prettyprinted value after bwd then fwd round-trip
    , bwd_expect :: Maybe (Selector Env) -- Nothing for tests that don't perturb output
-   , intermediate_expect :: Maybe (Selector IntermediateVals)
    }
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "fluid", Folder "test/fluid" ]
 
-test ∷ forall m. MonadReader FileCxt m => LoadFile m => File -> Raw Env -> SelectionSpec -> Int × Boolean -> AffError m BenchRow
-test file primitives spec (n × _) = do
+testWith
+   ∷ forall m
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => (Raw Env -> String -> m Config)
+   -> (String -> String)
+   -> File
+   -> Raw Env
+   -> SelectionSpec
+   -> Int × Boolean
+   -> m BenchRow
+testWith prep decorate file primitives spec (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
-   { s, e, gconfig } <- prepConfig primitives fluidSrc
+   { s, e, gconfig } <- prep primitives fluidSrc
    testPretty s
-   _ × res <- runWriterT (replicateM n (testProperties s e gconfig spec))
+   _ × res <- runWriterT (replicateM n (testProperties decorate s e gconfig spec))
    pure $ res `divRow` n
 
-graphBenchmark :: forall m a. MonadWriter BenchRow m => String -> Thunk (m a) -> EffectError m a
-graphBenchmark name = benchmark ("G" <> "-" <> name)
+test ∷ forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => File -> Raw Env -> SelectionSpec -> Int × Boolean -> m BenchRow
+test = testWith prepConfig identity
+
+testTwinned
+   ∷ forall m
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => File
+   -> Raw Env
+   -> SelectionSpec
+   -> Int × Boolean
+   -> m BenchRow
+testTwinned file primitives spec ni = do
+   withDoc <- testWith prepConfig identity file primitives spec ni
+   without <- testWith prepConfigNoDoc (_ <> "°") file primitives specTiming ni
+   pure (withDoc <> without)
+   where
+   specTiming = spec { bwd_expect = Nothing, fwd_expect = "" }
+
+graphBenchmark :: forall m a. MonadWriter BenchRow m => (String -> String) -> String -> Thunk (m a) -> EffectError m a
+graphBenchmark decorate name = benchmark (decorate ("G" <> "-" <> name))
 
 benchNames
    :: { eval :: String
@@ -81,32 +114,33 @@ testProperties
     . MonadReader FileCxt m
    => LoadFile m
    => MonadWriter BenchRow m
-   => Raw SE.Stmt
+   => (String -> String)
+   -> Raw SE.Stmt
    -> Raw Expr.Stmt
    -> GraphConfig
    -> SelectionSpec
    -> AffError m Unit
-testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, intermediate_expect } = do
+testProperties decorate _ s' gconfig { δv, bwd_expect, fwd_expect } = do
 
-   graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
+   graphed@{ g, outα } <- graphBenchmark decorate benchNames.eval \_ ->
       graphEval gconfig s'
    let { fwd, bwd } = graphGC graphed
 
    when tracing.intermediates $
       for_ (intermediateVertices (vertices g)) \(DVertex (Vertex vStr × vd)) ->
          case asVal vd of
-            Just val -> log' $ "Intermediate vertex " <> vStr <> ":\n" <> prettyP (erase val)
-            Nothing -> pure unit
+            Just val -> log' $ "Intermediate vertex " <> vStr <> " " <> show (docText val) <> ":\n" <> prettyP (erase val)
+            _ -> pure unit
 
    let v = map (const top) outα :: Val 𝔹
    let out0 = fst (δv (const unselected <$> v)) <#> getPersistent
 
    bwdResult <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
-      graphBenchmark benchNames.bwd \_ -> pure (bwd (report out0))
-   let (in0@(EnvStmt in_γ in_s)) × g' = bwdResult
+      graphBenchmark decorate benchNames.bwd \_ -> pure (bwd (report out0))
+   let (in0@(EnvStmt in_γ in_s)) × _ = bwdResult
 
-   out1 <- graphBenchmark benchNames.fwd \_ -> pure (fst (fwd (EnvStmt in_γ in_s)))
+   out1 <- graphBenchmark decorate benchNames.fwd \_ -> pure (fst (fwd (EnvStmt in_γ in_s)))
 
    let in_top = EnvStmt (topOf in_γ) (topOf in_s)
 
@@ -120,7 +154,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, intermediate_expect }
       let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
       withMsg "fwd_expect" $ checkPretty fwd_expect (report out1)
 
-   recordGraphSize g
+   record (decorate "Graph-Nodes") (toNumber $ size g)
+   record (decorate "Intermediate-Nodes") (toNumber $ Set.size (intermediateVertices (vertices g)))
 
    let out_top = fst (fwd in_top)
    when testing.fwdPreservesTop $
@@ -130,28 +165,10 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, intermediate_expect }
    let GC evalG_dual = dual (GC evalG)
    let GC evalG_op = withOp graphed # graphGC # toGC
 
-   out2 <- graphBenchmark benchNames.demBy_G_direct \_ -> pure (evalG_op.bwd in0)
-   out3 <- graphBenchmark benchNames.demBy_G_suff_dual \_ -> pure (evalG_dual.bwd in0)
+   out2 <- graphBenchmark decorate benchNames.demBy_G_direct \_ -> pure (evalG_op.bwd in0)
+   out3 <- graphBenchmark decorate benchNames.demBy_G_suff_dual \_ -> pure (evalG_dual.bwd in0)
    when testing.fwdDuals $
       checkEq benchNames.demBy_G_direct benchNames.demBy_G_suff_dual out2 out3
-
-   case intermediate_expect of
-      Nothing -> pure unit
-      Just intermediateSel -> do
-         let selected = addresses g'
-         let
-            pairs = foldMap
-               ( \(DVertex (Vertex vStr × vd)) ->
-                    case asVal vd of
-                       Just val -> [ vStr × ((\v' -> member v' selected) <$> val) ]
-                       Nothing -> []
-               )
-               (intermediateVertices (vertices g))
-         let actualDict = fromFoldable pairs :: Dict (Val 𝔹)
-         let templateDict = map (map (const (selStates false false false))) actualDict
-         let expectedDict = map (map getPersistent) (fst (intermediateSel templateDict))
-         unless (actualDict ≽ expectedDict) $
-            throw ("intermediate_expect mismatch:\nactual\n" <> prettyP actualDict <> "\nexpected\n" <> prettyP expectedDict)
 
 checkEq
    :: forall m a

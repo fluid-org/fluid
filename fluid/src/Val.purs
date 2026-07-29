@@ -8,6 +8,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array (concat, fromFoldable, (!!))
 import Data.Array (zipWith) as A
+import Data.Array (cons) as Array
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
 import Data.List (List(..), (:), zipWith)
@@ -17,7 +18,7 @@ import Data.Set (Set, unions)
 import Data.Set as Set
 import Data.String (joinWith)
 import Data.Traversable (class Traversable, sequenceDefault, traverse)
-import DataType (Ctr)
+import DataType (Ctr, cCons, cNil, cParagraph)
 import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
@@ -70,6 +71,23 @@ hasDoc (DVertex (_ × vd)) =
    case asVal vd of
       Just (Val _ (Just _) _) -> true
       _ -> false
+
+docText :: forall a. Val a -> Maybe String
+docText (Val _ (Just (Val _ _ (Constr c (para : Nil)))) _) | c == cParagraph =
+   joinWith " " <$> docWords para
+docText _ = Nothing
+
+docWords :: forall a. Val a -> Maybe (Array String)
+docWords (Val _ _ (Constr c Nil)) | c == cNil = Just []
+docWords (Val _ _ (Constr c (w : ws : Nil))) | c == cCons =
+   Array.cons <$> docWord w <*> docWords ws
+docWords _ = Nothing
+
+docWord :: forall a. Val a -> Maybe String
+docWord (Val _ _ (Str s)) = Just s
+docWord (Val _ _ (Int n)) = Just (show n)
+docWord (Val _ _ (Float n)) = Just (show n)
+docWord _ = Nothing
 
 data Fun a
    = Closure (Env a) (Dict (Elim a)) (Elim a)

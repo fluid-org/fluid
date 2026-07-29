@@ -7,7 +7,7 @@ import Data.Array (intersperse, fromFoldable) as A
 import Data.Array.NonEmpty (NonEmptyArray, head, toArray)
 import Data.Foldable (sum)
 import Data.Int (toNumber)
-import Data.List (List(..), fold, length, union)
+import Data.List (List(..), fold, length)
 import Data.Map (Map, unionWith, keys, values)
 import Data.Map (empty, singleton) as Map
 import Data.Newtype (class Newtype, over2)
@@ -43,7 +43,7 @@ newtype BenchRow = BenchRow (Map String (List Number))
 derive instance Newtype BenchRow _
 
 instance Semigroup BenchRow where
-   append = unionWith union `flip over2` BenchRow
+   append = unionWith (<>) `flip over2` BenchRow
 
 instance Monoid BenchRow where
    mempty = BenchRow Map.empty
@@ -77,9 +77,12 @@ benchmark' name m = do
    tell (BenchRow $ Map.singleton name (singleton t))
    pure x
 
+-- Record a single named metric into the BenchRow.
+record :: forall m. MonadWriter BenchRow m => String -> Number -> m Unit
+record name x = tell (BenchRow $ Map.singleton name (singleton x))
+
 recordGraphSize :: forall g m. Graph g => MonadWriter BenchRow m => g -> m Unit
-recordGraphSize g =
-   tell (BenchRow $ Map.singleton "Graph-Nodes" (singleton $ toNumber $ size g))
+recordGraphSize g = record "Graph-Nodes" (toNumber $ size g)
 
 divRow :: BenchRow -> Int -> BenchRow
 divRow (BenchRow row) n =
