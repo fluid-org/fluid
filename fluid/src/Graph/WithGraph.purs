@@ -4,9 +4,13 @@ import Prelude hiding (map)
 
 import Control.Monad.Except (class MonadError, lift)
 import Control.Monad.State (StateT, modify, modify_, runStateT)
+import Data.Foldable (foldMap)
 import Data.Identity (Identity)
-import Data.List (List(..), range, (:))
-import Data.Newtype (unwrap)
+import Data.List (List(..), filter, range, (:))
+import Data.Map (Map)
+import Data.Map as M
+import Data.Maybe (fromMaybe)
+import Data.Newtype (class Newtype, over, unwrap)
 import Data.Profunctor.Strong (first)
 import Data.Set (Set, isEmpty)
 import Data.Set as Set
@@ -17,7 +21,7 @@ import Graph (class Graph, class TypeName, class Vertices, DVertex, DVertex'(..)
 import Lattice (Raw)
 import Test.Util.Debug (checking, tracing)
 import Util (type (×), Endo, assertWhen, check, spy, spyFunWhenM, spyWhen, (×))
-import Util.Set ((\\))
+import Util.Set ((\\), (∈))
 
 class Monad m <= MonadWithGraph m where
    -- Extend graph with existing vertex and its accompanying data pointing to set of existing vertices.
@@ -31,6 +35,9 @@ class Monad m <= MonadAlloc m where
 class (MonadAlloc m, MonadError Error m, MonadWithGraph m) <= MonadWithGraphAlloc m where
    -- Extend with a freshly allocated vertex.
    new :: forall f g. TypeName (g Vertex) => (Vertex -> f Vertex -> g Vertex) -> Set Vertex -> f Vertex -> m (g Vertex)
+
+   -- Mark α as never to be contracted away. No-op unless the graph is being contracted.
+   retain :: Vertex -> m Unit
 
 type AllocT m = StateT Int m
 type Alloc = AllocT Identity
@@ -50,8 +57,88 @@ instance MonadError Error m => MonadWithGraphAlloc (WithGraphAllocT m) where
       extend (DVertex (α × pack v)) αs
       pure v
 
+   retain _ = pure unit
+
 instance Monad m => MonadWithGraph (WithGraphT m) where
    extend α αs = void $ modify_ $ (:) (α × αs)
+
+-- ======================
+-- Contracting variant
+-- ======================
+
+-- Graph retaining only inputs ∪ retained ∪ outputs; dropping α splices it out by rewiring α's
+-- consumers to the union of α's producers' frontiers, preserving reachability and fwd's conjunction.
+type ContractRec =
+   { edges :: List HyperEdge -- all vertices, reverse creation order; filtered on freeze
+   , resolved :: Map Vertex (Set Vertex) -- frontiers of vertices dropped at creation
+   , kept :: Set Vertex -- seeded with inputs, extended by retain
+   , keepAll :: Boolean -- contraction becomes identity
+   }
+
+-- Newtype rather than synonym: a bare record is not a legal instance head.
+newtype ContractState = ContractState ContractRec
+
+derive instance Newtype ContractState _
+
+type ContractT = StateT ContractState
+type ContractAllocT m = ContractT (AllocT m)
+
+keep :: ContractRec -> Vertex -> Boolean
+keep s α = s.keepAll || α ∈ s.kept
+
+-- Nearest retained ancestors of β; a β neither retained nor extended is treated as retained.
+frontier :: ContractRec -> Vertex -> Set Vertex
+frontier s β
+   | keep s β = Set.singleton β
+   | otherwise = fromMaybe (Set.singleton β) (M.lookup β s.resolved)
+
+instance Monad m => MonadWithGraph (ContractT m) where
+   extend dv@(DVertex (α × _)) βs = modify_ $ over ContractState \s ->
+      let
+         βs' = foldMap (frontier s) βs
+      in
+         s
+            { edges = (dv × βs') : s.edges
+            , resolved = if keep s α then s.resolved else M.insert α βs' s.resolved
+            }
+
+instance Monad m => MonadAlloc (ContractAllocT m) where
+   fresh = lift fresh
+
+instance MonadError Error m => MonadWithGraphAlloc (ContractAllocT m) where
+   new constr αs vd = do
+      α <- fresh
+      let v = constr α vd
+      extend (DVertex (α × pack v)) αs
+      pure v
+
+   retain α = modify_ $ over ContractState \s -> s { kept = Set.insert α s.kept }
+
+initialContractState :: Boolean -> Set DVertex -> ContractState
+initialContractState keepAll αs = ContractState
+   { edges: Nil
+   , resolved: M.empty
+   , kept: Set.map (fst <<< unwrap) αs
+   , keepAll
+   }
+
+-- Outputs are not identifiable at creation (a vertex can have consumers and still be returned), so
+-- they are recovered from the result here.
+freezeContracted
+   :: forall g m a
+    . Monad m
+   => Graph g
+   => Boolean
+   -> (a -> Set Vertex)
+   -> ContractT m a
+   -> Set DVertex
+   -> m (g × a)
+freezeContracted keepAll outputs m αs = do
+   a × ContractState s <- runStateT m (initialContractState keepAll αs)
+   let
+      kept = s.kept `Set.union` outputs a
+      retained (DVertex (α × _) × _) = s.keepAll || α ∈ kept
+   pure (fromEdgeList αs (filter retained s.edges) × a)
 
 alloc :: forall m f. MonadAlloc m => Traversable f => Raw f -> m (f Vertex)
 alloc = traverse (const fresh)
