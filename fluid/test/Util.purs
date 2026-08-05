@@ -20,7 +20,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
-import Eval (GraphConfig, graphEval, graphGC, toGC, withOp)
+import Eval (GraphConfig, graphEval, graphEvalContracted, graphGC, toGC, withOp)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import GaloisConnection (GaloisConnection(..), dual)
 import Graph (DVertex'(..), Vertex(..), size, vertices)
@@ -52,23 +52,24 @@ testWith
    => MonadError Error m
    => MonadReader FileCxt m
    => LoadFile m
-   => (Raw Env -> String -> m Config)
+   => Boolean
+   -> (Raw Env -> String -> m Config)
    -> (String -> String)
    -> File
    -> Raw Env
    -> SelectionSpec
    -> Int × Boolean
    -> m BenchRow
-testWith prep decorate file primitives spec (n × _) = do
+testWith contracted prep decorate file primitives spec (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
    { s, e, gconfig } <- prep primitives fluidSrc
    testPretty s
-   _ × res <- runWriterT (replicateM n (testProperties decorate s e gconfig spec))
+   _ × res <- runWriterT (replicateM n (testProperties contracted decorate s e gconfig spec))
    pure $ res `divRow` n
 
 test ∷ forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => File -> Raw Env -> SelectionSpec -> Int × Boolean -> m BenchRow
-test = testWith prepConfig identity
+test = testWith false prepConfig identity
 
 testTwinned
    ∷ forall m
@@ -82,8 +83,8 @@ testTwinned
    -> Int × Boolean
    -> m BenchRow
 testTwinned file primitives spec ni = do
-   withDoc <- testWith prepConfig identity file primitives spec ni
-   without <- testWith prepConfigNoDoc (_ <> "°") file primitives specTiming ni
+   withDoc <- testWith false prepConfig identity file primitives spec ni
+   without <- testWith false prepConfigNoDoc (_ <> "°") file primitives specTiming ni
    pure (withDoc <> without)
    where
    specTiming = spec { bwd_expect = Nothing, fwd_expect = "" }
@@ -114,16 +115,17 @@ testProperties
     . MonadReader FileCxt m
    => LoadFile m
    => MonadWriter BenchRow m
-   => (String -> String)
+   => Boolean
+   -> (String -> String)
    -> Raw SE.Stmt
    -> Raw Expr.Stmt
    -> GraphConfig
    -> SelectionSpec
    -> AffError m Unit
-testProperties decorate _ s' gconfig { δv, bwd_expect, fwd_expect } = do
+testProperties contracted decorate _ s' gconfig { δv, bwd_expect, fwd_expect } = do
 
    graphed@{ g, outα } <- graphBenchmark decorate benchNames.eval \_ ->
-      graphEval gconfig s'
+      (if contracted then graphEvalContracted else graphEval) gconfig s'
    let { fwd, bwd } = graphGC graphed
 
    when tracing.intermediates $

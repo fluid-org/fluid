@@ -25,10 +25,10 @@ import Effect.Exception (Error)
 import Expr (Cont(..), Elim(..), Expr(..), Module(..), RecDefs(..), Stmt(..), VarDef(..), asStmt, fv)
 import File (class LoadFile, FileCxt)
 import GaloisConnection (GaloisConnection(..))
-import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
+import Graph (class Graph, Vertex, addresses, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice, fwdSlice)
-import Graph.WithGraph (class MonadWithGraphAlloc, alloc, runAllocT, runWithGraphT_spy)
+import Graph.WithGraph (class MonadWithGraphAlloc, alloc, freezeContracted, runAllocT, runWithGraphT_spy)
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, ModuleCxt)
 import Pretty (prettyP)
@@ -360,7 +360,22 @@ graphEval { n, γ } stmt = do
       g × outα <- runWithGraphT_spy (asReturns <$> evalStmt Nothing γ sα mempty) (vertices inα)
       when checking.outputsInGraph $ check (vertices outα ⊆ vertices g) "outputs in graph"
       pure (g × inα × outα)
-   pure { g, graph_fwd, graph_bwd, inα, outα }
+   pure (withSlicers g inα outα)
+
+-- As graphEval, but retaining only inputs, @doc-annotated values and outputs. Separate function
+-- rather than flag, as the two differ in the monad evalStmt runs in.
+graphEvalContracted :: forall m. MonadAff m => MonadReader FileCxt m => LoadFile m => MonadError Error m => GraphConfig -> Raw Stmt -> m (GraphEval GraphImpl EnvStmt Val)
+graphEvalContracted { n, γ } stmt = do
+   _ × _ × g × inα × outα <- flip runAllocT n do
+      sα <- alloc stmt
+      let inα = EnvStmt γ sα
+      g × outα <- freezeContracted addresses (asReturns <$> evalStmt Nothing γ sα mempty) (vertices inα)
+      when checking.outputsInGraph $ check (vertices outα ⊆ vertices g) "outputs in graph"
+      pure (g × inα × outα)
+   pure (withSlicers g inα outα)
+
+withSlicers :: forall g s t. Graph g => g -> s Vertex -> t Vertex -> GraphEval g s t
+withSlicers g inα outα = { g, graph_fwd, graph_bwd, inα, outα }
    where
    graph_fwd = curry (fwdSlice # spyFun' tracing.graphFwdSlice "fwdSlice")
    graph_bwd = curry (bwdSlice # spyFun' tracing.graphBwdSlice "bwdSlice")
