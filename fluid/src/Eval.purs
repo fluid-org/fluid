@@ -28,7 +28,7 @@ import GaloisConnection (GaloisConnection(..))
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice, fwdSlice)
-import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
+import Graph.WithGraph (class MonadWithGraphAlloc, alloc, runAllocT, runWithGraphT_spy)
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, ModuleCxt)
 import Pretty (prettyP)
@@ -143,7 +143,7 @@ eval doc_opt γ e0 αs = do
    αu_opt <- evalVal γ e0 αs
    case αu_opt of
       Just (α × u) ->
-         new (flip Val doc_opt) (insert α αs) u
+         val doc_opt (insert α αs) u
       Nothing -> case e0 of
          Var x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (variable " <> x <> ")"

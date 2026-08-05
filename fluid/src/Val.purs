@@ -12,7 +12,7 @@ import Data.Array (cons) as Array
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
 import Data.List (List(..), (:), zipWith)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isJust)
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set (Set, unions)
 import Data.Set as Set
@@ -57,8 +57,9 @@ data BaseVal a
    | Matrix (MatrixRep a)
    | Fun (Fun a)
 
+-- @doc-annotated value is a contraction boundary; annotation's own vertices are not.
 val :: forall m. MonadWithGraphAlloc m => Maybe (Val Vertex) -> Set Vertex -> BaseVal Vertex -> m (Val Vertex)
-val doc_opt = new (flip Val doc_opt)
+val doc_opt = new (isJust doc_opt) (flip Val doc_opt)
 
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing

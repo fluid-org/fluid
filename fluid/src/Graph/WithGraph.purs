@@ -33,11 +33,16 @@ class Monad m <= MonadAlloc m where
 -- Fix exceptions at Error, the type of JavaScript exceptions, because Aff requires Error, and
 -- I can't see a way to convert MonadError Error m (for example) to MonadError Error m.
 class (MonadAlloc m, MonadError Error m, MonadWithGraph m) <= MonadWithGraphAlloc m where
-   -- Extend with a freshly allocated vertex.
-   new :: forall f g. TypeName (g Vertex) => (Vertex -> f Vertex -> g Vertex) -> Set Vertex -> f Vertex -> m (g Vertex)
-
-   -- Mark α as never to be contracted away. No-op unless the graph is being contracted.
-   retain :: Vertex -> m Unit
+   -- Extend with freshly allocated vertex; flag retains it from contraction (ignored unless contracting).
+   new
+      :: forall f g
+       . TypeName (g Vertex)
+      => Vertices (g Vertex)
+      => Boolean
+      -> (Vertex -> f Vertex -> g Vertex)
+      -> Set Vertex
+      -> f Vertex
+      -> m (g Vertex)
 
 type AllocT m = StateT Int m
 type Alloc = AllocT Identity
@@ -51,13 +56,11 @@ instance Monad m => MonadAlloc (AllocT m) where
       pure (Vertex $ show n)
 
 instance MonadError Error m => MonadWithGraphAlloc (WithGraphAllocT m) where
-   new constr αs vd = do
+   new _ constr αs vd = do
       α <- fresh
       let v = constr α vd
       extend (DVertex (α × pack v)) αs
       pure v
-
-   retain _ = pure unit
 
 instance Monad m => MonadWithGraph (WithGraphT m) where
    extend α αs = void $ modify_ $ (:) (α × αs)
@@ -71,8 +74,7 @@ instance Monad m => MonadWithGraph (WithGraphT m) where
 type ContractRec =
    { edges :: List HyperEdge -- all vertices, reverse creation order; filtered on freeze
    , resolved :: Map Vertex (Set Vertex) -- frontiers of vertices dropped at creation
-   , kept :: Set Vertex -- seeded with inputs, extended by retain
-   , keepAll :: Boolean -- contraction becomes identity
+   , kept :: Set Vertex -- seeded with inputs, extended as retained values are allocated
    }
 
 -- Newtype rather than synonym: a bare record is not a legal instance head.
@@ -84,7 +86,7 @@ type ContractT = StateT ContractState
 type ContractAllocT m = ContractT (AllocT m)
 
 keep :: ContractRec -> Vertex -> Boolean
-keep s α = s.keepAll || α ∈ s.kept
+keep s α = α ∈ s.kept
 
 -- Nearest retained ancestors of β; a β neither retained nor extended is treated as retained.
 frontier :: ContractRec -> Vertex -> Set Vertex
@@ -106,20 +108,19 @@ instance Monad m => MonadAlloc (ContractAllocT m) where
    fresh = lift fresh
 
 instance MonadError Error m => MonadWithGraphAlloc (ContractAllocT m) where
-   new constr αs vd = do
+   new retain constr αs vd = do
       α <- fresh
       let v = constr α vd
+      -- All vertices, as selections address components; before extend, so v is wired to them.
+      when retain $ modify_ $ over ContractState \s -> s { kept = s.kept `Set.union` addresses v }
       extend (DVertex (α × pack v)) αs
       pure v
 
-   retain α = modify_ $ over ContractState \s -> s { kept = Set.insert α s.kept }
-
-initialContractState :: Boolean -> Set DVertex -> ContractState
-initialContractState keepAll αs = ContractState
+initialContractState :: Set DVertex -> ContractState
+initialContractState αs = ContractState
    { edges: Nil
    , resolved: M.empty
    , kept: Set.map (fst <<< unwrap) αs
-   , keepAll
    }
 
 -- Outputs are not identifiable at creation (a vertex can have consumers and still be returned), so
@@ -128,16 +129,15 @@ freezeContracted
    :: forall g m a
     . Monad m
    => Graph g
-   => Boolean
-   -> (a -> Set Vertex)
+   => (a -> Set Vertex)
    -> ContractT m a
    -> Set DVertex
    -> m (g × a)
-freezeContracted keepAll outputs m αs = do
-   a × ContractState s <- runStateT m (initialContractState keepAll αs)
+freezeContracted outputs m αs = do
+   a × ContractState s <- runStateT m (initialContractState αs)
    let
       kept = s.kept `Set.union` outputs a
-      retained (DVertex (α × _) × _) = s.keepAll || α ∈ kept
+      retained (DVertex (α × _) × _) = α ∈ kept
    pure (fromEdgeList αs (filter retained s.edges) × a)
 
 alloc :: forall m f. MonadAlloc m => Traversable f => Raw f -> m (f Vertex)
