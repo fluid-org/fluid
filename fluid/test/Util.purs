@@ -9,7 +9,7 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
 import Data.Int (toNumber)
-import Data.List.Lazy (replicateM)
+import Data.List.Lazy (head, replicateM)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Foldable (for_)
@@ -32,10 +32,15 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, record)
 import Test.Util.Debug (testing, tracing)
-import Util (type (×), AffError, EffectError, Endo, Thunk, check, checkSatisfies, log', spyWhen, throw, throwLeft, withMsg, (×))
+import Util (type (×), AffError, EffectError, Endo, Thunk, check, checkSatisfies, log', orElse, spyWhen, throw, throwLeft, withMsg, (×))
 import Val (class Ann, Env, EnvStmt(..), Val, asVal, docText, intermediateVertices)
 
 type TestSuite m = Array (String × m Unit)
+
+type TestResult =
+   { in0 :: EnvStmt 𝔹 -- inputs demanded by δv
+   , out1 :: Val 𝔹 -- outputs those inputs suffice for
+   }
 
 type SelectionSpec =
    { δv :: Selector Val
@@ -59,17 +64,43 @@ testWith
    -> Raw Env
    -> SelectionSpec
    -> Int × Boolean
-   -> m BenchRow
+   -> m (BenchRow × TestResult)
 testWith contracted prep decorate file primitives spec (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
    { s, e, gconfig } <- prep primitives fluidSrc
    testPretty s
-   _ × res <- runWriterT (replicateM n (testProperties contracted decorate s e gconfig spec))
-   pure $ res `divRow` n
+   results × res <- runWriterT (replicateM n (testProperties contracted decorate s e gconfig spec))
+   result <- head results # orElse "no test iterations"
+   pure ((res `divRow` n) × result)
 
 test ∷ forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => File -> Raw Env -> SelectionSpec -> Int × Boolean -> m BenchRow
-test = testWith false prepConfig identity
+test file primitives spec ni
+   | testing.contracted = testContracted file primitives spec ni
+   | otherwise = fst <$> testWith false prepConfig identity file primitives spec ni
+
+-- Contraction must preserve the selections, not merely the fwd_expect/bwd_expect they are checked against.
+testContracted
+   ∷ forall m
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => File
+   -> Raw Env
+   -> SelectionSpec
+   -> Int × Boolean
+   -> m BenchRow
+testContracted file primitives spec ni = do
+   row' × r' <- testWith true prepConfig (_ <> "ᶜ") file primitives spec ni
+   row × r <- testWith false prepConfig identity file primitives spec ni
+   -- EnvStmt has no lattice instances, so only its environment half can be diffed.
+   let EnvStmt γ _ = r.in0
+   let EnvStmt γ' _ = r'.in0
+   checkEq "uncontracted" "contracted" γ γ'
+   checkEq "uncontracted" "contracted" r.out1 r'.out1
+   check (r.in0 == r'.in0) "contracted demands differ on program syntax"
+   pure (row <> row')
 
 testTwinned
    ∷ forall m
@@ -83,8 +114,8 @@ testTwinned
    -> Int × Boolean
    -> m BenchRow
 testTwinned file primitives spec ni = do
-   withDoc <- testWith false prepConfig identity file primitives spec ni
-   without <- testWith false prepConfigNoDoc (_ <> "°") file primitives specTiming ni
+   withDoc <- fst <$> testWith false prepConfig identity file primitives spec ni
+   without <- fst <$> testWith false prepConfigNoDoc (_ <> "°") file primitives specTiming ni
    pure (withDoc <> without)
    where
    specTiming = spec { bwd_expect = Nothing, fwd_expect = "" }
@@ -121,7 +152,7 @@ testProperties
    -> Raw Expr.Stmt
    -> GraphConfig
    -> SelectionSpec
-   -> AffError m Unit
+   -> AffError m TestResult
 testProperties contracted decorate _ s' gconfig { δv, bwd_expect, fwd_expect } = do
 
    graphed@{ g, outα } <- graphBenchmark decorate benchNames.eval \_ ->
@@ -171,6 +202,8 @@ testProperties contracted decorate _ s' gconfig { δv, bwd_expect, fwd_expect } 
    out3 <- graphBenchmark decorate benchNames.demBy_G_suff_dual \_ -> pure (evalG_dual.bwd in0)
    when testing.fwdDuals $
       checkEq benchNames.demBy_G_direct benchNames.demBy_G_suff_dual out2 out3
+
+   pure { in0, out1 }
 
 checkEq
    :: forall m a

@@ -55,6 +55,8 @@ type TestingConfig =
    , bwdDuals :: Boolean
    , fwdDuals :: Boolean
    , naiveFwd :: Boolean
+   -- Run each test contracted as well as uncontracted, comparing selections.
+   , contracted :: Boolean
    }
 
 testingDefaults :: TestingConfig
@@ -63,6 +65,7 @@ testingDefaults =
    , bwdDuals: false
    , fwdDuals: false
    , naiveFwd: false
+   , contracted: false
    }
 
 type TimingConfig =

@@ -22,6 +22,7 @@ testing = testingDefaults
    , bwdDuals = true
    , fwdDuals = true
    , naiveFwd = true
+   , contracted = true
    }
 
 timing :: TimingConfig

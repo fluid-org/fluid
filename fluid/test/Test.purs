@@ -5,8 +5,12 @@ import Prelude
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array (concat, filter, elem)
+import Data.Array.NonEmpty (fromArray) as NEA
+import Data.Maybe (maybe)
 import Data.Profunctor.Strong (second)
+import Data.Traversable (sequence, traverse)
 import Effect (Effect)
+import Effect.Class.Console (log)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import File (class LoadFile, FileCxt(..))
@@ -20,6 +24,7 @@ import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
 import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
+import Test.Benchmark.Util (BenchAcc(..))
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
 import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
@@ -30,6 +35,14 @@ main = run (second (runWebT (FileCxt { fluidSrcPaths })) <$> tests)
 
 tests :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
 tests = allTests
+
+scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
+scratchpad = [ "benchmark" × benchmarkAll 10 ]
+
+benchmarkAll :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Int -> m Unit
+benchmarkAll n = do
+   rows <- traverse sequence (concat (benchmarks <#> (_ $ (n × true))))
+   maybe (log "no benchmarks") (log <<< show <<< BenchAcc) (NEA.fromArray rows)
 
 filterSuite :: forall m r. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =
