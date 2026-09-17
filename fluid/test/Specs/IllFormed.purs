@@ -18,7 +18,7 @@ purepy_cases =
    , { file: "purepy/dataclass_int_field.fld", expected_error: "\"ParseError on line 3, column 6:\\nExpected uppercase letter\"" }
    , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 10, column 10:\\nExpected ')'\"" }
    , { file: "purepy/dataclass_unknown_base.fld", expected_error: "Unknown class: Unknown" }
-   , { file: "purepy/duplicate_def_in_region.fld", expected_error: "Shape mismatch" }
+   , { file: "purepy/duplicate_def_in_region.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/forward_class_in_def.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/forward_class_top.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module module.two_vals_lib" }
@@ -66,7 +66,6 @@ illFormed_cases =
    , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }
    , { file: "import_cycle.fld", expected_error: "import cycle: module.cyc_a -> module.cyc_b -> module.cyc_a" }
    , { file: "match_exhaustive_assign.fld", expected_error: "Not definitely assigned: result" }
-   , { file: "def_pattern_literal.fld", expected_error: "Pattern supported only in match: (PInt 0)" }
    , { file: "match_non_leaf.fld", expected_error: "Cannot match non-leaf class: Base" }
    , { file: "match_partial_def.fld", expected_error: "Not definitely assigned: result" }
    , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module module.return_mod" }

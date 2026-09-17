@@ -19,12 +19,12 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, arity, askClasses, cCons, cNil, checkArity, consistentWith, dataType, fieldsOf, showCtr)
+import DataType (class HasClasses, ClassTable, arity, askClasses, cCons, cNil, cPair, checkArity, fieldsOf, showCtr)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Cont(..), Elim(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..), asStmt, fv)
+import Expr (Cont, Elim(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..), asStmt, fv)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -37,7 +37,7 @@ import Pretty (prettyP)
 import Primitive (intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
 import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, whenever, withMsg, (×), (⊆))
-import Util.Map (unionWith_never, delete, get, keys, lookup, lookup', maplet, restrict, (<+>))
+import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
@@ -57,41 +57,6 @@ match :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Elim V
 match v (ElimVar x κ)
    | x == varAnon = pure (empty × κ × empty)
    | otherwise = pure (maplet x v × κ × empty)
-match (Val α _ (V.Constr c vs)) (ElimConstr m) = do
-   λ <- askClasses
-   withMsg "Pattern mismatch" $ consistentWith λ (Set.singleton (dottedName c)) (keys m)
-   κ <- lookup (dottedName c) m # orElse ("Incomplete patterns: no branch for " <> showCtr (last c))
-   γ × κ' × αs <- matchMany vs κ
-   pure (γ × κ' × (insert α αs))
-match v (ElimConstr m) = do
-   λ <- askClasses
-   throw (patternMismatch (prettyP v) (show (expected λ)))
-   where
-   -- Any branch names the datatype; the eliminator is non-empty and its constructors are known.
-   expected λ = definitely' (Set.findMin (keys m) >>= dataType λ)
-match (Val α _ (V.Dictionary (DictRep xvs))) (ElimDict xs κ) = do
-   check (Set.subset xs (Set.fromFoldable $ keys xvs))
-      $ patternMismatch (show (keys xvs)) (show xs)
-   let xs' = xs # Set.toUnfoldable
-   let xvs' = unwrap xvs
-   γ × κ' × αs <- matchMany (map (\k -> snd (get k xvs')) xs') κ
-   pure $ γ × κ' × (insert α αs)
-match v (ElimDict xs _) = throw (patternMismatch (prettyP v) (show xs))
-
-matchMany
-   :: forall m
-    . HasClasses m
-   => MonadWithGraphAlloc m
-   => List (Val Vertex)
-   -> Cont Vertex
-   -> m (Env Vertex × Cont Vertex × Set Vertex)
-matchMany Nil κ = pure (empty × κ × empty)
-matchMany (v : vs) (ContElim σ) = do
-   γ × κ × αs <- match v σ
-   γ' × κ' × βs <- matchMany vs κ
-   pure $ γ `unionWith_never` γ' × κ' × (αs ∪ βs)
-matchMany (_ : vs) (ContStmt _) = throw $
-   show (length vs + 1) <> " extra argument(s); did you forget parentheses in a lambda pattern?"
 
 -- Bindings if the pattern matches, with the vertices inspected either way.
 matches :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
@@ -111,17 +76,14 @@ matches v (PVar x)
    | otherwise = pure (Just (maplet x v) × empty)
 matches _ PWild = pure (Just empty × empty)
 matches v (PAs p x) = matches v p <#> first (map (_ `unionWith_never` maplet x v))
-matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
-   λ <- askClasses
-   withMsg "Pattern mismatch" $ consistentWith λ (Set.singleton (dottedName c')) (Set.singleton (dottedName c))
-   if c == c' then matchesMany vs ps <#> (insert α <$> _)
-   else pure (Nothing × Set.singleton α)
-matches v (PConstr c _ _) = throw (patternMismatch (prettyP v) (dottedName c))
+matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil)
+   | c == c' = matchesMany vs ps <#> (insert α <$> _)
+matches (Val α _ _) (PConstr _ _ _) = pure (Nothing × Set.singleton α)
 matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) =
    case traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps of
       Nothing -> pure (Nothing × Set.singleton α)
       Just vps -> matchesMany (fst <$> vps) (snd <$> vps) <#> (insert α <$> _)
-matches v (PRecord xps) = throw (patternMismatch (prettyP v) (show (fst <$> xps)))
+matches (Val α _ _) (PRecord _) = pure (Nothing × Set.singleton α)
 matches v PListEmpty = matchesTail v PListEnd
 matches v (PListNonEmpty p rest) = matchesTail v (PListNext p rest)
 
@@ -142,7 +104,9 @@ matchesTail (Val α _ (V.Constr c vs)) rest
            m' × αs' <- matchesTail vs' rest'
            pure (lift2 unionWith_never m m' × insert α (αs ∪ αs'))
         _ -> error absurd
-matchesTail v _ = throw (patternMismatch (prettyP v) "list")
+matchesTail v@(Val _ _ (V.Constr c _)) _
+   | c == cPair = throw (patternMismatch (prettyP v) "list")
+matchesTail (Val α _ _) _ = pure (Nothing × Set.singleton α)
 
 matchesMany :: forall m. HasClasses m => MonadWithGraphAlloc m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex) × Set Vertex)
 matchesMany Nil Nil = pure (Just empty × empty)
@@ -306,10 +270,12 @@ evalStmt doc_opt γ s αs = case s of
             case r of
                Returns _ -> pure r
                Assigns γ'' αs'' -> pure (Assigns (γ' <+> γ'') αs'')
-   Def (VarDef σ e) -> do
+   Def (VarDef p e) -> do
       v <- eval Nothing γ e αs
-      γ' × _ × αs' <- withMsg "In assignment" $ match v σ
-      pure (Assigns γ' αs')
+      m × αs' <- matches v p
+      case m of
+         Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
+         Just γ' -> pure (Assigns γ' αs')
    DefRec (RecDefs α ρ) -> do
       γ' <- closeDefs γ ρ (insert α αs)
       pure (Assigns γ' (insert α αs))

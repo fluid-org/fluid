@@ -16,7 +16,7 @@ import Expr (Cont(..), Elim(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
-import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
+import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
 import Pattern (ListRestPattern(..), Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
@@ -334,7 +334,7 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Match e cases) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> cases)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
-   pretty (E.Def (E.VarDef o e)) = pretty o <+> text "=" <+> pretty e
+   pretty (E.Def (E.VarDef p e)) = pretty p <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs _ ρ)) = text "def" <+> pretty ρ
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
@@ -346,8 +346,6 @@ instance Highlightable a => Pretty (Cont a) where
 
 instance Highlightable a => Pretty (Elim a) where
    pretty (ElimVar x k) = pretty x <> text "->" <> pretty k
-   pretty (ElimConstr ks) = prettyList ks
-   pretty (ElimDict xs k) = braces (prettyList xs) <+> text "->" <+> braces (pretty k)
 
 instance Highlightable a => Pretty (Dict (Elim a)) where
    pretty ρ = go (toUnfoldable ρ)

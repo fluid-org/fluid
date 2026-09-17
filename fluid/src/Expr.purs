@@ -18,7 +18,7 @@ import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertic
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Pattern (class BV, Pattern, bv)
 import Util (type (×), error, shapeMismatch, singleton, (×), (≜))
-import Util.Map (keys, asMaplet)
+import Util.Map (keys)
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -39,14 +39,11 @@ data Expr a
    | App (Expr a) (Expr a)
    | DocExpr (Expr a) (Expr a)
 
--- eliminator here is a singleton with null terminal continuation
-data VarDef a = VarDef (Elim a) (Expr a)
+-- Assignment to a pattern; the spec has only variables.
+data VarDef a = VarDef Pattern (Expr a)
 data RecDefs a = RecDefs a (Dict (Elim a))
 
-data Elim a
-   = ElimVar Var (Cont a)
-   | ElimConstr (Dict (Cont a))
-   | ElimDict (Set Var) (Cont a)
+data Elim a = ElimVar Var (Cont a)
 
 -- Continuation of an eliminator branch.
 data Cont a
@@ -95,8 +92,6 @@ instance FV (Expr a) where
 
 instance FV (Elim a) where
    fv (ElimVar x κ) = fv κ \\ singleton x
-   fv (ElimConstr m) = unions (fv <$> m)
-   fv (ElimDict _ κ) = fv κ
 
 instance FV (Cont a) where
    fv (ContElim σ) = fv σ
@@ -130,14 +125,11 @@ instance FV a => FV (Maybe a) where
 instance (FV a) => FV (List a) where
    fv xs = unions (fv <$> xs)
 
--- Bound variables, defined only for singleton eliminators.
 instance BV (Elim a) where
    bv (ElimVar x κ) = singleton x ∪ bv κ
-   bv (ElimConstr m) = bv (snd (asMaplet m))
-   bv (ElimDict _ κ) = bv κ
 
 instance BV (VarDef a) where
-   bv (VarDef σ _) = bv σ
+   bv (VarDef p _) = bv p
 
 instance BV (Cont a) where
    bv (ContElim σ) = bv σ
@@ -145,15 +137,9 @@ instance BV (Cont a) where
 
 instance JoinSemilattice a => JoinSemilattice (Elim a) where
    join (ElimVar x κ) (ElimVar x' κ') = ElimVar (x ≜ x') (κ ∨ κ')
-   join (ElimConstr cκs) (ElimConstr cκs') = ElimConstr (cκs ∨ cκs')
-   join (ElimDict xs κ) (ElimDict ys κ') = ElimDict (xs ≜ ys) (κ ∨ κ')
-   join _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Elim a) (Raw Elim) where
    expand (ElimVar x κ) (ElimVar x' κ') = ElimVar (x ≜ x') (expand κ κ')
-   expand (ElimConstr cκs) (ElimConstr cκs') = ElimConstr (expand cκs cκs')
-   expand (ElimDict xs κ) (ElimDict ys κ') = ElimDict (xs ≜ ys) (expand κ κ')
-   expand _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (Cont a) where
    join (ContElim σ) (ContElim σ') = ContElim (σ ∨ σ')
@@ -166,10 +152,10 @@ instance BoundedJoinSemilattice a => Expandable (Cont a) (Raw Cont) where
    expand _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (VarDef a) where
-   join (VarDef σ e) (VarDef σ' e') = VarDef (σ ∨ σ') (e ∨ e')
+   join (VarDef p e) (VarDef p' e') = VarDef (p ≜ p') (e ∨ e')
 
 instance BoundedJoinSemilattice a => Expandable (VarDef a) (Raw VarDef) where
-   expand (VarDef σ e) (VarDef σ' e') = VarDef (expand σ σ') (expand e e')
+   expand (VarDef p e) (VarDef p' e') = VarDef (p ≜ p') (expand e e')
 
 instance JoinSemilattice a => JoinSemilattice (RecDefs a) where
    join (RecDefs α ρ) (RecDefs α' ρ') = RecDefs (α ∨ α') (ρ ∨ ρ')
@@ -260,11 +246,9 @@ instance Vertices (Expr Vertex) where
 
 instance Vertices (Elim Vertex) where
    vertices (ElimVar _ κ) = vertices κ
-   vertices (ElimConstr m) = vertices m
-   vertices (ElimDict _ κ) = vertices κ
 
 instance Vertices (VarDef Vertex) where
-   vertices (VarDef σ e) = vertices σ ∪ vertices e
+   vertices (VarDef _ e) = vertices e
 
 instance Vertices (Cont Vertex) where
    vertices (ContElim σ) = vertices σ
@@ -329,9 +313,6 @@ instance Apply Expr where
 
 instance Apply Elim where
    apply (ElimVar x fk) (ElimVar _ k) = ElimVar x (fk <*> k)
-   apply (ElimConstr fk) (ElimConstr k) = ElimConstr (((<*>) <$> fk) <*> k)
-   apply (ElimDict xs fk) (ElimDict _ k) = ElimDict xs (fk <*> k)
-   apply _ _ = shapeMismatch unit
 
 instance Apply Cont where
    apply (ContElim fσ) (ContElim σ) = ContElim (fσ <*> σ)
@@ -339,7 +320,7 @@ instance Apply Cont where
    apply _ _ = shapeMismatch unit
 
 instance Apply VarDef where
-   apply (VarDef fσ fe) (VarDef σ e) = VarDef (fσ <*> σ) (fe <*> e)
+   apply (VarDef p fe) (VarDef _ e) = VarDef p (fe <*> e)
 
 instance Apply RecDefs where
    apply (RecDefs fα fρ) (RecDefs α ρ) = RecDefs (fα α) (((<*>) <$> fρ) <*> ρ)

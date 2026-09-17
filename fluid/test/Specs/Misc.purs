@@ -43,6 +43,7 @@ misc_cases =
    , { file: "match_literal.fld", fwd_expect: """"zero" :| "minus one" :| "two and a half" :| "greeting" :| "zero" :| "other" :| []""" }
    , { file: "match_as.fld", fwd_expect: "(2, (1, 2)) :| (0, (3, 4)) :| []" }
    , { file: "match_wildcard.fld", fwd_expect: "2 :| -1 :| 0 :| []" }
+   , { file: "def_literal_pattern.fld", fwd_expect: "2" }
    , { file: "module/attr_access.fld", fwd_expect: "42" }
    , { file: "module/child_after_parent.fld", fwd_expect: "5" }
    , { file: "module/dotted_attr_access.fld", fwd_expect: "1" }

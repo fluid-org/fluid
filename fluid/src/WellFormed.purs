@@ -10,6 +10,8 @@ import Data.Bifunctor (lmap)
 import Data.Either (Either)
 import Control.MonadPlus (guard)
 import Data.Foldable (all, elem, foldM, foldr, for_, intercalate, traverse_)
+import Data.Function (on)
+import Data.NonEmpty ((:|))
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
@@ -256,6 +258,8 @@ wellFormed _ cxt (S.Def (S.VarDef p e)) = do
 wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
+   for_ (NEL.groupBy (eq `on` fst) ds) \clauses ->
+      wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> clausePattern ps)
    ds' <- traverse
       ( \(x × S.Clause _ (ps × s)) -> do
            let xs = unions (bv <$> ps)
@@ -511,6 +515,11 @@ subsumed cxt = sub
       guard (length ps <= length fs)
       let positional = Map.fromFoldable (zip fs ps)
       foldM (\m (x × p) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x p m)) positional xps
+
+-- Parameter patterns of a clause as one pattern, a list pattern when there are several.
+clausePattern :: NEL.NonEmptyList S.Pattern -> S.Pattern
+clausePattern (NEL.NonEmptyList (p :| Nil)) = p
+clausePattern (NEL.NonEmptyList (p :| ps)) = S.PListNonEmpty p (foldr S.PListNext S.PListEnd ps)
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
