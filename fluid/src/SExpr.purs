@@ -25,8 +25,8 @@ import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class FV, Cont(..), Elim(..), fv)
-import Expr (Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..)) as E
+import Expr (class FV, fv)
+import Expr (Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
 import Pattern (ListRestPattern(..), Pattern(..), bv)
@@ -118,10 +118,10 @@ instance Desugarable ListRest E.Expr where
    desug (End α) = pure (enil α)
    desug (Next α s l) = econs α <$> desug s <*> desug l
 
-instance Desugarable Clauses Elim where
+instance Desugarable Clauses E.Def where
    desug (Clauses μ) = clausesFwd (μ <#> \(Clause _ clause) -> clause)
 
-instance Desugarable LambdaClause Elim where
+instance Desugarable LambdaClause E.Def where
    desug (LambdaClause (ps × e)) = clausesFwd (singleton (ps × Return e))
 
 desugarModuleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
@@ -144,7 +144,7 @@ matchBool e s s' = E.Match e (NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PCo
 
 -- Unary function whose body is a statement over its parameter.
 lambda :: forall a. a -> Var -> E.Stmt a -> E.Expr a
-lambda α x s = E.Lambda α (ElimVar x (ContStmt s))
+lambda α x s = E.Lambda α (E.Def x s)
 
 -- Function applied to an expression, with the body matching the argument.
 matchWith :: forall a. a -> E.Expr a -> NonEmptyList (Pattern × E.Stmt a) -> E.Expr a
@@ -155,8 +155,8 @@ moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
    where
    importFwd (Import q f) = E.Import q f
 
-varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.VarDef (WfResult VarCxt))
-varDefFwd (VarDef p s) = E.VarDef <$> expandKw p <*> desug s
+varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
+varDefFwd (VarDef p s) = E.Assign <$> expandKw p <*> desug s
 
 recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
 recDefsFwd xcs = do
@@ -174,7 +174,7 @@ recDefsFwd xcs = do
          | x `Set.member` seen = Just x
          | otherwise = go (Set.insert x seen) xs
 
-recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (Elim (WfResult VarCxt)))
+recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (E.Def (WfResult VarCxt)))
 recDefFwd xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
    where
    close (Clause Returns body) = Clause Returns body
@@ -270,7 +270,7 @@ exprFwd (DocExpr s s') = do
 type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
 
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-stmtFwd (Def vd) = E.Def <$> varDefFwd vd
+stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
 stmtFwd (Match s μ) = E.Match <$> desug s <*> traverse caseFwd μ
    where
@@ -362,7 +362,7 @@ clausesFwd
     . HasClasses m
    => MonadError Error m
    => NonEmptyList (NonEmptyList Pattern × Stmt (WfResult VarCxt))
-   -> m (Elim (WfResult VarCxt))
+   -> m (E.Def (WfResult VarCxt))
 clausesFwd clauses = do
    let k = length (fst (head clauses)) :: Int
    for_ clauses \(ps × _) ->
@@ -388,10 +388,10 @@ clausesFwd clauses = do
       PConstr c Nil Nil : _ | last c == last cNoArgs -> Just varAnon
       _ -> Nothing
 
-   curried :: List Var -> E.Stmt (WfResult VarCxt) -> Elim (WfResult VarCxt)
+   curried :: List Var -> E.Stmt (WfResult VarCxt) -> E.Def (WfResult VarCxt)
    curried Nil _ = error absurd
-   curried (x : Nil) s = ElimVar x (ContStmt s)
-   curried (x : xs) s = ElimVar x (ContStmt (E.Return (E.Lambda Returns (curried xs s))))
+   curried (x : Nil) s = E.Def x s
+   curried (x : xs) s = E.Def x (E.Return (E.Lambda Returns (curried xs s)))
 
    scrutinee :: List Var -> E.Expr (WfResult VarCxt)
    scrutinee Nil = error absurd

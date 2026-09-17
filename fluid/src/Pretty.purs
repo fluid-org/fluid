@@ -12,7 +12,6 @@ import Data.NonEmpty ((:|))
 import Data.Traversable (class Foldable)
 import DataType (Ctr, cCons)
 import Dict (Dict)
-import Expr (Cont(..), Elim(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
@@ -334,23 +333,19 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Match e cases) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> cases)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
-   pretty (E.Def (E.VarDef p e)) = pretty p <+> text "=" <+> pretty e
+   pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs _ ρ)) = text "def" <+> pretty ρ
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
-instance Highlightable a => Pretty (Cont a) where
-   pretty (ContElim σ) = pretty σ
-   pretty (ContStmt s) = pretty s
+instance Highlightable a => Pretty (E.Def a) where
+   pretty (E.Def x s) = pretty x <> text "->" <> pretty s
 
-instance Highlightable a => Pretty (Elim a) where
-   pretty (ElimVar x k) = pretty x <> text "->" <> pretty k
-
-instance Highlightable a => Pretty (Dict (Elim a)) where
+instance Highlightable a => Pretty (Dict (E.Def a)) where
    pretty ρ = go (toUnfoldable ρ)
       where
-      go :: List (Var × Elim a) -> Doc
+      go :: List (Var × E.Def a) -> Doc
       go Nil = empty
       go (xσ : Nil) = pretty xσ
       go (xσ : δ) = (go δ <+> text ";") <+> (pretty xσ)
@@ -366,7 +361,7 @@ instance Highlightable a => Pretty (Env a) where
 instance Highlightable a => Pretty (EnvStmt a) where
    pretty (EnvStmt γ s) = (pretty γ) <++> (pretty s)
 
-instance Highlightable a => Pretty (Bind (Elim a)) where
+instance Highlightable a => Pretty (Bind (E.Def a)) where
    pretty (x ↦ σ) = pretty x <> pretty ":" <+> pretty σ
 
 instance Highlightable a => Pretty (Val a) where

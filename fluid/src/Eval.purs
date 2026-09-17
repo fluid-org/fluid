@@ -24,7 +24,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Cont, Elim(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..), asStmt, fv)
+import Expr (Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), fv)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -52,11 +52,6 @@ type GraphConfig =
 
 patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
-
-match :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Elim Vertex -> m (Env Vertex × Cont Vertex × Set Vertex)
-match v (ElimVar x κ)
-   | x == varAnon = pure (empty × κ × empty)
-   | otherwise = pure (maplet x v × κ × empty)
 
 -- Bindings if the pattern matches, with the vertices inspected either way.
 matches :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
@@ -133,7 +128,7 @@ dispatch v cases = go (NEL.toList cases) empty
          Just γ -> pure (Just (γ × s) × (αs ∪ αs'))
          Nothing -> go cases' (αs ∪ αs')
 
-closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Elim Vertex) -> Set Vertex -> m (Env Vertex)
+closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs γ ρ αs =
    Env <$> for ρ \σ ->
       let
@@ -153,10 +148,10 @@ apply
    -> Val Vertex
    -> Val Vertex
    -> m (Val Vertex)
-apply doc_opt (Val α _ (V.Fun (V.Closure γ1 ρ σ))) v = do
+apply doc_opt (Val α _ (V.Fun (V.Closure γ1 ρ (Def x s)))) v = do
    γ2 <- closeDefs γ1 ρ (singleton α)
-   γ3 × κ × αs <- match v σ
-   asReturns <$> evalStmt doc_opt (γ1 <+> γ2 <+> γ3) (asStmt κ) (insert α αs)
+   let γ3 = if x == varAnon then empty else maplet x v
+   asReturns <$> evalStmt doc_opt (γ1 <+> γ2 <+> γ3) s (singleton α)
 apply doc_opt (Val α _ (V.Fun (V.Foreign (ForeignOp (id × φ)) vs))) v =
    apply' φ
    where
@@ -270,7 +265,7 @@ evalStmt doc_opt γ s αs = case s of
             case r of
                Returns _ -> pure r
                Assigns γ'' αs'' -> pure (Assigns (γ' <+> γ'') αs'')
-   Def (VarDef p e) -> do
+   Assign p e -> do
       v <- eval Nothing γ e αs
       m × αs' <- matches v p
       case m of

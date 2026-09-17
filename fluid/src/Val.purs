@@ -27,7 +27,7 @@ import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Elim, Module, Stmt, fv)
+import Expr (Def, Module, Stmt, fv)
 import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
@@ -68,7 +68,7 @@ asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
 
 data Fun a
-   = Closure (Env a) (Dict (Elim a)) (Elim a)
+   = Closure (Env a) (Dict (Def a)) (Def a)
    | Foreign ForeignOp (List (Val a)) -- never saturated
    | PartialConstr Name (List (Val a)) -- never saturated
 
@@ -163,7 +163,7 @@ instance Map (Env a) String (Val a) where
 
 data EnvStmt a = EnvStmt (Env a) (Stmt a)
 
-reaches :: forall a. Dict (Elim a) -> Endo (Set Var)
+reaches :: forall a. Dict (Def a) -> Endo (Set Var)
 reaches ρ xs = go (Set.toUnfoldable xs) empty
    where
    dom_ρ = keys ρ
@@ -176,7 +176,7 @@ reaches ρ xs = go (Set.toUnfoldable xs) empty
       where
       σ = get x ρ
 
-forDefs :: forall a. Dict (Elim a) -> Elim a -> Dict (Elim a)
+forDefs :: forall a. Dict (Def a) -> Def a -> Dict (Def a)
 forDefs ρ σ = restrict (reaches ρ (fv σ ∩ Set.fromFoldable (keys ρ))) ρ
 
 -- Wrap internal representations to provide foldable/traversable instances.
