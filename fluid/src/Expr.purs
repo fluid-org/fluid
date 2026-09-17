@@ -14,6 +14,7 @@ import Data.Tuple (snd)
 import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Pattern (class BV, bv)
 import Util (type (×), error, shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys, asMaplet)
 import Util.Pair (Pair(..))
@@ -126,9 +127,6 @@ instance FV a => FV (Maybe a) where
 
 instance (FV a) => FV (List a) where
    fv xs = unions (fv <$> xs)
-
-class BV a where
-   bv :: a -> Set Var
 
 -- Bound variables, defined only for singleton eliminators.
 instance BV (Elim a) where

@@ -2,7 +2,7 @@ module SExpr where
 
 import Prelude hiding (absurd, top, unless)
 
-import Bind (Bind, Name, Var, dottedName, varAnon, (↦))
+import Bind (Bind, Name, Var, dottedName, (↦))
 import Bind (keys) as B
 import Data.Set (Set, empty, insert, member, singleton, unions) as Set
 import Control.Monad.Error.Class (class MonadError)
@@ -29,10 +29,11 @@ import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class BV, class FV, Cont(..), Elim(..), asElim, bv, fv)
+import Expr (class FV, Cont(..), Elim(..), asElim, fv)
 import Expr (Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
+import Pattern (ListRestPattern(..), Pattern(..), bv, pListVarAnon, pVarAnon)
 import Util (type (+), type (×), Endo, absurd, appendList, assert, definitely, error, shapeMismatch, singleton, throw, unimplemented, whenever, (×), (≜))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
@@ -69,26 +70,8 @@ data ListRest a
    = End a
    | Next a (Expr a) (ListRest a)
 
-data Pattern
-   = PVar Var
-   | PConstr Name (List Pattern) (List (Bind Pattern))
-   | PRecord (List (Bind Pattern))
-   | PListEmpty
-   | PListNonEmpty Pattern ListRestPattern
-
-data ListRestPattern
-   = PListVar Var -- currently unsupported in parser; only arise during desugaring
-   | PListEnd
-   | PListNext Pattern ListRestPattern
-
 data ParagraphElem a = Token String | Unquote (Expr a)
 type Paragraph a = List (ParagraphElem a)
-
-pVarAnon :: Pattern
-pVarAnon = PVar varAnon
-
-pListVarAnon :: ListRestPattern
-pListVarAnon = PListVar varAnon
 
 showPattern :: Pattern + ListRestPattern -> String
 showPattern (Left p') = show p'
@@ -581,16 +564,6 @@ derive instance Generic (ListRest a) _
 instance Show a => Show (ListRest a) where
    show c = genericShow c
 
-derive instance Eq Pattern
-derive instance Generic Pattern _
-instance Show Pattern where
-   show c = genericShow c
-
-derive instance Eq ListRestPattern
-derive instance Generic ListRestPattern _
-instance Show ListRestPattern where
-   show c = genericShow c
-
 derive instance Eq a => Eq (Stmt a)
 derive instance Generic (Stmt a) _
 instance Show a => Show (Stmt a) where
@@ -634,18 +607,6 @@ instance Show a => Show (ParagraphElem a) where
 -- ======================
 -- Free / bound variables
 -- ======================
-
-instance BV Pattern where
-   bv (PVar x) = Set.singleton x
-   bv (PConstr _ ps xps) = Set.unions (bv <$> ps) ∪ Set.unions ((bv <<< snd) <$> xps)
-   bv (PRecord xps) = Set.unions ((bv <<< snd) <$> xps)
-   bv PListEmpty = Set.empty
-   bv (PListNonEmpty p lr) = bv p ∪ bv lr
-
-instance BV ListRestPattern where
-   bv (PListNext p lr) = bv p ∪ bv lr
-   bv (PListVar x) = Set.singleton x
-   bv PListEnd = Set.empty
 
 instance FV (Expr a) where
    fv (Var x) = Set.singleton x
