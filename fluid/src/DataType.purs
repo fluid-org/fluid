@@ -166,7 +166,6 @@ cNothing = lib_builtins "Nothing" :: Name -- Maybe
 cJust = lib_builtins "Just" :: Name
 cNone = lib_builtins "None" :: Name -- NoneType
 cNonEmpty = lib_builtins "NonEmpty" :: Name -- Tree
-cNoArgs = lib_builtins "__NoArgs" :: Name -- internal: zero-arg fn signature/call
 cText = lib_view "Text" :: Name
 cLink = lib_view "Link" :: Name
 -- Field names used internally by rendering layer.

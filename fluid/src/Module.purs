@@ -15,7 +15,7 @@ import Data.Maybe (Maybe(..), isJust)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
-import DataType (class HasClasses, ClassTable, cNoArgs)
+import DataType (class HasClasses, ClassTable)
 import Desugarable (desug)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -30,7 +30,7 @@ import Lattice (Raw)
 import ModuleGraph (DependencyGraph, ModuleName, predefined, predefinedDeps)
 import Parse (parseModule, parseProgram)
 import SExpr (desugarModuleFwd)
-import DefiniteAssignment (ClassEntry, Cxt, Entry(..), WfResult(..), erase)
+import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throwLeft, whenever, withMsg, (×))
@@ -85,9 +85,6 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
            ("import cycle: " <> intercalate " -> " (dottedName <$> (q : reverse (takeWhile (_ /= q) path)) <> (q : Nil)))
       | otherwise = Set.insert q <$> foldM (go (q : path)) done (findWithDefault Nil q edges)
 
-noArgsClass :: ClassEntry
-noArgsClass = { cxt: Map.empty, name: cNoArgs, base: Nothing, fields: Nil }
-
 classTable :: Map ModuleName Cxt -> ClassTable
 classTable modCxt =
    Map.fromFoldable (map (\cls -> dottedName cls.name × cls) (Map.values modCxt >>= classValues))
@@ -141,7 +138,7 @@ prepConfig
    -> m Config
 prepConfig primitives fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   let nativeBuiltins = constMap (VarStatus true) (keys primitives) `Map.union` Map.singleton "__NoArgs" (Class noArgsClass)
+   let nativeBuiltins = constMap (VarStatus true) (keys primitives)
    mods <- parseModules imports
    { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods nativeBuiltins imports s)
    let classes = classTable (_.cxt <$> loaded)

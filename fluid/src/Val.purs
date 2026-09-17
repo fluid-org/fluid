@@ -69,8 +69,9 @@ asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else N
 
 data Fun a
    = Closure (Env a) (Dict (Def a)) (Def a)
-   | Foreign ForeignOp (List (Val a)) -- never saturated
-   | PartialConstr Name (List (Val a)) -- never saturated
+   | Foreign ForeignOp
+   | Constructor Name
+   | Partial (Fun a) (List (Val a)) -- fewer arguments than the arity of the function, which is not itself partial
 
 class (Highlightable a, BoundedLattice a) <= Ann a
 
@@ -253,8 +254,9 @@ instance Apply BaseVal where
 
 instance Apply Fun where
    apply (Closure fγ fρ fσ) (Closure γ ρ σ) = Closure (fγ <*> γ) (((<*>) <$> fρ) <*> ρ) (fσ <*> σ)
-   apply (Foreign op fvs) (Foreign _ vs) = Foreign op (zipWith (<*>) fvs vs)
-   apply (PartialConstr c fvs) (PartialConstr c' vs) = PartialConstr (c ≜ c') (zipWith (<*>) fvs vs)
+   apply (Foreign op) (Foreign _) = Foreign op
+   apply (Constructor c) (Constructor c') = Constructor (c ≜ c')
+   apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
    apply _ _ = shapeMismatch unit
 
 -- Should require equal domains?
@@ -324,10 +326,9 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
 instance JoinSemilattice a => JoinSemilattice (Fun a) where
    join (Closure γ ρ σ) (Closure γ' ρ' σ') =
       Closure (γ ∨ γ') (ρ ∨ ρ') (σ ∨ σ')
-   join (Foreign φ vs) (Foreign _ vs') =
-      Foreign φ (vs ∨ vs') -- TODO: require φ == φ'
-   join (PartialConstr c vs) (PartialConstr c' us) =
-      PartialConstr (c ≜ c') (vs ∨ us)
+   join (Foreign φ) (Foreign _) = Foreign φ -- TODO: require φ == φ'
+   join (Constructor c) (Constructor c') = Constructor (c ≜ c')
+   join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
    join _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (Env a) where
@@ -365,8 +366,9 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
 instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
    expand (Closure γ ρ σ) (Closure γ' ρ' σ') =
       Closure (expand γ γ') (expand ρ ρ') (expand σ σ')
-   expand (Foreign φ vs) (Foreign _ vs') = Foreign φ (expand vs vs') -- TODO: require φ == φ'
-   expand (PartialConstr c vs) (PartialConstr c' us) = PartialConstr (c ≜ c') (expand vs us)
+   expand (Foreign φ) (Foreign _) = Foreign φ -- TODO: require φ == φ'
+   expand (Constructor c) (Constructor c') = Constructor (c ≜ c')
+   expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
    expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Env a) (Raw Env) where
@@ -421,8 +423,9 @@ instance Vertices (MatrixDim Vertex) where
 
 instance Vertices (Fun Vertex) where
    vertices (Closure γ ρ σ) = vertices γ ∪ vertices ρ ∪ vertices σ
-   vertices (Foreign _ vs) = unions (vertices <$> vs)
-   vertices (PartialConstr _ vs) = unions (vertices <$> vs)
+   vertices (Foreign _) = empty
+   vertices (Constructor _) = empty
+   vertices (Partial φ vs) = vertices φ ∪ unions (vertices <$> vs)
 
 instance Vertices (Env Vertex) where
    vertices (Env γ) = unions (vertices <$> values γ)

@@ -36,11 +36,11 @@ data Expr a
    | Attribute (Expr a) Var -- attribute x of a dataclass instance
    | Subscript (Expr a) (Expr a)
    | ModMember Name Var -- member x of module q; only arises during desugaring
-   | App (Expr a) (Expr a)
+   | App (Expr a) (List (Expr a))
    | DocExpr (Expr a) (Expr a)
 
--- Parameter and body of a function.
-data Def a = Def Var (Stmt a)
+-- Parameters and body of a function.
+data Def a = Def (List Var) (Stmt a)
 
 -- Mutually recursive function definitions.
 data RecDefs a = RecDefs a (Dict (Def a))
@@ -74,11 +74,11 @@ instance FV (Expr a) where
    fv (Attribute e _) = fv e
    fv (Subscript e x) = fv e ∪ fv x
    fv (ModMember _ _) = empty
-   fv (App e1 e2) = fv e1 ∪ fv e2
+   fv (App e es) = fv e ∪ unions (fv <$> es)
    fv (DocExpr doc e) = fv doc ∪ fv e
 
 instance FV (Def a) where
-   fv (Def x s) = fv s \\ singleton x
+   fv (Def xs s) = fv s \\ S.fromFoldable xs
 
 instance FV (RecDefs a) where
    fv (RecDefs _ ρ) = fv ρ
@@ -106,10 +106,10 @@ instance (FV a) => FV (List a) where
    fv xs = unions (fv <$> xs)
 
 instance JoinSemilattice a => JoinSemilattice (Def a) where
-   join (Def x s) (Def x' s') = Def (x ≜ x') (s ∨ s')
+   join (Def xs s) (Def xs' s') = Def (xs ≜ xs') (s ∨ s')
 
 instance BoundedJoinSemilattice a => Expandable (Def a) (Raw Def) where
-   expand (Def x s) (Def x' s') = Def (x ≜ x') (expand s s')
+   expand (Def xs s) (Def xs' s') = Def (xs ≜ xs') (expand s s')
 
 instance JoinSemilattice a => JoinSemilattice (RecDefs a) where
    join (RecDefs α ρ) (RecDefs α' ρ') = RecDefs (α ∨ α') (ρ ∨ ρ')
@@ -155,7 +155,7 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Attribute e x) (Attribute e' x') = Attribute (e ∨ e') (x ≜ x')
    join (Subscript e1 e2) (Subscript e1' e2') = Subscript (e1 ∨ e1') (e2 ∨ e2')
    join (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
-   join (App e1 e2) (App e1' e2') = App (e1 ∨ e1') (e2 ∨ e2')
+   join (App e es) (App e' es') = App (e ∨ e') (es ∨ es')
    join (DocExpr doc e) (DocExpr doc' e') = DocExpr (doc ∨ doc') (e ∨ e')
    join _ _ = shapeMismatch unit
 
@@ -173,7 +173,7 @@ instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Attribute e x) (Attribute e' x') = Attribute (expand e e') (x ≜ x')
    expand (Subscript e1 e2) (Subscript e1' e2') = Subscript (expand e1 e1') (expand e2 e2')
    expand (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
-   expand (App e1 e2) (App e1' e2') = App (expand e1 e1') (expand e2 e2')
+   expand (App e es) (App e' es') = App (expand e e') (expand es es')
    expand (DocExpr doc e) (DocExpr doc' e') = DocExpr (expand doc doc') (expand e e')
    expand _ _ = shapeMismatch unit
 
@@ -195,7 +195,7 @@ instance Vertices (Expr Vertex) where
    vertices (Attribute e _) = vertices e
    vertices (Subscript e e') = vertices e ∪ vertices e'
    vertices (ModMember _ _) = empty
-   vertices (App e1 e2) = vertices e1 ∪ vertices e2
+   vertices (App e es) = vertices e ∪ unions (vertices <$> es)
    vertices (DocExpr e e') = vertices e ∪ vertices e'
 
 instance Vertices (Def Vertex) where
@@ -248,12 +248,12 @@ instance Apply Expr where
    apply (Attribute fe x) (Attribute e x') = Attribute (fe <*> e) (x ≜ x')
    apply (Subscript fd fk) (Subscript d k) = Subscript (fd <*> d) (fk <*> k)
    apply (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
-   apply (App fe1 fe2) (App e1 e2) = App (fe1 <*> e1) (fe2 <*> e2)
+   apply (App fe fes) (App e es) = App (fe <*> e) (zipWith (<*>) fes es)
    apply (DocExpr fe fe') (DocExpr e e') = DocExpr (fe <*> e) (fe' <*> e')
    apply _ _ = shapeMismatch unit
 
 instance Apply Def where
-   apply (Def x fs) (Def _ s) = Def x (fs <*> s)
+   apply (Def xs fs) (Def _ s) = Def xs (fs <*> s)
 
 instance Apply RecDefs where
    apply (RecDefs fα fρ) (RecDefs α ρ) = RecDefs (fα α) (((<*>) <$> fρ) <*> ρ)

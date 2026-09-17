@@ -60,7 +60,7 @@ illFormed_cases =
    , { file: "extend_imported_class.fld", expected_error: "Cannot extend imported class: Base" }
    , { file: "from_import_arity.fld", expected_error: "Derived expects 2 argument(s); got 1" }
    , { file: "from_import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }
-   , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError" }
+   , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError\nIn error" }
    , { file: "from_import_selective.fld", expected_error: "Unbound name: bar" }
    , { file: "from_import_unassigned.fld", expected_error: "Not definitely assigned: x" }
    , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }

@@ -1,0 +1,14 @@
+def add(x, y):
+   return x + y
+
+def twice(f, x):
+   return f(f(x))
+
+def adder(x):
+   return lambda y: x + y
+
+def seven():
+   return 7
+
+inc = add(1)
+[inc(5), twice(add(2), 3), add(1)(2), add(1, 2), adder(1, 2), seven(), (+)(3, 4)]

@@ -17,8 +17,8 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
-import Data.Traversable (foldl, foldr)
-import DataType (cCons, cNoArgs, cNone, cPair)
+import Data.Traversable (foldr)
+import DataType (cCons, cNone, cPair)
 import Lattice (Raw)
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
@@ -211,11 +211,7 @@ recDefs = many1 recDef
       ps0 <- commas pattern
       delim ')'
       b <- blockBody
-      let
-         ps = case ps0 of
-            Nil -> NonEmptyList (PConstr (singleton (last cNoArgs)) Nil Nil :| Nil)
-            x : xs -> NonEmptyList (x :| xs)
-      pure $ p × Clause unit (ps × b)
+      pure $ p × Clause unit (ps0 × b)
 
 expr :: Parser (Raw Expr)
 expr = context "expr" $ ternary <?> "expression"
@@ -286,10 +282,7 @@ expr = context "expr" $ ternary <?> "expression"
                      args <- commas constrArg
                      pure $ Constr a c (es <> takeLefts args) (takeRights args)
                   _ -> do
-                     ps <- commas ternary
-                     pure $ case ps of
-                        Nil -> App e (Constr unit (singleton (last cNoArgs)) Nil Nil)
-                        x : xs -> foldl App e (x : xs)
+                     App e <$> commas ternary
                close ')'
                chain e'
                where
@@ -334,11 +327,7 @@ expr = context "expr" $ ternary <?> "expression"
             ps0 <- commas pattern
             delim ':'
             e <- ternary
-            let
-               ps = case ps0 of
-                  Nil -> NonEmptyList (PConstr (singleton (last cNoArgs)) Nil Nil :| Nil)
-                  x : xs -> NonEmptyList (x :| xs)
-            pure $ Lambda (LambdaClause (ps × e))
+            pure $ Lambda (LambdaClause (ps0 × e))
 
          var :: Parser (Raw Expr)
          var = variable <#> Var

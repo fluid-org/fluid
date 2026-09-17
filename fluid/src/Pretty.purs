@@ -127,7 +127,6 @@ instance Ann a => Pretty (Expr a) where
    pretty (Int α n) = highlightIf α (number n)
    pretty (Float α n) = highlightIf α (number n)
    pretty (Str α str) = highlightIf α (string str)
-   pretty (Constr _ c Nil Nil) | last c == "__NoArgs" = text "()"
    pretty (Constr α c Nil Nil) = highlightIf α (text (dottedName c))
    pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
    pretty (Constr α c es xes) =
@@ -140,7 +139,7 @@ instance Ann a => Pretty (Expr a) where
    pretty (Attribute s x) = expr $ prettySimple s <> text "." <> text x
    pretty (ModMember q x) = expr $ text (dottedName q) <> text "." <> text x
    pretty (Subscript e k) = expr $ prettySimple e <> brackets (expr $ pretty k)
-   pretty (App s s') = expr $ prettyAppChain (App s s') Nil
+   pretty (App s ss) = expr $ prettySimple s <> parens (prettyList ss)
    pretty (BinaryApp s op s') = expr $ operatorApp 0 (BinaryApp s op s')
    pretty (UnaryPrefixApp op s) = expr $ operatorApp 0 (UnaryPrefixApp op s)
    pretty (Ternary cond e1 e2) =
@@ -183,7 +182,6 @@ instance Pretty Pattern where
    pretty (PVar x) = text x
    pretty PWild = text "_"
    pretty (PRecord xps) = record $ map pretty xps
-   pretty (PConstr c Nil Nil) | last c == "__NoArgs" = text "()"
    pretty (PConstr c Nil Nil) = text (dottedName c)
    pretty (PConstr c ps Nil) = prettyConstr (dottedName c) ps
    pretty (PConstr c ps xps) =
@@ -237,21 +235,19 @@ instance Ann a => Pretty (Stmt a) where
          _ -> vsep ((\x -> text x <> text ": Any") <$> xs)
 
 instance Ann a => Pretty (Clause a) where
-   pretty (Clause _ (ps × b)) = lambda (toList ps) b
+   pretty (Clause _ (ps × b)) = lambda ps b
 
 instance Ann a => Pretty (LambdaClause a) where
-   pretty (LambdaClause (ps × e)) = text "lambda" <+> prettyList (toList ps) <> text ":" <+> pretty e
+   pretty (LambdaClause (ps × e)) = text "lambda" <+> prettyList ps <> text ":" <+> pretty e
 
 instance Ann a => Pretty (RecDefs a) where
    pretty bs = sep' (stmtOrExpr line (text " ")) (toList (pretty <$> bs))
 
 instance Ann a => Pretty (Branch a) where
-   pretty (v × Clause _ (NonEmptyList (PConstr (NonEmptyList ("__NoArgs" :| Nil)) Nil Nil :| Nil) × b)) =
-      text "def" <+> text v <> text "()" <> block (pretty b)
    pretty (v × Clause _ (ps × b)) =
       text "def"
          <+> text v
-         <> parens (prettyList (toList ps))
+         <> parens (prettyList ps)
          <> block (pretty b)
 
 instance Ann a => Pretty (DictEntry a × Expr a) where
@@ -285,16 +281,6 @@ prettyConsArg e lhs = case rootOp e of
    Nothing -> prettySimple e
    Just op -> if (if lhs then (<=) else (<)) (getPrec op) (getPrec ":") then parens (pretty e) else pretty e
 
-prettyAppChain :: forall a. Ann a => Expr a -> List (Expr a) -> Doc
-prettyAppChain (App f (Constr _ c Nil Nil)) as | last c == "__NoArgs" =
-   prettyAppChain f Nil <> text "()" <> renderArgs as
-   where
-   renderArgs Nil = mempty
-   renderArgs xs = parens (prettyList xs)
-prettyAppChain (App f a) as = prettyAppChain f (a : as)
-prettyAppChain f Nil = prettySimple f
-prettyAppChain f as = prettySimple f <> parens (prettyList as)
-
 commas :: List Doc -> Doc
 commas Nil = empty
 commas (d : Nil) = d
@@ -325,7 +311,7 @@ instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Attribute e x) = pretty e <> text "." <> text x
    pretty (E.Subscript e x) = pretty e <> brackets (pretty x)
    pretty (E.ModMember q x) = text (dottedName q) <> text "." <> text x
-   pretty (E.App e e') = pretty e <> parens (pretty e') -- TODO
+   pretty (E.App e es) = pretty e <> parens (prettyList es)
    pretty (E.DocExpr p e) = text "@doc" <> parens (pretty p) <+> pretty e
 
 instance Highlightable a => Pretty (E.Stmt a) where
@@ -340,7 +326,7 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Highlightable a => Pretty (E.Def a) where
-   pretty (E.Def x s) = pretty x <> text "->" <> pretty s
+   pretty (E.Def xs s) = parens (commas (text <$> xs)) <> text "->" <> pretty s
 
 instance Highlightable a => Pretty (Dict (E.Def a)) where
    pretty ρ = go (toUnfoldable ρ)
@@ -384,8 +370,9 @@ instance Highlightable a => Pretty (BaseVal a) where
 
 instance Highlightable a => Pretty (Fun a) where
    pretty (V.Closure _ _ _) = text "cl"
-   pretty (V.Foreign phi _) = pretty phi
-   pretty (V.PartialConstr c vs) = prettyConstr (last c) vs
+   pretty (V.Foreign phi) = pretty phi
+   pretty (V.Constructor c) = text (last c)
+   pretty (V.Partial phi vs) = pretty phi <> parens (prettyList vs)
 
 instance Pretty ForeignOp where
    pretty (ForeignOp (s × _)) = pretty s

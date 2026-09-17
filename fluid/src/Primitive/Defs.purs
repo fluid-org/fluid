@@ -46,11 +46,11 @@ import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
-   id × Val bot Nothing (Fun (Foreign (ForeignOp (id × φ)) Nil))
+   id × Val bot Nothing (Fun (Foreign (ForeignOp (id × φ))))
 
 primitives :: Raw Env
 primitives = wrap $ D.fromFoldable
-   [ ":" × Val bot Nothing (Fun (PartialConstr cCons Nil))
+   [ ":" × Val bot Nothing (Fun (Constructor cCons))
    , unary "ceiling" { i: number, o: int, fwd: ceil }
    , extern print_
    , extern dims
@@ -97,7 +97,7 @@ error_ =
    ForeignOp ("error" × ForeignOp' { arity: 1, op })
    where
    op :: Op
-   op _ (Val _ _ (Str s) : Nil) = pure $ error s
+   op _ (Val _ _ (Str s) : Nil) = throw s
    op _ _ = throw "String expected"
 
 print_ :: ForeignOp
@@ -264,7 +264,7 @@ foldl_with_index =
    op doc_opt (v : u : Val _ _ (Dictionary (DictRep d)) : Nil) =
       foldM
          ( \(u1 × doc_opt') (k × (α × u2)) ->
-              G.apply Nothing v (Val α Nothing (Str k)) >>= flip (G.apply Nothing) u1 >>= flip (G.apply doc_opt') u2
+              G.apply doc_opt' v (Val α Nothing (Str k) : u1 : u2 : Nil)
                  <#> (_ × Nothing)
          )
          (u × doc_opt)
@@ -305,7 +305,7 @@ dict_intersectionWith =
       val doc_opt (singleton α # Set.insert α') v'
       where
       apply' (β × u) (β' × u') = do
-         v''@(Val _ _ key) <- G.apply Nothing v u >>= flip (G.apply Nothing) u'
+         v''@(Val _ _ key) <- G.apply Nothing v (u : u' : Nil)
          Val β'' _ _ <- val Nothing (singleton β # Set.insert β') key
          pure (β'' × v'')
    op _ _ = throw "Function and two dictionaries expected"
@@ -316,7 +316,7 @@ dict_map =
    where
    op :: Op
    op doc_opt (v : Val α _ (Dictionary (DictRep d)) : Nil) = do
-      d' <- traverse (\(β × u) -> (β × _) <$> G.apply Nothing v u) d
+      d' <- traverse (\(β × u) -> (β × _) <$> G.apply Nothing v (u : Nil)) d
       val doc_opt (singleton α) (Dictionary (DictRep d'))
    op _ _ = throw "Function and dictionary expected"
 

@@ -7,7 +7,7 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
-import Data.List (List(..), find, foldM, length, snoc, unzip, zip, (:))
+import Data.List (List(..), drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List.NonEmpty (NonEmptyList, last)
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
@@ -41,7 +41,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), Fun, MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -146,36 +146,49 @@ apply
    => LoadFile m
    => Maybe (Val Vertex)
    -> Val Vertex
-   -> Val Vertex
+   -> List (Val Vertex)
    -> m (Val Vertex)
-apply doc_opt (Val α _ (V.Fun (V.Closure γ1 ρ (Def x s)))) v = do
-   γ2 <- closeDefs γ1 ρ (singleton α)
-   let γ3 = if x == varAnon then empty else maplet x v
-   asReturns <$> evalStmt doc_opt (γ1 <+> γ2 <+> γ3) s (singleton α)
-apply doc_opt (Val α _ (V.Fun (V.Foreign (ForeignOp (id × φ)) vs))) v =
-   apply' φ
-   where
-   vs' = snoc vs v
+apply doc_opt (Val α _ (V.Fun (V.Partial φ vs))) vs' = applyFun doc_opt α φ (vs <> vs')
+apply doc_opt (Val α _ (V.Fun φ)) vs = applyFun doc_opt α φ vs
+apply _ v _ = throw $ "Found " <> prettyP v <> ", expected function"
 
-   apply' :: ForeignOp' -> m (Val Vertex)
-   apply' (ForeignOp' φ') =
-      if φ'.arity > length vs' then
-         val doc_opt (singleton α) v'
-      else
-         φ'.op doc_opt vs'
-      where
-      v' = V.Fun (V.Foreign (ForeignOp (id × φ)) vs')
-apply doc_opt (Val α _ (V.Fun (V.PartialConstr c vs))) v = do
-   n <- askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
-   check (length vs < n) ("Too many arguments to " <> showCtr (last c))
-   let
-      v' =
-         if length vs < n - 1 then
-            V.Fun (V.PartialConstr c (snoc vs v))
-         else
-            V.Constr c (snoc vs v)
-   val doc_opt (singleton α) v'
-apply _ _ v = throw $ "Found " <> prettyP v <> ", expected function"
+-- Fewer arguments than the arity is a partial application; more applies the result to the rest.
+applyFun
+   :: forall m
+    . HasClasses m
+   => HasModuleStore m
+   => MonadWithGraphAlloc m
+   => MonadReader FileCxt m
+   => MonadAff m
+   => LoadFile m
+   => Maybe (Val Vertex)
+   -> Vertex
+   -> Fun Vertex
+   -> List (Val Vertex)
+   -> m (Val Vertex)
+applyFun doc_opt α φ vs = do
+   n <- arity'
+   let k = length vs
+   if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
+   else if k == n then saturate doc_opt vs
+   else saturate Nothing (take n vs) >>= \v -> apply doc_opt v (drop n vs)
+   where
+   arity' :: m Int
+   arity' = case φ of
+      V.Closure _ _ (Def xs _) -> pure (length xs)
+      V.Foreign (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
+      V.Constructor c -> askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
+      V.Partial _ _ -> error absurd
+
+   saturate :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
+   saturate doc_opt' vs' = case φ of
+      V.Closure γ1 ρ (Def xs s) -> do
+         γ2 <- closeDefs γ1 ρ (singleton α)
+         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
+         asReturns <$> evalStmt doc_opt' (γ1 <+> γ2 <+> γ3) s (singleton α)
+      V.Foreign (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
+      V.Constructor c -> val doc_opt' (singleton α) (V.Constr c vs')
+      V.Partial _ _ -> error absurd
 
 eval
    :: forall m
@@ -224,10 +237,10 @@ eval doc_opt γ e0 αs = do
             { moduleEnv } <- moduleStore
             let γ_q = definitely "module loaded" (Map.lookup q moduleEnv)
             withMsg "Module member" $ lookup' x γ_q
-         App e e' -> do
+         App e es -> do
             v <- eval Nothing γ e αs
-            v' <- eval Nothing γ e' αs
-            withMsg ("In " <> funName e) $ apply doc_opt v v'
+            vs <- traverse (\e' -> eval Nothing γ e' αs) es
+            withMsg ("In " <> funName e) $ apply doc_opt v vs
          DocExpr e e' -> do
             v <- eval Nothing γ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"

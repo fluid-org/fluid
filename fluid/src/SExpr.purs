@@ -2,7 +2,7 @@ module SExpr where
 
 import Prelude hiding (absurd, top)
 
-import Bind (Bind, Name, Var, dottedName, varAnon, (↦))
+import Bind (Bind, Name, Var, dottedName, (↦))
 import Data.Set (Set, empty, insert, member, singleton, unions) as Set
 import Control.Monad.Error.Class (class MonadError)
 import Data.Foldable (all, for_, length, null)
@@ -18,7 +18,7 @@ import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf, cCons, cNoArgs, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
+import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..))
 import Lattice (class JoinSemilattice)
@@ -48,7 +48,7 @@ data Expr a
    | Attribute (Expr a) Var
    | ModMember Name Var -- member x of module q; not parseable, produced by well-formedness from Attribute
    | Subscript (Expr a) (Expr a)
-   | App (Expr a) (Expr a)
+   | App (Expr a) (List (Expr a))
    | BinaryApp (Expr a) Var (Expr a)
    | UnaryPrefixApp Var (Expr a)
    | Ternary (Expr a) (Expr a) (Expr a)
@@ -82,13 +82,13 @@ data Stmt a
 
 data Import = Import Name (Maybe (List Var))
 
-data Clause a = Clause a (NonEmptyList Pattern × Stmt a)
+data Clause a = Clause a (List Pattern × Stmt a)
 
 type Branch a = Var × Clause a
 newtype Clauses a = Clauses (NonEmptyList (Clause a))
 
 -- Lambdas accept exactly one clause whose body is an expression (no defs / return-keyword).
-newtype LambdaClause a = LambdaClause (NonEmptyList Pattern × Expr a)
+newtype LambdaClause a = LambdaClause (List Pattern × Expr a)
 
 newtype RecDef a = RecDef (NonEmptyList (Branch a))
 type RecDefs a = NonEmptyList (Branch a)
@@ -144,11 +144,11 @@ matchBool e s s' = E.Match e (NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PCo
 
 -- Unary function whose body is a statement over its parameter.
 lambda :: forall a. a -> Var -> E.Stmt a -> E.Expr a
-lambda α x s = E.Lambda α (E.Def x s)
+lambda α x s = E.Lambda α (E.Def (x : Nil) s)
 
 -- Function applied to an expression, with the body matching the argument.
 matchWith :: forall a. a -> E.Expr a -> NonEmptyList (Pattern × E.Stmt a) -> E.Expr a
-matchWith α e cases = E.App (lambda α (param 1) (E.Match (E.Var (param 1)) cases)) e
+matchWith α e cases = E.App (lambda α (param 1) (E.Match (E.Var (param 1)) cases)) (e : Nil)
 
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
@@ -237,27 +237,27 @@ exprFwd (ModMember q x) =
    pure $ E.ModMember q x
 exprFwd (Subscript s x) =
    E.Subscript <$> desug s <*> desug x
-exprFwd (App s1 s2) =
-   E.App <$> desug s1 <*> desug s2
+exprFwd (App s ss) =
+   E.App <$> desug s <*> traverse desug ss
 exprFwd (BinaryApp s1 op s2) =
-   E.App <$> (E.App (E.Op op) <$> desug s1) <*> desug s2
+   E.App (E.Op op) <$> traverse desug (s1 : s2 : Nil)
 exprFwd (UnaryPrefixApp op s) =
-   E.App (E.Op op) <$> desug s
+   E.App (E.Op op) <$> traverse desug (s : Nil)
 exprFwd (Ternary cond e1 e2) = do
    e1' <- desug e1
    e2' <- desug e2
    cond' <- desug cond
-   pure $ E.App (lambda Returns (param 1) (matchBool (E.Var (param 1)) (E.Return e1') (E.Return e2'))) cond'
+   pure $ E.App (lambda Returns (param 1) (matchBool (E.Var (param 1)) (E.Return e1') (E.Return e2'))) (cond' : Nil)
 exprFwd (Paragraph elems) =
    paragraphFwd elems
 exprFwd (ListEmpty α) =
    pure $ enil α
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
-exprFwd (ListEnum s1 s2) =
-   E.App
-      <$> (E.App (E.Var "range") <$> desug s1)
-      <*> (E.App <$> (E.App (E.Op "+") <$> desug s2) <@> (E.Int Returns 1))
+exprFwd (ListEnum s1 s2) = do
+   e1 <- desug s1
+   e2 <- desug s2
+   pure $ E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)
 exprFwd (ListComp α s (ListCompGen p s' : qs)) = unsafePartial $
    listCompFwd (α × (ListCompGen p s' : qs) × s)
 exprFwd (ListComp α s qs) =
@@ -280,7 +280,7 @@ stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
 stmtFwd (ExprStmt e) = E.ExprStmt <$> desug e
 stmtFwd (Assert cond msg_opt) =
-   stmtFwd (If (singleton (App (Var "not") cond × ExprStmt (App (Var "error") msg))) Nothing)
+   stmtFwd (If (singleton (App (Var "not") (cond : Nil) × ExprStmt (App (Var "error") (msg : Nil)))) Nothing)
    where
    msg = fromMaybe (Str Returns "AssertionError") msg_opt
 stmtFwd (Seq s1 s2) = E.Seq <$> stmtFwd s1 <*> stmtFwd s2
@@ -307,7 +307,7 @@ listCompFwd (α × Nil × s) =
    econs α <$> desug s <@> enil α
 listCompFwd (α × (ListCompGuard s : qs) × s') = do
    e <- listCompFwd (α × qs × s')
-   E.App (lambda α (param 1) (matchBool (E.Var (param 1)) (E.Return e) (E.Return (enil α)))) <$> desug s
+   E.App (lambda α (param 1) (matchBool (E.Var (param 1)) (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
 listCompFwd (α × (ListCompDecl (VarDef p s) : qs) × s') = do
    e <- listCompFwd (α × qs × s')
    p' <- expandKw p
@@ -321,7 +321,8 @@ listCompFwd (α × (ListCompGen p s : qs) × s') = do
          PVar _ -> singleton (p' × E.Return e)
          PWild -> singleton (p' × E.Return e)
          _ -> NonEmptyList ((p' × E.Return e) :| (PWild × E.Return (enil α)) : Nil)
-   E.App (E.App (E.Var "concat_map") (lambda α (param 1) (E.Match (E.Var (param 1)) cases))) <$> desug s
+   e' <- desug s
+   pure $ E.App (E.Var "concat_map") (lambda α (param 1) (E.Match (E.Var (param 1)) cases) : e' : Nil)
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw λ c n xbs = do
@@ -354,21 +355,21 @@ expandKw p = do
    goRest λ (PListNext p' l) = PListNext <$> go λ p' <*> goRest λ l
    goRest _ p' = pure p'
 
--- Clauses over k parameters as a function of k parameters, one parameter at a time as nested unary functions.
--- A parameter column that is the same variable in every clause is a parameter of that name; the remaining
--- columns are matched together, as nested pairs when there are several.
+-- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
+-- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
+-- there are several.
 clausesFwd
    :: forall m
     . HasClasses m
    => MonadError Error m
-   => NonEmptyList (NonEmptyList Pattern × Stmt (WfResult VarCxt))
+   => NonEmptyList (List Pattern × Stmt (WfResult VarCxt))
    -> m (E.Def (WfResult VarCxt))
 clausesFwd clauses = do
    let k = length (fst (head clauses)) :: Int
    for_ clauses \(ps × _) ->
       when (length ps /= k) $ throw "Clauses differ in number of parameters"
    let
-      columns = transpose (toList (toList <<< fst <$> clauses))
+      columns = transpose (toList (fst <$> clauses))
       params = columns # mapWithIndex \i column -> case sharedVar column of
          Just x -> x × Nothing
          Nothing -> param (i + 1) × Just column
@@ -380,18 +381,12 @@ clausesFwd clauses = do
          rows <- traverse (traverse expandKw) (transpose (snd <$> matched))
          let cases = NonEmptyList.zipWith (\ps s -> patterns ps × s) (nonEmpty rows) bodies
          pure (E.Match (scrutinee (fst <$> matched)) cases)
-   pure (curried (fst <$> params) body)
+   pure (E.Def (fst <$> params) body)
    where
    sharedVar :: List Pattern -> Maybe Var
    sharedVar column = case column of
       PVar x : ps | all (_ == PVar x) ps -> Just x
-      PConstr c Nil Nil : _ | last c == last cNoArgs -> Just varAnon
       _ -> Nothing
-
-   curried :: List Var -> E.Stmt (WfResult VarCxt) -> E.Def (WfResult VarCxt)
-   curried Nil _ = error absurd
-   curried (x : Nil) s = E.Def x s
-   curried (x : xs) s = E.Def x (E.Return (E.Lambda Returns (curried xs s)))
 
    scrutinee :: List Var -> E.Expr (WfResult VarCxt)
    scrutinee Nil = error absurd
@@ -498,7 +493,7 @@ instance FV (Expr a) where
    fv (Attribute e _) = fv e
    fv (ModMember _ _) = Set.empty
    fv (Subscript e e') = fv e ∪ fv e'
-   fv (App e e') = fv e ∪ fv e'
+   fv (App e es) = fv e ∪ Set.unions (fv <$> es)
    fv (BinaryApp e op e') = fv e ∪ Set.singleton op ∪ fv e'
    fv (UnaryPrefixApp op e) = Set.singleton op ∪ fv e
    fv (Ternary cond e1 e2) = fv cond ∪ fv e1 ∪ fv e2

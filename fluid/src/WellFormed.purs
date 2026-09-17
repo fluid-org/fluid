@@ -11,7 +11,6 @@ import Data.Either (Either)
 import Control.MonadPlus (guard)
 import Data.Foldable (all, elem, foldM, foldr, for_, intercalate, traverse_)
 import Data.Function (on)
-import Data.NonEmpty ((:|))
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
@@ -219,7 +218,7 @@ capturesE (S.Lambda (S.LambdaClause (ps × e))) =
 capturesE (S.Attribute e _) = capturesE e
 capturesE (S.ModMember _ _) = Set.empty
 capturesE (S.Subscript e e') = capturesE e ∪ capturesE e'
-capturesE (S.App e e') = capturesE e ∪ capturesE e'
+capturesE (S.App e es) = capturesE e ∪ unions (capturesE <$> es)
 capturesE (S.BinaryApp e _ e') = capturesE e ∪ capturesE e'
 capturesE (S.UnaryPrefixApp _ e) = capturesE e
 capturesE (S.Ternary e e1 e2) = capturesE e ∪ capturesE e1 ∪ capturesE e2
@@ -367,7 +366,7 @@ wellFormedExpr = wf
       Just (Class cls) ->
          S.Constr α (qualified cls c) <$> traverse (wf cxt) es <*> traverse (\(x × e) -> (x × _) <$> wf cxt e) xes
       _ -> throwError $ "Unknown dataclass: " <> dottedName c
-   wf cxt (S.App e e') = S.App <$> wf cxt e <*> wf cxt e'
+   wf cxt (S.App e es) = S.App <$> wf cxt e <*> traverse (wf cxt) es
    wf cxt (S.BinaryApp e op e') = S.BinaryApp <$> wf cxt e <*> (op <$ var cxt op) <*> wf cxt e'
    wf cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wf cxt e)
    wf cxt (S.Ternary c e e') = S.Ternary <$> wf cxt c <*> wf cxt e <*> wf cxt e'
@@ -517,9 +516,10 @@ subsumed cxt = sub
       foldM (\m (x × p) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x p m)) positional xps
 
 -- Parameter patterns of a clause as one pattern, a list pattern when there are several.
-clausePattern :: NEL.NonEmptyList S.Pattern -> S.Pattern
-clausePattern (NEL.NonEmptyList (p :| Nil)) = p
-clausePattern (NEL.NonEmptyList (p :| ps)) = S.PListNonEmpty p (foldr S.PListNext S.PListEnd ps)
+clausePattern :: List S.Pattern -> S.Pattern
+clausePattern Nil = S.PWild
+clausePattern (p : Nil) = p
+clausePattern (p : ps) = S.PListNonEmpty p (foldr S.PListNext S.PListEnd ps)
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
