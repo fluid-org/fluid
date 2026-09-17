@@ -8,7 +8,7 @@ import Data.Set (Set, empty, insert, member, singleton, unions) as Set
 import Control.Monad.Error.Class (class MonadError)
 import Data.Bitraversable (ltraverse, rtraverse)
 import Data.Either (Either(..))
-import Data.Foldable (for_, length)
+import Data.Foldable (for_, length, null)
 import Data.Function (on)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), drop, find, sort, take, unzip, zip, zipWith, (:))
@@ -17,12 +17,12 @@ import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty ((:|))
-import Data.Profunctor.Strong (first, second)
+import Data.Profunctor.Strong (second)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Unfoldable (replicate)
-import DataType (class HasClasses, ClassTable, Ctr, DataType(..), askClasses, ctrSig, fieldsOf, cCons, cNone, cParagraph, cFalse, cNil, cTrue, dataType)
+import DataType (class HasClasses, ClassTable, Ctr, DataType(..), askClasses, checkArity, ctrSig, fieldsOf, cCons, cNone, cParagraph, cFalse, cNil, cTrue, dataType)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..))
 import Lattice (class JoinSemilattice)
@@ -292,9 +292,9 @@ type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
 stmtFwd (Def vd) = E.Def <$> varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
-stmtFwd (Match s μ) = do
-   κ <- clausesStateFwd (toClausesStateFwd (Clauses (Clause (Assigns Map.empty) <$> first singleton <$> μ)))
-   E.Match <$> desug s <@> asElim κ
+stmtFwd (Match s μ) = E.Match <$> desug s <*> traverse caseFwd μ
+   where
+   caseFwd (p × b) = (×) <$> expandKw p <*> stmtFwd b
 stmtFwd (If sss s) = ifElseFwd (sss × fromMaybe Pass s)
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
@@ -314,7 +314,7 @@ ifElseFwd (sss × s) =
       cond <- desug s1
       b' <- stmtFwd b
       e3' <- e3
-      pure $ E.Match cond (elimBool (ContStmt b') (ContStmt e3'))
+      pure $ E.Match cond (NonEmptyList ((PConstr cTrue Nil Nil × b') :| (PConstr cFalse Nil Nil × e3') : Nil))
 
 -- List Qualifier × Expr
 listCompFwd
@@ -428,10 +428,11 @@ expandKw p = do
    λ <- askClasses
    go λ p
    where
-   go λ (PConstr c ps Nil) = (\ps' -> PConstr c ps' Nil) <$> traverse (go λ) ps
    go λ (PConstr c ps xps) = do
-      reordered <- positionaliseKw λ c (length ps) xps
-      (\ps' -> PConstr c ps' Nil) <$> traverse (go λ) (ps <> reordered)
+      reordered <- if null xps then pure Nil else positionaliseKw λ c (length ps) xps
+      let ps' = ps <> reordered
+      checkArity λ "match" (dottedName c) (length ps')
+      (\ps'' -> PConstr c ps'' Nil) <$> traverse (go λ) ps'
    go λ (PRecord xps) = PRecord <$> traverse (traverse (go λ)) xps
    go λ (PListNonEmpty p' l) = PListNonEmpty <$> go λ p' <*> goRest λ l
    go _ p' = pure p'

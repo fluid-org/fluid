@@ -326,7 +326,9 @@ instance Highlightable a => Pretty (E.Expr a) where
 
 instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Return e) = text "return" <+> pretty e
-   pretty (E.Match e σ) = text "match" <+> pretty e <> block (pretty σ)
+   pretty (E.Match e cases) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> cases)))
+      where
+      prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
    pretty (E.Def (E.VarDef o e)) = pretty o <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs _ ρ)) = text "def" <+> pretty ρ
    pretty E.Pass = text "pass"

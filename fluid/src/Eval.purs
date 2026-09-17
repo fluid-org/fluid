@@ -3,12 +3,13 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon)
+import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.List (List(..), find, foldM, length, snoc, unzip, zip, (:))
-import Data.List.NonEmpty (head, snoc, unsnoc, fromList) as NEL
-import Data.List.NonEmpty (last)
+import Data.List.NonEmpty (NonEmptyList, last)
+import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (unwrap)
@@ -16,8 +17,8 @@ import Data.Profunctor.Strong ((***))
 import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
-import Data.Tuple (curry, snd)
-import DataType (class HasClasses, ClassTable, arity, askClasses, checkArity, consistentWith, dataType, fieldsOf, showCtr)
+import Data.Tuple (curry, fst, snd)
+import DataType (class HasClasses, ClassTable, arity, askClasses, cCons, cNil, checkArity, consistentWith, dataType, fieldsOf, showCtr)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -30,6 +31,7 @@ import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, builtins)
+import Pattern (ListRestPattern(..), Pattern(..))
 import Pretty (prettyP)
 import Primitive (intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
@@ -89,6 +91,65 @@ matchMany (v : vs) (ContElim σ) = do
    pure $ γ `unionWith_never` γ' × κ' × (αs ∪ βs)
 matchMany (_ : vs) (ContStmt _) = throw $
    show (length vs + 1) <> " extra argument(s); did you forget parentheses in a lambda pattern?"
+
+-- Bindings if the pattern matches, with the vertices inspected either way.
+matches :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
+matches v (PVar x)
+   | x == varAnon = pure (Just empty × empty)
+   | otherwise = pure (Just (maplet x v) × empty)
+matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
+   λ <- askClasses
+   withMsg "Pattern mismatch" $ consistentWith λ (Set.singleton (dottedName c')) (Set.singleton (dottedName c))
+   if c == c' then matchesMany vs ps <#> (insert α <$> _)
+   else pure (Nothing × Set.singleton α)
+matches v (PConstr c _ _) = throw (patternMismatch (prettyP v) (dottedName c))
+matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) =
+   case traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps of
+      Nothing -> pure (Nothing × Set.singleton α)
+      Just vps -> matchesMany (fst <$> vps) (snd <$> vps) <#> (insert α <$> _)
+matches v (PRecord xps) = throw (patternMismatch (prettyP v) (show (fst <$> xps)))
+matches v PListEmpty = matchesTail v PListEnd
+matches v (PListNonEmpty p rest) = matchesTail v (PListNext p rest)
+
+matchesTail :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex) × Set Vertex)
+matchesTail v (PListVar x) = matches v (PVar x)
+matchesTail (Val α _ (V.Constr c vs)) rest
+   | c == cNil = case rest of
+        PListEnd -> pure (Just empty × Set.singleton α)
+        _ -> pure (Nothing × Set.singleton α)
+   | c == cCons, v : vs' : Nil <- vs = case rest of
+        PListEnd -> pure (Nothing × Set.singleton α)
+        PListNext p rest' -> do
+           m × αs <- matches v p
+           m' × αs' <- matchesTail vs' rest'
+           pure (lift2 unionWith_never m m' × insert α (αs ∪ αs'))
+        _ -> error absurd
+matchesTail v _ = throw (patternMismatch (prettyP v) "list")
+
+matchesMany :: forall m. HasClasses m => MonadWithGraphAlloc m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex) × Set Vertex)
+matchesMany Nil Nil = pure (Just empty × empty)
+matchesMany (v : vs) (p : ps) = do
+   m × αs <- matches v p
+   m' × αs' <- matchesMany vs ps
+   pure (lift2 unionWith_never m m' × (αs ∪ αs'))
+matchesMany _ _ = error absurd
+
+-- Bindings and body of the first case whose pattern matches, with the vertices inspected by every case tried.
+dispatch
+   :: forall m
+    . HasClasses m
+   => MonadWithGraphAlloc m
+   => Val Vertex
+   -> NonEmptyList (Pattern × Stmt Vertex)
+   -> m (Maybe (Env Vertex × Stmt Vertex) × Set Vertex)
+dispatch v cases = go (NEL.toList cases) empty
+   where
+   go Nil αs = pure (Nothing × αs)
+   go ((p × s) : cases') αs = do
+      m × αs' <- matches v p
+      case m of
+         Just γ -> pure (Just (γ × s) × (αs ∪ αs'))
+         Nothing -> go cases' (αs ∪ αs')
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Elim Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs γ ρ αs =
@@ -217,14 +278,16 @@ evalStmt
    -> m (Result Vertex)
 evalStmt doc_opt γ s αs = case s of
    Return e -> Returns <$> eval doc_opt γ e αs
-   Match e σ -> do
+   Match e cases -> do
       v <- eval Nothing γ e αs
-      case σ, v of
-         ElimConstr m, Val _ _ (V.Constr c _) | not (isJust (lookup (dottedName c) m)) ->
-            pure (Assigns empty empty)
-         _, _ -> do
-            γ' × κ × αs' <- match v σ
-            evalStmt doc_opt (γ <+> γ') (asStmt κ) (αs ∪ αs')
+      taken × αs' <- dispatch v cases
+      case taken of
+         Nothing -> pure (Assigns empty empty)
+         Just (γ' × s') -> do
+            r <- evalStmt doc_opt (γ <+> γ') s' (αs ∪ αs')
+            case r of
+               Returns _ -> pure r
+               Assigns γ'' αs'' -> pure (Assigns (γ' <+> γ'') αs'')
    Def (VarDef σ e) -> do
       v <- eval Nothing γ e αs
       γ' × _ × αs' <- withMsg "In assignment" $ match v σ
@@ -267,7 +330,7 @@ evalVal γ (Dictionary α ees) αs = do
       d = D.fromFoldable $ zip ss (zip βs us)
    pure $ Just (α × V.Dictionary (DictRep d))
 evalVal γ (Constr α c es) αs = do
-   askClasses >>= \λ -> checkArity λ (dottedName c) (length es)
+   askClasses >>= \λ -> checkArity λ "construct" (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing γ) αs) es
    pure $ Just (α × V.Constr c vs)
 evalVal γ (Matrix α e (x × y) e') αs = do

@@ -1,0 +1,10 @@
+def f(v):
+   match v:
+      case (x, y):
+         pass
+      case w:
+         x = w
+         y = 0
+   return x + y
+
+f((1, 2))

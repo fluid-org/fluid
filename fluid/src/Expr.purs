@@ -6,6 +6,8 @@ import Bind (Name, Var)
 import Control.Apply (lift2)
 import Data.Foldable (class Foldable, foldl, foldrDefault, foldMapDefaultL)
 import Data.List (List, zipWith)
+import Data.List.NonEmpty (NonEmptyList)
+import Data.List.NonEmpty (zipWith) as NEL
 import Data.Maybe (Maybe(..))
 import Data.Set (Set, empty, unions)
 import Data.Set (fromFoldable) as S
@@ -14,7 +16,7 @@ import Data.Tuple (snd)
 import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
-import Pattern (class BV, bv)
+import Pattern (class BV, Pattern, bv)
 import Util (type (×), error, shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys, asMaplet)
 import Util.Pair (Pair(..))
@@ -61,7 +63,7 @@ asStmt _ = error "Statement expected"
 
 data Stmt a
    = Return (Expr a)
-   | Match (Expr a) (Elim a)
+   | Match (Expr a) (NonEmptyList (Pattern × Stmt a))
    | Def (VarDef a)
    | DefRec (RecDefs a)
    | Pass
@@ -108,7 +110,7 @@ instance FV (RecDefs a) where
 
 instance FV (Stmt a) where
    fv (Return e) = fv e
-   fv (Match e σ) = fv e ∪ fv σ
+   fv (Match e cases) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> cases)
    fv (Def vd) = fv vd
    fv (DefRec ρ) = fv ρ
    fv Pass = empty
@@ -177,7 +179,9 @@ instance BoundedJoinSemilattice a => Expandable (RecDefs a) (Raw RecDefs) where
 
 instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Return e) (Return e') = Return (e ∨ e')
-   join (Match e σ) (Match e' σ') = Match (e ∨ e') (σ ∨ σ')
+   join (Match e cases) (Match e' cases') = Match (e ∨ e') (NEL.zipWith joinCase cases cases')
+      where
+      joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
    join (Def vd) (Def vd') = Def (vd ∨ vd')
    join (DefRec ρ) (DefRec ρ') = DefRec (ρ ∨ ρ')
    join Pass Pass = Pass
@@ -187,7 +191,9 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
 
 instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
    expand (Return e) (Return e') = Return (expand e e')
-   expand (Match e σ) (Match e' σ') = Match (expand e e') (expand σ σ')
+   expand (Match e cases) (Match e' cases') = Match (expand e e') (NEL.zipWith expandCase cases cases')
+      where
+      expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
    expand (Def vd) (Def vd') = Def (expand vd vd')
    expand (DefRec ρ) (DefRec ρ') = DefRec (expand ρ ρ')
    expand Pass Pass = Pass
@@ -269,7 +275,7 @@ instance Vertices (RecDefs Vertex) where
 
 instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
-   vertices (Match e σ) = vertices e ∪ vertices σ
+   vertices (Match e cases) = vertices e ∪ unions ((vertices <<< snd) <$> cases)
    vertices (Def vd) = vertices vd
    vertices (DefRec ρ) = vertices ρ
    vertices Pass = empty
@@ -340,7 +346,9 @@ instance Apply RecDefs where
 
 instance Apply Stmt where
    apply (Return fe) (Return e) = Return (fe <*> e)
-   apply (Match fe fσ) (Match e σ) = Match (fe <*> e) (fσ <*> σ)
+   apply (Match fe fcases) (Match e cases) = Match (fe <*> e) (NEL.zipWith applyCase fcases cases)
+      where
+      applyCase (p × fs) (_ × s) = p × (fs <*> s)
    apply (Def fvd) (Def vd) = Def (fvd <*> vd)
    apply (DefRec fρ) (DefRec ρ) = DefRec (fρ <*> ρ)
    apply Pass Pass = Pass

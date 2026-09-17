@@ -125,9 +125,9 @@ ctrSig λ verb c = do
    n <- maybe (throw $ "Cannot " <> verb <> " non-leaf class: " <> showCtr (simpleName c)) pure (lookup c sigs)
    pure (d × n)
 
-checkArity :: forall m. MonadError Error m => ClassTable -> Ctr -> Int -> m Unit
-checkArity λ c n = do
-   _ × n' <- ctrSig λ "construct" c
+checkArity :: forall m. MonadError Error m => ClassTable -> String -> Ctr -> Int -> m Unit
+checkArity λ verb c n = do
+   _ × n' <- ctrSig λ verb c
    when (n' /= n) $ throw $ showCtr (simpleName c) <> " arity " <> show n' <> "; got " <> show n
 
 type FieldIndex = Name -> FieldName -> Int

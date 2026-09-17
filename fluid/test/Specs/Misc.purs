@@ -38,6 +38,8 @@ misc_cases =
    , { file: "lookup.fld", fwd_expect: """Just("sarah")""" }
    , { file: "map.fld", fwd_expect: "5 :| 7 :| 13 :| 15 :| 4 :| 3 :| -3 :| []" }
    , { file: "merge_sort.fld", fwd_expect: "1 :| 2 :| 3 :| []" }
+   , { file: "match_bindings.fld", fwd_expect: "3" }
+   , { file: "match_fallthrough.fld", fwd_expect: "0" }
    , { file: "module/attr_access.fld", fwd_expect: "42" }
    , { file: "module/child_after_parent.fld", fwd_expect: "5" }
    , { file: "module/dotted_attr_access.fld", fwd_expect: "1" }
