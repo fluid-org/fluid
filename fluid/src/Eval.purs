@@ -54,7 +54,7 @@ patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the vertices inspected either way.
-matches :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
+matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
 matches (Val α _ u) (PInt n) = literal α case u of
    V.Int n' -> n == n'
    V.Float x -> toNumber n == x
@@ -86,7 +86,7 @@ matches v (PListNonEmpty p rest) = matchesTail v (PListNext p rest)
 literal :: forall m. Monad m => Vertex -> Boolean -> m (Maybe (Env Vertex) × Set Vertex)
 literal α eq = pure (whenever eq empty × Set.singleton α)
 
-matchesTail :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex) × Set Vertex)
+matchesTail :: forall m. MonadError Error m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex) × Set Vertex)
 matchesTail v (PListVar x) = matches v (PVar x)
 matchesTail (Val α _ (V.Constr c vs)) rest
    | c == cNil = case rest of
@@ -103,7 +103,7 @@ matchesTail v@(Val _ _ (V.Constr c _)) _
    | c == cPair = throw (patternMismatch (prettyP v) "list")
 matchesTail (Val α _ _) _ = pure (Nothing × Set.singleton α)
 
-matchesMany :: forall m. HasClasses m => MonadWithGraphAlloc m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex) × Set Vertex)
+matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex) × Set Vertex)
 matchesMany Nil Nil = pure (Just empty × empty)
 matchesMany (v : vs) (p : ps) = do
    m × αs <- matches v p
@@ -114,8 +114,7 @@ matchesMany _ _ = error absurd
 -- Bindings and body of the first case whose pattern matches, with the vertices inspected by every case tried.
 dispatch
    :: forall m
-    . HasClasses m
-   => MonadWithGraphAlloc m
+    . MonadError Error m
    => Val Vertex
    -> NonEmptyList (Pattern × Stmt Vertex)
    -> m (Maybe (Env Vertex × Stmt Vertex) × Set Vertex)

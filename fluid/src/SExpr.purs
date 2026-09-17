@@ -138,9 +138,9 @@ econs α e e' = E.Constr α cCons (e : e' : Nil)
 param :: Int -> Var
 param i = "$" <> show i
 
--- Statement branching on a Boolean.
-matchBool :: forall a. E.Expr a -> E.Stmt a -> E.Stmt a -> E.Stmt a
-matchBool e s s' = E.Match e (NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse Nil Nil × s') : Nil))
+-- Cases branching on a Boolean.
+boolCases :: forall a. E.Stmt a -> E.Stmt a -> NonEmptyList (Pattern × E.Stmt a)
+boolCases s s' = NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse Nil Nil × s') : Nil)
 
 -- Unary function whose body is a statement over its parameter.
 lambda :: forall a. a -> Var -> E.Stmt a -> E.Expr a
@@ -246,8 +246,7 @@ exprFwd (UnaryPrefixApp op s) =
 exprFwd (Ternary cond e1 e2) = do
    e1' <- desug e1
    e2' <- desug e2
-   cond' <- desug cond
-   pure $ E.App (lambda Returns (param 1) (matchBool (E.Var (param 1)) (E.Return e1') (E.Return e2'))) (cond' : Nil)
+   matchWith Returns <$> desug cond <@> boolCases (E.Return e1') (E.Return e2')
 exprFwd (Paragraph elems) =
    paragraphFwd elems
 exprFwd (ListEmpty α) =
@@ -258,8 +257,6 @@ exprFwd (ListEnum s1 s2) = do
    e1 <- desug s1
    e2 <- desug s2
    pure $ E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)
-exprFwd (ListComp α s (ListCompGen p s' : qs)) = unsafePartial $
-   listCompFwd (α × (ListCompGen p s' : qs) × s)
 exprFwd (ListComp α s qs) =
    listCompFwd (α × qs × s)
 exprFwd (DocExpr s s') = do
@@ -294,7 +291,7 @@ ifElseFwd (sss × s) =
       cond <- desug s1
       b' <- stmtFwd b
       e3' <- e3
-      pure $ E.Match cond (NonEmptyList ((PConstr cTrue Nil Nil × b') :| (PConstr cFalse Nil Nil × e3') : Nil))
+      pure $ E.Match cond (boolCases b' e3')
 
 -- List Qualifier × Expr
 listCompFwd
@@ -307,7 +304,7 @@ listCompFwd (α × Nil × s) =
    econs α <$> desug s <@> enil α
 listCompFwd (α × (ListCompGuard s : qs) × s') = do
    e <- listCompFwd (α × qs × s')
-   E.App (lambda α (param 1) (matchBool (E.Var (param 1)) (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
+   matchWith α <$> desug s <@> boolCases (E.Return e) (E.Return (enil α))
 listCompFwd (α × (ListCompDecl (VarDef p s) : qs) × s') = do
    e <- listCompFwd (α × qs × s')
    p' <- expandKw p
