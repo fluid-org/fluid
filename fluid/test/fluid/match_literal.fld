@@ -1,0 +1,14 @@
+def describe(v):
+   match v:
+      case 0:
+         return "zero"
+      case -1:
+         return "minus one"
+      case 2.5:
+         return "two and a half"
+      case "hi":
+         return "greeting"
+      case _:
+         return "other"
+
+[describe(0), describe(-1), describe(2.5), describe("hi"), describe(0.0), describe([])]

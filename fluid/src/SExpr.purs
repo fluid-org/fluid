@@ -19,7 +19,7 @@ import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty ((:|))
 import Data.Profunctor.Strong (second)
 import Data.Show.Generic (genericShow)
-import Data.Traversable (sequence, traverse)
+import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst, snd)
 import Data.Unfoldable (replicate)
 import DataType (class HasClasses, ClassTable, Ctr, DataType(..), askClasses, checkArity, ctrSig, fieldsOf, cCons, cNone, cParagraph, cFalse, cNil, cTrue, dataType)
@@ -86,6 +86,7 @@ ctrFor (Left (PListNonEmpty _ _)) = pure (dottedName cCons)
 ctrFor (Right (PListVar _)) = Nothing
 ctrFor (Right PListEnd) = pure (dottedName cNil)
 ctrFor (Right (PListNext _ _)) = pure (dottedName cCons)
+ctrFor (Left _) = error absurd
 
 subpatts :: Pattern + ListRestPattern -> List (Pattern + ListRestPattern)
 subpatts (Left (PVar _)) = Nil
@@ -96,6 +97,7 @@ subpatts (Left (PListNonEmpty p o)) = Left p : Right o : Nil
 subpatts (Right (PListVar _)) = Nil
 subpatts (Right PListEnd) = Nil
 subpatts (Right (PListNext p o)) = Left p : Right o : Nil
+subpatts (Left _) = error absurd
 
 data Stmt a
    = Return (Expr a)
@@ -435,6 +437,7 @@ expandKw p = do
       (\ps'' -> PConstr c ps'' Nil) <$> traverse (go λ) ps'
    go λ (PRecord xps) = PRecord <$> traverse (traverse (go λ)) xps
    go λ (PListNonEmpty p' l) = PListNonEmpty <$> go λ p' <*> goRest λ l
+   go λ (PAs p' x) = PAs <$> go λ p' <@> x
    go _ p' = pure p'
 
    goRest :: ClassTable -> ListRestPattern -> m ListRestPattern
@@ -444,8 +447,24 @@ expandKw p = do
 -- Implementing Desugarable would require another newtype
 clausesStateFwd :: forall m. HasClasses m => MonadError Error m => ClausesState' (WfResult VarCxt) -> m (Cont (WfResult VarCxt))
 clausesStateFwd ks0 = do
-   ks <- traverse (\(π × π' × b) -> (\π'' -> π'' × π' × b) <$> traverse (ltraverse expandKw) π) ks0
+   ks <- for ks0 \(π × π' × b) -> do
+      π'' <- traverse (ltraverse (expandKw >=> eliminable)) π
+      π''' <- traverse (expandKw >=> eliminable) π'
+      pure (π'' × π''' × b)
    clausesStateFwd' ks
+
+-- Patterns the eliminator compiler handles, with wildcards as anonymous variables.
+eliminable :: forall m. MonadError Error m => Pattern -> m Pattern
+eliminable PWild = pure pVarAnon
+eliminable p@(PVar _) = pure p
+eliminable PListEmpty = pure PListEmpty
+eliminable (PConstr c ps Nil) = PConstr c <$> traverse eliminable ps <@> Nil
+eliminable (PRecord xps) = PRecord <$> traverse (traverse eliminable) xps
+eliminable (PListNonEmpty p rest) = PListNonEmpty <$> eliminable p <*> eliminableRest rest
+   where
+   eliminableRest (PListNext p' rest') = PListNext <$> eliminable p' <*> eliminableRest rest'
+   eliminableRest rest' = pure rest'
+eliminable p = throw ("Pattern supported only in match: " <> show p)
 
 clausesStateFwd' :: forall m. HasClasses m => MonadError Error m => ClausesState' (WfResult VarCxt) -> m (Cont (WfResult VarCxt))
 clausesStateFwd' ks = case ks of
@@ -488,6 +507,7 @@ unless _ (Left (PListNonEmpty _ _)) = Left PListEmpty : Nil
 unless _ (Right (PListVar _)) = Nil
 unless _ (Right (PListNext _ _)) = Right PListEnd : Nil
 unless _ (Right PListEnd) = Right (PListNext pVarAnon pListVarAnon) : Nil
+unless _ (Left _) = error absurd
 
 orElseFwd :: forall a. ClassTable -> a -> ClauseState a -> NonEmptyList (ClauseState a)
 orElseFwd λ α = case _ of
@@ -522,6 +542,7 @@ orElseFwd λ α = case _ of
       pushPatt (Right (PListNext p o)) k
    pushPattFor (Right PListEnd) = \(_ × k) ->
       pushPatt (Right PListEnd) k
+   pushPattFor (Left _) = error absurd
 
 anon :: Pattern + ListRestPattern -> Pattern + ListRestPattern
 anon (Left _) = Left pVarAnon

@@ -59,6 +59,7 @@ illFormed_cases =
    , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }
    , { file: "import_cycle.fld", expected_error: "import cycle: module.cyc_a -> module.cyc_b -> module.cyc_a" }
    , { file: "match_exhaustive_assign.fld", expected_error: "Not definitely assigned: result" }
+   , { file: "def_pattern_literal.fld", expected_error: "Pattern supported only in match: (PInt 0)" }
    , { file: "match_non_leaf.fld", expected_error: "Cannot match non-leaf class: Base" }
    , { file: "match_partial_def.fld", expected_error: "Not definitely assigned: result" }
    , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module module.return_mod" }

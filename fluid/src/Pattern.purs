@@ -11,11 +11,16 @@ import Data.Tuple (snd)
 import Util.Set ((∪))
 
 data Pattern
-   = PVar Var
+   = PInt Int
+   | PFloat Number
+   | PStr String
+   | PVar Var
+   | PWild
    | PConstr Name (List Pattern) (List (Bind Pattern))
    | PRecord (List (Bind Pattern))
    | PListEmpty
    | PListNonEmpty Pattern ListRestPattern
+   | PAs Pattern Var
 
 data ListRestPattern
    = PListVar Var -- currently unsupported in parser; only arise during desugaring
@@ -32,11 +37,16 @@ class BV a where
    bv :: a -> Set Var
 
 instance BV Pattern where
+   bv (PInt _) = empty
+   bv (PFloat _) = empty
+   bv (PStr _) = empty
    bv (PVar x) = singleton x
+   bv PWild = empty
    bv (PConstr _ ps xps) = unions (bv <$> ps) ∪ unions ((bv <<< snd) <$> xps)
    bv (PRecord xps) = unions ((bv <<< snd) <$> xps)
    bv PListEmpty = empty
    bv (PListNonEmpty p lr) = bv p ∪ bv lr
+   bv (PAs p x) = bv p ∪ singleton x
 
 instance BV ListRestPattern where
    bv (PListNext p lr) = bv p ∪ bv lr

@@ -40,6 +40,9 @@ misc_cases =
    , { file: "merge_sort.fld", fwd_expect: "1 :| 2 :| 3 :| []" }
    , { file: "match_bindings.fld", fwd_expect: "3" }
    , { file: "match_fallthrough.fld", fwd_expect: "0" }
+   , { file: "match_literal.fld", fwd_expect: """"zero" :| "minus one" :| "two and a half" :| "greeting" :| "zero" :| "other" :| []""" }
+   , { file: "match_as.fld", fwd_expect: "(2, (1, 2)) :| (0, (3, 4)) :| []" }
+   , { file: "match_wildcard.fld", fwd_expect: "2 :| -1 :| 0 :| []" }
    , { file: "module/attr_access.fld", fwd_expect: "42" }
    , { file: "module/child_after_parent.fld", fwd_expect: "5" }
    , { file: "module/dotted_attr_access.fld", fwd_expect: "1" }

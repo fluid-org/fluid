@@ -300,6 +300,7 @@ wellFormed q cxt (S.Match e ps) = do
    where
    rFall = case fst (NEL.last ps) of
       S.PVar _ -> Returns
+      S.PWild -> Returns
       _ -> Assigns Map.empty
 wellFormed q cxt (S.Dataclass c b xs) = do
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
@@ -431,6 +432,7 @@ qualifyPattern cxt = qualify
       S.PConstr fqn <$> traverse qualify ps <*> traverse (traverse qualify) xps
    qualify (S.PRecord xps) = S.PRecord <$> traverse (traverse qualify) xps
    qualify (S.PListNonEmpty p lr) = S.PListNonEmpty <$> qualify p <*> qualifyRest lr
+   qualify (S.PAs p x) = S.PAs <$> qualify p <@> x
    qualify p = pure p
    qualifyRest (S.PListNext p lr) = S.PListNext <$> qualify p <*> qualifyRest lr
    qualifyRest lr = pure lr

@@ -13,7 +13,8 @@ import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (unwrap)
-import Data.Profunctor.Strong ((***))
+import Data.Int (toNumber)
+import Data.Profunctor.Strong (first, (***))
 import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
@@ -35,7 +36,7 @@ import Pattern (ListRestPattern(..), Pattern(..))
 import Pretty (prettyP)
 import Primitive (intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
-import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, withMsg, (×), (⊆))
+import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, whenever, withMsg, (×), (⊆))
 import Util.Map (unionWith_never, delete, get, keys, lookup, lookup', maplet, restrict, (<+>))
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
@@ -94,9 +95,22 @@ matchMany (_ : vs) (ContStmt _) = throw $
 
 -- Bindings if the pattern matches, with the vertices inspected either way.
 matches :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
+matches (Val α _ u) (PInt n) = literal α case u of
+   V.Int n' -> n == n'
+   V.Float x -> toNumber n == x
+   _ -> false
+matches (Val α _ u) (PFloat x) = literal α case u of
+   V.Int n -> toNumber n == x
+   V.Float x' -> x == x'
+   _ -> false
+matches (Val α _ u) (PStr s) = literal α case u of
+   V.Str s' -> s == s'
+   _ -> false
 matches v (PVar x)
    | x == varAnon = pure (Just empty × empty)
    | otherwise = pure (Just (maplet x v) × empty)
+matches _ PWild = pure (Just empty × empty)
+matches v (PAs p x) = matches v p <#> first (map (_ `unionWith_never` maplet x v))
 matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
    λ <- askClasses
    withMsg "Pattern mismatch" $ consistentWith λ (Set.singleton (dottedName c')) (Set.singleton (dottedName c))
@@ -110,6 +124,10 @@ matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) =
 matches v (PRecord xps) = throw (patternMismatch (prettyP v) (show (fst <$> xps)))
 matches v PListEmpty = matchesTail v PListEnd
 matches v (PListNonEmpty p rest) = matchesTail v (PListNext p rest)
+
+-- Literal pattern inspects the value and binds nothing.
+literal :: forall m. Monad m => Vertex -> Boolean -> m (Maybe (Env Vertex) × Set Vertex)
+literal α eq = pure (whenever eq empty × Set.singleton α)
 
 matchesTail :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex) × Set Vertex)
 matchesTail v (PListVar x) = matches v (PVar x)

@@ -178,7 +178,11 @@ instance Ann a => Pretty (Pattern × Stmt a) where
    pretty (p × b) = text "case" <+> (pretty p) <> block (pretty b)
 
 instance Pretty Pattern where
+   pretty (PInt n) = number n
+   pretty (PFloat n) = number n
+   pretty (PStr s) = string s
    pretty (PVar x) = text x
+   pretty PWild = text "_"
    pretty (PRecord xps) = record $ map pretty xps
    pretty (PConstr c Nil Nil) | last c == "__NoArgs" = text "()"
    pretty (PConstr c Nil Nil) = text (dottedName c)
@@ -187,6 +191,7 @@ instance Pretty Pattern where
       text (dottedName c) <> parens (commas ((pretty <$> ps) <> ((\(x ↦ p) -> text x <> text "=" <> pretty p) <$> xps)))
    pretty (PListEmpty) = text "[]"
    pretty (PListNonEmpty p l) = brackets (pretty p <> pretty l)
+   pretty (PAs p x) = pretty p <+> text "as" <+> text x
 
 instance Pretty (String × Pattern) where
    pretty (k × v) = text k <> text ":" <+> pretty v

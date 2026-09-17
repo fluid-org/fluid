@@ -8,12 +8,12 @@ import Control.Monad.State (StateT)
 import Data.Array (some)
 import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
-import Bind (Bind, Name, (↦))
+import Bind (Bind, Name, varAnon, (↦))
 import Data.Either (Either(..))
 import Data.Identity (Identity)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList(..), cons, last, toList)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
@@ -34,13 +34,18 @@ import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaCla
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
-pattern = defer \_ -> buildExprParser [ [ P.Infix pConsOp P.AssocRight ] ] simplePattern
+pattern = defer \_ -> do
+   p <- buildExprParser [ [ P.Infix pConsOp P.AssocRight ] ] simplePattern
+   optionMaybe (reserved "as" *> variable) <#> maybe p (PAs p)
 
 simplePattern :: Parser Pattern
-simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
+simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern <|> pLit
    where
    pVar :: Parser Pattern
-   pVar = PVar <$> variable
+   pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
+
+   pLit :: Parser Pattern
+   pLit = try (float <#> PFloat) <|> (integer <#> PInt) <|> (stringLiteral <#> PStr)
 
    pConstr :: Parser Pattern
    pConstr = defer \_ -> try do
