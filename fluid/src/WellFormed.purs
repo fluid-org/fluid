@@ -8,10 +8,14 @@ import Control.Monad.State (StateT, get, mapStateT, modify_, runStateT)
 import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
 import Data.Either (Either)
-import Data.Foldable (foldM, foldr, for_, intercalate)
+import Control.MonadPlus (guard)
+import Data.Foldable (all, elem, foldM, foldr, for_, intercalate, traverse_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
-import Data.List (List(..), length, mapMaybe, nub, (:))
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.List (List(..), length, mapMaybe, nub, zip, (:))
+import Data.Foldable (lookup) as F
+import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, builtins, predefinedDeps)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
@@ -288,6 +292,7 @@ wellFormed q cxt (S.If es elseBranch) = do
    pure (foldl1 mergeRes (NEL.cons rElse (fst <$> es')) × S.If (snd <$> es') elseBranch')
 wellFormed q cxt (S.Match e ps) = do
    e' <- wellFormedExpr cxt e
+   wellFormedPatterns cxt (fst <$> ps)
    ps' <- traverse
       ( \(p × s) -> do
            let xs = bv p
@@ -423,6 +428,100 @@ var cxt x = case Map.lookup x cxt of
 
 assignedIn :: Cxt -> Set Var -> Cxt
 assignedIn cxt xs = cxt `extendCxt` constMap true xs
+
+-- Case patterns well-formed as a list (cases-cons): each well-formed, and none subsumed by an earlier one.
+wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String Unit
+wellFormedPatterns cxt = go 1 <<< NEL.toList
+   where
+   go :: Int -> List S.Pattern -> Either String Unit
+   go _ Nil = pure unit
+   go i (p : ps) = do
+      wellFormedPattern p
+      forWithIndex_ ps \j p' ->
+         when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 1) <> " is unreachable"
+      go (i + 1) ps
+
+-- Variables bound by a pattern distinct; an as-variable not bound by its sub-pattern.
+wellFormedPattern :: S.Pattern -> Either String Unit
+wellFormedPattern = wf
+   where
+   wf (S.PAs p x) = do
+      wf p
+      when (x `Set.member` bv p) $ throwError $ "Duplicate variable in pattern: " <> x
+   wf p = case asConstr p of
+      Just (_ × ps × xps) -> distinct (ps <> (snd <$> xps))
+      Nothing -> case p of
+         S.PRecord xps -> do
+            for_ (firstDuplicate (fst <$> xps)) \w -> throwError $ "Duplicate key in pattern: " <> w
+            distinct (snd <$> xps)
+         _ -> pure unit
+
+   distinct :: List S.Pattern -> Either String Unit
+   distinct ps = do
+      traverse_ wf ps
+      void $ foldM step Set.empty ps
+      where
+      step xs p = case Set.findMin (xs ∩ bv p) of
+         Just x -> throwError $ "Duplicate variable in pattern: " <> x
+         Nothing -> pure (xs ∪ bv p)
+
+   firstDuplicate :: List Var -> Maybe Var
+   firstDuplicate = go Set.empty
+      where
+      go _ Nil = Nothing
+      go seen (x : xs)
+         | x `Set.member` seen = Just x
+         | otherwise = go (Set.insert x seen) xs
+
+-- p subsumed by p': every value p matches, p' matches. List patterns as Nil and Cons patterns.
+subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean
+subsumed cxt = sub
+   where
+   sub _ (S.PVar _) = true
+   sub _ S.PWild = true
+   sub (S.PAs p _) p' = sub p p'
+   sub p (S.PAs p' _) = sub p p'
+   sub (S.PInt n) (S.PInt n') = n == n'
+   sub (S.PFloat x) (S.PFloat x') = x == x'
+   sub (S.PStr s) (S.PStr s') = s == s'
+   sub (S.PRecord xps) (S.PRecord uqs) =
+      all (\(u × q) -> maybe false (\p -> sub p q) (F.lookup u xps)) uqs
+   sub p p' = case asConstr p, asConstr p' of
+      Just (c × ps × xps), Just (c' × qs × xqs) -> fromMaybe false do
+         cls <- classOf c
+         cls' <- classOf c'
+         guard (cls'.name `elem` ancestors cls)
+         fm <- fieldMap cls ps xps
+         fm' <- fieldMap cls' qs xqs
+         pure $ all (\x -> fromMaybe false (sub <$> Map.lookup x fm <*> Map.lookup x fm')) (fields cls')
+      _, _ -> false
+
+   classOf :: Name -> Maybe ClassEntry
+   classOf c = case resolveName cxt c of
+      Just (Class cls) -> Just cls
+      _ -> Nothing
+
+   ancestors :: ClassEntry -> List Name
+   ancestors cls = cls.name : maybe Nil ancestors (cls.base >>= classFor cls.cxt)
+
+   -- Field to sub-pattern, positional then keyword; undefined if the arguments don't fit the class.
+   fieldMap :: ClassEntry -> List S.Pattern -> List (Var × S.Pattern) -> Maybe (Map.Map Var S.Pattern)
+   fieldMap cls ps xps = do
+      let fs = fields cls
+      guard (length ps <= length fs)
+      let positional = Map.fromFoldable (zip fs ps)
+      foldM (\m (x × p) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x p m)) positional xps
+
+-- Constructor view of a pattern, with list patterns as Nil and Cons.
+asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
+asConstr (S.PConstr c ps xps) = Just (c × ps × xps)
+asConstr S.PListEmpty = Just (singleton (NEL.last cNil) × Nil × Nil)
+asConstr (S.PListNonEmpty p rest) = Just (singleton (NEL.last cCons) × (p : asPattern rest : Nil) × Nil)
+   where
+   asPattern (S.PListVar x) = S.PVar x
+   asPattern S.PListEnd = S.PListEmpty
+   asPattern (S.PListNext p' rest') = S.PListNonEmpty p' rest'
+asConstr _ = Nothing
 
 qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
 qualifyPattern cxt = qualify

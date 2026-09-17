@@ -26,6 +26,13 @@ purepy_cases =
    , { file: "purepy/import_in_if.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_match_case.fld", expected_error: "\"ParseError on line 3, column 12:\\nimports must precede statements\"" }
    , { file: "purepy/match_var_leak.fld", expected_error: "Not definitely assigned: x" }
+   , { file: "purepy/match_dup_literal.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_as_subsumed.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_dup_list.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_list_after_cons.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/pat_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
+   , { file: "purepy/pat_as_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
+   , { file: "purepy/pat_dup_key.fld", expected_error: "Duplicate key in pattern: a" }
    , { file: "purepy/mutual_def_block_local.fld", expected_error: "Not definitely assigned: g" }
    , { file: "purepy/mutual_split.fld", expected_error: "Unbound name: odd" }
    , { file: "purepy/mutual_split_by_assign.fld", expected_error: "Unbound name: g" }

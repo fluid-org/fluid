@@ -1,0 +1,7 @@
+v = {a: 1}
+match v:
+   case {a: x, a: y}:
+      z = x
+   case _:
+      z = 0
+z
