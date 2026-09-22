@@ -41,7 +41,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), Fun, MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -135,32 +135,29 @@ apply
    -> Val Vertex
    -> List (Val Vertex)
    -> m (Val Vertex)
-apply doc_opt (Val α _ (V.Fun φ0)) vs0 = go φ0 vs0
+apply doc_opt (Val α _ (V.Fun (V.Partial φ vs))) vs' = apply doc_opt (Val α Nothing (V.Fun φ)) (vs <> vs')
+apply doc_opt (Val α _ (V.Fun φ)) vs = do
+   n <- arity'
+   let k = length vs
+   if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
+   else if k == n then saturate doc_opt vs
+   else saturate Nothing (take n vs) >>= \v -> apply doc_opt v (drop n vs)
    where
-   go :: Fun Vertex -> List (Val Vertex) -> m (Val Vertex)
-   go (V.Partial φ vs) vs' = go φ (vs <> vs')
-   go φ vs = do
-      n <- arity' φ
-      let k = length vs
-      if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
-      else if k == n then saturate doc_opt φ vs
-      else saturate Nothing φ (take n vs) >>= \v -> apply doc_opt v (drop n vs)
-
-   arity' :: Fun Vertex -> m Int
-   arity' = case _ of
+   arity' :: m Int
+   arity' = case φ of
       V.Closure _ _ (Def xs _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
       V.Type c -> askClasses >>= \λ -> ctrSig λ "construct" (dottedName c) <#> snd
       V.Partial _ _ -> error absurd
 
-   saturate :: Maybe (Val Vertex) -> Fun Vertex -> List (Val Vertex) -> m (Val Vertex)
-   saturate doc_opt' φ vs = case φ of
+   saturate :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
+   saturate doc_opt' vs' = case φ of
       V.Closure γ1 ρ (Def xs s) -> do
          γ2 <- closeDefs γ1 ρ (singleton α)
-         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs)
+         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
          asReturns <$> evalStmt doc_opt' (γ1 <+> γ2 <+> γ3) s (singleton α)
-      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs
-      V.Type c -> val doc_opt' (singleton α) (V.Constr c vs)
+      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
+      V.Type c -> val doc_opt' (singleton α) (V.Constr c vs')
       V.Partial _ _ -> error absurd
 apply _ v _ = throw $ "Found " <> prettyP v <> ", expected function"
 
