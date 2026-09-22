@@ -136,7 +136,7 @@ enil α = E.Constr α cNil Nil
 econs :: forall a. a -> E.Expr a -> E.Expr a -> E.Expr a
 econs α e e' = E.Constr α cCons (e : e' : Nil)
 
--- Fresh parameter names, kept apart from source identifiers by the leading $.
+-- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
 param :: Int -> Var
 param i = "$" <> show i
 
