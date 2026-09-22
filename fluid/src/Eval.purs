@@ -14,7 +14,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (unwrap)
 import Data.Int (toNumber)
-import Data.Profunctor.Strong (first, (***))
+import Data.Profunctor.Strong (first, second, (***))
 import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
@@ -53,79 +53,78 @@ type GraphConfig =
 patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
--- Bindings if the pattern matches, with the vertices inspected either way.
-matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Maybe (Env Vertex) × Set Vertex)
-matches (Val α _ u) (PInt n) = literal α case u of
+-- Bindings if the pattern matches, with the vertices of the value that matching inspected.
+matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Maybe (Env Vertex × Set Vertex))
+matches (Val α _ u) (PInt n) = pure $ literal α case u of
    V.Int n' -> n == n'
    V.Float x -> toNumber n == x
    _ -> false
-matches (Val α _ u) (PFloat x) = literal α case u of
+matches (Val α _ u) (PFloat x) = pure $ literal α case u of
    V.Int n -> toNumber n == x
    V.Float x' -> x == x'
    _ -> false
-matches (Val α _ u) (PStr s) = literal α case u of
+matches (Val α _ u) (PStr s) = pure $ literal α case u of
    V.Str s' -> s == s'
    _ -> false
 matches v (PVar x)
-   | x == varAnon = pure (Just empty × empty)
-   | otherwise = pure (Just (maplet x v) × empty)
-matches _ PWild = pure (Just empty × empty)
-matches v (PAs p x) = matches v p <#> first (map (_ `unionWith_never` maplet x v))
+   | x == varAnon = pure (Just (empty × empty))
+   | otherwise = pure (Just (maplet x v × empty))
+matches _ PWild = pure (Just (empty × empty))
+matches v (PAs p x) = matches v p <#> map (first (_ `unionWith_never` maplet x v))
 matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil)
-   | c == c' = matchesMany vs ps <#> (insert α <$> _)
-matches (Val α _ _) (PConstr _ _ _) = pure (Nothing × Set.singleton α)
+   | c == c' = matchesMany vs ps <#> map (second (insert α))
+matches _ (PConstr _ _ _) = pure Nothing
 matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) =
    case traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps of
-      Nothing -> pure (Nothing × Set.singleton α)
-      Just vps -> matchesMany (fst <$> vps) (snd <$> vps) <#> (insert α <$> _)
-matches (Val α _ _) (PRecord _) = pure (Nothing × Set.singleton α)
+      Nothing -> pure Nothing
+      Just vps -> matchesMany (fst <$> vps) (snd <$> vps) <#> map (second (insert α))
+matches _ (PRecord _) = pure Nothing
 matches v PListEmpty = matchesTail v PListEnd
 matches v (PListNonEmpty p rest) = matchesTail v (PListNext p rest)
 
 -- Literal pattern inspects the value and binds nothing.
-literal :: forall m. Monad m => Vertex -> Boolean -> m (Maybe (Env Vertex) × Set Vertex)
-literal α eq = pure (whenever eq empty × Set.singleton α)
+literal :: Vertex -> Boolean -> Maybe (Env Vertex × Set Vertex)
+literal α eq = whenever eq (empty × Set.singleton α)
 
-matchesTail :: forall m. MonadError Error m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex) × Set Vertex)
+matchesTail :: forall m. MonadError Error m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex × Set Vertex))
 matchesTail v (PListVar x) = matches v (PVar x)
 matchesTail (Val α _ (V.Constr c vs)) rest
-   | c == cNil = case rest of
-        PListEnd -> pure (Just empty × Set.singleton α)
-        _ -> pure (Nothing × Set.singleton α)
+   | c == cNil = pure case rest of
+        PListEnd -> Just (empty × Set.singleton α)
+        _ -> Nothing
    | c == cCons, v : vs' : Nil <- vs = case rest of
-        PListEnd -> pure (Nothing × Set.singleton α)
-        PListNext p rest' -> do
-           m × αs <- matches v p
-           m' × αs' <- matchesTail vs' rest'
-           pure (lift2 unionWith_never m m' × insert α (αs ∪ αs'))
+        PListEnd -> pure Nothing
+        PListNext p rest' -> lift2 (combine α) <$> matches v p <*> matchesTail vs' rest'
         _ -> error absurd
 matchesTail v@(Val _ _ (V.Constr c _)) _
    | c == cPair = throw (patternMismatch (prettyP v) "list")
-matchesTail (Val α _ _) _ = pure (Nothing × Set.singleton α)
+matchesTail _ _ = pure Nothing
 
-matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex) × Set Vertex)
-matchesMany Nil Nil = pure (Just empty × empty)
-matchesMany (v : vs) (p : ps) = do
-   m × αs <- matches v p
-   m' × αs' <- matchesMany vs ps
-   pure (lift2 unionWith_never m m' × (αs ∪ αs'))
+matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex × Set Vertex))
+matchesMany Nil Nil = pure (Just (empty × empty))
+matchesMany (v : vs) (p : ps) = lift2 (lift2 disjoint) (matches v p) (matchesMany vs ps)
 matchesMany _ _ = error absurd
 
--- Bindings and body of the first case whose pattern matches, with the vertices inspected by every case tried.
+-- Sub-matches combined, and under a constructor at α.
+disjoint :: Env Vertex × Set Vertex -> Env Vertex × Set Vertex -> Env Vertex × Set Vertex
+disjoint (γ × αs) (γ' × αs') = (γ `unionWith_never` γ') × (αs ∪ αs')
+
+combine :: Vertex -> Env Vertex × Set Vertex -> Env Vertex × Set Vertex -> Env Vertex × Set Vertex
+combine α m m' = second (insert α) (disjoint m m')
+
+-- Bindings, body and inspected vertices of the first case whose pattern matches.
 dispatch
    :: forall m
     . MonadError Error m
    => Val Vertex
    -> NonEmptyList (Pattern × Stmt Vertex)
-   -> m (Maybe (Env Vertex × Stmt Vertex) × Set Vertex)
-dispatch v cases = go (NEL.toList cases) empty
+   -> m (Maybe (Env Vertex × Stmt Vertex × Set Vertex))
+dispatch v cases = go (NEL.toList cases)
    where
-   go Nil αs = pure (Nothing × αs)
-   go ((p × s) : cases') αs = do
-      m × αs' <- matches v p
-      case m of
-         Just γ -> pure (Just (γ × s) × (αs ∪ αs'))
-         Nothing -> go cases' (αs ∪ αs')
+   go Nil = pure Nothing
+   go ((p × s) : cases') = matches v p >>= case _ of
+      Just (γ × αs) -> pure (Just (γ × s × αs))
+      Nothing -> go cases'
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs γ ρ αs =
@@ -269,20 +268,18 @@ evalStmt doc_opt γ s αs = case s of
    Return e -> Returns <$> eval doc_opt γ e αs
    Match e cases -> do
       v <- eval Nothing γ e αs
-      taken × αs' <- dispatch v cases
-      case taken of
+      dispatch v cases >>= case _ of
          Nothing -> pure (Assigns empty empty)
-         Just (γ' × s') -> do
+         Just (γ' × s' × αs') -> do
             r <- evalStmt doc_opt (γ <+> γ') s' (αs ∪ αs')
             case r of
                Returns _ -> pure r
                Assigns γ'' αs'' -> pure (Assigns (γ' <+> γ'') αs'')
    Assign p e -> do
       v <- eval Nothing γ e αs
-      m × αs' <- matches v p
-      case m of
+      matches v p >>= case _ of
          Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
-         Just γ' -> pure (Assigns γ' αs')
+         Just (γ' × αs') -> pure (Assigns γ' αs')
    DefRec (RecDefs α ρ) -> do
       γ' <- closeDefs γ ρ (insert α αs)
       pure (Assigns γ' (insert α αs))
