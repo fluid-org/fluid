@@ -316,7 +316,7 @@ instance Highlightable a => Pretty (E.Expr a) where
 
 instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Return e) = text "return" <+> pretty e
-   pretty (E.Match e cases) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> cases)))
+   pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
    pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e

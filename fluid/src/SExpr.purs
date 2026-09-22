@@ -148,7 +148,7 @@ lambda α x s = E.Lambda α (E.Def (x : Nil) s)
 
 -- Function applied to an expression, with the body matching the argument.
 matchWith :: forall a. a -> E.Expr a -> NonEmptyList (Pattern × E.Stmt a) -> E.Expr a
-matchWith α e cases = E.App (lambda α (param 1) (E.Match (E.Var (param 1)) cases)) (e : Nil)
+matchWith α e bs = E.App (lambda α (param 1) (E.Match (E.Var (param 1)) bs)) (e : Nil)
 
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
@@ -269,9 +269,9 @@ type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
 stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
-stmtFwd (Match s μ) = E.Match <$> desug s <*> traverse caseFwd μ
+stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse caseFwd bs
    where
-   caseFwd (p × b) = (×) <$> expandKw p <*> stmtFwd b
+   caseFwd (p × s') = (×) <$> expandKw p <*> stmtFwd s'
 stmtFwd (If sss s) = ifElseFwd (sss × fromMaybe Pass s)
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
@@ -314,12 +314,12 @@ listCompFwd (α × (ListCompGen p s : qs) × s') = do
    e <- listCompFwd (α × qs × s')
    p' <- expandKw p
    let
-      cases = case p' of
+      bs = case p' of
          PVar _ -> singleton (p' × E.Return e)
          PWild -> singleton (p' × E.Return e)
          _ -> NonEmptyList ((p' × E.Return e) :| (PWild × E.Return (enil α)) : Nil)
    e' <- desug s
-   pure $ E.App (E.Var "concat_map") (lambda α (param 1) (E.Match (E.Var (param 1)) cases) : e' : Nil)
+   pure $ E.App (E.Var "concat_map") (lambda α (param 1) (E.Match (E.Var (param 1)) bs) : e' : Nil)
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw λ c n xbs = do
@@ -376,8 +376,8 @@ clausesFwd clauses = do
       Nil -> pure (head bodies)
       _ -> do
          rows <- traverse (traverse expandKw) (transpose (snd <$> matched))
-         let cases = NonEmptyList.zipWith (\ps s -> patterns ps × s) (nonEmpty rows) bodies
-         pure (E.Match (scrutinee (fst <$> matched)) cases)
+         let bs = NonEmptyList.zipWith (\ps s -> patterns ps × s) (nonEmpty rows) bodies
+         pure (E.Match (scrutinee (fst <$> matched)) bs)
    pure (E.Def (fst <$> params) body)
    where
    sharedVar :: List Pattern -> Maybe Var

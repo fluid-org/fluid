@@ -119,12 +119,12 @@ dispatch
    => Val Vertex
    -> NonEmptyList (Pattern × Stmt Vertex)
    -> m (Maybe (Env Vertex × Stmt Vertex × Set Vertex))
-dispatch v cases = go (NEL.toList cases)
+dispatch v bs = go (NEL.toList bs)
    where
    go Nil = pure Nothing
-   go ((p × s) : cases') = matches v p >>= case _ of
+   go ((p × s) : bs') = matches v p >>= case _ of
       Just (γ × αs) -> pure (Just (γ × s × αs))
-      Nothing -> go cases'
+      Nothing -> go bs'
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs γ ρ αs =
@@ -266,9 +266,9 @@ evalStmt
    -> m (Result Vertex)
 evalStmt doc_opt γ s αs = case s of
    Return e -> Returns <$> eval doc_opt γ e αs
-   Match e cases -> do
+   Match e bs -> do
       v <- eval Nothing γ e αs
-      dispatch v cases >>= case _ of
+      dispatch v bs >>= case _ of
          Nothing -> pure (Assigns empty empty)
          Just (γ' × s' × αs') -> do
             r <- evalStmt doc_opt (γ <+> γ') s' (αs ∪ αs')

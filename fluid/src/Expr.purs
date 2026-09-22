@@ -85,7 +85,7 @@ instance FV (RecDefs a) where
 
 instance FV (Stmt a) where
    fv (Return e) = fv e
-   fv (Match e cases) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> cases)
+   fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
    fv (Assign _ e) = fv e
    fv (DefRec ρ) = fv ρ
    fv Pass = empty
@@ -119,7 +119,7 @@ instance BoundedJoinSemilattice a => Expandable (RecDefs a) (Raw RecDefs) where
 
 instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Return e) (Return e') = Return (e ∨ e')
-   join (Match e cases) (Match e' cases') = Match (e ∨ e') (NEL.zipWith joinCase cases cases')
+   join (Match e bs) (Match e' bs') = Match (e ∨ e') (NEL.zipWith joinCase bs bs')
       where
       joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
    join (Assign p e) (Assign p' e') = Assign (p ≜ p') (e ∨ e')
@@ -131,7 +131,7 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
 
 instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
    expand (Return e) (Return e') = Return (expand e e')
-   expand (Match e cases) (Match e' cases') = Match (expand e e') (NEL.zipWith expandCase cases cases')
+   expand (Match e bs) (Match e' bs') = Match (expand e e') (NEL.zipWith expandCase bs bs')
       where
       expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
    expand (Assign p e) (Assign p' e') = Assign (p ≜ p') (expand e e')
@@ -206,7 +206,7 @@ instance Vertices (RecDefs Vertex) where
 
 instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
-   vertices (Match e cases) = vertices e ∪ unions ((vertices <<< snd) <$> cases)
+   vertices (Match e bs) = vertices e ∪ unions ((vertices <<< snd) <$> bs)
    vertices (Assign _ e) = vertices e
    vertices (DefRec ρ) = vertices ρ
    vertices Pass = empty
@@ -260,7 +260,7 @@ instance Apply RecDefs where
 
 instance Apply Stmt where
    apply (Return fe) (Return e) = Return (fe <*> e)
-   apply (Match fe fcases) (Match e cases) = Match (fe <*> e) (NEL.zipWith applyCase fcases cases)
+   apply (Match fe fbs) (Match e bs) = Match (fe <*> e) (NEL.zipWith applyCase fbs bs)
       where
       applyCase (p × fs) (_ × s) = p × (fs <*> s)
    apply (Assign p fe) (Assign _ e) = Assign p (fe <*> e)
