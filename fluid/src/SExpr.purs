@@ -253,7 +253,7 @@ exprFwd (ListEmpty α) =
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 exprFwd (ListEnum s1 s2) =
-   (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)) <$> desug s1 <*> desug s2
+   exprFwd (App (Var "range") (s1 : BinaryApp s2 "+" (Int Returns 1) : Nil))
 exprFwd (ListComp α s qs) =
    listCompFwd (α × qs × s)
 exprFwd (DocExpr s s') = do
