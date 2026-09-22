@@ -244,20 +244,16 @@ exprFwd (BinaryApp s1 op s2) =
    E.App (E.Op op) <$> traverse desug (s1 : s2 : Nil)
 exprFwd (UnaryPrefixApp op s) =
    E.App (E.Op op) <$> traverse desug (s : Nil)
-exprFwd (Ternary cond e1 e2) = do
-   e1' <- desug e1
-   e2' <- desug e2
-   matchWith Returns <$> desug cond <@> boolCases (E.Return e1') (E.Return e2')
+exprFwd (Ternary cond e1 e2) =
+   matchWith Returns <$> desug cond <*> (boolCases <$> (E.Return <$> desug e1) <*> (E.Return <$> desug e2))
 exprFwd (Paragraph elems) =
    paragraphFwd elems
 exprFwd (ListEmpty α) =
    pure $ enil α
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
-exprFwd (ListEnum s1 s2) = do
-   e1 <- desug s1
-   e2 <- desug s2
-   pure $ E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)
+exprFwd (ListEnum s1 s2) =
+   (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)) <$> desug s1 <*> desug s2
 exprFwd (ListComp α s qs) =
    listCompFwd (α × qs × s)
 exprFwd (DocExpr s s') = do
