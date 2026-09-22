@@ -148,9 +148,6 @@ boolCases s s' = NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse N
 matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
 matchFun α bs = E.Lambda α (E.Def (param 1 : Nil) (E.Match (E.Var (param 1)) bs))
 
-matchWith :: forall a. a -> E.Expr a -> NonEmptyList (E.Case a) -> E.Expr a
-matchWith α e bs = E.App (matchFun α bs) (e : Nil)
-
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
    where
@@ -245,7 +242,9 @@ exprFwd (BinaryApp s1 op s2) =
 exprFwd (UnaryPrefixApp op s) =
    E.App (E.Op op) <$> traverse desug (s : Nil)
 exprFwd (Ternary cond e1 e2) =
-   matchWith Returns <$> desug cond <*> (boolCases <$> (E.Return <$> desug e1) <*> (E.Return <$> desug e2))
+   E.App <$> branch <*> ((_ : Nil) <$> desug cond)
+   where
+   branch = matchFun Returns <$> (boolCases <$> (E.Return <$> desug e1) <*> (E.Return <$> desug e2))
 exprFwd (Paragraph elems) =
    paragraphFwd elems
 exprFwd (ListEmpty α) =
@@ -301,11 +300,11 @@ listCompFwd (α × Nil × s) =
    econs α <$> desug s <@> enil α
 listCompFwd (α × (ListCompGuard s : qs) × s') = do
    e <- listCompFwd (α × qs × s')
-   matchWith α <$> desug s <@> boolCases (E.Return e) (E.Return (enil α))
+   E.App (matchFun α (boolCases (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
 listCompFwd (α × (ListCompDecl (VarDef p s) : qs) × s') = do
    e <- listCompFwd (α × qs × s')
    p' <- expandKw p
-   matchWith α <$> desug s <@> singleton (p' × E.Return e)
+   E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
 -- Elements not matching the pattern contribute nothing.
 listCompFwd (α × (ListCompGen p s : qs) × s') = do
    e <- listCompFwd (α × qs × s')
