@@ -434,7 +434,7 @@ var cxt x = case Map.lookup x cxt of
 assignedIn :: Cxt -> Set Var -> Cxt
 assignedIn cxt xs = cxt `extendCxt` constMap true xs
 
--- Case patterns well-formed as a list (cases-cons): each well-formed, and none subsumed by an earlier one.
+-- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
 wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String Unit
 wellFormedPatterns cxt = go 1 <<< NEL.toList
    where
