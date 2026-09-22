@@ -5,6 +5,7 @@ import Prelude hiding (absurd, top)
 import Bind (Bind, Name, Var, dottedName, (↦))
 import Data.Set (Set, empty, insert, member, singleton, unions) as Set
 import Control.Monad.Error.Class (class MonadError)
+import Data.Bitraversable (bitraverse)
 import Data.Foldable (all, for_, length, null)
 import Data.Function (on)
 import Data.Generic.Rep (class Generic)
@@ -265,9 +266,7 @@ type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
 stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
-stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse caseFwd bs
-   where
-   caseFwd (p × s') = (×) <$> expandKw p <*> stmtFwd s'
+stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse expandKw stmtFwd) bs
 stmtFwd (If sss s) = ifElseFwd (sss × fromMaybe Pass s)
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
@@ -330,19 +329,16 @@ positionaliseKw λ c n xbs = do
 
 -- Keyword sub-patterns positionalised; constructor patterns checked against the class.
 expandKw :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
-expandKw p = do
+expandKw (PConstr c ps xps) = do
    λ <- askClasses
-   go λ p
-   where
-   go λ (PConstr c ps xps) = do
-      reordered <- if null xps then pure Nil else positionaliseKw λ c (length ps) xps
-      let ps' = ps <> reordered
-      checkArity λ "match" (dottedName c) (length ps')
-      (\ps'' -> PConstr c ps'' Nil) <$> traverse (go λ) ps'
-   go λ (PRecord xps) = PRecord <$> traverse (traverse (go λ)) xps
-   go λ (PList ps) = PList <$> traverse (go λ) ps
-   go λ (PAs p' x) = PAs <$> go λ p' <@> x
-   go _ p' = pure p'
+   reordered <- if null xps then pure Nil else positionaliseKw λ c (length ps) xps
+   let ps' = ps <> reordered
+   checkArity λ "match" (dottedName c) (length ps')
+   PConstr c <$> traverse expandKw ps' <@> Nil
+expandKw (PRecord xps) = PRecord <$> traverse (traverse expandKw) xps
+expandKw (PList ps) = PList <$> traverse expandKw ps
+expandKw (PAs p x) = PAs <$> expandKw p <@> x
+expandKw p = pure p
 
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
