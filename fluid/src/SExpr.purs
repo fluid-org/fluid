@@ -16,7 +16,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
-import Data.Traversable (for, traverse)
+import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst, snd)
 import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
 import Data.Map as Map
@@ -253,9 +253,7 @@ exprFwd (ListEmpty α) =
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 exprFwd (ListEnum s1 s2) =
-   (\e1 e2 -> E.App (E.Var "range") (e1 : succ e2 : Nil)) <$> desug s1 <*> desug s2
-   where
-   succ e = E.App (E.Op "+") (e : E.Int Returns 1 : Nil)
+   E.App (E.Var "range") <$> sequence (desug s1 : (E.App (E.Op "+") <<< (_ : E.Int Returns 1 : Nil) <$> desug s2) : Nil)
 exprFwd (ListComp α s qs) =
    listCompFwd (α × qs × s)
 exprFwd (DocExpr s s') = do
