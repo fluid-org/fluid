@@ -122,6 +122,7 @@ closeDefs γ ρ αs =
       in
          val Nothing αs (V.Fun (V.Closure (restrict (fv ρ' ∪ fv σ) γ) ρ' σ))
 
+-- Fewer arguments than the arity is a partial application; more applies the result to the rest.
 apply
    :: forall m
     . HasClasses m
@@ -134,47 +135,34 @@ apply
    -> Val Vertex
    -> List (Val Vertex)
    -> m (Val Vertex)
-apply doc_opt (Val α _ (V.Fun (V.Partial φ vs))) vs' = applyFun doc_opt α φ (vs <> vs')
-apply doc_opt (Val α _ (V.Fun φ)) vs = applyFun doc_opt α φ vs
-apply _ v _ = throw $ "Found " <> prettyP v <> ", expected function"
-
--- Fewer arguments than the arity is a partial application; more applies the result to the rest.
-applyFun
-   :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadWithGraphAlloc m
-   => MonadReader FileCxt m
-   => MonadAff m
-   => LoadFile m
-   => Maybe (Val Vertex)
-   -> Vertex
-   -> Fun Vertex
-   -> List (Val Vertex)
-   -> m (Val Vertex)
-applyFun doc_opt α φ vs = do
-   n <- arity'
-   let k = length vs
-   if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
-   else if k == n then saturate doc_opt vs
-   else saturate Nothing (take n vs) >>= \v -> apply doc_opt v (drop n vs)
+apply doc_opt (Val α _ (V.Fun φ0)) vs0 = go φ0 vs0
    where
-   arity' :: m Int
-   arity' = case φ of
+   go :: Fun Vertex -> List (Val Vertex) -> m (Val Vertex)
+   go (V.Partial φ vs) vs' = go φ (vs <> vs')
+   go φ vs = do
+      n <- arity' φ
+      let k = length vs
+      if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
+      else if k == n then saturate doc_opt φ vs
+      else saturate Nothing φ (take n vs) >>= \v -> apply doc_opt v (drop n vs)
+
+   arity' :: Fun Vertex -> m Int
+   arity' = case _ of
       V.Closure _ _ (Def xs _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
       V.Type c -> askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
       V.Partial _ _ -> error absurd
 
-   saturate :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
-   saturate doc_opt' vs' = case φ of
+   saturate :: Maybe (Val Vertex) -> Fun Vertex -> List (Val Vertex) -> m (Val Vertex)
+   saturate doc_opt' φ vs = case φ of
       V.Closure γ1 ρ (Def xs s) -> do
          γ2 <- closeDefs γ1 ρ (singleton α)
-         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
+         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs)
          asReturns <$> evalStmt doc_opt' (γ1 <+> γ2 <+> γ3) s (singleton α)
-      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
-      V.Type c -> val doc_opt' (singleton α) (V.Constr c vs')
+      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs
+      V.Type c -> val doc_opt' (singleton α) (V.Constr c vs)
       V.Partial _ _ -> error absurd
+apply _ v _ = throw $ "Found " <> prettyP v <> ", expected function"
 
 eval
    :: forall m
