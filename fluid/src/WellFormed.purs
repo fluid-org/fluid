@@ -257,7 +257,7 @@ wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
    for_ (NEL.groupBy (eq `on` fst) ds) \clauses ->
-      wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> clausePattern ps)
+      wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList ps)
    ds' <- traverse
       ( \(x × S.Clause _ (ps × s)) -> do
            let xs = unions (bv <$> ps)
@@ -511,12 +511,6 @@ subsumed cxt = sub
       guard (length ps <= length fs)
       let positional = Map.fromFoldable (zip fs ps)
       foldM (\m (x × p) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x p m)) positional xps
-
--- Parameter patterns of a clause as one pattern, a list pattern when there are several.
-clausePattern :: List S.Pattern -> S.Pattern
-clausePattern Nil = S.PWild
-clausePattern (p : Nil) = p
-clausePattern ps = S.PList ps
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
