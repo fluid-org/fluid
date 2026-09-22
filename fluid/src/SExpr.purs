@@ -350,28 +350,27 @@ clausesFwd
    => NonEmptyList (List Pattern × Stmt (WfResult VarCxt))
    -> m (E.Def (WfResult VarCxt))
 clausesFwd clauses = do
-   let k = length (fst (head clauses)) :: Int
+   let n = length (fst (head clauses)) :: Int
    for_ clauses \(ps × _) ->
-      when (length ps /= k) $ throw "Clauses differ in number of parameters"
+      when (length ps /= n) $ throw "Clauses differ in number of parameters"
    let
       columns = transpose (toList (fst <$> clauses))
-      params = columns # mapWithIndex \i column -> case sharedVar column of
+      named = columns # mapWithIndex \i ps -> case sharedVar ps of
          Just x -> x × Nothing
-         Nothing -> param (i + 1) × Just column
-      matched = params # mapMaybe \(x × column) -> (x × _) <$> column
-   bodies <- for clauses \(_ × s) -> stmtFwd s
+         Nothing -> param (i + 1) × Just ps
+      matched = named # mapMaybe \(x × ps_opt) -> (x × _) <$> ps_opt
+   ss <- for clauses (stmtFwd <<< snd)
    body <- case matched of
-      Nil -> pure (head bodies)
+      Nil -> pure (head ss)
       _ -> do
-         rows <- traverse (traverse expandKw) (transpose (snd <$> matched))
-         let bs = NonEmptyList.zipWith (\ps s -> patterns ps × s) (nonEmpty rows) bodies
+         pss <- traverse (traverse expandKw) (transpose (snd <$> matched))
+         let bs = NonEmptyList.zipWith (\ps s -> patterns ps × s) (nonEmpty pss) ss
          pure (E.Match (scrutinee (fst <$> matched)) bs)
-   pure (E.Def (fst <$> params) body)
+   pure (E.Def (fst <$> named) body)
    where
    sharedVar :: List Pattern -> Maybe Var
-   sharedVar column = case column of
-      PVar x : ps | all (_ == PVar x) ps -> Just x
-      _ -> Nothing
+   sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
+   sharedVar _ = Nothing
 
    scrutinee :: List Var -> E.Expr (WfResult VarCxt)
    scrutinee Nil = error absurd
