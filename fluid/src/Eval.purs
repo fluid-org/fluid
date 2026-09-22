@@ -140,8 +140,8 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
    n <- arity'
    let k = length vs
    if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
-   else if k == n then saturate doc_opt vs
-   else saturate Nothing (take n vs) >>= \v -> apply doc_opt v (drop n vs)
+   else if k == n then call doc_opt vs
+   else call Nothing (take n vs) >>= \v -> apply doc_opt v (drop n vs)
    where
    arity' :: m Int
    arity' = case φ of
@@ -150,8 +150,8 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
       V.Type c -> askClasses >>= \λ -> ctrSig λ "construct" (dottedName c) <#> snd
       V.Partial _ _ -> error absurd
 
-   saturate :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
-   saturate doc_opt' vs' = case φ of
+   call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
+   call doc_opt' vs' = case φ of
       V.Closure γ1 ρ (Def xs s) -> do
          γ2 <- closeDefs γ1 ρ (singleton α)
          let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
