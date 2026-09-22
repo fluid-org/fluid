@@ -83,7 +83,7 @@ matches (Val α _ (V.Constr c vs)) (PList ps)
    | c == cNil = pure (whenever (null ps) (empty × Set.singleton α))
    | c == cCons, v : vs' : Nil <- vs = case ps of
         Nil -> pure Nothing
-        p : ps' -> lift2 (combine α) <$> matches v p <*> matches vs' (PList ps')
+        p : ps' -> matchesMany (v : vs' : Nil) (p : PList ps' : Nil) <#> map (second (insert α))
    | c == cPair = throw (patternMismatch (prettyP (Val α Nothing (V.Constr c vs))) "list")
 matches _ (PList _) = pure Nothing
 
@@ -94,14 +94,9 @@ literal α eq = whenever eq (empty × Set.singleton α)
 matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex × Set Vertex))
 matchesMany Nil Nil = pure (Just (empty × empty))
 matchesMany (v : vs) (p : ps) = lift2 (lift2 disjoint) (matches v p) (matchesMany vs ps)
+   where
+   disjoint (γ × αs) (γ' × αs') = (γ `unionWith_never` γ') × (αs ∪ αs')
 matchesMany _ _ = error absurd
-
--- Sub-matches combined, and under a constructor at α.
-disjoint :: Env Vertex × Set Vertex -> Env Vertex × Set Vertex -> Env Vertex × Set Vertex
-disjoint (γ × αs) (γ' × αs') = (γ `unionWith_never` γ') × (αs ∪ αs')
-
-combine :: Vertex -> Env Vertex × Set Vertex -> Env Vertex × Set Vertex -> Env Vertex × Set Vertex
-combine α m m' = second (insert α) (disjoint m m')
 
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
 dispatch
