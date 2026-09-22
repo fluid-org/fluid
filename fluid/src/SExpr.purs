@@ -253,7 +253,9 @@ exprFwd (ListEmpty α) =
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 exprFwd (ListEnum s1 s2) =
-   exprFwd (App (Var "range") (s1 : BinaryApp s2 "+" (Int Returns 1) : Nil))
+   (\e1 e2 -> E.App (E.Var "range") (e1 : succ e2 : Nil)) <$> desug s1 <*> desug s2
+   where
+   succ e = E.App (E.Op "+") (e : E.Int Returns 1 : Nil)
 exprFwd (ListComp α s qs) =
    listCompFwd (α × qs × s)
 exprFwd (DocExpr s s') = do
@@ -274,9 +276,9 @@ stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
 stmtFwd (ExprStmt e) = E.ExprStmt <$> desug e
 stmtFwd (Assert cond msg_opt) =
-   stmtFwd (If (singleton (App (Var "not") (cond : Nil) × ExprStmt (App (Var "error") (msg : Nil)))) Nothing)
-   where
-   msg = fromMaybe (Str Returns "AssertionError") msg_opt
+   (\c msg -> E.Match c (boolCases E.Pass (E.ExprStmt (E.App (E.Var "error") (msg : Nil)))))
+      <$> desug cond
+      <*> maybe (pure (E.Str Returns "AssertionError")) desug msg_opt
 stmtFwd (Seq s1 s2) = E.Seq <$> stmtFwd s1 <*> stmtFwd s2
 stmtFwd (Dataclass _ _ _) = pure E.Pass
 
