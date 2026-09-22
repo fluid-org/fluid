@@ -29,7 +29,7 @@ import Parsing.Expr (Assoc(..), OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
-import Pattern (ListRestPattern(..), Pattern(..))
+import Pattern (Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 
@@ -82,9 +82,7 @@ simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern <|> pLi
    pRecord = defer \_ -> braces (fields variable pattern) <#> PRecord
 
    pList :: Parser Pattern
-   pList = defer \_ -> brackets (trailingCommas pattern) <#> case _ of
-      Nil -> PListEmpty
-      p : ps -> PListNonEmpty p (foldr PListNext PListEnd ps)
+   pList = defer \_ -> brackets (trailingCommas pattern) <#> PList
 
    parensPattern :: Parser Pattern
    parensPattern = do

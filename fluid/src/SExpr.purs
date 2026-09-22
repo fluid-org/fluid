@@ -29,7 +29,7 @@ import Expr (class FV, fv)
 import Expr (Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Pattern (ListRestPattern(..), Pattern(..), bv)
+import Pattern (Pattern(..), bv)
 import Util (type (×), absurd, error, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 
@@ -344,13 +344,9 @@ expandKw p = do
       checkArity λ "match" (dottedName c) (length ps')
       (\ps'' -> PConstr c ps'' Nil) <$> traverse (go λ) ps'
    go λ (PRecord xps) = PRecord <$> traverse (traverse (go λ)) xps
-   go λ (PListNonEmpty p' l) = PListNonEmpty <$> go λ p' <*> goRest λ l
+   go λ (PList ps) = PList <$> traverse (go λ) ps
    go λ (PAs p' x) = PAs <$> go λ p' <@> x
    go _ p' = pure p'
-
-   goRest :: ClassTable -> ListRestPattern -> m ListRestPattern
-   goRest λ (PListNext p' l) = PListNext <$> go λ p' <*> goRest λ l
-   goRest _ p' = pure p'
 
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when

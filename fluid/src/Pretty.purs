@@ -17,7 +17,7 @@ import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricD
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
-import Pattern (ListRestPattern(..), Pattern(..))
+import Pattern (Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Util (type (×), error, isEmpty, (×))
 import Util.Map (toUnfoldable)
@@ -186,17 +186,11 @@ instance Pretty Pattern where
    pretty (PConstr c ps Nil) = prettyConstr (dottedName c) ps
    pretty (PConstr c ps xps) =
       text (dottedName c) <> parens (commas ((pretty <$> ps) <> ((\(x ↦ p) -> text x <> text "=" <> pretty p) <$> xps)))
-   pretty (PListEmpty) = text "[]"
-   pretty (PListNonEmpty p l) = brackets (pretty p <> pretty l)
+   pretty (PList ps) = brackets (prettyList ps)
    pretty (PAs p x) = pretty p <+> text "as" <+> text x
 
 instance Pretty (String × Pattern) where
    pretty (k × v) = text k <> text ":" <+> pretty v
-
-instance Pretty ListRestPattern where
-   pretty (PListVar x) = text x
-   pretty (PListNext p l) = text "," <+> pretty p <> pretty l
-   pretty PListEnd = empty
 
 instance Ann a => Pretty (VarDef a) where
    pretty (VarDef v s) = pretty v <+> assignment (pretty s)

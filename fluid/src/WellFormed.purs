@@ -29,7 +29,7 @@ import Util.Map (constMap)
 import Expr (fv)
 import Lattice (Raw)
 import Pattern (bv)
-import Pattern (ListRestPattern(..), Pattern(..)) as S
+import Pattern (Pattern(..)) as S
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Util (type (×), singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
@@ -519,17 +519,13 @@ subsumed cxt = sub
 clausePattern :: List S.Pattern -> S.Pattern
 clausePattern Nil = S.PWild
 clausePattern (p : Nil) = p
-clausePattern (p : ps) = S.PListNonEmpty p (foldr S.PListNext S.PListEnd ps)
+clausePattern ps = S.PList ps
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
 asConstr (S.PConstr c ps xps) = Just (c × ps × xps)
-asConstr S.PListEmpty = Just (singleton (NEL.last cNil) × Nil × Nil)
-asConstr (S.PListNonEmpty p rest) = Just (singleton (NEL.last cCons) × (p : asPattern rest : Nil) × Nil)
-   where
-   asPattern (S.PListVar x) = S.PVar x
-   asPattern S.PListEnd = S.PListEmpty
-   asPattern (S.PListNext p' rest') = S.PListNonEmpty p' rest'
+asConstr (S.PList Nil) = Just (singleton (NEL.last cNil) × Nil × Nil)
+asConstr (S.PList (p : ps)) = Just (singleton (NEL.last cCons) × (p : S.PList ps : Nil) × Nil)
 asConstr _ = Nothing
 
 qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
@@ -539,11 +535,9 @@ qualifyPattern cxt = qualify
       fqn <- fqnOf c
       S.PConstr fqn <$> traverse qualify ps <*> traverse (traverse qualify) xps
    qualify (S.PRecord xps) = S.PRecord <$> traverse (traverse qualify) xps
-   qualify (S.PListNonEmpty p lr) = S.PListNonEmpty <$> qualify p <*> qualifyRest lr
+   qualify (S.PList ps) = S.PList <$> traverse qualify ps
    qualify (S.PAs p x) = S.PAs <$> qualify p <@> x
    qualify p = pure p
-   qualifyRest (S.PListNext p lr) = S.PListNext <$> qualify p <*> qualifyRest lr
-   qualifyRest lr = pure lr
    fqnOf c = case resolveName cxt c of
       Just (Class cls) -> pure cls.name
       _ -> throwError $ "Unknown dataclass: " <> dottedName c

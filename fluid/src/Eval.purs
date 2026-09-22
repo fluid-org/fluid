@@ -7,7 +7,7 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
-import Data.List (List(..), drop, find, foldM, foldl, length, take, unzip, zip, (:))
+import Data.List (List(..), drop, find, foldM, foldl, length, null, take, unzip, zip, (:))
 import Data.List.NonEmpty (NonEmptyList, last)
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
@@ -32,7 +32,7 @@ import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, builtins)
-import Pattern (ListRestPattern(..), Pattern(..))
+import Pattern (Pattern(..))
 import Pretty (prettyP)
 import Primitive (intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
@@ -79,26 +79,17 @@ matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) =
       Nothing -> pure Nothing
       Just vps -> matchesMany (fst <$> vps) (snd <$> vps) <#> map (second (insert α))
 matches _ (PRecord _) = pure Nothing
-matches v PListEmpty = matchesTail v PListEnd
-matches v (PListNonEmpty p rest) = matchesTail v (PListNext p rest)
+matches (Val α _ (V.Constr c vs)) (PList ps)
+   | c == cNil = pure (whenever (null ps) (empty × Set.singleton α))
+   | c == cCons, v : vs' : Nil <- vs = case ps of
+        Nil -> pure Nothing
+        p : ps' -> lift2 (combine α) <$> matches v p <*> matches vs' (PList ps')
+   | c == cPair = throw (patternMismatch (prettyP (Val α Nothing (V.Constr c vs))) "list")
+matches _ (PList _) = pure Nothing
 
 -- Literal pattern inspects the value and binds nothing.
 literal :: Vertex -> Boolean -> Maybe (Env Vertex × Set Vertex)
 literal α eq = whenever eq (empty × Set.singleton α)
-
-matchesTail :: forall m. MonadError Error m => Val Vertex -> ListRestPattern -> m (Maybe (Env Vertex × Set Vertex))
-matchesTail v (PListVar x) = matches v (PVar x)
-matchesTail (Val α _ (V.Constr c vs)) rest
-   | c == cNil = pure case rest of
-        PListEnd -> Just (empty × Set.singleton α)
-        _ -> Nothing
-   | c == cCons, v : vs' : Nil <- vs = case rest of
-        PListEnd -> pure Nothing
-        PListNext p rest' -> lift2 (combine α) <$> matches v p <*> matchesTail vs' rest'
-        _ -> error absurd
-matchesTail v@(Val _ _ (V.Constr c _)) _
-   | c == cPair = throw (patternMismatch (prettyP v) "list")
-matchesTail _ _ = pure Nothing
 
 matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex × Set Vertex))
 matchesMany Nil Nil = pure (Just (empty × empty))
