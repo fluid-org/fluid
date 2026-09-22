@@ -8,7 +8,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.List (List(..), drop, find, foldM, foldl, length, null, take, unzip, zip, (:))
-import Data.List.NonEmpty (NonEmptyList, last)
+import Data.List.NonEmpty (NonEmptyList)
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
@@ -19,7 +19,7 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, arity, askClasses, cCons, cNil, cPair, checkArity, fieldsOf, showCtr)
+import DataType (class HasClasses, ClassTable, askClasses, cCons, cNil, cPair, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -150,7 +150,7 @@ apply doc_opt (Val α _ (V.Fun φ0)) vs0 = go φ0 vs0
    arity' = case _ of
       V.Closure _ _ (Def xs _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-      V.Type c -> askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
+      V.Type c -> askClasses >>= \λ -> ctrSig λ "construct" (dottedName c) <#> snd
       V.Partial _ _ -> error absurd
 
    saturate :: Maybe (Val Vertex) -> Fun Vertex -> List (Val Vertex) -> m (Val Vertex)
