@@ -55,17 +55,23 @@ patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the vertices of the value that matching inspected.
 matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Maybe (Env Vertex × Set Vertex))
-matches (Val α _ u) (PInt n) = pure $ literal α case u of
-   V.Int n' -> n == n'
-   V.Float x -> toNumber n == x
-   _ -> false
-matches (Val α _ u) (PFloat x) = pure $ literal α case u of
-   V.Int n -> toNumber n == x
-   V.Float x' -> x == x'
-   _ -> false
-matches (Val α _ u) (PStr s) = pure $ literal α case u of
-   V.Str s' -> s == s'
-   _ -> false
+matches (Val α _ u) (PInt n) = pure $ whenever eq (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Int n' -> n == n'
+      V.Float x -> toNumber n == x
+      _ -> false
+matches (Val α _ u) (PFloat x) = pure $ whenever eq (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Int n -> toNumber n == x
+      V.Float x' -> x == x'
+      _ -> false
+matches (Val α _ u) (PStr s) = pure $ whenever eq (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Str s' -> s == s'
+      _ -> false
 matches v (PVar x)
    | x == varAnon = pure (Just (empty × empty))
    | otherwise = pure (Just (maplet x v × empty))
@@ -86,10 +92,6 @@ matches (Val α _ (V.Constr c vs)) (PList ps)
         p : ps' -> matchesMany (v : vs' : Nil) (p : PList ps' : Nil) <#> map (second (insert α))
    | c == cPair = throw (patternMismatch (prettyP (Val α Nothing (V.Constr c vs))) "list")
 matches _ (PList _) = pure Nothing
-
--- Literal pattern inspects the value and binds nothing.
-literal :: Vertex -> Boolean -> Maybe (Env Vertex × Set Vertex)
-literal α eq = whenever eq (empty × Set.singleton α)
 
 matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex × Set Vertex))
 matchesMany Nil Nil = pure (Just (empty × empty))
