@@ -1,6 +1,6 @@
 module SExpr where
 
-import Prelude hiding (absurd, top)
+import Prelude hiding (top)
 
 import Bind (Bind, Name, Var, dottedName, (↦))
 import Data.Set (Set, empty, insert, member, singleton, unions) as Set
@@ -12,6 +12,7 @@ import Data.Generic.Rep (class Generic)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWith, (:))
 import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
+import Data.Semigroup.Foldable (foldr1)
 import Data.List.NonEmpty (zipWith) as NonEmptyList
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype, unwrap)
@@ -30,7 +31,7 @@ import Expr (class FV, Pattern(..), bv, fv)
 import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Util (type (×), absurd, error, nonEmpty, singleton, throw, unimplemented, (×))
+import Util (type (×), error, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 
 -- Surface language expressions.
@@ -364,23 +365,15 @@ clausesFwd clauses = do
       Nil -> pure (head ss)
       _ -> do
          pss <- traverse (traverse expandKw) (transpose (snd <$> matched))
-         let bs = NonEmptyList.zipWith (\ps s -> patterns ps × s) (nonEmpty pss) ss
-         pure (E.Match (scrutinee (fst <$> matched)) bs)
+         let
+            e = foldr1 (\e1 e2 -> E.Constr Returns cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
+            bs = NonEmptyList.zipWith (\ps s -> foldr1 (\p p' -> PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s) (nonEmpty pss) ss
+         pure (E.Match e bs)
    pure (E.Def (fst <$> named) body)
    where
    sharedVar :: List Pattern -> Maybe Var
    sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
    sharedVar _ = Nothing
-
-   scrutinee :: List Var -> E.Expr (WfResult VarCxt)
-   scrutinee Nil = error absurd
-   scrutinee (x : Nil) = E.Var x
-   scrutinee (x : xs) = E.Constr Returns cPair (E.Var x : scrutinee xs : Nil)
-
-   patterns :: List Pattern -> Pattern
-   patterns Nil = error absurd
-   patterns (p : Nil) = p
-   patterns (p : ps) = PConstr cPair (p : patterns ps : Nil) Nil
 
 -- ======================
 -- boilerplate
