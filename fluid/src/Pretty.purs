@@ -18,7 +18,7 @@ import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtO
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
 import Pattern (Pattern(..))
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Util (type (×), error, isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
@@ -169,10 +169,10 @@ instance Ann a => Pretty (List (Qualifier a)) where
    pretty (Cons q qs) = pretty (singleton q) <+> pretty qs
    pretty Nil = empty
 
-instance Ann a => Pretty (NonEmptyList (Pattern × Stmt a)) where
+instance Ann a => Pretty (NonEmptyList (Case a)) where
    pretty cs = vsep (toList (pretty <$> cs))
 
-instance Ann a => Pretty (Pattern × Stmt a) where
+instance Ann a => Pretty (Case a) where
    pretty (p × b) = text "case" <+> (pretty p) <> block (pretty b)
 
 instance Pretty Pattern where
