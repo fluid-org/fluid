@@ -145,11 +145,11 @@ boolCases :: forall a. E.Stmt a -> E.Stmt a -> NonEmptyList (E.Case a)
 boolCases s s' = NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse Nil Nil × s') : Nil)
 
 -- Unary function matching its argument against the cases.
-matcher :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
-matcher α bs = E.Lambda α (E.Def (param 1 : Nil) (E.Match (E.Var (param 1)) bs))
+matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
+matchFun α bs = E.Lambda α (E.Def (param 1 : Nil) (E.Match (E.Var (param 1)) bs))
 
 matchWith :: forall a. a -> E.Expr a -> NonEmptyList (E.Case a) -> E.Expr a
-matchWith α e bs = E.App (matcher α bs) (e : Nil)
+matchWith α e bs = E.App (matchFun α bs) (e : Nil)
 
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
@@ -320,7 +320,7 @@ listCompFwd (α × (ListCompGen p s : qs) × s') = do
          PWild -> singleton (p' × E.Return e)
          _ -> NonEmptyList ((p' × E.Return e) :| (PWild × E.Return (enil α)) : Nil)
    e' <- desug s
-   pure $ E.App (E.Var "concat_map") (matcher α bs : e' : Nil)
+   pure $ E.App (E.Var "concat_map") (matchFun α bs : e' : Nil)
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw λ c n xbs = do
