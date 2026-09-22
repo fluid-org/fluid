@@ -20,9 +20,9 @@ import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
+import DataType (class HasClasses, ClassTable, askClasses, checkArity, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
 import Data.Map as Map
-import DefiniteAssignment (VarCxt, WfResult(..))
+import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
@@ -319,7 +319,7 @@ listCompFwd (α × (ListCompGen p s : qs) × s') = do
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw λ c n xbs = do
-   fs <- maybe (throw $ "Unknown dataclass: " <> dottedName c) pure (fieldsOf λ (dottedName c))
+   fs <- fields <$> classEntry λ (dottedName c)
    let remaining = drop n fs
    let provided = xbs <#> fst
    when (sort provided /= sort remaining) $ throw $

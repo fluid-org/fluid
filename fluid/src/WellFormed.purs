@@ -7,7 +7,7 @@ import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (StateT, get, mapStateT, modify_, runStateT)
 import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
-import Data.Either (Either)
+import Data.Either (Either, hush)
 import Control.MonadPlus (guard)
 import Data.Foldable (all, elem, foldM, foldr, for_, intercalate, traverse_)
 import Data.Function (on)
@@ -328,6 +328,11 @@ asName (S.Var x) = Just (singleton x)
 asName (S.Attribute e y) = asName e <#> (_ <> singleton y)
 asName _ = Nothing
 
+classOf :: Cxt -> Name -> Either String ClassEntry
+classOf cxt c = case resolveName cxt c of
+   Just (Class cls) -> pure cls
+   _ -> throwError $ "Unknown dataclass: " <> dottedName c
+
 resolveName :: Cxt -> Name -> Maybe Entry
 resolveName cxt name = case NEL.fromList init of
    Nothing -> simpleEntry cxt x
@@ -353,18 +358,16 @@ wellFormedExpr = wf
    wf _ e@(S.Int _ _) = pure e
    wf _ e@(S.Float _ _) = pure e
    wf _ e@(S.Str _ _) = pure e
-   wf cxt (S.Constr α c es Nil) = case resolveName cxt c of
-      Just (Class cls) -> do
-         let fs = fields cls
-         when (length es /= length fs)
-            $ throwError
-            $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
-         (\es' -> S.Constr α (qualified cls c) es' Nil) <$> traverse (wf cxt) es
-      _ -> throwError $ "Unknown dataclass: " <> dottedName c
-   wf cxt (S.Constr α c es xes) = case resolveName cxt c of
-      Just (Class cls) ->
-         S.Constr α (qualified cls c) <$> traverse (wf cxt) es <*> traverse (\(x × e) -> (x × _) <$> wf cxt e) xes
-      _ -> throwError $ "Unknown dataclass: " <> dottedName c
+   wf cxt (S.Constr α c es Nil) = do
+      cls <- classOf cxt c
+      let fs = fields cls
+      when (length es /= length fs)
+         $ throwError
+         $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
+      (\es' -> S.Constr α (qualified cls c) es' Nil) <$> traverse (wf cxt) es
+   wf cxt (S.Constr α c es xes) = do
+      cls <- classOf cxt c
+      S.Constr α (qualified cls c) <$> traverse (wf cxt) es <*> traverse (\(x × e) -> (x × _) <$> wf cxt e) xes
    wf cxt (S.App e es) = S.App <$> wf cxt e <*> traverse (wf cxt) es
    wf cxt (S.BinaryApp e op e') = S.BinaryApp <$> wf cxt e <*> (op <$ var cxt op) <*> wf cxt e'
    wf cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wf cxt e)
@@ -490,18 +493,13 @@ subsumed cxt = sub
       all (\(u × q) -> maybe false (\p -> sub p q) (F.lookup u xps)) uqs
    sub p p' = case asConstr p, asConstr p' of
       Just (c × ps × xps), Just (c' × qs × xqs) -> fromMaybe false do
-         cls <- classOf c
-         cls' <- classOf c'
+         cls <- hush (classOf cxt c)
+         cls' <- hush (classOf cxt c')
          guard (cls'.name `elem` ancestors cls)
          fm <- fieldMap cls ps xps
          fm' <- fieldMap cls' qs xqs
          pure $ all (\x -> fromMaybe false (sub <$> Map.lookup x fm <*> Map.lookup x fm')) (fields cls')
       _, _ -> false
-
-   classOf :: Name -> Maybe ClassEntry
-   classOf c = case resolveName cxt c of
-      Just (Class cls) -> Just cls
-      _ -> Nothing
 
    ancestors :: ClassEntry -> List Name
    ancestors cls = cls.name : maybe Nil ancestors (cls.base >>= classFor cls.cxt)
@@ -537,7 +535,5 @@ qualifyPattern cxt = qualify
    qualify (S.PList ps) = S.PList <$> traverse qualify ps
    qualify (S.PAs p x) = S.PAs <$> qualify p <@> x
    qualify p = pure p
-   fqnOf c = case resolveName cxt c of
-      Just (Class cls) -> pure cls.name
-      _ -> throwError $ "Unknown dataclass: " <> dottedName c
+   fqnOf c = _.name <$> classOf cxt c
 

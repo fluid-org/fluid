@@ -10,7 +10,6 @@ import Control.Monad.State.Trans (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer.Trans (WriterT)
 import Data.CodePoint.Unicode (isUpper)
-import Data.Foldable (for_)
 import Data.Function (on)
 import Data.List (List(..), elemIndex, (:))
 import Data.List as List
@@ -20,15 +19,13 @@ import Data.Map as Map
 import Data.Array (last) as A
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.String (Pattern(..), split)
-import Data.Set (Set)
-import Data.Set (fromFoldable, map, toUnfoldable) as S
 import Data.String.CodePoints (codePointFromChar)
 import Data.String.CodeUnits (charAt)
 import DefiniteAssignment (ClassEntry, classFor, fields)
 import Dict (Dict, fromFoldable)
 import Effect.Exception (Error)
-import Util (type (×), absurd, definitely, definitely', error, throw, whenever, withMsg, (×))
-import Util.Map (keys, lookup)
+import Util (type (×), absurd, definitely, definitely', error, throw, whenever, (×))
+import Util.Map (lookup)
 
 type TypeName = String
 type FieldName = String
@@ -59,9 +56,6 @@ instance Eq DataType where
 
 instance Show DataType where
    show = typeName
-
-ctrs :: DataType -> Set Ctr
-ctrs (DataType _ sigs) = keys sigs # S.fromFoldable
 
 type ClassTable = Map.Map Ctr ClassEntry -- keyed by fully-qualified name
 
@@ -105,23 +99,13 @@ dataType λ c = Map.lookup c λ $> DataType root (fromFoldable sigs)
 fieldsOf :: ClassTable -> Ctr -> Maybe (List Var)
 fieldsOf λ c = Map.lookup c λ <#> fields
 
-arity :: ClassTable -> Ctr -> Maybe Int
-arity λ c = Map.lookup c λ <#> (fields >>> List.length)
-
-consistentWith :: forall m. MonadError Error m => ClassTable -> Set Ctr -> Set Ctr -> m Unit
-consistentWith λ cs cs' = case S.toUnfoldable cs' :: List Ctr of
-   Nil -> pure unit
-   c : _ -> case dataType λ c of
-      Nothing -> throw $ "Unknown dataclass: " <> showCtr (simpleName c)
-      Just d -> withMsg ("dataclasses of " <> show d <> " do not include " <> show (S.map (showCtr <<< simpleName) cs))
-         $ for_ (S.toUnfoldable cs :: List Ctr) \c'' -> case dataType λ c'' of
-              Just d'' | d'' == d -> pure unit
-              _ -> throw "mismatch"
+classEntry :: forall m. MonadError Error m => ClassTable -> Ctr -> m ClassEntry
+classEntry λ c = maybe (throw $ "Unknown dataclass: " <> showCtr (simpleName c)) pure (Map.lookup c λ)
 
 -- Datatype of c and c's signature within it; a non-leaf class has no signature (#1530).
 ctrSig :: forall m. MonadError Error m => ClassTable -> String -> Ctr -> m (DataType × CtrSig)
 ctrSig λ verb c = do
-   d@(DataType _ sigs) <- maybe (throw $ "Unknown dataclass: " <> showCtr (simpleName c)) pure (dataType λ c)
+   d@(DataType _ sigs) <- classEntry λ c $> definitely' (dataType λ c)
    n <- maybe (throw $ "Cannot " <> verb <> " non-leaf class: " <> showCtr (simpleName c)) pure (lookup c sigs)
    pure (d × n)
 
