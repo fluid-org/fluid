@@ -370,8 +370,8 @@ instance Highlightable a => Pretty (BaseVal a) where
 
 instance Highlightable a => Pretty (Fun a) where
    pretty (V.Closure _ _ _) = text "cl"
-   pretty (V.Foreign phi) = pretty phi
-   pretty (V.Constructor c) = text (last c)
+   pretty (V.Prim phi) = pretty phi
+   pretty (V.Type c) = text (last c)
    pretty (V.Partial phi vs) = pretty phi <> parens (prettyList vs)
 
 instance Pretty ForeignOp where

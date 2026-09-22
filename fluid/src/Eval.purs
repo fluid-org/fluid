@@ -175,8 +175,8 @@ applyFun doc_opt α φ vs = do
    arity' :: m Int
    arity' = case φ of
       V.Closure _ _ (Def xs _) -> pure (length xs)
-      V.Foreign (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-      V.Constructor c -> askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
+      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
+      V.Type c -> askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
       V.Partial _ _ -> error absurd
 
    saturate :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
@@ -185,8 +185,8 @@ applyFun doc_opt α φ vs = do
          γ2 <- closeDefs γ1 ρ (singleton α)
          let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
          asReturns <$> evalStmt doc_opt' (γ1 <+> γ2 <+> γ3) s (singleton α)
-      V.Foreign (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
-      V.Constructor c -> val doc_opt' (singleton α) (V.Constr c vs')
+      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
+      V.Type c -> val doc_opt' (singleton α) (V.Constr c vs')
       V.Partial _ _ -> error absurd
 
 eval

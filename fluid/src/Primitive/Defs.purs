@@ -46,11 +46,11 @@ import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
-   id × Val bot Nothing (Fun (Foreign (ForeignOp (id × φ))))
+   id × Val bot Nothing (Fun (Prim (ForeignOp (id × φ))))
 
 primitives :: Raw Env
 primitives = wrap $ D.fromFoldable
-   [ ":" × Val bot Nothing (Fun (Constructor cCons))
+   [ ":" × Val bot Nothing (Fun (Type cCons))
    , unary "ceiling" { i: number, o: int, fwd: ceil }
    , extern print_
    , extern dims

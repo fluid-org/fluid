@@ -69,8 +69,8 @@ asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else N
 
 data Fun a
    = Closure (Env a) (Dict (Def a)) (Def a)
-   | Foreign ForeignOp
-   | Constructor Name
+   | Prim ForeignOp
+   | Type Name -- class as a value, as at the Python runtime
    | Partial (Fun a) (List (Val a)) -- fewer arguments than the arity of the function, which is not itself partial
 
 class (Highlightable a, BoundedLattice a) <= Ann a
@@ -254,8 +254,8 @@ instance Apply BaseVal where
 
 instance Apply Fun where
    apply (Closure fγ fρ fσ) (Closure γ ρ σ) = Closure (fγ <*> γ) (((<*>) <$> fρ) <*> ρ) (fσ <*> σ)
-   apply (Foreign op) (Foreign _) = Foreign op
-   apply (Constructor c) (Constructor c') = Constructor (c ≜ c')
+   apply (Prim op) (Prim _) = Prim op
+   apply (Type c) (Type c') = Type (c ≜ c')
    apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
    apply _ _ = shapeMismatch unit
 
@@ -326,8 +326,8 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
 instance JoinSemilattice a => JoinSemilattice (Fun a) where
    join (Closure γ ρ σ) (Closure γ' ρ' σ') =
       Closure (γ ∨ γ') (ρ ∨ ρ') (σ ∨ σ')
-   join (Foreign φ) (Foreign _) = Foreign φ -- TODO: require φ == φ'
-   join (Constructor c) (Constructor c') = Constructor (c ≜ c')
+   join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
+   join (Type c) (Type c') = Type (c ≜ c')
    join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
    join _ _ = shapeMismatch unit
 
@@ -366,8 +366,8 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
 instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
    expand (Closure γ ρ σ) (Closure γ' ρ' σ') =
       Closure (expand γ γ') (expand ρ ρ') (expand σ σ')
-   expand (Foreign φ) (Foreign _) = Foreign φ -- TODO: require φ == φ'
-   expand (Constructor c) (Constructor c') = Constructor (c ≜ c')
+   expand (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
+   expand (Type c) (Type c') = Type (c ≜ c')
    expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
    expand _ _ = shapeMismatch unit
 
@@ -423,8 +423,8 @@ instance Vertices (MatrixDim Vertex) where
 
 instance Vertices (Fun Vertex) where
    vertices (Closure γ ρ σ) = vertices γ ∪ vertices ρ ∪ vertices σ
-   vertices (Foreign _) = empty
-   vertices (Constructor _) = empty
+   vertices (Prim _) = empty
+   vertices (Type _) = empty
    vertices (Partial φ vs) = vertices φ ∪ unions (vertices <$> vs)
 
 instance Vertices (Env Vertex) where
