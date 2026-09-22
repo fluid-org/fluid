@@ -30,7 +30,7 @@ import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
-import Util (type (×), singleton, whenever, (×), (∩))
+import Util (type (×), firstDuplicate, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
 -- Member context of a loaded module and its checked body. The program is
@@ -446,37 +446,21 @@ wellFormedPatterns cxt = go 1 <<< NEL.toList
          when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 1) <> " is unreachable"
       go (i + 1) ps
 
--- Variables bound by a pattern distinct; an as-variable not bound by its sub-pattern.
+-- Sub-patterns well-formed, with pairwise disjoint variables; dictionary keys distinct.
 wellFormedPattern :: S.Pattern -> Either String Unit
-wellFormedPattern = wf
+wellFormedPattern p = do
+   case p of
+      S.PRecord xps -> for_ (firstDuplicate (fst <$> xps)) \w -> throwError $ "Duplicate key in pattern: " <> w
+      _ -> pure unit
+   traverse_ wellFormedPattern ps
+   for_ (firstDuplicate (ps >>= Set.toUnfoldable <<< bv)) \x -> throwError $ "Duplicate variable in pattern: " <> x
    where
-   wf (S.PAs p x) = do
-      wf p
-      when (x `Set.member` bv p) $ throwError $ "Duplicate variable in pattern: " <> x
-   wf p = case asConstr p of
-      Just (_ × ps × xps) -> distinct (ps <> (snd <$> xps))
-      Nothing -> case p of
-         S.PRecord xps -> do
-            for_ (firstDuplicate (fst <$> xps)) \w -> throwError $ "Duplicate key in pattern: " <> w
-            distinct (snd <$> xps)
-         _ -> pure unit
-
-   distinct :: List S.Pattern -> Either String Unit
-   distinct ps = do
-      traverse_ wf ps
-      void $ foldM step Set.empty ps
-      where
-      step xs p = case Set.findMin (xs ∩ bv p) of
-         Just x -> throwError $ "Duplicate variable in pattern: " <> x
-         Nothing -> pure (xs ∪ bv p)
-
-   firstDuplicate :: List Var -> Maybe Var
-   firstDuplicate = go Set.empty
-      where
-      go _ Nil = Nothing
-      go seen (x : xs)
-         | x `Set.member` seen = Just x
-         | otherwise = go (Set.insert x seen) xs
+   ps = case p of
+      S.PConstr _ ps' xps -> ps' <> (snd <$> xps)
+      S.PRecord xps -> snd <$> xps
+      S.PList ps' -> ps'
+      S.PAs p' x -> p' : S.PVar x : Nil
+      _ -> Nil
 
 -- p subsumed by p': every value p matches, p' matches. List patterns as Nil and Cons patterns.
 subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean

@@ -3,7 +3,7 @@ module SExpr where
 import Prelude hiding (top)
 
 import Bind (Bind, Name, Var, dottedName, (↦))
-import Data.Set (Set, empty, insert, member, singleton, unions) as Set
+import Data.Set (Set, empty, singleton, unions) as Set
 import Control.Monad.Error.Class (class MonadError)
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (all, for_, length, null)
@@ -31,7 +31,7 @@ import Expr (class FV, Pattern(..), bv, fv)
 import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Util (type (×), error, nonEmpty, singleton, throw, unimplemented, (×))
+import Util (type (×), error, firstDuplicate, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 
 -- Surface language expressions.
@@ -165,14 +165,6 @@ recDefsFwd xcs = do
    for_ (firstDuplicate names) \x ->
       throw $ "Non-contiguous clauses for: " <> x
    E.RecDefs Returns <$> D.fromFoldable <$> traverse recDefFwd xcss
-   where
-   firstDuplicate :: List Var -> Maybe Var
-   firstDuplicate = go Set.empty
-      where
-      go _ Nil = Nothing
-      go seen (x : xs)
-         | x `Set.member` seen = Just x
-         | otherwise = go (Set.insert x seen) xs
 
 recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (E.Def (WfResult VarCxt)))
 recDefFwd xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
