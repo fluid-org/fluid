@@ -45,9 +45,12 @@ data Def a = Def (List Var) (Stmt a)
 -- Mutually recursive function definitions.
 data RecDefs a = RecDefs a (Dict (Def a))
 
+-- Case of a match statement.
+type Case a = Pattern × Stmt a
+
 data Stmt a
    = Return (Expr a)
-   | Match (Expr a) (NonEmptyList (Pattern × Stmt a))
+   | Match (Expr a) (NonEmptyList (Case a))
    | Assign Pattern (Expr a) -- assignment to a pattern; the spec has only variables
    | DefRec (RecDefs a)
    | Pass

@@ -26,7 +26,7 @@ import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
 import Expr (class FV, fv)
-import Expr (Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
+import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
 import Pattern (Pattern(..), bv)
@@ -71,7 +71,7 @@ type Paragraph a = List (ParagraphElem a)
 data Stmt a
    = Return (Expr a)
    | If (NonEmptyList (Expr a × Stmt a)) (Maybe (Stmt a))
-   | Match (Expr a) (NonEmptyList (Pattern × Stmt a))
+   | Match (Expr a) (NonEmptyList (Case a))
    | Def (VarDef a)
    | DefRec (RecDefs a)
    | Pass
@@ -81,6 +81,9 @@ data Stmt a
    | Dataclass Var (Maybe Var) (List Var)
 
 data Import = Import Name (Maybe (List Var))
+
+-- Case of a match statement.
+type Case a = Pattern × Stmt a
 
 data Clause a = Clause a (List Pattern × Stmt a)
 
@@ -139,7 +142,7 @@ param :: Int -> Var
 param i = "$" <> show i
 
 -- Cases branching on a Boolean.
-boolCases :: forall a. E.Stmt a -> E.Stmt a -> NonEmptyList (Pattern × E.Stmt a)
+boolCases :: forall a. E.Stmt a -> E.Stmt a -> NonEmptyList (E.Case a)
 boolCases s s' = NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse Nil Nil × s') : Nil)
 
 -- Unary function whose body is a statement over its parameter.
@@ -147,7 +150,7 @@ lambda :: forall a. a -> Var -> E.Stmt a -> E.Expr a
 lambda α x s = E.Lambda α (E.Def (x : Nil) s)
 
 -- Function applied to an expression, with the body matching the argument.
-matchWith :: forall a. a -> E.Expr a -> NonEmptyList (Pattern × E.Stmt a) -> E.Expr a
+matchWith :: forall a. a -> E.Expr a -> NonEmptyList (E.Case a) -> E.Expr a
 matchWith α e bs = E.App (lambda α (param 1) (E.Match (E.Var (param 1)) bs)) (e : Nil)
 
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))

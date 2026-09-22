@@ -24,7 +24,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), fv)
+import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), fv)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -105,7 +105,7 @@ dispatch
    :: forall m
     . MonadError Error m
    => Val Vertex
-   -> NonEmptyList (Pattern × Stmt Vertex)
+   -> NonEmptyList (Case Vertex)
    -> m (Maybe (Env Vertex × Stmt Vertex × Set Vertex))
 dispatch v bs = go (NEL.toList bs)
    where
