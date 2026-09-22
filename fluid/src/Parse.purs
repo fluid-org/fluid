@@ -29,7 +29,7 @@ import Parsing.Expr (Assoc(..), OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
-import Pattern (Pattern(..))
+import Expr (Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 

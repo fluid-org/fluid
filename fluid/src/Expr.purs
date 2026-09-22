@@ -2,21 +2,22 @@ module Expr where
 
 import Prelude hiding (absurd, top)
 
-import Bind (Name, Var)
+import Bind (Bind, Name, Var)
 import Control.Apply (lift2)
 import Data.Foldable (class Foldable, foldl, foldrDefault, foldMapDefaultL)
+import Data.Generic.Rep (class Generic)
 import Data.List (List, zipWith)
 import Data.List.NonEmpty (NonEmptyList)
 import Data.List.NonEmpty (zipWith) as NEL
 import Data.Maybe (Maybe(..))
 import Data.Set (Set, empty, unions)
 import Data.Set (fromFoldable) as S
+import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable, sequenceDefault, traverse)
 import Data.Tuple (snd)
 import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
-import Pattern (Pattern, bv)
 import Util (type (×), shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys)
 import Util.Pair (Pair(..))
@@ -38,6 +39,17 @@ data Expr a
    | ModMember Name Var -- member x of module q; only arises during desugaring
    | App (Expr a) (List (Expr a))
    | DocExpr (Expr a) (Expr a)
+
+data Pattern
+   = PInt Int
+   | PFloat Number
+   | PStr String
+   | PVar Var
+   | PWild
+   | PConstr Name (List Pattern) (List (Bind Pattern))
+   | PRecord (List (Bind Pattern))
+   | PList (List Pattern)
+   | PAs Pattern Var
 
 -- Parameters and body of a function.
 data Def a = Def (List Var) (Stmt a)
@@ -107,6 +119,20 @@ instance FV a => FV (Maybe a) where
 
 instance (FV a) => FV (List a) where
    fv xs = unions (fv <$> xs)
+
+class BV a where
+   bv :: a -> Set Var
+
+instance BV Pattern where
+   bv (PInt _) = empty
+   bv (PFloat _) = empty
+   bv (PStr _) = empty
+   bv (PVar x) = singleton x
+   bv PWild = empty
+   bv (PConstr _ ps xps) = unions (bv <$> ps) ∪ unions ((bv <<< snd) <$> xps)
+   bv (PRecord xps) = unions ((bv <<< snd) <$> xps)
+   bv (PList ps) = unions (bv <$> ps)
+   bv (PAs p x) = bv p ∪ singleton x
 
 instance JoinSemilattice a => JoinSemilattice (Def a) where
    join (Def xs s) (Def xs' s') = Def (xs ≜ xs') (s ∨ s')
@@ -287,6 +313,11 @@ instance Traversable Module where
 
 derive instance Eq a => Eq (Expr a)
 derive instance Eq a => Eq (Def a)
+derive instance Eq Pattern
+derive instance Generic Pattern _
+instance Show Pattern where
+   show c = genericShow c
+
 derive instance Eq a => Eq (RecDefs a)
 derive instance Eq a => Eq (Stmt a)
 

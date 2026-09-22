@@ -25,11 +25,10 @@ import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class FV, fv)
+import Expr (class FV, Pattern(..), bv, fv)
 import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Pattern (Pattern(..), bv)
 import Util (type (×), absurd, error, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 

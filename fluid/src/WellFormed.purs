@@ -26,10 +26,9 @@ import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), classFor, erase, extendCxt, extendCxtWith, fields, mergeRes, overrideRes)
 import Util.Map (constMap)
-import Expr (fv)
+import Expr (bv, fv)
+import Expr (Pattern(..)) as S
 import Lattice (Raw)
-import Pattern (bv)
-import Pattern (Pattern(..)) as S
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Util (type (×), singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
