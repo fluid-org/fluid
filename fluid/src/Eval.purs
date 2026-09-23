@@ -8,7 +8,6 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.List (List(..), drop, find, foldM, foldl, length, null, take, unzip, zip, (:))
-import Data.List.NonEmpty (NonEmptyList)
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
@@ -100,18 +99,11 @@ matchesMany (v : vs) (p : ps) = lift2 (lift2 disjoint) (matches v p) (matchesMan
 matchesMany _ _ = error absurd
 
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
-dispatch
-   :: forall m
-    . MonadError Error m
-   => Val Vertex
-   -> NonEmptyList (Case Vertex)
-   -> m (Maybe (Env Vertex × Stmt Vertex × Set Vertex))
-dispatch v bs = go (NEL.toList bs)
-   where
-   go Nil = pure Nothing
-   go ((p × s) : bs') = matches v p >>= case _ of
-      Just (γ × αs) -> pure (Just (γ × s × αs))
-      Nothing -> go bs'
+dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> m (Maybe (Env Vertex × Stmt Vertex × Set Vertex))
+dispatch _ Nil = pure Nothing
+dispatch v ((p × s) : bs) = matches v p >>= case _ of
+   Just (γ × αs) -> pure (Just (γ × s × αs))
+   Nothing -> dispatch v bs
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs γ ρ αs =
@@ -240,7 +232,7 @@ evalStmt doc_opt γ s αs = case s of
    Return e -> Returns <$> eval doc_opt γ e αs
    Match e bs -> do
       v <- eval Nothing γ e αs
-      dispatch v bs >>= case _ of
+      dispatch v (NEL.toList bs) >>= case _ of
          Nothing -> pure (Assigns empty empty)
          Just (γ' × s' × αs') -> do
             r <- evalStmt doc_opt (γ <+> γ') s' (αs ∪ αs')

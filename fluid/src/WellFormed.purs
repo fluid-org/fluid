@@ -14,7 +14,7 @@ import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.List (List(..), elemIndex, index, length, mapMaybe, nub, (:))
+import Data.List (List(..), drop, elemIndex, index, length, mapMaybe, nub, (:))
 import Data.Foldable (lookup) as F
 import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, builtins, predefinedDeps)
@@ -350,77 +350,72 @@ resolveName cxt name = case NEL.fromList init of
 -- Validate an expression; rewrite constructor names to fully-qualified form and
 -- module projections to ModMember.
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
-wellFormedExpr = wf
-   where
-   wf :: Cxt -> S.Expr a -> Either String (S.Expr a)
-   wf cxt e@(S.Var x) = e <$ var cxt x
-   wf cxt e@(S.Op op) = e <$ var cxt op
-   wf _ e@(S.Int _ _) = pure e
-   wf _ e@(S.Float _ _) = pure e
-   wf _ e@(S.Str _ _) = pure e
-   wf cxt (S.Constr α c es Nil) = do
-      cls <- classOf cxt c
-      let fs = fields cls
-      when (length es /= length fs)
+wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
+wellFormedExpr cxt e@(S.Op op) = e <$ var cxt op
+wellFormedExpr _ e@(S.Int _ _) = pure e
+wellFormedExpr _ e@(S.Float _ _) = pure e
+wellFormedExpr _ e@(S.Str _ _) = pure e
+wellFormedExpr cxt (S.Constr α c es Nil) = do
+   cls <- classOf cxt c
+   let fs = fields cls
+   when (length es /= length fs)
+      $ throwError
+      $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
+   (\es' -> S.Constr α cls.name es' Nil) <$> traverse (wellFormedExpr cxt) es
+wellFormedExpr cxt (S.Constr α c es xes) = do
+   cls <- classOf cxt c
+   S.Constr α cls.name <$> traverse (wellFormedExpr cxt) es <*> traverse (\(x × e) -> (x × _) <$> wellFormedExpr cxt e) xes
+wellFormedExpr cxt (S.App e es) = S.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
+wellFormedExpr cxt (S.BinaryApp e op e') = S.BinaryApp <$> wellFormedExpr cxt e <*> (op <$ var cxt op) <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wellFormedExpr cxt e)
+wellFormedExpr cxt (S.Ternary c e e') = S.Ternary <$> wellFormedExpr cxt c <*> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
+   Just (ModLoaded q cxt') -> do
+      when (not (Map.member y cxt'))
          $ throwError
-         $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
-      (\es' -> S.Constr α (qualified cls c) es' Nil) <$> traverse (wf cxt) es
-   wf cxt (S.Constr α c es xes) = do
-      cls <- classOf cxt c
-      S.Constr α (qualified cls c) <$> traverse (wf cxt) es <*> traverse (\(x × e) -> (x × _) <$> wf cxt e) xes
-   wf cxt (S.App e es) = S.App <$> wf cxt e <*> traverse (wf cxt) es
-   wf cxt (S.BinaryApp e op e') = S.BinaryApp <$> wf cxt e <*> (op <$ var cxt op) <*> wf cxt e'
-   wf cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wf cxt e)
-   wf cxt (S.Ternary c e e') = S.Ternary <$> wf cxt c <*> wf cxt e <*> wf cxt e'
-   wf cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
-      Just (ModLoaded q cxt') -> do
-         when (not (Map.member y cxt'))
-            $ throwError
-            $ "module " <> dottedName q <> " has no member " <> y
-         pure (S.ModMember q y)
-      _ -> flip S.Attribute y <$> wf cxt e
-   wf _ e@(S.ModMember _ _) = pure e
-   wf cxt (S.Subscript e e') = S.Subscript <$> wf cxt e <*> wf cxt e'
-   wf cxt (S.Matrix α body (x × y) source) =
-      (\source' body' -> S.Matrix α body' (x × y) source') <$> wf cxt source <*> wf
-         (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
-         body
-   wf cxt (S.Lambda (S.LambdaClause (ps × e))) = do
-      ps' <- traverse (qualifyPattern cxt) ps
-      e' <- wf (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
-      pure (S.Lambda (S.LambdaClause (ps' × e')))
-   wf cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wf cxt v) kvs
-      where
-      dictKey (S.ExprKey e) = S.ExprKey <$> wf cxt e
-      dictKey k@(S.VarKey _ _) = pure k
-   wf cxt (S.Paragraph elems) = S.Paragraph <$> traverse pe elems
-      where
-      pe (S.Unquote e) = S.Unquote <$> wf cxt e
-      pe t@(S.Token _) = pure t
-   wf _ e@(S.ListEmpty _) = pure e
-   wf cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wf cxt e <*> listRest l
-      where
-      listRest l'@(S.End _) = pure l'
-      listRest (S.Next α' e' l') = S.Next α' <$> wf cxt e' <*> listRest l'
-   wf cxt (S.ListEnum e e') = S.ListEnum <$> wf cxt e <*> wf cxt e'
-   wf cxt (S.ListComp α e quals) = (\(e' × quals') -> S.ListComp α e' quals') <$> qualifiers cxt quals
-      where
-      qualifiers cxt' Nil = (_ × Nil) <$> wf cxt' e
-      qualifiers cxt' (q : qs) = case q of
-         S.ListCompGuard cond -> do
-            cond' <- wf cxt' cond
-            map (S.ListCompGuard cond' : _) <$> qualifiers cxt' qs
-         S.ListCompGen p src -> do
-            src' <- wf cxt' src
-            p' <- qualifyPattern cxt' p
-            map (S.ListCompGen p' src' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
-         S.ListCompDecl (S.VarDef p src) -> do
-            src' <- wf cxt' src
-            p' <- qualifyPattern cxt' p
-            map (S.ListCompDecl (S.VarDef p' src') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
-   wf cxt (S.DocExpr e e') = S.DocExpr <$> wf cxt e <*> wf cxt e'
-
-   qualified cls _ = cls.name
+         $ "module " <> dottedName q <> " has no member " <> y
+      pure (S.ModMember q y)
+   _ -> flip S.Attribute y <$> wellFormedExpr cxt e
+wellFormedExpr _ e@(S.ModMember _ _) = pure e
+wellFormedExpr cxt (S.Subscript e e') = S.Subscript <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.Matrix α body (x × y) source) =
+   (\source' body' -> S.Matrix α body' (x × y) source') <$> wellFormedExpr cxt source <*> wellFormedExpr
+      (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
+      body
+wellFormedExpr cxt (S.Lambda (S.LambdaClause (ps × e))) = do
+   ps' <- traverse (qualifyPattern cxt) ps
+   e' <- wellFormedExpr (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
+   pure (S.Lambda (S.LambdaClause (ps' × e')))
+wellFormedExpr cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wellFormedExpr cxt v) kvs
+   where
+   dictKey (S.ExprKey e) = S.ExprKey <$> wellFormedExpr cxt e
+   dictKey k@(S.VarKey _ _) = pure k
+wellFormedExpr cxt (S.Paragraph elems) = S.Paragraph <$> traverse pe elems
+   where
+   pe (S.Unquote e) = S.Unquote <$> wellFormedExpr cxt e
+   pe t@(S.Token _) = pure t
+wellFormedExpr _ e@(S.ListEmpty _) = pure e
+wellFormedExpr cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wellFormedExpr cxt e <*> listRest l
+   where
+   listRest l'@(S.End _) = pure l'
+   listRest (S.Next α' e' l') = S.Next α' <$> wellFormedExpr cxt e' <*> listRest l'
+wellFormedExpr cxt (S.ListEnum e e') = S.ListEnum <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.ListComp α e quals) = (\(e' × quals') -> S.ListComp α e' quals') <$> qualifiers cxt quals
+   where
+   qualifiers cxt' Nil = (_ × Nil) <$> wellFormedExpr cxt' e
+   qualifiers cxt' (q : qs) = case q of
+      S.ListCompGuard cond -> do
+         cond' <- wellFormedExpr cxt' cond
+         map (S.ListCompGuard cond' : _) <$> qualifiers cxt' qs
+      S.ListCompGen p src -> do
+         src' <- wellFormedExpr cxt' src
+         p' <- qualifyPattern cxt' p
+         map (S.ListCompGen p' src' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
+      S.ListCompDecl (S.VarDef p src) -> do
+         src' <- wellFormedExpr cxt' src
+         p' <- qualifyPattern cxt' p
+         map (S.ListCompDecl (S.VarDef p' src') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
+wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit
 var cxt x = case Map.lookup x cxt of
@@ -433,15 +428,10 @@ var cxt x = case Map.lookup x cxt of
 
 -- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
 wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String Unit
-wellFormedPatterns cxt = go 1 <<< NEL.toList
-   where
-   go :: Int -> List S.Pattern -> Either String Unit
-   go _ Nil = pure unit
-   go i (p : ps) = do
-      wellFormedPattern p
-      forWithIndex_ ps \j p' ->
-         when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 1) <> " is unreachable"
-      go (i + 1) ps
+wellFormedPatterns cxt ps = forWithIndex_ ps \i p -> do
+   wellFormedPattern p
+   forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
+      when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"
 
 -- Sub-patterns well-formed, with pairwise disjoint variables; dictionary keys distinct.
 wellFormedPattern :: S.Pattern -> Either String Unit
@@ -495,14 +485,10 @@ asConstr (S.PList (p : ps)) = Just (singleton (NEL.last cCons) × (p : S.PList p
 asConstr _ = Nothing
 
 qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
-qualifyPattern cxt = qualify
-   where
-   qualify (S.PConstr c ps xps) = do
-      fqn <- fqnOf c
-      S.PConstr fqn <$> traverse qualify ps <*> traverse (traverse qualify) xps
-   qualify (S.PRecord xps) = S.PRecord <$> traverse (traverse qualify) xps
-   qualify (S.PList ps) = S.PList <$> traverse qualify ps
-   qualify (S.PAs p x) = S.PAs <$> qualify p <@> x
-   qualify p = pure p
-   fqnOf c = _.name <$> classOf cxt c
+qualifyPattern cxt (S.PConstr c ps xps) =
+   S.PConstr <$> (_.name <$> classOf cxt c) <*> traverse (qualifyPattern cxt) ps <*> traverse (traverse (qualifyPattern cxt)) xps
+qualifyPattern cxt (S.PRecord xps) = S.PRecord <$> traverse (traverse (qualifyPattern cxt)) xps
+qualifyPattern cxt (S.PList ps) = S.PList <$> traverse (qualifyPattern cxt) ps
+qualifyPattern cxt (S.PAs p x) = S.PAs <$> qualifyPattern cxt p <@> x
+qualifyPattern _ p = pure p
 
