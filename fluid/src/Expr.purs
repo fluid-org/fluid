@@ -4,9 +4,9 @@ import Prelude hiding (absurd, top)
 
 import Bind (Bind, Name, Var)
 import Control.Apply (lift2)
-import Data.Foldable (class Foldable, foldl, foldrDefault, foldMapDefaultL)
+import Data.Foldable (class Foldable, foldl, foldr, foldrDefault, foldMapDefaultL)
 import Data.Generic.Rep (class Generic)
-import Data.List (List, zipWith)
+import Data.List (List(..), zipWith, (:))
 import Data.List.NonEmpty (NonEmptyList)
 import Data.List.NonEmpty (zipWith) as NEL
 import Data.Maybe (Maybe(..))
@@ -50,6 +50,10 @@ data Pattern
    | PRecord (List (Bind Pattern))
    | PList (List Pattern)
    | PAs Pattern Var
+
+-- List pattern as patterns over the given Cons and Nil constructors.
+consPattern :: Name -> Name -> List Pattern -> Pattern
+consPattern cons nil = foldr (\p ps -> PConstr cons (p : ps : Nil) Nil) (PConstr nil Nil Nil)
 
 -- Parameters and body of a function.
 data Def a = Def (List Var) (Stmt a)

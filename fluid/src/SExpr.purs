@@ -27,7 +27,7 @@ import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class FV, Pattern(..), bv, fv)
+import Expr (class FV, Pattern(..), bv, consPattern, fv)
 import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
@@ -328,7 +328,7 @@ patternFwd (PConstr c ps xps) = do
    checkArity classes "match" (dottedName c) (length ps')
    PConstr c <$> traverse patternFwd ps' <@> Nil
 patternFwd (PRecord xps) = PRecord <$> traverse (traverse patternFwd) xps
-patternFwd (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse patternFwd ps
+patternFwd (PList ps) = consPattern cCons cNil <$> traverse patternFwd ps
 patternFwd (PAs p x) = PAs <$> patternFwd p <@> x
 patternFwd p = pure p
 
