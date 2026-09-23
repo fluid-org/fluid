@@ -13,7 +13,7 @@ import Data.Array.NonEmpty (NonEmptyArray, fromArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (class Foldable, foldr)
+import Data.Foldable (class Foldable, foldr, for_)
 import Data.Functor.Compose (Compose)
 import Data.Functor.Product (Product)
 import Data.Identity (Identity(..))
@@ -130,9 +130,9 @@ traceWhen _ _ = pure unit
 log' :: forall m. MonadEffect m => String -> m Unit
 log' msg = when debug.logging (log msg)
 
--- First element that occurs earlier in the list.
-firstDuplicate :: forall a. Ord a => List a -> Maybe a
-firstDuplicate xs = L.head (xs L.\\ L.nub xs)
+-- Fail with the given error on the first element that occurs earlier in the list.
+checkDistinct :: forall m e a. MonadThrow e m => Ord a => (a -> e) -> List a -> m Unit
+checkDistinct err xs = for_ (L.head (xs L.\\ L.nub xs)) (throwError <<< err)
 
 absurd :: String
 absurd = "absurd"

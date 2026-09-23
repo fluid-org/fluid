@@ -31,7 +31,7 @@ import Expr (class FV, Pattern(..), bv, fv)
 import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Util (type (×), error, firstDuplicate, nonEmpty, singleton, throw, unimplemented, (×))
+import Util (type (×), checkDistinct, error, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 
 -- Surface language expressions.
@@ -162,8 +162,7 @@ recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult 
 recDefsFwd xcs = do
    let xcss = map RecDef (groupBy (eq `on` fst) xcs)
    let names = (fst <<< head <<< unwrap) <$> toList xcss
-   for_ (firstDuplicate names) \x ->
-      throw $ "Non-contiguous clauses for: " <> x
+   checkDistinct (error <<< ("Non-contiguous clauses for: " <> _)) names
    E.RecDefs Returns <$> D.fromFoldable <$> traverse recDefFwd xcss
 
 recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (E.Def (WfResult VarCxt)))

@@ -30,7 +30,7 @@ import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
-import Util (type (×), firstDuplicate, singleton, whenever, (×), (∩))
+import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
 -- Member context of a loaded module and its checked body. The program is
@@ -437,10 +437,10 @@ wellFormedPatterns cxt ps = forWithIndex_ ps \i p -> do
 wellFormedPattern :: S.Pattern -> Either String Unit
 wellFormedPattern p = do
    case p of
-      S.PRecord xps -> for_ (firstDuplicate (fst <$> xps)) \w -> throwError $ "Duplicate key in pattern: " <> w
+      S.PRecord xps -> checkDistinct ("Duplicate key in pattern: " <> _) (fst <$> xps)
       _ -> pure unit
    traverse_ wellFormedPattern ps
-   for_ (firstDuplicate (ps >>= Set.toUnfoldable <<< bv)) \x -> throwError $ "Duplicate variable in pattern: " <> x
+   checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
    where
    ps = case p of
       S.PConstr _ ps' xps -> ps' <> (snd <$> xps)
