@@ -9,12 +9,13 @@ import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
 import Data.Either (Either, hush)
 import Control.MonadPlus (guard)
-import Data.Foldable (all, and, elem, foldM, foldr, for_, intercalate, traverse_)
+import Data.Foldable (all, and, elem, foldM, foldr, for_, intercalate)
 import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.TraversableWithIndex (forWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.List (List(..), drop, length, mapMaybe, nub, zipWith, (:))
+import Data.List (List(..), drop, length, mapMaybe, nub, null, zipWith, (:))
 import Data.Foldable (lookup) as F
 import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, builtins, predefinedDeps)
@@ -22,7 +23,7 @@ import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
 import Data.Set as Set
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Util.Map (constMap)
@@ -251,19 +252,19 @@ wellFormed _ cxt (S.Def (S.VarDef p e)) = do
    for_ (Set.toUnfoldable (xs `Set.intersection` capturesE e) :: Array Var) \x ->
       throwError $ "Variable captured by its own definition: " <> x
    e' <- wellFormedExpr cxt e
-   p' <- qualifyPattern cxt p
+   p' <- wellFormedPattern cxt p
    pure (Assigns (constMap true xs) × S.Def (S.VarDef p' (Assigns Map.empty <$ e')))
 wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
    for_ (NEL.groupBy (eq `on` fst) ds) \clauses ->
-      wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList ps)
+      void $ wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList ps)
    ds' <- traverse
       ( \(x × S.Clause _ (ps × s)) -> do
            let xs = unions (bv <$> ps)
            let ys = assigns s \\ xs
            let cxt'' = cxt' `extendCxt` constMap true xs `extendCxt` constMap false ys
-           ps' <- traverse (qualifyPattern cxt') ps
+           ps' <- traverse (wellFormedPattern cxt') ps
            r × s' <- wellFormed q cxt'' s
            pure (x × S.Clause r (ps' × s'))
       )
@@ -292,20 +293,18 @@ wellFormed q cxt (S.If es elseBranch) = do
       Just s -> map Just <$> wellFormed q cxt s
       Nothing -> pure (Assigns Map.empty × Nothing)
    pure (foldl1 mergeRes (NEL.cons rElse (fst <$> es')) × S.If (snd <$> es') elseBranch')
-wellFormed q cxt (S.Match e ps) = do
+wellFormed q cxt (S.Match e bs) = do
    e' <- wellFormedExpr cxt e
-   wellFormedPatterns cxt (fst <$> ps)
-   ps' <- traverse
-      ( \(p × s) -> do
+   ps' <- wellFormedPatterns cxt (fst <$> bs)
+   bs' <- for (NEL.zip ps' bs)
+      ( \(p' × (p × s)) -> do
            let xs = bv p
-           p' <- qualifyPattern cxt p
            r × s' <- wellFormed q (cxt `extendCxt` constMap true xs) s
            pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
       )
-      ps
-   pure (foldl1 mergeRes ((fst <$> ps') `NEL.snoc` rFall) × S.Match (Assigns Map.empty <$ e') (snd <$> ps'))
+   pure (foldl1 mergeRes ((fst <$> bs') `NEL.snoc` rFall) × S.Match (Assigns Map.empty <$ e') (snd <$> bs'))
    where
-   rFall = case fst (NEL.last ps) of
+   rFall = case fst (NEL.last bs) of
       S.PVar _ -> Returns
       S.PWild -> Returns
       _ -> Assigns Map.empty
@@ -364,7 +363,7 @@ wellFormedExpr cxt (S.Matrix α e1 (x × y) e2) =
       (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
       e1
 wellFormedExpr cxt (S.Lambda (S.LambdaClause (ps × e))) = do
-   ps' <- traverse (qualifyPattern cxt) ps
+   ps' <- traverse (wellFormedPattern cxt) ps
    e' <- wellFormedExpr (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
    pure (S.Lambda (S.LambdaClause (ps' × e')))
 wellFormedExpr cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wellFormedExpr cxt v) kvs
@@ -390,11 +389,11 @@ wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs')
          map (S.ListCompGuard e1' : _) <$> qualifiers cxt' gs'
       S.ListCompGen p e1 -> do
          e1' <- wellFormedExpr cxt' e1
-         p' <- qualifyPattern cxt' p
+         p' <- wellFormedPattern cxt' p
          map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
       S.ListCompDecl (S.VarDef p e1) -> do
          e1' <- wellFormedExpr cxt' e1
-         p' <- qualifyPattern cxt' p
+         p' <- wellFormedPattern cxt' p
          map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
@@ -408,25 +407,36 @@ var cxt x = case Map.lookup x cxt of
    Nothing -> throwError $ "Unbound name: " <> x
 
 -- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
-wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String Unit
-wellFormedPatterns cxt ps = forWithIndex_ ps \i p -> do
-   wellFormedPattern p
+wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String (NEL.NonEmptyList S.Pattern)
+wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
    forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
       when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"
+   wellFormedPattern cxt p
 
-wellFormedPattern :: S.Pattern -> Either String Unit
-wellFormedPattern (S.PConstr _ ps xps) = subpatterns (ps <> (snd <$> xps))
-wellFormedPattern (S.PRecord xps) = do
+-- Check a pattern; rewrite its constructor names to fully-qualified form.
+wellFormedPattern :: Cxt -> S.Pattern -> Either String S.Pattern
+wellFormedPattern cxt (S.PConstr c ps xps) = do
+   cls <- classOf cxt c
+   let fs = fields cls
+   when (null xps && length ps /= length fs)
+      $ throwError
+      $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length ps)
+   distinctVars (ps <> (snd <$> xps))
+   S.PConstr cls.name <$> traverse (wellFormedPattern cxt) ps <*> traverse (traverse (wellFormedPattern cxt)) xps
+wellFormedPattern cxt (S.PRecord xps) = do
    checkDistinct ("Duplicate key in pattern: " <> _) (fst <$> xps)
-   subpatterns (snd <$> xps)
-wellFormedPattern (S.PList ps) = subpatterns ps
-wellFormedPattern (S.PAs p x) = subpatterns (p : S.PVar x : Nil)
-wellFormedPattern _ = pure unit
+   distinctVars (snd <$> xps)
+   S.PRecord <$> traverse (traverse (wellFormedPattern cxt)) xps
+wellFormedPattern cxt (S.PList ps) = do
+   distinctVars ps
+   S.PList <$> traverse (wellFormedPattern cxt) ps
+wellFormedPattern cxt (S.PAs p x) = do
+   distinctVars (p : S.PVar x : Nil)
+   S.PAs <$> wellFormedPattern cxt p <@> x
+wellFormedPattern _ p = pure p
 
-subpatterns :: List S.Pattern -> Either String Unit
-subpatterns ps = do
-   traverse_ wellFormedPattern ps
-   checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
+distinctVars :: List S.Pattern -> Either String Unit
+distinctVars ps = checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
 
 subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean
 subsumed _ _ (S.PVar _) = true
@@ -451,12 +461,4 @@ subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    guard (cls'.name `elem` ancestors cls)
    pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
 subsumed _ _ _ = false
-
-qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
-qualifyPattern cxt (S.PConstr c ps xps) =
-   S.PConstr <$> className cxt c <*> traverse (qualifyPattern cxt) ps <*> traverse (traverse (qualifyPattern cxt)) xps
-qualifyPattern cxt (S.PRecord xps) = S.PRecord <$> traverse (traverse (qualifyPattern cxt)) xps
-qualifyPattern cxt (S.PList ps) = S.PList <$> traverse (qualifyPattern cxt) ps
-qualifyPattern cxt (S.PAs p x) = S.PAs <$> qualifyPattern cxt p <@> x
-qualifyPattern _ p = pure p
 

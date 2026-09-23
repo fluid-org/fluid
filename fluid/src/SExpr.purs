@@ -20,7 +20,7 @@ import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, checkArity, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
+import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
@@ -324,9 +324,8 @@ patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Patte
 patternFwd (PConstr c ps xps) = do
    classes <- askClasses
    reordered <- if null xps then pure Nil else positionaliseKw classes c (length ps) xps
-   let ps' = ps <> reordered
-   checkArity classes "match" (dottedName c) (length ps')
-   PConstr c <$> traverse patternFwd ps' <@> Nil
+   _ <- ctrSig classes "match" (dottedName c)
+   PConstr c <$> traverse patternFwd (ps <> reordered) <@> Nil
 patternFwd (PRecord xps) = PRecord <$> traverse (traverse patternFwd) xps
 patternFwd (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse patternFwd ps
 patternFwd (PAs p x) = PAs <$> patternFwd p <@> x

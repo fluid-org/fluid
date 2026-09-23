@@ -37,7 +37,7 @@ purepy_cases =
    , { file: "purepy/mutual_split.fld", expected_error: "Unbound name: odd" }
    , { file: "purepy/mutual_split_by_assign.fld", expected_error: "Unbound name: g" }
    , { file: "purepy/no_else.fld", expected_error: "Not definitely assigned: x" }
-   , { file: "purepy/pat_class_arity.fld", expected_error: "Point arity 2; got 0" }
+   , { file: "purepy/pat_class_arity.fld", expected_error: "Point expects 2 argument(s); got 0" }
    , { file: "purepy/pat_class_bad_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"y\" : Nil), got (\"z\" : Nil)" }
    , { file: "purepy/pat_class_unknown.fld", expected_error: "Unknown dataclass: NotAClass" }
    , { file: "purepy/self_capture.fld", expected_error: "Variable captured by its own definition: x" }
