@@ -14,7 +14,7 @@ import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.List (List(..), drop, elemIndex, index, length, mapMaybe, nub, (:))
+import Data.List (List(..), drop, length, mapMaybe, nub, (:))
 import Data.Foldable (lookup) as F
 import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, builtins, predefinedDeps)
@@ -24,7 +24,7 @@ import Data.Set (Set, unions)
 import Data.Set as Set
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, erase, extendCxt, extendCxtWith, fields, mergeRes, overrideRes, resolveName)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
@@ -445,12 +445,6 @@ subsumed cxt p p' = case asConstr p, asConstr p' of
       guard (cls'.name `elem` ancestors cls)
       pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' qs xqs x)) (fields cls')
    _, _ -> false
-   where
-   -- Sub-pattern for a field, positional then keyword.
-   fieldMap :: ClassEntry -> List S.Pattern -> List (Var × S.Pattern) -> Var -> Maybe S.Pattern
-   fieldMap cls ps xps x = case elemIndex x (fields cls) of
-      Just i | i < length ps -> index ps i
-      _ -> F.lookup x xps
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
