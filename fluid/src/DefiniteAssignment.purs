@@ -7,10 +7,10 @@ import Control.Monad.Error.Class (throwError)
 import Data.Either (Either)
 import Data.List.NonEmpty as NEL
 import Data.Foldable (foldl)
-import Data.List (List)
+import Data.List (List(..), (:))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
 import Util (definitely')
@@ -103,6 +103,9 @@ fields :: ClassEntry -> List Var
 fields cls = case cls.base of
    Nothing -> cls.fields
    Just b -> fields (definitely' (classFor cls.cxt b)) <> cls.fields
+
+ancestors :: ClassEntry -> List Name
+ancestors cls = cls.name : maybe Nil ancestors (cls.base >>= classFor cls.cxt)
 
 -- ======================
 -- boilerplate
