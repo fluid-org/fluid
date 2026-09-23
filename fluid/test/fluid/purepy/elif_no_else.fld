@@ -1,0 +1,6 @@
+x = 3
+if x < 0:
+   y = "neg"
+elif x > 5:
+   y = "big"
+x

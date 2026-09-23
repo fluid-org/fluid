@@ -14,13 +14,13 @@ import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWit
 import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
 import Data.Semigroup.Foldable (foldr1)
 import Data.List.NonEmpty (zipWith) as NonEmptyList
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
+import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cNil)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
@@ -52,7 +52,7 @@ data Expr a
    | App (Expr a) (List (Expr a))
    | BinaryApp (Expr a) Var (Expr a)
    | UnaryPrefixApp Var (Expr a)
-   | Ternary (Expr a) (Expr a) (Expr a)
+   | Cond (Expr a) (Expr a) (Expr a) -- e1 if e else e2
    | Paragraph (Paragraph a)
    | ListEmpty a
    | ListNonEmpty a (Expr a) (ListRest a)
@@ -142,10 +142,6 @@ econs α e e' = E.Constr α cCons (e : e' : Nil)
 param :: Int -> Var
 param i = "$" <> show i
 
--- Cases branching on a Boolean.
-boolCases :: forall a. E.Stmt a -> E.Stmt a -> NonEmptyList (E.Case a)
-boolCases s s' = NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse Nil Nil × s') : Nil)
-
 -- Unary function matching its argument against the cases.
 matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
 matchFun α bs = E.Lambda α (E.Def (param 1 : Nil) (E.Match (E.Var (param 1)) bs))
@@ -234,10 +230,8 @@ exprFwd (BinaryApp s1 op s2) =
    E.App (E.Op op) <$> traverse desug (s1 : s2 : Nil)
 exprFwd (UnaryPrefixApp op s) =
    E.App (E.Op op) <$> traverse desug (s : Nil)
-exprFwd (Ternary cond e1 e2) =
-   E.App <$> branch <*> ((_ : Nil) <$> desug cond)
-   where
-   branch = matchFun Returns <$> (boolCases <$> (E.Return <$> desug e1) <*> (E.Return <$> desug e2))
+exprFwd (Cond e1 e e2) =
+   E.Cond <$> desug e1 <*> desug e <*> desug e2
 exprFwd (Paragraph elems) =
    paragraphFwd elems
 exprFwd (ListEmpty α) =
@@ -253,32 +247,17 @@ exprFwd (DocExpr s s') = do
    e' <- exprFwd s'
    pure $ E.DocExpr e e'
 
-type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
-
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
 stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
 stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse patternFwd stmtFwd) bs
-stmtFwd (If sss s) = ifElseFwd (sss × fromMaybe Pass s)
+stmtFwd (If ess s_opt) = E.If <$> traverse (bitraverse desug stmtFwd) ess <*> traverse stmtFwd s_opt
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
 stmtFwd (ExprStmt e) = E.ExprStmt <$> desug e
-stmtFwd (Assert cond msg_opt) =
-   (\c msg -> E.Match c (boolCases E.Pass (E.ExprStmt (E.App (E.Var "error") (msg : Nil)))))
-      <$> desug cond
-      <*> maybe (pure (E.Str Returns "AssertionError")) desug msg_opt
+stmtFwd (Assert e e_opt) = E.Assert <$> desug e <*> traverse desug e_opt
 stmtFwd (Seq s1 s2) = E.Seq <$> stmtFwd s1 <*> stmtFwd s2
 stmtFwd (Dataclass _ _ _) = pure E.Pass
-
-ifElseFwd :: forall m. HasClasses m => MonadError Error m => IfElseClauses (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-ifElseFwd (sss × s) =
-   foldr clause (stmtFwd s) sss
-   where
-   clause (s1 × b) e3 = do
-      cond <- desug s1
-      b' <- stmtFwd b
-      e3' <- e3
-      pure $ E.Match cond (boolCases b' e3')
 
 -- List Qualifier × Expr
 listCompFwd
@@ -291,7 +270,7 @@ listCompFwd (α × Nil × s) =
    econs α <$> desug s <@> enil α
 listCompFwd (α × (ListCompGuard s : gs) × s') = do
    e <- listCompFwd (α × gs × s')
-   E.App (matchFun α (boolCases (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
+   E.Cond e <$> desug s <@> enil α
 listCompFwd (α × (ListCompDecl (VarDef p s) : gs) × s') = do
    e <- listCompFwd (α × gs × s')
    p' <- patternFwd p
@@ -463,7 +442,7 @@ instance FV (Expr a) where
    fv (App e es) = fv e ∪ Set.unions (fv <$> es)
    fv (BinaryApp e op e') = fv e ∪ Set.singleton op ∪ fv e'
    fv (UnaryPrefixApp op e) = Set.singleton op ∪ fv e
-   fv (Ternary cond e1 e2) = fv cond ∪ fv e1 ∪ fv e2
+   fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
    fv (Paragraph elems) = Set.unions (fv <$> elems)
    fv (ListEmpty _) = Set.empty
    fv (ListNonEmpty _ e l) = fv e ∪ fv l

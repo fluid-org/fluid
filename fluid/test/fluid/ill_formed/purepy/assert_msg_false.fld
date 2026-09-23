@@ -1,0 +1,3 @@
+import module.assert_msg_false_lib
+
+return 0

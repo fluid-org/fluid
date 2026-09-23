@@ -71,7 +71,7 @@ instance Ann a => IsSimple (Expr a) where
    isSimple (UnaryPrefixApp _ _) = false
    isSimple (Constr _ c _ _) | last c == last cCons = false
    isSimple (Lambda _) = false
-   isSimple (Ternary _ _ _) = false
+   isSimple (Cond _ _ _) = false
    isSimple _ = true
 
 instance Highlightable a => IsSimple (E.Expr a) where
@@ -142,8 +142,8 @@ instance Ann a => Pretty (Expr a) where
    pretty (App s ss) = expr $ prettySimple s <> parens (prettyList ss)
    pretty (BinaryApp s op s') = expr $ operatorApp 0 (BinaryApp s op s')
    pretty (UnaryPrefixApp op s) = expr $ operatorApp 0 (UnaryPrefixApp op s)
-   pretty (Ternary cond e1 e2) =
-      expr $ pretty e1 <+> text "if" <+> pretty cond <+> text "else" <+> pretty e2
+   pretty (Cond e1 e e2) =
+      expr $ pretty e1 <+> text "if" <+> pretty e <+> text "else" <+> pretty e2
 
    pretty (ListEmpty α) = highlightIf α (text "[]")
    pretty (ListNonEmpty α e rest) =
@@ -306,10 +306,16 @@ instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Subscript e x) = pretty e <> brackets (pretty x)
    pretty (E.ModMember q x) = text (dottedName q) <> text "." <> text x
    pretty (E.App e es) = pretty e <> parens (prettyList es)
+   pretty (E.Cond e1 e e2) = expr $ pretty e1 <+> text "if" <+> pretty e <+> text "else" <+> pretty e2
    pretty (E.DocExpr p e) = text "@doc" <> parens (pretty p) <+> pretty e
 
 instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Return e) = text "return" <+> pretty e
+   pretty (E.If (NonEmptyList (es :| ess)) s_opt) =
+      vsep (prettyClause "if" es : (prettyClause "elif" <$> ess))
+         <++> maybe mempty (\s -> text "else" <> block (pretty s)) s_opt
+      where
+      prettyClause w (e × s) = text w <+> expr (pretty e) <> block (pretty s)
    pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
@@ -317,6 +323,8 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.DefRec (E.RecDefs _ ds)) = text "def" <+> pretty ds
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
+   pretty (E.Assert e Nothing) = text "assert" <+> pretty e
+   pretty (E.Assert e (Just e')) = text "assert" <+> pretty e <> text "," <+> pretty e'
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Highlightable a => Pretty (E.Def a) where

@@ -1,0 +1,3 @@
+import module.if_nonbool_lib
+
+return 0

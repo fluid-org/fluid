@@ -21,7 +21,7 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf)
+import DataType (class HasClasses, ClassTable, askClasses, cFalse, cTrue, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -93,6 +93,13 @@ matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
    where
    disjoint (ρ × αs) (ρ' × αs') = (ρ `unionWith_never` ρ') × (αs ∪ αs')
 matchesMany _ _ = error absurd
+
+-- Vertex and truth value of a condition, which must be a Bool.
+truth :: forall m. MonadError Error m => Val Vertex -> m (Vertex × Boolean)
+truth (Val α _ (V.Constr c Nil))
+   | c == cTrue = pure (α × true)
+   | c == cFalse = pure (α × false)
+truth v = throw $ "Found " <> prettyP (unit <$ v) <> ", expected boolean"
 
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
 dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
@@ -196,6 +203,9 @@ eval doc_opt ρ e0 αs = do
             v <- eval Nothing ρ e αs
             vs <- traverse (\e' -> eval Nothing ρ e' αs) es
             withMsg ("In " <> funName e) $ apply doc_opt v vs
+         Cond e1 e e2 -> do
+            α × b <- eval Nothing ρ e αs >>= truth
+            eval doc_opt ρ (if b then e1 else e2) (insert α αs)
          DocExpr e e' -> do
             v <- eval Nothing ρ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"
@@ -223,6 +233,12 @@ evalStmt
    -> m (Result Vertex)
 evalStmt doc_opt ρ s αs = case s of
    Return e -> Returns <$> eval doc_opt ρ e αs
+   If ess s_opt -> go (NEL.toList ess) αs
+      where
+      go Nil αs' = maybe (pure (Assigns empty empty)) (\s' -> evalStmt doc_opt ρ s' αs') s_opt
+      go ((e × s') : ess') αs' = do
+         α × b <- eval Nothing ρ e αs' >>= truth
+         if b then evalStmt doc_opt ρ s' (insert α αs') else go ess' (insert α αs')
    Match e bs -> do
       v <- eval Nothing ρ e αs
       runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of
@@ -244,6 +260,18 @@ evalStmt doc_opt ρ s αs = case s of
    ExprStmt e -> do
       _ <- eval Nothing ρ e αs
       pure (Assigns empty empty)
+   Assert e e_opt -> do
+      α × b <- eval Nothing ρ e αs >>= truth
+      if b then pure (Assigns empty empty)
+      else case e_opt of
+         Nothing -> throw "AssertionError"
+         Just e' -> do
+            Val _ _ w <- eval Nothing ρ e' (insert α αs)
+            throw
+               ( "AssertionError: " <> case w of
+                    V.Str str -> str
+                    _ -> prettyP (unit <$ w)
+               )
    Seq s1 s2 -> do
       r1 <- evalStmt Nothing ρ s1 αs
       case r1 of

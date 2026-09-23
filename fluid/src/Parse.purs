@@ -125,9 +125,9 @@ returnStmt = do
 assertStmt :: Parser (Raw Stmt)
 assertStmt = do
    reserved "assert"
-   cond <- expr
+   e <- expr
    msg <- optionMaybe (delim ',' *> expr)
-   pure $ Assert cond msg
+   pure $ Assert e msg
 
 stmts :: Parser (Raw Stmt)
 stmts = defer \_ -> many1 (align stmt) <#> foldr1Seq
@@ -212,17 +212,17 @@ recDefs = many1 recDef
       pure $ p × Clause unit (ps0 × b)
 
 expr :: Parser (Raw Expr)
-expr = context "expr" $ ternary <?> "expression"
+expr = context "expr" $ cond <?> "expression"
    where
-   ternary :: Parser (Raw Expr)
-   ternary = defer \_ -> do
+   cond :: Parser (Raw Expr)
+   cond = defer \_ -> do
       e1 <- opTree
       option e1 $ try do
          reserved "if"
-         cond <- opTree
+         e <- opTree
          reserved "else"
          e2 <- expr
-         pure $ Ternary cond e1 e2
+         pure $ Cond e1 e e2
 
    opTree :: Parser (Raw Expr)
    opTree = context "opTree" (buildExprParser opTable simpleChain) <* consume -- otherwise always `consume: false`
@@ -268,7 +268,7 @@ expr = context "expr" $ ternary <?> "expression"
             dproject :: Parser (Raw Expr)
             dproject = do
                delim '['
-               k <- ternary
+               k <- cond
                close ']'
                chain (Subscript e k)
 
@@ -280,18 +280,18 @@ expr = context "expr" $ ternary <?> "expression"
                      args <- commas constrArg
                      pure $ Constr a c (es <> takeLefts args) (takeRights args)
                   _ -> do
-                     App e <$> commas ternary
+                     App e <$> commas cond
                close ')'
                chain e'
                where
                constrArg :: Parser (Raw Expr + Bind (Raw Expr))
-               constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> ternary)
+               constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)
 
                kwArg :: Parser (Bind (Raw Expr))
                kwArg = defer \_ -> do
                   x <- variable
                   delim '='
-                  v <- ternary
+                  v <- cond
                   pure (x ↦ v)
 
                takeLefts :: forall p q. List (p + q) -> List p
@@ -324,7 +324,7 @@ expr = context "expr" $ ternary <?> "expression"
             reserved "lambda"
             ps0 <- commas pattern
             delim ':'
-            e <- ternary
+            e <- cond
             pure $ Lambda (LambdaClause (ps0 × e))
 
          var :: Parser (Raw Expr)
@@ -376,7 +376,7 @@ expr = context "expr" $ ternary <?> "expression"
 
             where
             exprKey :: Parser (Raw DictEntry)
-            exprKey = defer \_ -> brackets ternary <#> ExprKey
+            exprKey = defer \_ -> brackets cond <#> ExprKey
 
             varKey :: Parser (Raw DictEntry)
             varKey = variable <#> VarKey unit
@@ -384,7 +384,7 @@ expr = context "expr" $ ternary <?> "expression"
          matrix :: Parser (Raw Expr)
          matrix = context "matrix" do
             delim "[|"
-            e <- ternary
+            e <- cond
             reserved "for"
             delim '('
             x <- variable
@@ -392,7 +392,7 @@ expr = context "expr" $ ternary <?> "expression"
             y <- variable
             delim ')'
             reserved "in"
-            e' <- ternary
+            e' <- cond
             delim "|]"
             pure $ Matrix unit e (x × y) e'
 
@@ -404,11 +404,11 @@ expr = context "expr" $ ternary <?> "expression"
                     close ']'
                     pure $ ListEmpty unit
                , do
-                    e <- ternary
+                    e <- cond
                     choice
                        [ context "listNonEmpty" do
                             delim ','
-                            rest <- trailingCommas ternary
+                            rest <- trailingCommas cond
                             close ']'
                             pure $ ListNonEmpty unit e (foldr (Next unit) (End unit) rest)
                        , do
@@ -416,7 +416,7 @@ expr = context "expr" $ ternary <?> "expression"
                             pure $ ListNonEmpty unit e (End unit)
                        , context "listEnum" do
                             delim ".."
-                            e' <- ternary
+                            e' <- cond
                             close ']'
                             pure $ ListEnum e e'
 
@@ -454,14 +454,14 @@ expr = context "expr" $ ternary <?> "expression"
                     op <- try (operator <* close ')')
                     pure $ Op op
                , do
-                    e <- ternary
+                    e <- cond
                     choice
                        [ do
                             close ')'
                             pure e
                        , do
                             delim ','
-                            e' <- ternary
+                            e' <- cond
                             close ')'
                             pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
                        , fail "Expected `)` or `,` after `(expr`"
