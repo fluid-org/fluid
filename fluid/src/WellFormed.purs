@@ -436,14 +436,14 @@ subsumed cxt p (S.PAs p' _) = subsumed cxt p p'
 subsumed _ (S.PInt n) (S.PInt n') = n == n'
 subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
 subsumed _ (S.PStr s) (S.PStr s') = s == s'
-subsumed cxt (S.PRecord xps) (S.PRecord uqs) =
-   all (\(u × q) -> maybe false (\p -> subsumed cxt p q) (F.lookup u xps)) uqs
+subsumed cxt (S.PRecord xps) (S.PRecord xps') =
+   all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
 subsumed cxt p p' = case asConstr p, asConstr p' of
-   Just (c × ps × xps), Just (c' × qs × xqs) -> fromMaybe false do
+   Just (c × ps × xps), Just (c' × ps' × xps') -> fromMaybe false do
       cls <- hush (classOf cxt c)
       cls' <- hush (classOf cxt c')
       guard (cls'.name `elem` ancestors cls)
-      pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' qs xqs x)) (fields cls')
+      pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
    _, _ -> false
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
