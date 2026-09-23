@@ -48,7 +48,7 @@ checkProgram
    -> List S.Import
    -> Raw S.Stmt
    -> Either String { cxt :: VarCxt, s :: S.Stmt (WfResult VarCxt), loaded :: Map.Map ModuleName LoadedModule }
-checkProgram mods nativeBuiltins imports s =
+checkProgram mods primitivesCxt imports s =
    runStateT program Map.empty <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
    where
    program :: LoadM (VarCxt × S.Stmt (WfResult VarCxt))
@@ -76,12 +76,12 @@ checkProgram mods nativeBuiltins imports s =
             $ throwError
             $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
          when (q == builtins) do
-            let nativeClash = Map.keys nativeBuiltins ∩ (Map.keys δ ∪ Map.keys decls ∪ Map.keys subs)
-            when (not (Set.isEmpty nativeClash))
+            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys decls ∪ Map.keys subs)
+            when (not (Set.isEmpty primitiveClash))
                $ throwError
-               $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable nativeClash :: List Var)
+               $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable primitiveClash :: List Var)
          let
-            cxt = (if q == builtins then nativeBuiltins else Map.empty) `Map.union` subs `Map.union` (Class <$> decls) `Map.union`
+            cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` (Class <$> decls) `Map.union`
                (VarStatus <$> δ)
          modify_ (Map.insert q { cxt, mod: Just mod' })
          pure cxt

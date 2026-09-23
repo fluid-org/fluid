@@ -379,9 +379,9 @@ loadPredefined
    -> m (Env Vertex)
 loadPredefined primitives ρ q = do
    { moduleBody } <- moduleStore
-   let native = if q == builtins then primitives else empty
-   ρ' <- maybe (pure empty) (\body -> eval_module (ρ <+> native) q body empty) (Map.lookup q moduleBody)
-   let members = native <+> ρ'
+   let primitives' = if q == builtins then primitives else empty
+   ρ' <- maybe (pure empty) (\body -> eval_module (ρ <+> primitives') q body empty) (Map.lookup q moduleBody)
+   let members = primitives' <+> ρ'
    modifyModuleStore (\s -> s { moduleEnv = Map.insert q members s.moduleEnv })
    pure (ρ <+> members)
 

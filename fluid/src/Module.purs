@@ -138,9 +138,9 @@ prepConfig
    -> m Config
 prepConfig primitives fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   let nativeBuiltins = constMap (VarStatus true) (keys primitives)
+   let primitivesCxt = constMap (VarStatus true) (keys primitives)
    mods <- parseModules imports
-   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods nativeBuiltins imports s)
+   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods primitivesCxt imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
       desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModuleFwd (Returns <$ m)) (Map.mapMaybe _.mod loaded)
