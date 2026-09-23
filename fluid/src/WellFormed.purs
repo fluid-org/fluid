@@ -383,11 +383,11 @@ wellFormedExpr = wf
    wf cxt (S.Subscript e e') = S.Subscript <$> wf cxt e <*> wf cxt e'
    wf cxt (S.Matrix α body (x × y) source) =
       (\source' body' -> S.Matrix α body' (x × y) source') <$> wf cxt source <*> wf
-         (assignedIn cxt (Set.singleton x ∪ Set.singleton y))
+         (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
          body
    wf cxt (S.Lambda (S.LambdaClause (ps × e))) = do
       ps' <- traverse (qualifyPattern cxt) ps
-      e' <- wf (assignedIn cxt (unions (bv <$> ps))) e
+      e' <- wf (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
       pure (S.Lambda (S.LambdaClause (ps' × e')))
    wf cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wf cxt v) kvs
       where
@@ -413,11 +413,11 @@ wellFormedExpr = wf
          S.ListCompGen p src -> do
             src' <- wf cxt' src
             p' <- qualifyPattern cxt' p
-            map (S.ListCompGen p' src' : _) <$> qualifiers (assignedIn cxt' (bv p)) qs
+            map (S.ListCompGen p' src' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
          S.ListCompDecl (S.VarDef p src) -> do
             src' <- wf cxt' src
             p' <- qualifyPattern cxt' p
-            map (S.ListCompDecl (S.VarDef p' src') : _) <$> qualifiers (assignedIn cxt' (bv p)) qs
+            map (S.ListCompDecl (S.VarDef p' src') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
    wf cxt (S.DocExpr e e') = S.DocExpr <$> wf cxt e <*> wf cxt e'
 
    qualified cls _ = cls.name
@@ -430,9 +430,6 @@ var cxt x = case Map.lookup x cxt of
    Just (ModLoaded q _) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just (Class _) -> throwError $ "class " <> x <> " is not a value"
    Nothing -> throwError $ "Unbound name: " <> x
-
-assignedIn :: Cxt -> Set Var -> Cxt
-assignedIn cxt xs = cxt `extendCxt` constMap true xs
 
 -- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
 wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String Unit
