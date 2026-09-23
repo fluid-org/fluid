@@ -10,7 +10,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.Foldable (oneOfMap)
-import Data.List (List(..), drop, find, foldM, foldl, length, null, take, unzip, zip, (:))
+import Data.List (List(..), drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
@@ -21,7 +21,7 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, cCons, cNil, cPair, checkArity, ctrSig, fieldsOf)
+import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -85,13 +85,7 @@ matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
    vps <- MaybeT $ pure $ traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
    second (insert α) <$> matchesMany (fst <$> vps) (snd <$> vps)
 matches _ (PRecord _) = Plus.empty
-matches (Val α _ (V.Constr c vs)) (PList ps)
-   | c == cNil = guard (null ps) $> (empty × Set.singleton α)
-   | c == cCons, v : vs' : Nil <- vs = case ps of
-        Nil -> Plus.empty
-        p : ps' -> second (insert α) <$> matchesMany (v : vs' : Nil) (p : PList ps' : Nil)
-   | c == cPair = throw (patternMismatch (prettyP (Val α Nothing (V.Constr c vs))) "list")
-matches _ (PList _) = Plus.empty
+matches _ (PList _) = error absurd
 
 matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
 matchesMany Nil Nil = pure (empty × empty)

@@ -156,7 +156,7 @@ moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
    importFwd (Import q f) = E.Import q f
 
 varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-varDefFwd (VarDef p s) = E.Assign <$> expandKw p <*> desug s
+varDefFwd (VarDef p s) = E.Assign <$> patternFwd p <*> desug s
 
 recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
 recDefsFwd xcs = do
@@ -258,7 +258,7 @@ type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
 stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
-stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse expandKw stmtFwd) bs
+stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse patternFwd stmtFwd) bs
 stmtFwd (If sss s) = ifElseFwd (sss × fromMaybe Pass s)
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
@@ -294,12 +294,12 @@ listCompFwd (α × (ListCompGuard s : qs) × s') = do
    E.App (matchFun α (boolCases (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
 listCompFwd (α × (ListCompDecl (VarDef p s) : qs) × s') = do
    e <- listCompFwd (α × qs × s')
-   p' <- expandKw p
+   p' <- patternFwd p
    E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
 -- Elements not matching the pattern contribute nothing.
 listCompFwd (α × (ListCompGen p s : qs) × s') = do
    e <- listCompFwd (α × qs × s')
-   p' <- expandKw p
+   p' <- patternFwd p
    let
       bs = case p' of
          PVar _ -> singleton (p' × E.Return e)
@@ -319,18 +319,18 @@ positionaliseKw classes c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
--- Keyword sub-patterns positionalised; constructor patterns checked against the class.
-expandKw :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
-expandKw (PConstr c ps xps) = do
+-- Keyword sub-patterns positionalised, list patterns as Nil and Cons; constructor patterns checked against the class.
+patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
+patternFwd (PConstr c ps xps) = do
    classes <- askClasses
    reordered <- if null xps then pure Nil else positionaliseKw classes c (length ps) xps
    let ps' = ps <> reordered
    checkArity classes "match" (dottedName c) (length ps')
-   PConstr c <$> traverse expandKw ps' <@> Nil
-expandKw (PRecord xps) = PRecord <$> traverse (traverse expandKw) xps
-expandKw (PList ps) = PList <$> traverse expandKw ps
-expandKw (PAs p x) = PAs <$> expandKw p <@> x
-expandKw p = pure p
+   PConstr c <$> traverse patternFwd ps' <@> Nil
+patternFwd (PRecord xps) = PRecord <$> traverse (traverse patternFwd) xps
+patternFwd (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse patternFwd ps
+patternFwd (PAs p x) = PAs <$> patternFwd p <@> x
+patternFwd p = pure p
 
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
@@ -355,7 +355,7 @@ clausesFwd clauses = do
    body <- case matched of
       Nil -> pure (head ss)
       _ -> do
-         pss <- traverse (traverse expandKw) (transpose (snd <$> matched))
+         pss <- traverse (traverse patternFwd) (transpose (snd <$> matched))
          let
             e = foldr1 (\e1 e2 -> E.Constr Returns cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
             bs = NonEmptyList.zipWith (\ps s -> foldr1 (\p p' -> PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s) (nonEmpty pss) ss
