@@ -414,21 +414,20 @@ wellFormedPatterns cxt ps = forWithIndex_ ps \i p -> do
    forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
       when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"
 
--- Sub-patterns well-formed, with pairwise disjoint variables; dictionary keys distinct.
 wellFormedPattern :: S.Pattern -> Either String Unit
-wellFormedPattern p = do
-   case p of
-      S.PRecord xps -> checkDistinct ("Duplicate key in pattern: " <> _) (fst <$> xps)
-      _ -> pure unit
+wellFormedPattern (S.PConstr _ ps xps) = subpatterns (ps <> (snd <$> xps))
+wellFormedPattern (S.PRecord xps) = do
+   checkDistinct ("Duplicate key in pattern: " <> _) (fst <$> xps)
+   subpatterns (snd <$> xps)
+wellFormedPattern (S.PList ps) = subpatterns ps
+wellFormedPattern (S.PAs p x) = subpatterns (p : S.PVar x : Nil)
+wellFormedPattern _ = pure unit
+
+-- Sub-patterns well-formed, with pairwise disjoint variables.
+subpatterns :: List S.Pattern -> Either String Unit
+subpatterns ps = do
    traverse_ wellFormedPattern ps
    checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
-   where
-   ps = case p of
-      S.PConstr _ ps' xps -> ps' <> (snd <$> xps)
-      S.PRecord xps -> snd <$> xps
-      S.PList ps' -> ps'
-      S.PAs p' x -> p' : S.PVar x : Nil
-      _ -> Nil
 
 -- p subsumed by p': every value p matches, p' matches. List patterns as Nil and Cons patterns.
 subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean
