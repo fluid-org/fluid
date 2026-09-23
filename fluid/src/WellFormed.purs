@@ -322,8 +322,6 @@ wellFormed q cxt (S.Dataclass c b xs) = do
                  <> show (Set.toUnfoldable clash :: List Var)
    pure (Assigns Map.empty × S.Dataclass c b xs)
 
--- Validate an expression; rewrite constructor names to fully-qualified form and
--- module projections to ModMember.
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
 wellFormedExpr cxt e@(S.Op op) = e <$ var cxt op
@@ -413,7 +411,6 @@ wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
       when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"
    wellFormedPattern cxt p
 
--- Check a pattern; rewrite its constructor names to fully-qualified form.
 wellFormedPattern :: Cxt -> S.Pattern -> Either String S.Pattern
 wellFormedPattern cxt (S.PConstr c ps xps) = do
    cls <- classOf cxt c
