@@ -438,20 +438,18 @@ subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
 subsumed _ (S.PStr s) (S.PStr s') = s == s'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
-subsumed cxt p p' = case asConstr p, asConstr p' of
-   Just (c × ps × xps), Just (c' × ps' × xps') -> fromMaybe false do
-      cls <- hush (classOf cxt c)
-      cls' <- hush (classOf cxt c')
-      guard (cls'.name `elem` ancestors cls)
-      pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
-   _, _ -> false
+subsumed cxt (S.PList ps) p' = subsumed cxt (consPattern ps) p'
+subsumed cxt p (S.PList ps') = subsumed cxt p (consPattern ps')
+subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
+   cls <- hush (classOf cxt c)
+   cls' <- hush (classOf cxt c')
+   guard (cls'.name `elem` ancestors cls)
+   pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
+subsumed _ _ _ = false
 
--- Constructor view of a pattern, with list patterns as Nil and Cons.
-asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
-asConstr (S.PConstr c ps xps) = Just (c × ps × xps)
-asConstr (S.PList Nil) = Just (singleton (NEL.last cNil) × Nil × Nil)
-asConstr (S.PList (p : ps)) = Just (singleton (NEL.last cCons) × (p : S.PList ps : Nil) × Nil)
-asConstr _ = Nothing
+-- List pattern as Cons and Nil patterns, by their unqualified names.
+consPattern :: List S.Pattern -> S.Pattern
+consPattern = foldr (\p ps -> S.PConstr (singleton (NEL.last cCons)) (p : ps : Nil) Nil) (S.PConstr (singleton (NEL.last cNil)) Nil Nil)
 
 qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
 qualifyPattern cxt (S.PConstr c ps xps) =
