@@ -359,10 +359,10 @@ wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
    _ -> flip S.Attribute y <$> wellFormedExpr cxt e
 wellFormedExpr _ e@(S.ModMember _ _) = pure e
 wellFormedExpr cxt (S.Subscript e e') = S.Subscript <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
-wellFormedExpr cxt (S.Matrix α body (x × y) source) =
-   (\source' body' -> S.Matrix α body' (x × y) source') <$> wellFormedExpr cxt source <*> wellFormedExpr
+wellFormedExpr cxt (S.Matrix α e1 (x × y) e2) =
+   (\e2' e1' -> S.Matrix α e1' (x × y) e2') <$> wellFormedExpr cxt e2 <*> wellFormedExpr
       (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
-      body
+      e1
 wellFormedExpr cxt (S.Lambda (S.LambdaClause (ps × e))) = do
    ps' <- traverse (qualifyPattern cxt) ps
    e' <- wellFormedExpr (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
@@ -385,17 +385,17 @@ wellFormedExpr cxt (S.ListComp α e quals) = (\(e' × quals') -> S.ListComp α e
    where
    qualifiers cxt' Nil = (_ × Nil) <$> wellFormedExpr cxt' e
    qualifiers cxt' (q : qs) = case q of
-      S.ListCompGuard cond -> do
-         cond' <- wellFormedExpr cxt' cond
-         map (S.ListCompGuard cond' : _) <$> qualifiers cxt' qs
-      S.ListCompGen p src -> do
-         src' <- wellFormedExpr cxt' src
+      S.ListCompGuard e1 -> do
+         e1' <- wellFormedExpr cxt' e1
+         map (S.ListCompGuard e1' : _) <$> qualifiers cxt' qs
+      S.ListCompGen p e1 -> do
+         e1' <- wellFormedExpr cxt' e1
          p' <- qualifyPattern cxt' p
-         map (S.ListCompGen p' src' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
-      S.ListCompDecl (S.VarDef p src) -> do
-         src' <- wellFormedExpr cxt' src
+         map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
+      S.ListCompDecl (S.VarDef p e1) -> do
+         e1' <- wellFormedExpr cxt' e1
          p' <- qualifyPattern cxt' p
-         map (S.ListCompDecl (S.VarDef p' src') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
+         map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit
