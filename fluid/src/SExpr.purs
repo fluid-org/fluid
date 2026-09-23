@@ -319,7 +319,7 @@ positionaliseKw classes c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
--- Keyword sub-patterns positionalised, list patterns as Nil and Cons; constructor patterns checked against the class.
+-- Keyword sub-patterns positionalised; list patterns as Nil and Cons.
 patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
 patternFwd (PConstr c ps xps) = do
    classes <- askClasses
