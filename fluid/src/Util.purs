@@ -132,12 +132,7 @@ log' msg = when debug.logging (log msg)
 
 -- First element that occurs earlier in the list.
 firstDuplicate :: forall a. Ord a => List a -> Maybe a
-firstDuplicate = go Set.empty
-   where
-   go _ L.Nil = Nothing
-   go seen (x L.: xs)
-      | x `Set.member` seen = Just x
-      | otherwise = go (Set.insert x seen) xs
+firstDuplicate xs = L.head (xs L.\\ L.nub xs)
 
 absurd :: String
 absurd = "absurd"
