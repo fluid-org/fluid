@@ -57,8 +57,8 @@ checkProgram mods nativeBuiltins imports s =
       -- Unlike a module (checkStatements), the program may return: a top-level return yields
       -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
       _ × s' <- lift (wellFormed mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
-      λ <- lift (classes mainModule s)
-      modify_ (Map.insert mainModule { cxt: Class <$> λ, mod: Nothing })
+      decls <- lift (classes mainModule s)
+      modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
       pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
    -- Member context of module q; memoised.
@@ -69,19 +69,19 @@ checkProgram mods nativeBuiltins imports s =
          mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
          importCxt × cxt_imp <- checkImports q is
          δ × mod' <- lift (checkStatements q cxt_imp mod)
-         λ <- lift (classesOfModule q mod)
+         decls <- lift (classesOfModule q mod)
          let subs = submodules (Map.keys mods) q
-         let clash = (Map.keys importCxt ∪ Map.keys δ ∪ Map.keys λ) ∩ Map.keys subs
+         let clash = (Map.keys importCxt ∪ Map.keys δ ∪ Map.keys decls) ∩ Map.keys subs
          when (not Set.isEmpty clash)
             $ throwError
             $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
          when (q == builtins) do
-            let nativeClash = Map.keys nativeBuiltins ∩ (Map.keys δ ∪ Map.keys λ ∪ Map.keys subs)
+            let nativeClash = Map.keys nativeBuiltins ∩ (Map.keys δ ∪ Map.keys decls ∪ Map.keys subs)
             when (not (Set.isEmpty nativeClash))
                $ throwError
                $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable nativeClash :: List Var)
          let
-            cxt = (if q == builtins then nativeBuiltins else Map.empty) `Map.union` subs `Map.union` (Class <$> λ) `Map.union`
+            cxt = (if q == builtins then nativeBuiltins else Map.empty) `Map.union` subs `Map.union` (Class <$> decls) `Map.union`
                (VarStatus <$> δ)
          modify_ (Map.insert q { cxt, mod: Just mod' })
          pure cxt
@@ -276,8 +276,8 @@ wellFormed q cxt (S.Seq s1 s2) = do
       Assigns δ -> do
          for_ (Set.toUnfoldable (captures s1 `Set.intersection` assigns s2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         λ1 <- classes q s1
-         let cxt' = Map.union (Class <$> (λ1 <#> _ { cxt = cxt })) (cxt `extendCxt` δ)
+         decls <- classes q s1
+         let cxt' = Map.union (Class <$> (decls <#> _ { cxt = cxt })) (cxt `extendCxt` δ)
          r2 × s2' <- wellFormed q cxt' s2
          pure (overrideRes r1 r2 × S.Seq s1' s2')
 wellFormed q cxt (S.If es elseBranch) = do

@@ -205,13 +205,13 @@ exprFwd (Float α n) =
 exprFwd (Str α s) =
    pure $ E.Str α s
 exprFwd (Constr α c es Nil) = do
-   λ <- askClasses
-   _ <- ctrSig λ "construct" (dottedName c)
+   classes <- askClasses
+   _ <- ctrSig classes "construct" (dottedName c)
    E.Constr α c <$> traverse desug es
 exprFwd (Constr α c es xes) = do
-   λ <- askClasses
-   _ <- ctrSig λ "construct" (dottedName c)
-   reordered <- positionaliseKw λ c (length es) xes
+   classes <- askClasses
+   _ <- ctrSig classes "construct" (dottedName c)
+   reordered <- positionaliseKw classes c (length es) xes
    E.Constr α c <$> traverse desug (es <> reordered)
 exprFwd (Dictionary α sss) = do
    let ks × ss = unzip sss
@@ -309,8 +309,8 @@ listCompFwd (α × (ListCompGen p s : qs) × s') = do
    pure $ E.App (E.Var "concat_map") (matchFun α bs : e' : Nil)
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
-positionaliseKw λ c n xbs = do
-   fs <- fields <$> classEntry λ (dottedName c)
+positionaliseKw classes c n xbs = do
+   fs <- fields <$> classEntry classes (dottedName c)
    let remaining = drop n fs
    let provided = xbs <#> fst
    when (sort provided /= sort remaining) $ throw $
@@ -322,10 +322,10 @@ positionaliseKw λ c n xbs = do
 -- Keyword sub-patterns positionalised; constructor patterns checked against the class.
 expandKw :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
 expandKw (PConstr c ps xps) = do
-   λ <- askClasses
-   reordered <- if null xps then pure Nil else positionaliseKw λ c (length ps) xps
+   classes <- askClasses
+   reordered <- if null xps then pure Nil else positionaliseKw classes c (length ps) xps
    let ps' = ps <> reordered
-   checkArity λ "match" (dottedName c) (length ps')
+   checkArity classes "match" (dottedName c) (length ps')
    PConstr c <$> traverse expandKw ps' <@> Nil
 expandKw (PRecord xps) = PRecord <$> traverse (traverse expandKw) xps
 expandKw (PList ps) = PList <$> traverse expandKw ps

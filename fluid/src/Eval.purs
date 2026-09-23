@@ -137,7 +137,7 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
    arity' = case φ of
       V.Closure _ _ (Def xs _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-      V.Type c -> askClasses >>= \λ -> ctrSig λ "construct" (dottedName c) <#> snd
+      V.Type c -> askClasses >>= \classes -> ctrSig classes "construct" (dottedName c) <#> snd
       V.Partial _ _ -> error absurd
 
    call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
@@ -181,7 +181,7 @@ eval doc_opt ρ e0 αs = do
             v <- eval Nothing ρ e αs
             case v of
                Val _ _ (V.Constr c vs) -> do
-                  xs <- askClasses <#> \λ -> definitely' (fieldsOf λ (dottedName c))
+                  xs <- askClasses <#> \classes -> definitely' (fieldsOf classes (dottedName c))
                   find (\(k × _) -> k == x) (zip xs vs) <#> snd # orElse (dottedName c <> " has no field " <> x)
                _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected object"
          Subscript e e' -> do
@@ -281,7 +281,7 @@ evalVal ρ (Dictionary α ees) αs = do
       d = D.fromFoldable $ zip ss (zip βs us)
    pure $ Just (α × V.Dictionary (DictRep d))
 evalVal ρ (Constr α c es) αs = do
-   askClasses >>= \λ -> checkArity λ "construct" (dottedName c) (length es)
+   askClasses >>= \classes -> checkArity classes "construct" (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.Constr c vs)
 evalVal ρ (Matrix α e (x × y) e') αs = do
