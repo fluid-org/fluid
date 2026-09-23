@@ -3,10 +3,12 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon)
-import Control.Apply (lift2)
+import Control.Alternative (empty, guard)
+import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
+import Data.Foldable (oneOfMap)
 import Data.List (List(..), drop, find, foldM, foldl, length, null, take, unzip, zip, (:))
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
@@ -15,7 +17,7 @@ import Data.Newtype (unwrap)
 import Data.Int (toNumber)
 import Data.Profunctor.Strong (first, second, (***))
 import Data.Set (Set, insert)
-import Data.Set as Set
+import Data.Set (singleton, unions) as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
 import DataType (class HasClasses, ClassTable, askClasses, cCons, cNil, cPair, checkArity, ctrSig, fieldsOf)
@@ -34,10 +36,11 @@ import ModuleGraph (ModuleName, builtins)
 import Pretty (prettyP)
 import Primitive (intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
-import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, whenever, withMsg, (×), (⊆))
+import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, withMsg, (×), (⊆))
 import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (unzip) as P
-import Util.Set ((∪), empty)
+import Util.Set ((∪))
+import Util.Set (empty) as Set
 import Val (BaseVal(..), Fun(..)) as V
 import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
 
@@ -52,58 +55,54 @@ patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the vertices of the value that matching inspected.
-matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Maybe (Env Vertex × Set Vertex))
-matches (Val α _ u) (PInt n) = pure $ whenever eq (empty × Set.singleton α)
+matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matches (Val α _ u) (PInt n) = guard eq $> (Set.empty × Set.singleton α)
    where
    eq = case u of
       V.Int n' -> n == n'
       V.Float x -> toNumber n == x
       _ -> false
-matches (Val α _ u) (PFloat x) = pure $ whenever eq (empty × Set.singleton α)
+matches (Val α _ u) (PFloat x) = guard eq $> (Set.empty × Set.singleton α)
    where
    eq = case u of
       V.Int n -> toNumber n == x
       V.Float x' -> x == x'
       _ -> false
-matches (Val α _ u) (PStr s) = pure $ whenever eq (empty × Set.singleton α)
+matches (Val α _ u) (PStr s) = guard eq $> (Set.empty × Set.singleton α)
    where
    eq = case u of
       V.Str s' -> s == s'
       _ -> false
 matches v (PVar x)
-   | x == varAnon = pure (Just (empty × empty))
-   | otherwise = pure (Just (maplet x v × empty))
-matches _ PWild = pure (Just (empty × empty))
-matches v (PAs p x) = matches v p <#> map (first (_ `unionWith_never` maplet x v))
+   | x == varAnon = pure (Set.empty × Set.empty)
+   | otherwise = pure (maplet x v × Set.empty)
+matches _ PWild = pure (Set.empty × Set.empty)
+matches v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches v p
 matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil)
-   | c == c' = matchesMany vs ps <#> map (second (insert α))
-matches _ (PConstr _ _ _) = pure Nothing
-matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) =
-   case traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps of
-      Nothing -> pure Nothing
-      Just vps -> matchesMany (fst <$> vps) (snd <$> vps) <#> map (second (insert α))
-matches _ (PRecord _) = pure Nothing
+   | c == c' = second (insert α) <$> matchesMany vs ps
+matches _ (PConstr _ _ _) = empty
+matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
+   vps <- MaybeT $ pure $ traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
+   second (insert α) <$> matchesMany (fst <$> vps) (snd <$> vps)
+matches _ (PRecord _) = empty
 matches (Val α _ (V.Constr c vs)) (PList ps)
-   | c == cNil = pure (whenever (null ps) (empty × Set.singleton α))
+   | c == cNil = guard (null ps) $> (Set.empty × Set.singleton α)
    | c == cCons, v : vs' : Nil <- vs = case ps of
-        Nil -> pure Nothing
-        p : ps' -> matchesMany (v : vs' : Nil) (p : PList ps' : Nil) <#> map (second (insert α))
+        Nil -> empty
+        p : ps' -> second (insert α) <$> matchesMany (v : vs' : Nil) (p : PList ps' : Nil)
    | c == cPair = throw (patternMismatch (prettyP (Val α Nothing (V.Constr c vs))) "list")
-matches _ (PList _) = pure Nothing
+matches _ (PList _) = empty
 
-matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> m (Maybe (Env Vertex × Set Vertex))
-matchesMany Nil Nil = pure (Just (empty × empty))
-matchesMany (v : vs) (p : ps) = lift2 (lift2 disjoint) (matches v p) (matchesMany vs ps)
+matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matchesMany Nil Nil = pure (Set.empty × Set.empty)
+matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
    where
    disjoint (γ × αs) (γ' × αs') = (γ `unionWith_never` γ') × (αs ∪ αs')
 matchesMany _ _ = error absurd
 
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
-dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> m (Maybe (Env Vertex × Stmt Vertex × Set Vertex))
-dispatch _ Nil = pure Nothing
-dispatch v ((p × s) : bs) = matches v p >>= case _ of
-   Just (γ × αs) -> pure (Just (γ × s × αs))
-   Nothing -> dispatch v bs
+dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
+dispatch v = oneOfMap \(p × s) -> (\(γ × αs) -> γ × s × αs) <$> matches v p
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs γ ρ αs =
@@ -145,7 +144,7 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
    call doc_opt' vs' = case φ of
       V.Closure γ1 ρ (Def xs s) -> do
          γ2 <- closeDefs γ1 ρ (singleton α)
-         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
+         let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) Set.empty (zip xs vs')
          asReturns <$> evalStmt doc_opt' (γ1 <+> γ2 <+> γ3) s (singleton α)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
       V.Type c -> val doc_opt' (singleton α) (V.Constr c vs')
@@ -232,8 +231,8 @@ evalStmt doc_opt γ s αs = case s of
    Return e -> Returns <$> eval doc_opt γ e αs
    Match e bs -> do
       v <- eval Nothing γ e αs
-      dispatch v (NEL.toList bs) >>= case _ of
-         Nothing -> pure (Assigns empty empty)
+      runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of
+         Nothing -> pure (Assigns Set.empty Set.empty)
          Just (γ' × s' × αs') -> do
             r <- evalStmt doc_opt (γ <+> γ') s' (αs ∪ αs')
             case r of
@@ -241,16 +240,16 @@ evalStmt doc_opt γ s αs = case s of
                Assigns γ'' αs'' -> pure (Assigns (γ' <+> γ'') αs'')
    Assign p e -> do
       v <- eval Nothing γ e αs
-      matches v p >>= case _ of
+      runMaybeT (matches v p) >>= case _ of
          Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
          Just (γ' × αs') -> pure (Assigns γ' αs')
    DefRec (RecDefs α ρ) -> do
       γ' <- closeDefs γ ρ (insert α αs)
       pure (Assigns γ' (insert α αs))
-   Pass -> pure (Assigns empty empty)
+   Pass -> pure (Assigns Set.empty Set.empty)
    ExprStmt e -> do
       _ <- eval Nothing γ e αs
-      pure (Assigns empty empty)
+      pure (Assigns Set.empty Set.empty)
    Seq s1 s2 -> do
       r1 <- evalStmt Nothing γ s1 αs
       case r1 of
@@ -299,7 +298,7 @@ evalVal γ (Matrix α e (x × y) e') αs = do
          singleton (eval Nothing (γ <+> γ') e αs)
    pure $ Just (α × V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
 evalVal γ (Lambda α σ) _ =
-   pure $ Just (α × V.Fun (V.Closure (restrict (fv σ) γ) empty σ))
+   pure $ Just (α × V.Fun (V.Closure (restrict (fv σ) γ) Set.empty σ))
 evalVal _ _ _ = pure Nothing
 
 eval_module
@@ -317,7 +316,7 @@ eval_module
    -> m (Env Vertex)
 eval_module γ0 q (Module is ss0) αs0 = do
    γ_imp <- foldM (evalImport q) γ0 is
-   v_name <- val Nothing empty (V.Str (dottedName q))
+   v_name <- val Nothing Set.empty (V.Str (dottedName q))
    go γ_imp (maplet "__name__" v_name) ss0 αs0
    where
    go :: Env Vertex -> Env Vertex -> List (Stmt Vertex) -> Set Vertex -> m (Env Vertex)
@@ -380,8 +379,8 @@ loadPredefined
    -> m (Env Vertex)
 loadPredefined primitives γ q = do
    { moduleBody } <- moduleStore
-   let native = if q == builtins then primitives else empty
-   γ' <- maybe (pure empty) (\body -> eval_module (γ <+> native) q body empty) (Map.lookup q moduleBody)
+   let native = if q == builtins then primitives else Set.empty
+   γ' <- maybe (pure Set.empty) (\body -> eval_module (γ <+> native) q body Set.empty) (Map.lookup q moduleBody)
    let members = native <+> γ'
    modifyModuleStore (\s -> s { moduleEnv = Map.insert q members s.moduleEnv })
    pure (γ <+> members)
@@ -401,7 +400,7 @@ load q = do
    case Map.lookup q moduleEnv of
       Just γ -> pure γ
       Nothing -> do
-         γ_q <- maybe (pure empty) (\body -> eval_module γ0 q body empty) (Map.lookup q moduleBody)
+         γ_q <- maybe (pure Set.empty) (\body -> eval_module γ0 q body Set.empty) (Map.lookup q moduleBody)
          modifyModuleStore (\s -> s { moduleEnv = Map.insert q γ_q s.moduleEnv })
          pure γ_q
 
