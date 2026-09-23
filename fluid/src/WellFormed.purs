@@ -461,27 +461,25 @@ wellFormedPattern p = do
 
 -- p subsumed by p': every value p matches, p' matches. List patterns as Nil and Cons patterns.
 subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean
-subsumed cxt = sub
+subsumed _ _ (S.PVar _) = true
+subsumed _ _ S.PWild = true
+subsumed cxt (S.PAs p _) p' = subsumed cxt p p'
+subsumed cxt p (S.PAs p' _) = subsumed cxt p p'
+subsumed _ (S.PInt n) (S.PInt n') = n == n'
+subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
+subsumed _ (S.PStr s) (S.PStr s') = s == s'
+subsumed cxt (S.PRecord xps) (S.PRecord uqs) =
+   all (\(u × q) -> maybe false (\p -> subsumed cxt p q) (F.lookup u xps)) uqs
+subsumed cxt p p' = case asConstr p, asConstr p' of
+   Just (c × ps × xps), Just (c' × qs × xqs) -> fromMaybe false do
+      cls <- hush (classOf cxt c)
+      cls' <- hush (classOf cxt c')
+      guard (cls'.name `elem` ancestors cls)
+      fm <- fieldMap cls ps xps
+      fm' <- fieldMap cls' qs xqs
+      pure $ all (\x -> fromMaybe false (subsumed cxt <$> Map.lookup x fm <*> Map.lookup x fm')) (fields cls')
+   _, _ -> false
    where
-   sub _ (S.PVar _) = true
-   sub _ S.PWild = true
-   sub (S.PAs p _) p' = sub p p'
-   sub p (S.PAs p' _) = sub p p'
-   sub (S.PInt n) (S.PInt n') = n == n'
-   sub (S.PFloat x) (S.PFloat x') = x == x'
-   sub (S.PStr s) (S.PStr s') = s == s'
-   sub (S.PRecord xps) (S.PRecord uqs) =
-      all (\(u × q) -> maybe false (\p -> sub p q) (F.lookup u xps)) uqs
-   sub p p' = case asConstr p, asConstr p' of
-      Just (c × ps × xps), Just (c' × qs × xqs) -> fromMaybe false do
-         cls <- hush (classOf cxt c)
-         cls' <- hush (classOf cxt c')
-         guard (cls'.name `elem` ancestors cls)
-         fm <- fieldMap cls ps xps
-         fm' <- fieldMap cls' qs xqs
-         pure $ all (\x -> fromMaybe false (sub <$> Map.lookup x fm <*> Map.lookup x fm')) (fields cls')
-      _, _ -> false
-
    ancestors :: ClassEntry -> List Name
    ancestors cls = cls.name : maybe Nil ancestors (cls.base >>= classFor cls.cxt)
 
@@ -491,7 +489,7 @@ subsumed cxt = sub
       let fs = fields cls
       guard (length ps <= length fs)
       let positional = Map.fromFoldable (zip fs ps)
-      foldM (\m (x × p) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x p m)) positional xps
+      foldM (\m (x × q) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x q m)) positional xps
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
