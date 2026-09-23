@@ -314,7 +314,7 @@ instance Highlightable a => Pretty (E.Stmt a) where
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
    pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e
-   pretty (E.DefRec (E.RecDefs _ ρ)) = text "def" <+> pretty ρ
+   pretty (E.DefRec (E.RecDefs _ ds)) = text "def" <+> pretty ds
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
@@ -323,12 +323,12 @@ instance Highlightable a => Pretty (E.Def a) where
    pretty (E.Def xs s) = parens (commas (text <$> xs)) <> text "->" <> pretty s
 
 instance Highlightable a => Pretty (Dict (E.Def a)) where
-   pretty ρ = go (toUnfoldable ρ)
+   pretty ds = go (toUnfoldable ds)
       where
       go :: List (Var × E.Def a) -> Doc
       go Nil = empty
-      go (xσ : Nil) = pretty xσ
-      go (xσ : δ) = (go δ <+> text ";") <+> (pretty xσ)
+      go (xd : Nil) = pretty xd
+      go (xd : xds) = (go xds <+> text ";") <+> (pretty xd)
 
 instance Highlightable a => Pretty (Env a) where
    pretty (Env γ) = brackets $ go (toUnfoldable γ)
@@ -342,7 +342,7 @@ instance Highlightable a => Pretty (EnvStmt a) where
    pretty (EnvStmt γ s) = (pretty γ) <++> (pretty s)
 
 instance Highlightable a => Pretty (Bind (E.Def a)) where
-   pretty (x ↦ σ) = pretty x <> pretty ":" <+> pretty σ
+   pretty (x ↦ d) = pretty x <> pretty ":" <+> pretty d
 
 instance Highlightable a => Pretty (Val a) where
    pretty (Val a Nothing u) = highlightIf a (pretty u)

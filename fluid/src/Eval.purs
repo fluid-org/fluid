@@ -105,12 +105,12 @@ dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> 
 dispatch v = oneOfMap \(p × s) -> (\(γ × αs) -> γ × s × αs) <$> matches v p
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
-closeDefs γ ρ αs =
-   Env <$> for ρ \σ ->
+closeDefs γ ds αs =
+   Env <$> for ds \d ->
       let
-         ρ' = ρ `forDefs` σ
+         ds' = ds `forDefs` d
       in
-         val Nothing αs (V.Fun (V.Closure (restrict (fv ρ' ∪ fv σ) γ) ρ' σ))
+         val Nothing αs (V.Fun (V.Closure (restrict (fv ds' ∪ fv d) γ) ds' d))
 
 -- Fewer arguments than the arity is a partial application; more applies the result to the rest.
 apply
@@ -142,8 +142,8 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
 
    call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
    call doc_opt' vs' = case φ of
-      V.Closure γ1 ρ (Def xs s) -> do
-         γ2 <- closeDefs γ1 ρ (singleton α)
+      V.Closure γ1 ds (Def xs s) -> do
+         γ2 <- closeDefs γ1 ds (singleton α)
          let γ3 = foldl (\γ (x × v) -> if x == varAnon then γ else γ `unionWith_never` maplet x v) empty (zip xs vs')
          asReturns <$> evalStmt doc_opt' (γ1 <+> γ2 <+> γ3) s (singleton α)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
@@ -243,8 +243,8 @@ evalStmt doc_opt γ s αs = case s of
       runMaybeT (matches v p) >>= case _ of
          Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
          Just (γ' × αs') -> pure (Assigns γ' αs')
-   DefRec (RecDefs α ρ) -> do
-      γ' <- closeDefs γ ρ (insert α αs)
+   DefRec (RecDefs α ds) -> do
+      γ' <- closeDefs γ ds (insert α αs)
       pure (Assigns γ' (insert α αs))
    Pass -> pure (Assigns empty empty)
    ExprStmt e -> do
@@ -297,8 +297,8 @@ evalVal γ (Matrix α e (x × y) e') αs = do
          let γ' = maplet x (Val β Nothing (V.Int i)) `unionWith_never` (maplet y (Val β' Nothing (V.Int j)))
          singleton (eval Nothing (γ <+> γ') e αs)
    pure $ Just (α × V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
-evalVal γ (Lambda α σ) _ =
-   pure $ Just (α × V.Fun (V.Closure (restrict (fv σ) γ) empty σ))
+evalVal γ (Lambda α d) _ =
+   pure $ Just (α × V.Fun (V.Closure (restrict (fv d) γ) empty d))
 evalVal _ _ _ = pure Nothing
 
 eval_module

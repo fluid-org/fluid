@@ -85,7 +85,7 @@ instance FV (Expr a) where
    fv (Dictionary _ ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ _ es) = unions (fv <$> es)
    fv (Matrix _ e1 _ e2) = fv e1 ∪ fv e2
-   fv (Lambda _ σ) = fv σ
+   fv (Lambda _ d) = fv d
    fv (Attribute e _) = fv e
    fv (Subscript e x) = fv e ∪ fv x
    fv (ModMember _ _) = empty
@@ -96,13 +96,13 @@ instance FV (Def a) where
    fv (Def xs s) = fv s \\ S.fromFoldable xs
 
 instance FV (RecDefs a) where
-   fv (RecDefs _ ρ) = fv ρ
+   fv (RecDefs _ ds) = fv ds
 
 instance FV (Stmt a) where
    fv (Return e) = fv e
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
    fv (Assign _ e) = fv e
-   fv (DefRec ρ) = fv ρ
+   fv (DefRec ds) = fv ds
    fv Pass = empty
    fv (ExprStmt e) = fv e
    fv (Seq s s') = fv s ∪ fv s'
@@ -141,10 +141,10 @@ instance BoundedJoinSemilattice a => Expandable (Def a) (Raw Def) where
    expand (Def xs s) (Def xs' s') = Def (xs ≜ xs') (expand s s')
 
 instance JoinSemilattice a => JoinSemilattice (RecDefs a) where
-   join (RecDefs α ρ) (RecDefs α' ρ') = RecDefs (α ∨ α') (ρ ∨ ρ')
+   join (RecDefs α ds) (RecDefs α' ds') = RecDefs (α ∨ α') (ds ∨ ds')
 
 instance BoundedJoinSemilattice a => Expandable (RecDefs a) (Raw RecDefs) where
-   expand (RecDefs α ρ) (RecDefs _ ρ') = RecDefs α (expand ρ ρ')
+   expand (RecDefs α ds) (RecDefs _ ds') = RecDefs α (expand ds ds')
 
 instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Return e) (Return e') = Return (e ∨ e')
@@ -152,7 +152,7 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
       where
       joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
    join (Assign p e) (Assign p' e') = Assign (p ≜ p') (e ∨ e')
-   join (DefRec ρ) (DefRec ρ') = DefRec (ρ ∨ ρ')
+   join (DefRec ds) (DefRec ds') = DefRec (ds ∨ ds')
    join Pass Pass = Pass
    join (ExprStmt e) (ExprStmt e') = ExprStmt (e ∨ e')
    join (Seq s1 s2) (Seq s1' s2') = Seq (s1 ∨ s1') (s2 ∨ s2')
@@ -164,7 +164,7 @@ instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
       where
       expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
    expand (Assign p e) (Assign p' e') = Assign (p ≜ p') (expand e e')
-   expand (DefRec ρ) (DefRec ρ') = DefRec (expand ρ ρ')
+   expand (DefRec ds) (DefRec ds') = DefRec (expand ds ds')
    expand Pass Pass = Pass
    expand (ExprStmt e) (ExprStmt e') = ExprStmt (expand e e')
    expand (Seq s1 s2) (Seq s1' s2') = Seq (expand s1 s1') (expand s2 s2')
@@ -180,7 +180,7 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Constr α c es) (Constr α' c' es') = Constr (α ∨ α') (c ≜ c') (es ∨ es')
    join (Matrix α e1 (x × y) e2) (Matrix α' e1' (x' × y') e2') =
       Matrix (α ∨ α') (e1 ∨ e1') ((x ≜ x') × (y ≜ y')) (e2 ∨ e2')
-   join (Lambda α σ) (Lambda α' σ') = Lambda (α ∨ α') (σ ∨ σ')
+   join (Lambda α d) (Lambda α' d') = Lambda (α ∨ α') (d ∨ d')
    join (Attribute e x) (Attribute e' x') = Attribute (e ∨ e') (x ≜ x')
    join (Subscript e1 e2) (Subscript e1' e2') = Subscript (e1 ∨ e1') (e2 ∨ e2')
    join (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
@@ -198,7 +198,7 @@ instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Constr α c es) (Constr _ c' es') = Constr α (c ≜ c') (expand es es')
    expand (Matrix α e1 (x × y) e2) (Matrix _ e1' (x' × y') e2') =
       Matrix α (expand e1 e1') ((x ≜ x') × (y ≜ y')) (expand e2 e2')
-   expand (Lambda α σ) (Lambda _ σ') = Lambda α (expand σ σ')
+   expand (Lambda α d) (Lambda _ d') = Lambda α (expand d d')
    expand (Attribute e x) (Attribute e' x') = Attribute (expand e e') (x ≜ x')
    expand (Subscript e1 e2) (Subscript e1' e2') = Subscript (expand e1 e1') (expand e2 e2')
    expand (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
@@ -220,7 +220,7 @@ instance Vertices (Expr Vertex) where
       go (Pair e e') = vertices e ∪ vertices e'
    vertices e@(Constr α _ es) = singleton (DVertex (α × pack e)) ∪ unions (vertices <$> es)
    vertices e@(Matrix α e1 _ e2) = singleton (DVertex (α × pack e)) ∪ vertices e1 ∪ vertices e2
-   vertices e@(Lambda α σ) = singleton (DVertex (α × pack e)) ∪ vertices σ
+   vertices e@(Lambda α d) = singleton (DVertex (α × pack e)) ∪ vertices d
    vertices (Attribute e _) = vertices e
    vertices (Subscript e e') = vertices e ∪ vertices e'
    vertices (ModMember _ _) = empty
@@ -231,13 +231,13 @@ instance Vertices (Def Vertex) where
    vertices (Def _ s) = vertices s
 
 instance Vertices (RecDefs Vertex) where
-   vertices defs@(RecDefs α ρ) = singleton (DVertex (α × pack defs)) ∪ vertices ρ
+   vertices defs@(RecDefs α ds) = singleton (DVertex (α × pack defs)) ∪ vertices ds
 
 instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
    vertices (Match e bs) = vertices e ∪ unions ((vertices <<< snd) <$> bs)
    vertices (Assign _ e) = vertices e
-   vertices (DefRec ρ) = vertices ρ
+   vertices (DefRec ds) = vertices ds
    vertices Pass = empty
    vertices (ExprStmt e) = vertices e
    vertices (Seq s1 s2) = vertices s1 ∪ vertices s2
@@ -273,7 +273,7 @@ instance Apply Expr where
    apply (Constr fα c fes) (Constr α c' es) = Constr (fα α) (c ≜ c') (zipWith (<*>) fes es)
    apply (Matrix fα fe1 (x × y) fe2) (Matrix α e1 (x' × y') e2) =
       Matrix (fα α) (fe1 <*> e1) ((x ≜ x') × (y ≜ y')) (fe2 <*> e2)
-   apply (Lambda fα fσ) (Lambda α σ) = Lambda (fα α) (fσ <*> σ)
+   apply (Lambda fα fd) (Lambda α d) = Lambda (fα α) (fd <*> d)
    apply (Attribute fe x) (Attribute e x') = Attribute (fe <*> e) (x ≜ x')
    apply (Subscript fd fk) (Subscript d k) = Subscript (fd <*> d) (fk <*> k)
    apply (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
@@ -285,7 +285,7 @@ instance Apply Def where
    apply (Def xs fs) (Def _ s) = Def xs (fs <*> s)
 
 instance Apply RecDefs where
-   apply (RecDefs fα fρ) (RecDefs α ρ) = RecDefs (fα α) (((<*>) <$> fρ) <*> ρ)
+   apply (RecDefs fα fds) (RecDefs α ds) = RecDefs (fα α) (((<*>) <$> fds) <*> ds)
 
 instance Apply Stmt where
    apply (Return fe) (Return e) = Return (fe <*> e)
@@ -293,7 +293,7 @@ instance Apply Stmt where
       where
       applyCase (p × fs) (_ × s) = p × (fs <*> s)
    apply (Assign p fe) (Assign _ e) = Assign p (fe <*> e)
-   apply (DefRec fρ) (DefRec ρ) = DefRec (fρ <*> ρ)
+   apply (DefRec fds) (DefRec ds) = DefRec (fds <*> ds)
    apply Pass Pass = Pass
    apply (ExprStmt fe) (ExprStmt e) = ExprStmt (fe <*> e)
    apply (Seq fs1 fs2) (Seq s1 s2) = Seq (fs1 <*> s1) (fs2 <*> s2)

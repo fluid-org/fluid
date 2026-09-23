@@ -165,20 +165,20 @@ instance Map (Env a) String (Val a) where
 data EnvStmt a = EnvStmt (Env a) (Stmt a)
 
 reaches :: forall a. Dict (Def a) -> Endo (Set Var)
-reaches ρ xs = go (Set.toUnfoldable xs) empty
+reaches ds xs = go (Set.toUnfoldable xs) empty
    where
-   dom_ρ = keys ρ
+   dom_ds = keys ds
 
    go :: List Var -> Endo (Set Var)
    go Nil acc = acc
    go (x : xs') acc | x ∈ acc = go xs' acc
    go (x : xs') acc | otherwise =
-      go (Set.toUnfoldable (fv σ ∩ dom_ρ) <> xs') (singleton x ∪ acc)
+      go (Set.toUnfoldable (fv d ∩ dom_ds) <> xs') (singleton x ∪ acc)
       where
-      σ = get x ρ
+      d = get x ds
 
 forDefs :: forall a. Dict (Def a) -> Def a -> Dict (Def a)
-forDefs ρ σ = restrict (reaches ρ (fv σ ∩ Set.fromFoldable (keys ρ))) ρ
+forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
 
 -- Wrap internal representations to provide foldable/traversable instances.
 newtype DictRep a = DictRep (Dict (a × Val a))
@@ -253,7 +253,7 @@ instance Apply BaseVal where
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where
-   apply (Closure fγ fρ fσ) (Closure γ ρ σ) = Closure (fγ <*> γ) (((<*>) <$> fρ) <*> ρ) (fσ <*> σ)
+   apply (Closure fγ fds fd) (Closure γ ds d) = Closure (fγ <*> γ) (((<*>) <$> fds) <*> ds) (fd <*> d)
    apply (Prim op) (Prim _) = Prim op
    apply (Type c) (Type c') = Type (c ≜ c')
    apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
@@ -324,8 +324,8 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
    join x y = (∨) <$> x <*> y
 
 instance JoinSemilattice a => JoinSemilattice (Fun a) where
-   join (Closure γ ρ σ) (Closure γ' ρ' σ') =
-      Closure (γ ∨ γ') (ρ ∨ ρ') (σ ∨ σ')
+   join (Closure γ ds d) (Closure γ' ds' d') =
+      Closure (γ ∨ γ') (ds ∨ ds') (d ∨ d')
    join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    join (Type c) (Type c') = Type (c ≜ c')
    join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
@@ -364,8 +364,8 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
-   expand (Closure γ ρ σ) (Closure γ' ρ' σ') =
-      Closure (expand γ γ') (expand ρ ρ') (expand σ σ')
+   expand (Closure γ ds d) (Closure γ' ds' d') =
+      Closure (expand γ γ') (expand ds ds') (expand d d')
    expand (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    expand (Type c) (Type c') = Type (c ≜ c')
    expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
@@ -422,7 +422,7 @@ instance Vertices (MatrixDim Vertex) where
    vertices md@(MatrixDim (_ × α)) = singleton (DVertex (α × pack md))
 
 instance Vertices (Fun Vertex) where
-   vertices (Closure γ ρ σ) = vertices γ ∪ vertices ρ ∪ vertices σ
+   vertices (Closure γ ds d) = vertices γ ∪ vertices ds ∪ vertices d
    vertices (Prim _) = empty
    vertices (Type _) = empty
    vertices (Partial φ vs) = vertices φ ∪ unions (vertices <$> vs)
