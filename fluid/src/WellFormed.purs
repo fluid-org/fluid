@@ -428,7 +428,6 @@ subpatterns ps = do
    traverse_ wellFormedPattern ps
    checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
 
--- p subsumed by p': every value p matches, p' matches. List patterns as Nil and Cons patterns.
 subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean
 subsumed _ _ (S.PVar _) = true
 subsumed _ _ S.PWild = true
