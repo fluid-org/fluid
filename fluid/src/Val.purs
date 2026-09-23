@@ -49,7 +49,7 @@ asReturns (Returns v) = v
 asReturns (Assigns _ _) = error "Returns expected"
 
 asAssigns :: forall a. Result a -> Env a × Set.Set a
-asAssigns (Assigns γ αs) = γ × αs
+asAssigns (Assigns ρ αs) = ρ × αs
 asAssigns (Returns _) = error "Assigns expected"
 
 data BaseVal a
@@ -84,13 +84,13 @@ instance Highlightable a => Highlightable (a × b) where
 instance (Ann a, BoundedLattice b) => Ann (a × b)
 
 type ModuleStore =
-   { γ0 :: Env Vertex -- the members of the predefined modules (lib.builtins, which owns the primitives, and lib.prelude)
+   { ρ0 :: Env Vertex -- the members of the predefined modules (lib.builtins, which owns the primitives, and lib.prelude)
    , moduleBody :: Map ModuleName (Module Vertex)
    , moduleEnv :: Map ModuleName (Env Vertex)
    }
 
 emptyModuleStore :: ModuleStore
-emptyModuleStore = { γ0: empty, moduleBody: Map.empty, moduleEnv: Map.empty }
+emptyModuleStore = { ρ0: empty, moduleBody: Map.empty, moduleEnv: Map.empty }
 
 class Monad m <= HasModuleStore m where
    moduleStore :: m ModuleStore
@@ -141,26 +141,26 @@ instance Ord ForeignOp where
 newtype Env a = Env (Dict (Val a))
 
 instance IsEmpty (Env a) where
-   isEmpty (Env γ) = isEmpty γ
+   isEmpty (Env ρ) = isEmpty ρ
 
 instance Set (Env a) String where
    empty = Env empty
-   filter p (Env γ) = Env (filter p γ)
-   size (Env γ) = size γ
-   member x (Env γ) = x ∈ γ
-   difference (Env γ) (Env γ') = Env (difference γ γ')
-   union (Env γ) (Env γ') = Env (union γ γ')
+   filter p (Env ρ) = Env (filter p ρ)
+   size (Env ρ) = size ρ
+   member x (Env ρ) = x ∈ ρ
+   difference (Env ρ) (Env ρ') = Env (difference ρ ρ')
+   union (Env ρ) (Env ρ') = Env (union ρ ρ')
 
 instance Map (Env a) String (Val a) where
    maplet k v = Env (maplet k v)
-   keys (Env γ) = keys γ
-   values (Env γ) = values γ
-   filterKeys p (Env γ) = Env (filterKeys p γ)
-   unionWith f (Env γ) (Env γ') = Env (unionWith f γ γ')
-   lookup k (Env γ) = lookup k γ
-   delete k (Env γ) = Env (delete k γ)
-   insert k v (Env γ) = Env (insert k v γ)
-   toUnfoldable (Env γ) = toUnfoldable γ
+   keys (Env ρ) = keys ρ
+   values (Env ρ) = values ρ
+   filterKeys p (Env ρ) = Env (filterKeys p ρ)
+   unionWith f (Env ρ) (Env ρ') = Env (unionWith f ρ ρ')
+   lookup k (Env ρ) = lookup k ρ
+   delete k (Env ρ) = Env (delete k ρ)
+   insert k v (Env ρ) = Env (insert k v ρ)
+   toUnfoldable (Env ρ) = toUnfoldable ρ
 
 data EnvStmt a = EnvStmt (Env a) (Stmt a)
 
@@ -253,7 +253,7 @@ instance Apply BaseVal where
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where
-   apply (Closure fγ fds fd) (Closure γ ds d) = Closure (fγ <*> γ) (((<*>) <$> fds) <*> ds) (fd <*> d)
+   apply (Closure fρ fds fd) (Closure ρ ds d) = Closure (fρ <*> ρ) (((<*>) <$> fds) <*> ds) (fd <*> d)
    apply (Prim op) (Prim _) = Prim op
    apply (Type c) (Type c') = Type (c ≜ c')
    apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
@@ -272,10 +272,10 @@ instance Apply MatrixDim where
    apply (MatrixDim (n × fnα)) (MatrixDim (n' × nα)) = MatrixDim ((n ≜ n') × (fnα nα))
 
 instance Apply Env where
-   apply (Env fγ) (Env γ) = Env (((<*>) <$> fγ) <*> γ)
+   apply (Env fρ) (Env ρ) = Env (((<*>) <$> fρ) <*> ρ)
 
 instance Apply EnvStmt where
-   apply (EnvStmt fγ fs) (EnvStmt γ s) = EnvStmt (fγ <*> γ) (fs <*> s)
+   apply (EnvStmt fρ fs) (EnvStmt ρ s) = EnvStmt (fρ <*> ρ) (fs <*> s)
 
 instance Foldable DictRep where
    foldl f acc (DictRep d) = foldl (\acc' (a × v) -> foldl f (acc' `f` a) v) acc d
@@ -324,15 +324,15 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
    join x y = (∨) <$> x <*> y
 
 instance JoinSemilattice a => JoinSemilattice (Fun a) where
-   join (Closure γ ds d) (Closure γ' ds' d') =
-      Closure (γ ∨ γ') (ds ∨ ds') (d ∨ d')
+   join (Closure ρ ds d) (Closure ρ' ds' d') =
+      Closure (ρ ∨ ρ') (ds ∨ ds') (d ∨ d')
    join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    join (Type c) (Type c') = Type (c ≜ c')
    join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
    join _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (Env a) where
-   join (Env γ) (Env γ') = Env (γ ∨ γ')
+   join (Env ρ) (Env ρ') = Env (ρ ∨ ρ')
 
 instance MeetSemilattice a => MeetSemilattice (Val a) where
    meet = lift2 (∧)
@@ -364,15 +364,15 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
-   expand (Closure γ ds d) (Closure γ' ds' d') =
-      Closure (expand γ γ') (expand ds ds') (expand d d')
+   expand (Closure ρ ds d) (Closure ρ' ds' d') =
+      Closure (expand ρ ρ') (expand ds ds') (expand d d')
    expand (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    expand (Type c) (Type c') = Type (c ≜ c')
    expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
    expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Env a) (Raw Env) where
-   expand (Env γ) (Env γ') = Env (expand γ γ')
+   expand (Env ρ) (Env ρ') = Env (expand ρ ρ')
 
 derive instance Eq a => Eq (Val a)
 derive instance Eq a => Eq (BaseVal a)
@@ -422,13 +422,13 @@ instance Vertices (MatrixDim Vertex) where
    vertices md@(MatrixDim (_ × α)) = singleton (DVertex (α × pack md))
 
 instance Vertices (Fun Vertex) where
-   vertices (Closure γ ds d) = vertices γ ∪ vertices ds ∪ vertices d
+   vertices (Closure ρ ds d) = vertices ρ ∪ vertices ds ∪ vertices d
    vertices (Prim _) = empty
    vertices (Type _) = empty
    vertices (Partial φ vs) = vertices φ ∪ unions (vertices <$> vs)
 
 instance Vertices (Env Vertex) where
-   vertices (Env γ) = unions (vertices <$> values γ)
+   vertices (Env ρ) = unions (vertices <$> values ρ)
 
 instance Vertices (EnvStmt Vertex) where
-   vertices (EnvStmt γ s) = vertices γ ∪ vertices s
+   vertices (EnvStmt ρ s) = vertices ρ ∪ vertices s

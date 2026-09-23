@@ -20,9 +20,9 @@ import Val (BaseVal(..), DictRep(..), Env, MatrixDim(..), MatrixRep(..), Val(..)
 type SelSetter f g = Setter (f (SelStates 𝔹)) (g (SelStates 𝔹))
 
 sel𝔹 :: forall f a. Functor f => SetSel (f (SelStates 𝔹)) -> f a -> f 𝔹
-sel𝔹 sel template = getPersistent <$> γ'
+sel𝔹 sel template = getPersistent <$> ρ'
    where
-   γ' × _ = sel (const (selStates false false false) <$> template)
+   ρ' × _ = sel (const (selStates false false false) <$> template)
 
 type Setter b a = SetSel a -> SetSel b
 
@@ -116,8 +116,8 @@ dictVal s δv = unsafePartial $ case _ of
       _ × v = get s d
 
 envVal :: Var -> Setter (Env (SelStates 𝔹)) (Val (SelStates 𝔹))
-envVal x δv γ =
-   assert (x ∈ γ) $ first (\v' -> update (const v') x γ) (δv (get x γ))
+envVal x δv ρ =
+   assert (x ∈ ρ) $ first (\v' -> update (const v') x ρ) (δv (get x ρ))
 
 listCell :: Int -> Setter (Val (SelStates 𝔹)) 𝔹
 listCell n δα = unsafePartial $ case _ of

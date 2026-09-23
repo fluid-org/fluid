@@ -108,7 +108,7 @@ instance FV (Stmt a) where
    fv (Seq s s') = fv s ∪ fv s'
 
 instance FV a => FV (Dict a) where
-   fv ρ = unions (fv <$> ρ) \\ S.fromFoldable (keys ρ)
+   fv ds = unions (fv <$> ds) \\ S.fromFoldable (keys ds)
 
 instance (FV a, FV b) => FV (a × b) where
    fv (x × y) = fv x ∪ fv y

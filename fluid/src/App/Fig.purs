@@ -53,22 +53,22 @@ str =
    }
 
 selectOutput :: Selector Val -> Endo Fig
-selectOutput δv fig@{ v, dir, γ } = fig { v = v', γ = γ', dir = dir' }
+selectOutput δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
    where
    v' × selType = δv v
-   γ' × dir' = case selType of
-      Persistent | dir.persistent /= LinkedOutputs -> botOf γ × dir { persistent = LinkedOutputs }
-      Transient | dir.transient /= LinkedOutputs -> γ × dir { transient = LinkedOutputs }
-      _ -> γ × dir
+   ρ' × dir' = case selType of
+      Persistent | dir.persistent /= LinkedOutputs -> botOf ρ × dir { persistent = LinkedOutputs }
+      Transient | dir.transient /= LinkedOutputs -> ρ × dir { transient = LinkedOutputs }
+      _ -> ρ × dir
 
 setOutputView :: ViewSetter Fig View
 setOutputView δvw fig = fig
    { out_view = fig.out_view <#> δvw }
 
 selectInput :: Var -> Selector Val -> Endo Fig
-selectInput x δv fig@{ v, dir, γ } = fig { v = v', γ = γ', dir = dir' }
+selectInput x δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
    where
-   γ' × selType = envVal x δv γ
+   ρ' × selType = envVal x δv ρ
    v' × dir' = case selType of
       Persistent | dir.persistent /= LinkedInputs -> botOf v × dir { persistent = LinkedInputs }
       Transient | dir.transient /= LinkedInputs -> v × dir { transient = LinkedInputs }
@@ -80,13 +80,13 @@ setInputView x δvw fig = fig
    }
 
 selectIntermediate :: Vertex -> Selector Val -> Endo Fig
-selectIntermediate (Vertex α) δv fig@{ ι, dir, γ, v } = fig { ι = ι_final, γ = γ', v = v', dir = dir' }
+selectIntermediate (Vertex α) δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
    ι' × selType = envVal α δv ι
-   γ' × v' × dir' × ι_final = case selType of
-      Transient | dir.transient /= Intermediates -> γ × v × dir { transient = Intermediates } × ι'
-      Transient -> γ × v × dir × ι'
-      _ -> γ × v × dir × ι
+   ρ' × v' × dir' × ι_final = case selType of
+      Transient | dir.transient /= Intermediates -> ρ × v × dir { transient = Intermediates } × ι'
+      Transient -> ρ × v × dir × ι'
+      _ -> ρ × v × dir × ι
 
 setIntermediateView :: Vertex -> ViewSetter Fig View
 setIntermediateView (Vertex α) δvw fig = fig
@@ -97,7 +97,7 @@ rebuildι :: Set DVertex -> Selection (Set DVertex) -> Dict (Val Vertex) -> Env 
 rebuildι inerts αs ι =
    Env $ D.fromFoldable $ setSels <$> vs_inert <*> vs_selected
    where
-   -- Consolidate with analogous calculation with γInert etc in loadFig?
+   -- Consolidate with analogous calculation with ρInert etc in loadFig?
    vs_inert = ι <#> \v -> select𝔹s v inerts
    vs_selected = ι <#> \v@(Val α _ _) -> α × { persistent: select𝔹s v αs.persistent, transient: select𝔹s v αs.transient }
 
@@ -106,13 +106,13 @@ rebuildι inerts αs ι =
 
 type SelectionResult =
    { v :: Val (SelStates 𝕊)
-   , γ :: Env (SelStates 𝕊)
+   , ρ :: Env (SelStates 𝕊)
    , ι :: Env (SelStates 𝔹)
    }
 
 selectionResult :: Fig -> SelectionResult
-selectionResult fig@{ dir, v, γ, ι } =
-   { v: reportOut v', γ: reportIn γ', ι: ι' }
+selectionResult fig@{ dir, v, ρ, ι } =
+   { v: reportOut v', ρ: reportIn ρ', ι: ι' }
    where
    as𝕊v :: forall a b. SelectionType -> a × Val (SelState 𝔹) × b -> a × Val (SelState 𝕊) × b
    as𝕊v selType = (second <<< first) $ primaryOrSecondary selType v
@@ -120,22 +120,22 @@ selectionResult fig@{ dir, v, γ, ι } =
    to𝕊v :: forall a b. a × Val (SelState 𝔹) × b -> a × (Val (SelState 𝕊)) × b
    to𝕊v = second (first primary)
 
-   as𝕊γ :: forall a. SelectionType -> Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
-   as𝕊γ selType = first $ primaryOrSecondary selType γ
+   as𝕊ρ :: forall a. SelectionType -> Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
+   as𝕊ρ selType = first $ primaryOrSecondary selType ρ
 
-   to𝕊γ :: forall a. Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
-   to𝕊γ = first primary
+   to𝕊ρ :: forall a. Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
+   to𝕊ρ = first primary
 
-   γ1 × v1 × αs =
+   ρ1 × v1 × αs =
       case dir.persistent of
-         LinkedOutputs -> to𝕊γ $ as𝕊v Persistent $ fig.linkedOutputs Persistent v
-         LinkedInputs -> to𝕊v $ as𝕊γ Persistent $ fig.linkedInputs Persistent γ
+         LinkedOutputs -> to𝕊ρ $ as𝕊v Persistent $ fig.linkedOutputs Persistent v
+         LinkedInputs -> to𝕊v $ as𝕊ρ Persistent $ fig.linkedInputs Persistent ρ
          Intermediates -> error absurd
-   γ2 × v2 × αs' =
+   ρ2 × v2 × αs' =
       case dir.transient of
-         LinkedOutputs -> to𝕊γ $ as𝕊v Transient $ fig.linkedOutputs Transient v
-         LinkedInputs -> to𝕊v $ as𝕊γ Transient $ fig.linkedInputs Transient γ
-         Intermediates -> to𝕊γ $ to𝕊v $ fig.linkIntermediates ι
+         LinkedOutputs -> to𝕊ρ $ as𝕊v Transient $ fig.linkedOutputs Transient v
+         LinkedInputs -> to𝕊v $ as𝕊ρ Transient $ fig.linkedInputs Transient ρ
+         Intermediates -> to𝕊ρ $ to𝕊v $ fig.linkIntermediates ι
 
    ι' = intermediates fig { persistent: αs, transient: αs' }
 
@@ -146,7 +146,7 @@ selectionResult fig@{ dir, v, γ, ι } =
       SelStates (Reactive { persistent, transient })
 
    v' = splice <$> v1 <*> v2
-   γ' = splice <$> γ1 <*> γ2
+   ρ' = splice <$> ρ1 <*> ρ2
 
    reportIn = spyWhen tracing.mediatingData ("Mediating inputs") (prettyP <<< erase)
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
@@ -173,9 +173,9 @@ drawFig divId fig@{ spec: options } = do
          (selectIntermediate (Vertex α) >>> redraw)
    where
    arg = constrArg fig.fieldIndex
-   { v, γ, ι } = selectionResult fig
+   { v, ρ, ι } = selectionResult fig
    out_view = unsafePartial $ view' fig.fieldIndex options str.output v
-   in_views = γ # \(Env γ) -> unsafePartial (mapWithKey (view' fig.fieldIndex options) γ)
+   in_views = ρ # \(Env ρ) -> unsafePartial (mapWithKey (view' fig.fieldIndex options) ρ)
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
    unused = keys fig.ι \\ keys ι
    prefix = divId <> "-" <> str.intermediate
@@ -184,7 +184,7 @@ drawFile :: File × String -> Effect Unit
 drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
-type IO a = { γ :: Env a, v :: Val a }
+type IO a = { ρ :: Env a, v :: Val a }
 
 lift
    :: forall f f' g
@@ -199,50 +199,50 @@ lift selState_f f v = first (apply selState_f) (f (v <#> to𝔹))
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking } fluidSrc = do
    { s, e, gconfig } <- prepConfig primitives fluidSrc
-   eval@({ inα: EnvStmt γα _, outα, g: g0 }) <- graphEval gconfig e
+   eval@({ inα: EnvStmt ρα _, outα, g: g0 }) <- graphEval gconfig e
    let
       opEval = withOp eval
       inputs' = Set.fromFoldable inputs
       EnvStmt _ s' = erase eval.inα
-      Env γ_restricted = restrict inputs' γα
-      in_roots = Set.fromFoldable $ (\(Val α _ _) -> α) <$> γ_restricted
+      Env ρ_restricted = restrict inputs' ρα
+      in_roots = Set.fromFoldable $ (\(Val α _ _) -> α) <$> ρ_restricted
 
       deps = depsOf eval
 
       io :: ConjugatePair GraphImpl Env Val
       io =
-         { fwd: \γ -> deps.fwd (EnvStmt γ (botOf s'))
-         , bwd: \v -> first (\(EnvStmt γ _) -> restrict inputs' γ) (deps.bwd v)
+         { fwd: \ρ -> deps.fwd (EnvStmt ρ (botOf s'))
+         , bwd: \v -> first (\(EnvStmt ρ _) -> restrict inputs' ρ) (deps.bwd v)
          }
 
-      in_views = const Nothing <$> γ_restricted
-      unselected = { γ: botOf γα, v: botOf outα } :: IO 𝔹
+      in_views = const Nothing <$> ρ_restricted
+      unselected = { ρ: botOf ρα, v: botOf outα } :: IO 𝔹
 
       inertBwd = vertices g0 \\ (vertices $ snd $ io.bwd $ topOf outα)
-      inertFwd = vertices g0 \\ (vertices $ snd $ deps.fwd (EnvStmt (topOf γα) (botOf s')))
+      inertFwd = vertices g0 \\ (vertices $ snd $ deps.fwd (EnvStmt (topOf ρα) (botOf s')))
 
-      inert = { γ: select𝔹s γα inertBwd, v: select𝔹s outα inertFwd } :: IO 𝔹
-      inert' = { γ: selState <$> inert.γ, v: selState <$> inert.v } :: IO (𝔹 -> SelState 𝔹)
+      inert = { ρ: select𝔹s ρα inertBwd, v: select𝔹s outα inertFwd } :: IO 𝔹
+      inert' = { ρ: selState <$> inert.ρ, v: selState <$> inert.v } :: IO (𝔹 -> SelState 𝔹)
 
       demands :: Val (SelState 𝔹) -> Env (SelState 𝔹) × GraphImpl
-      demands = lift inert'.γ io.bwd
+      demands = lift inert'.ρ io.bwd
 
       demandedBy :: Env (SelState 𝔹) -> Val (SelState 𝔹) × GraphImpl
       demandedBy = lift inert'.v io.fwd
 
       linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-      linkedInputs selType γ = γ'' × v × vertices g
+      linkedInputs selType ρ = ρ'' × v × vertices g
          where
-         γ' = γ <#> getSel selType
-         v × g = demandedBy γ'
-         γ'' = if linking then fst (demands v) else γ'
+         ρ' = ρ <#> getSel selType
+         v × g = demandedBy ρ'
+         ρ'' = if linking then fst (demands v) else ρ'
 
       linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-      linkedOutputs selType v = γ × v'' × vertices g
+      linkedOutputs selType v = ρ × v'' × vertices g
          where
          v' = v <#> getSel selType
-         γ × g = demands v'
-         v'' = if linking then fst (demandedBy γ) else v'
+         ρ × g = demands v'
+         v'' = if linking then fst (demandedBy ρ) else v'
 
       linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
       linkIntermediates ι =
@@ -251,14 +251,14 @@ loadFig options@{ inputs, linking } fluidSrc = do
             ι' = ι <#> getSel Transient >>> to𝔹
             αs = selectαs ι' ια
             v = inert'.v <*> select𝔹s outα (vertices $ bwdSlice (αs × opEval.g))
-            γ = inert'.γ <*> select𝔹s γα (vertices $ bwdSlice (αs × eval.g))
+            ρ = inert'.ρ <*> select𝔹s ρα (vertices $ bwdSlice (αs × eval.g))
          in
-            γ × v × (dvertices g0 αs)
+            ρ × v × (dvertices g0 αs)
 
    pure
       { spec: options
       , s
-      , γ: selStates <$> inert.γ <*> unselected.γ <*> unselected.γ
+      , ρ: selStates <$> inert.ρ <*> unselected.ρ <*> unselected.ρ
       , v: selStates <$> inert.v <*> unselected.v <*> unselected.v
       , ι: empty
       , linkedOutputs

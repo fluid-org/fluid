@@ -95,9 +95,9 @@ linkedInputsTest :: forall m. MonadAff m => MonadError Error m => HasClasses m =
 linkedInputsTest { spec, δ_in, in_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
    fig <- loadFig spec fluidSrc <#> uncurry selectInput δ_in
-   γ <- logTimeWhen timing.selectionResult file \_ ->
-      pure (selectionResult fig).γ
-   checkEq "selected" "expected" (selStates <$> (isInert <$> γ) <*> (isPersistent <$> γ) <*> (isTransient <$> γ)) (fst $ in_expect (botOf <$> γ))
+   ρ <- logTimeWhen timing.selectionResult file \_ ->
+      pure (selectionResult fig).ρ
+   checkEq "selected" "expected" (selStates <$> (isInert <$> ρ) <*> (isPersistent <$> ρ) <*> (isTransient <$> ρ)) (fst $ in_expect (botOf <$> ρ))
    pure fig
 
 linkedInputsSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestLinkedInputsSpec -> Array (String × m Unit)
