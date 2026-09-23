@@ -26,7 +26,7 @@ import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Util.Map (constMap)
-import Expr (bv, consPattern, fv)
+import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
@@ -438,8 +438,8 @@ subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
 subsumed _ (S.PStr s) (S.PStr s') = s == s'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
-subsumed cxt (S.PList ps) p' = subsumed cxt (consPattern cons nil ps) p'
-subsumed cxt p (S.PList ps') = subsumed cxt p (consPattern cons nil ps')
+subsumed cxt (S.PList ps) p' = subsumed cxt (consPattern ps) p'
+subsumed cxt p (S.PList ps') = subsumed cxt p (consPattern ps')
 subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    cls <- hush (classOf cxt c)
    cls' <- hush (classOf cxt c')
@@ -447,18 +447,15 @@ subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
 subsumed _ _ _ = false
 
--- Cons and Nil as named in source.
-cons :: Name
-cons = singleton (NEL.last cCons)
-
-nil :: Name
-nil = singleton (NEL.last cNil)
+-- List pattern as Cons and Nil patterns, as named in source.
+consPattern :: List S.Pattern -> S.Pattern
+consPattern = foldr (\p ps -> S.PConstr (singleton (NEL.last cCons)) (p : ps : Nil) Nil) (S.PConstr (singleton (NEL.last cNil)) Nil Nil)
 
 qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
 qualifyPattern cxt (S.PConstr c ps xps) =
    S.PConstr <$> (_.name <$> classOf cxt c) <*> traverse (qualifyPattern cxt) ps <*> traverse (traverse (qualifyPattern cxt)) xps
 qualifyPattern cxt (S.PRecord xps) = S.PRecord <$> traverse (traverse (qualifyPattern cxt)) xps
-qualifyPattern cxt (S.PList ps) = S.PList <$> traverse (qualifyPattern cxt) ps
+qualifyPattern cxt (S.PList ps) = qualifyPattern cxt (consPattern ps)
 qualifyPattern cxt (S.PAs p x) = S.PAs <$> qualifyPattern cxt p <@> x
 qualifyPattern _ p = pure p
 

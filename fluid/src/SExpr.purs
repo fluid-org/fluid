@@ -1,6 +1,6 @@
 module SExpr where
 
-import Prelude hiding (top)
+import Prelude hiding (absurd, top)
 
 import Bind (Bind, Name, Var, dottedName, (↦))
 import Data.Set (Set, empty, singleton, unions) as Set
@@ -27,11 +27,11 @@ import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class FV, Pattern(..), bv, consPattern, fv)
+import Expr (class FV, Pattern(..), bv, fv)
 import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Util (type (×), checkDistinct, error, nonEmpty, singleton, throw, unimplemented, (×))
+import Util (type (×), absurd, checkDistinct, error, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 
 -- Surface language expressions.
@@ -319,7 +319,7 @@ positionaliseKw classes c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
--- Keyword sub-patterns positionalised; list patterns as Nil and Cons.
+-- Keyword sub-patterns positionalised.
 patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
 patternFwd (PConstr c ps xps) = do
    classes <- askClasses
@@ -328,7 +328,7 @@ patternFwd (PConstr c ps xps) = do
    checkArity classes "match" (dottedName c) (length ps')
    PConstr c <$> traverse patternFwd ps' <@> Nil
 patternFwd (PRecord xps) = PRecord <$> traverse (traverse patternFwd) xps
-patternFwd (PList ps) = consPattern cCons cNil <$> traverse patternFwd ps
+patternFwd (PList _) = error absurd
 patternFwd (PAs p x) = PAs <$> patternFwd p <@> x
 patternFwd p = pure p
 
