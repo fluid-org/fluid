@@ -381,21 +381,21 @@ wellFormedExpr cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wellFormedExp
    listRest l'@(S.End _) = pure l'
    listRest (S.Next α' e' l') = S.Next α' <$> wellFormedExpr cxt e' <*> listRest l'
 wellFormedExpr cxt (S.ListEnum e e') = S.ListEnum <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
-wellFormedExpr cxt (S.ListComp α e quals) = (\(e' × quals') -> S.ListComp α e' quals') <$> qualifiers cxt quals
+wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs') <$> qualifiers cxt gs
    where
    qualifiers cxt' Nil = (_ × Nil) <$> wellFormedExpr cxt' e
-   qualifiers cxt' (q : qs) = case q of
+   qualifiers cxt' (g : gs') = case g of
       S.ListCompGuard e1 -> do
          e1' <- wellFormedExpr cxt' e1
-         map (S.ListCompGuard e1' : _) <$> qualifiers cxt' qs
+         map (S.ListCompGuard e1' : _) <$> qualifiers cxt' gs'
       S.ListCompGen p e1 -> do
          e1' <- wellFormedExpr cxt' e1
          p' <- qualifyPattern cxt' p
-         map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
+         map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
       S.ListCompDecl (S.VarDef p e1) -> do
          e1' <- wellFormedExpr cxt' e1
          p' <- qualifyPattern cxt' p
-         map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) qs
+         map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit

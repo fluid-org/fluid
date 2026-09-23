@@ -246,8 +246,8 @@ exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 exprFwd (ListEnum s1 s2) =
    (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)) <$> desug s1 <*> desug s2
-exprFwd (ListComp α s qs) =
-   listCompFwd (α × qs × s)
+exprFwd (ListComp α s gs) =
+   listCompFwd (α × gs × s)
 exprFwd (DocExpr s s') = do
    e <- exprFwd s
    e' <- exprFwd s'
@@ -289,16 +289,16 @@ listCompFwd
    -> m (E.Expr (WfResult VarCxt))
 listCompFwd (α × Nil × s) =
    econs α <$> desug s <@> enil α
-listCompFwd (α × (ListCompGuard s : qs) × s') = do
-   e <- listCompFwd (α × qs × s')
+listCompFwd (α × (ListCompGuard s : gs) × s') = do
+   e <- listCompFwd (α × gs × s')
    E.App (matchFun α (boolCases (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
-listCompFwd (α × (ListCompDecl (VarDef p s) : qs) × s') = do
-   e <- listCompFwd (α × qs × s')
+listCompFwd (α × (ListCompDecl (VarDef p s) : gs) × s') = do
+   e <- listCompFwd (α × gs × s')
    p' <- patternFwd p
    E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
 -- Elements not matching the pattern contribute nothing.
-listCompFwd (α × (ListCompGen p s : qs) × s') = do
-   e <- listCompFwd (α × qs × s')
+listCompFwd (α × (ListCompGen p s : gs) × s') = do
+   e <- listCompFwd (α × gs × s')
    p' <- patternFwd p
    let
       bs = case p' of
@@ -469,7 +469,7 @@ instance FV (Expr a) where
    fv (ListEmpty _) = Set.empty
    fv (ListNonEmpty _ e l) = fv e ∪ fv l
    fv (ListEnum e1 e2) = fv e1 ∪ fv e2
-   fv (ListComp _ e quals) = qualsFv quals e
+   fv (ListComp _ e gs) = qualifiersFv gs e
    fv (DocExpr e e') = fv e ∪ fv e'
 
 instance FV (Stmt a) where
@@ -513,9 +513,9 @@ fvRecDefs rs =
 
 -- List-comprehension qualifiers bind their variables for subsequent qualifiers
 -- (and the producing expression). Process right-to-left.
-qualsFv :: forall a. List (Qualifier a) -> Expr a -> Set.Set Var
-qualsFv Nil e = fv e
-qualsFv (q : qs) e = case q of
-   ListCompGuard cond -> fv cond ∪ qualsFv qs e
-   ListCompGen p src -> fv src ∪ (qualsFv qs e \\ bv p)
-   ListCompDecl (VarDef p src) -> fv src ∪ (qualsFv qs e \\ bv p)
+qualifiersFv :: forall a. List (Qualifier a) -> Expr a -> Set.Set Var
+qualifiersFv Nil e = fv e
+qualifiersFv (g : gs) e = case g of
+   ListCompGuard e' -> fv e' ∪ qualifiersFv gs e
+   ListCompGen p e' -> fv e' ∪ (qualifiersFv gs e \\ bv p)
+   ListCompDecl (VarDef p e') -> fv e' ∪ (qualifiersFv gs e \\ bv p)
