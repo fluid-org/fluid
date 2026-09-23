@@ -423,7 +423,6 @@ wellFormedPattern (S.PList ps) = subpatterns ps
 wellFormedPattern (S.PAs p x) = subpatterns (p : S.PVar x : Nil)
 wellFormedPattern _ = pure unit
 
--- Sub-patterns well-formed, with pairwise disjoint variables.
 subpatterns :: List S.Pattern -> Either String Unit
 subpatterns ps = do
    traverse_ wellFormedPattern ps
