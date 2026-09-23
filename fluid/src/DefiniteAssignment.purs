@@ -82,6 +82,9 @@ classOf cxt c = case resolveName cxt c of
    Just (Class cls) -> pure cls
    _ -> throwError $ "Unknown dataclass: " <> dottedName c
 
+className :: Cxt -> Name -> Either String Name
+className cxt c = _.name <$> classOf cxt c
+
 resolveName :: Cxt -> Name -> Maybe Entry
 resolveName cxt name = case NEL.fromList init of
    Nothing -> simpleEntry cxt x

@@ -24,7 +24,7 @@ import Data.Set (Set, unions)
 import Data.Set as Set
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
@@ -439,12 +439,12 @@ subsumed _ (S.PStr s) (S.PStr s') = s == s'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
 subsumed cxt (S.PList ps) (S.PList ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')
-subsumed cxt (S.PList Nil) (S.PConstr c' Nil Nil) = className cxt c' == Just cNil
+subsumed cxt (S.PList Nil) (S.PConstr c' Nil Nil) = hush (className cxt c') == Just cNil
 subsumed cxt (S.PList (p : ps)) (S.PConstr c' (p' : ps' : Nil) Nil) =
-   className cxt c' == Just cCons && subsumed cxt p p' && subsumed cxt (S.PList ps) ps'
-subsumed cxt (S.PConstr c Nil Nil) (S.PList Nil) = className cxt c == Just cNil
+   hush (className cxt c') == Just cCons && subsumed cxt p p' && subsumed cxt (S.PList ps) ps'
+subsumed cxt (S.PConstr c Nil Nil) (S.PList Nil) = hush (className cxt c) == Just cNil
 subsumed cxt (S.PConstr c (p : ps : Nil) Nil) (S.PList (p' : ps')) =
-   className cxt c == Just cCons && subsumed cxt p p' && subsumed cxt ps (S.PList ps')
+   hush (className cxt c) == Just cCons && subsumed cxt p p' && subsumed cxt ps (S.PList ps')
 subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    cls <- hush (classOf cxt c)
    cls' <- hush (classOf cxt c')
@@ -452,12 +452,9 @@ subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
 subsumed _ _ _ = false
 
-className :: Cxt -> Name -> Maybe Name
-className cxt c = _.name <$> hush (classOf cxt c)
-
 qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
 qualifyPattern cxt (S.PConstr c ps xps) =
-   S.PConstr <$> (_.name <$> classOf cxt c) <*> traverse (qualifyPattern cxt) ps <*> traverse (traverse (qualifyPattern cxt)) xps
+   S.PConstr <$> className cxt c <*> traverse (qualifyPattern cxt) ps <*> traverse (traverse (qualifyPattern cxt)) xps
 qualifyPattern cxt (S.PRecord xps) = S.PRecord <$> traverse (traverse (qualifyPattern cxt)) xps
 qualifyPattern cxt (S.PList ps) = S.PList <$> traverse (qualifyPattern cxt) ps
 qualifyPattern cxt (S.PAs p x) = S.PAs <$> qualifyPattern cxt p <@> x
