@@ -14,7 +14,7 @@ import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.List (List(..), length, mapMaybe, nub, zip, (:))
+import Data.List (List(..), elemIndex, index, length, mapMaybe, nub, (:))
 import Data.Foldable (lookup) as F
 import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, builtins, predefinedDeps)
@@ -475,21 +475,17 @@ subsumed cxt p p' = case asConstr p, asConstr p' of
       cls <- hush (classOf cxt c)
       cls' <- hush (classOf cxt c')
       guard (cls'.name `elem` ancestors cls)
-      fm <- fieldMap cls ps xps
-      fm' <- fieldMap cls' qs xqs
-      pure $ all (\x -> fromMaybe false (subsumed cxt <$> Map.lookup x fm <*> Map.lookup x fm')) (fields cls')
+      pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' qs xqs x)) (fields cls')
    _, _ -> false
    where
    ancestors :: ClassEntry -> List Name
    ancestors cls = cls.name : maybe Nil ancestors (cls.base >>= classFor cls.cxt)
 
-   -- Field to sub-pattern, positional then keyword; undefined if the arguments don't fit the class.
-   fieldMap :: ClassEntry -> List S.Pattern -> List (Var × S.Pattern) -> Maybe (Map.Map Var S.Pattern)
-   fieldMap cls ps xps = do
-      let fs = fields cls
-      guard (length ps <= length fs)
-      let positional = Map.fromFoldable (zip fs ps)
-      foldM (\m (x × q) -> whenever (x `elem` fs && not (Map.member x m)) (Map.insert x q m)) positional xps
+   -- Sub-pattern for a field, positional then keyword.
+   fieldMap :: ClassEntry -> List S.Pattern -> List (Var × S.Pattern) -> Var -> Maybe S.Pattern
+   fieldMap cls ps xps x = case elemIndex x (fields cls) of
+      Just i | i < length ps -> index ps i
+      _ -> F.lookup x xps
 
 -- Constructor view of a pattern, with list patterns as Nil and Cons.
 asConstr :: S.Pattern -> Maybe (Name × List S.Pattern × List (Var × S.Pattern))
