@@ -323,11 +323,6 @@ wellFormed q cxt (S.Dataclass c b xs) = do
                  <> show (Set.toUnfoldable clash :: List Var)
    pure (Assigns Map.empty × S.Dataclass c b xs)
 
-asName :: forall a. S.Expr a -> Maybe Name
-asName (S.Var x) = Just (singleton x)
-asName (S.Attribute e y) = asName e <#> (_ <> singleton y)
-asName _ = Nothing
-
 -- Validate an expression; rewrite constructor names to fully-qualified form and
 -- module projections to ModMember.
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
@@ -357,6 +352,11 @@ wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
          $ "module " <> dottedName q <> " has no member " <> y
       pure (S.ModMember q y)
    _ -> flip S.Attribute y <$> wellFormedExpr cxt e
+   where
+   asName :: S.Expr a -> Maybe Name
+   asName (S.Var x) = Just (singleton x)
+   asName (S.Attribute e' y') = asName e' <#> (_ <> singleton y')
+   asName _ = Nothing
 wellFormedExpr _ e@(S.ModMember _ _) = pure e
 wellFormedExpr cxt (S.Subscript e e') = S.Subscript <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.Matrix α e1 (x × y) e2) =
