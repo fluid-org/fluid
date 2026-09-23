@@ -130,7 +130,6 @@ traceWhen _ _ = pure unit
 log' :: forall m. MonadEffect m => String -> m Unit
 log' msg = when debug.logging (log msg)
 
--- Fail with the given error on the first element that occurs earlier in the list.
 checkDistinct :: forall m e a. MonadThrow e m => Ord a => (a -> e) -> List a -> m Unit
 checkDistinct err xs = for_ (L.head (xs L.\\ L.nub xs)) (throwError <<< err)
 
