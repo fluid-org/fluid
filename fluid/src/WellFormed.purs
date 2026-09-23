@@ -24,7 +24,7 @@ import Data.Set (Set, unions)
 import Data.Set as Set
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), classFor, erase, extendCxt, extendCxtWith, fields, mergeRes, overrideRes)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), classFor, classOf, erase, extendCxt, extendCxtWith, fields, mergeRes, overrideRes, resolveName)
 import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
@@ -327,25 +327,6 @@ asName :: forall a. S.Expr a -> Maybe Name
 asName (S.Var x) = Just (singleton x)
 asName (S.Attribute e y) = asName e <#> (_ <> singleton y)
 asName _ = Nothing
-
-classOf :: Cxt -> Name -> Either String ClassEntry
-classOf cxt c = case resolveName cxt c of
-   Just (Class cls) -> pure cls
-   _ -> throwError $ "Unknown dataclass: " <> dottedName c
-
-resolveName :: Cxt -> Name -> Maybe Entry
-resolveName cxt name = case NEL.fromList init of
-   Nothing -> simpleEntry cxt x
-   Just q -> case resolveName cxt q of
-      Just (ModLoaded _ cxt') -> simpleEntry cxt' x
-      _ -> Nothing
-   where
-   { init, last: x } = NEL.unsnoc name
-   simpleEntry g y = case Map.lookup y g of
-      Just e@(VarStatus true) -> Just e
-      Just e@(ModLoaded _ _) -> Just e
-      Just e@(Class _) -> Just e
-      _ -> Nothing
 
 -- Validate an expression; rewrite constructor names to fully-qualified form and
 -- module projections to ModMember.
