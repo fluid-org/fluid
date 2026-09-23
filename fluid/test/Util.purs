@@ -86,25 +86,25 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphEval gconfig s'
    let evalG_bwd = fst <<< (depsOf graphed).bwd
    let evalG_op_bwd = fst <<< (depsOf graphed).fwd
-   let EnvStmt γ_raw s_raw = erase graphed.inα
-   let inputs' = if Array.null inputs then keys γ_raw else Set.fromFoldable inputs
+   let EnvStmt ρ_raw s_raw = erase graphed.inα
+   let inputs' = if Array.null inputs then keys ρ_raw else Set.fromFoldable inputs
 
    let arg = constrArg (fieldIndex gconfig.classes)
    let v = map (const top) outα :: Val 𝔹
    let out0 = fst (δv arg (const unselected <$> v)) <#> getPersistent
 
-   EnvStmt in_γ _ <- do
+   EnvStmt in_ρ _ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
-   out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (EnvStmt (restrict inputs' in_γ) (botOf s_raw)))
+   out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (EnvStmt (restrict inputs' in_ρ) (botOf s_raw)))
 
    case bwd_expect of
       Nothing -> pure unit
       Just sel -> do
-         let expected = sel𝔹 (sel arg) in_γ
-         unless (in_γ ≽ expected) $
-            throw ("bwd_expect mismatch:\nactual in_γ\n" <> prettyP in_γ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
+         let expected = sel𝔹 (sel arg) in_ρ
+         unless (in_ρ ≽ expected) $
+            throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
    unless (null fwd_expect) do
       let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
       withMsg "fwd_expect" $ checkPretty fwd_expect (report out1)

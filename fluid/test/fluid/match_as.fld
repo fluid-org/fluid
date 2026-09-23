@@ -1,0 +1,8 @@
+def f(v):
+   match v:
+      case (1, y) as p:
+         return (y, p)
+      case _ as w:
+         return (0, w)
+
+[f((1, 2)), f((3, 4))]

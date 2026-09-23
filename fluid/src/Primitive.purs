@@ -149,7 +149,7 @@ type BinaryZero i o a =
 
 unary :: forall i o a'. BoundedJoinSemilattice a' => String -> (forall a. Unary i o a) -> Bind (Val a')
 unary id f =
-   id × Val bot Nothing (Fun (Foreign (ForeignOp (id × op)) Nil))
+   id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
    op = ForeignOp' { arity: 1, op: unsafePartial op' }
@@ -162,7 +162,7 @@ unary id f =
 
 binary :: forall i1 i2 o a'. BoundedJoinSemilattice a' => String -> (forall a. Binary i1 i2 o a) -> Bind (Val a')
 binary id f =
-   id × Val bot Nothing (Fun (Foreign (ForeignOp (id × op)) Nil))
+   id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
    op = ForeignOp' { arity: 2, op: unsafePartial op' }
@@ -176,7 +176,7 @@ binary id f =
 -- If both are zero, depend only on the first.
 binaryZero :: forall i o a'. BoundedJoinSemilattice a' => IsZero i => String -> (forall a. BinaryZero i o a) -> Bind (Val a')
 binaryZero id f =
-   id × Val bot Nothing (Fun (Foreign (ForeignOp (id × op)) Nil))
+   id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
    op = ForeignOp' { arity: 2, op: unsafePartial op' }

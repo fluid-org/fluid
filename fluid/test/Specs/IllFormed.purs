@@ -18,7 +18,7 @@ purepy_cases =
    , { file: "purepy/dataclass_int_field.fld", expected_error: "\"ParseError on line 3, column 6:\\nExpected uppercase letter\"" }
    , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 10, column 10:\\nExpected ')'\"" }
    , { file: "purepy/dataclass_unknown_base.fld", expected_error: "Unknown class: Unknown" }
-   , { file: "purepy/duplicate_def_in_region.fld", expected_error: "Shape mismatch" }
+   , { file: "purepy/duplicate_def_in_region.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/forward_class_in_def.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/forward_class_top.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module module.two_vals_lib" }
@@ -26,11 +26,18 @@ purepy_cases =
    , { file: "purepy/import_in_if.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_match_case.fld", expected_error: "\"ParseError on line 3, column 12:\\nimports must precede statements\"" }
    , { file: "purepy/match_var_leak.fld", expected_error: "Not definitely assigned: x" }
+   , { file: "purepy/match_dup_literal.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_as_subsumed.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_dup_list.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_list_after_cons.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/pat_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
+   , { file: "purepy/pat_as_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
+   , { file: "purepy/pat_dup_key.fld", expected_error: "Duplicate key in pattern: a" }
    , { file: "purepy/mutual_def_block_local.fld", expected_error: "Not definitely assigned: g" }
    , { file: "purepy/mutual_split.fld", expected_error: "Unbound name: odd" }
    , { file: "purepy/mutual_split_by_assign.fld", expected_error: "Unbound name: g" }
    , { file: "purepy/no_else.fld", expected_error: "Not definitely assigned: x" }
-   , { file: "purepy/pat_class_arity.fld", expected_error: "Assertion failure: " }
+   , { file: "purepy/pat_class_arity.fld", expected_error: "Point expects 2 argument(s); got 0" }
    , { file: "purepy/pat_class_bad_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"y\" : Nil), got (\"z\" : Nil)" }
    , { file: "purepy/pat_class_unknown.fld", expected_error: "Unknown dataclass: NotAClass" }
    , { file: "purepy/self_capture.fld", expected_error: "Variable captured by its own definition: x" }
@@ -53,7 +60,7 @@ illFormed_cases =
    , { file: "extend_imported_class.fld", expected_error: "Cannot extend imported class: Base" }
    , { file: "from_import_arity.fld", expected_error: "Derived expects 2 argument(s); got 1" }
    , { file: "from_import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }
-   , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError" }
+   , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError\nIn error" }
    , { file: "from_import_selective.fld", expected_error: "Unbound name: bar" }
    , { file: "from_import_unassigned.fld", expected_error: "Not definitely assigned: x" }
    , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }

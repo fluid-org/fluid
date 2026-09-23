@@ -1,0 +1,10 @@
+def g(xs):
+   match xs:
+      case [_, y]:
+         return y
+      case _ :| _:
+         return -1
+      case _:
+         return 0
+
+[g([1, 2]), g([1, 2, 3]), g([])]

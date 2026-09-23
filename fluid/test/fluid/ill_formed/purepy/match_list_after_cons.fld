@@ -1,0 +1,9 @@
+v = [1, 2]
+match v:
+   case _ :| _:
+      x = "a"
+   case [c, d]:
+      x = "b"
+   case _:
+      x = "c"
+x

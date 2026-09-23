@@ -7,24 +7,31 @@ import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (StateT, get, mapStateT, modify_, runStateT)
 import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
-import Data.Either (Either)
-import Data.Foldable (foldM, foldr, for_, intercalate)
+import Data.Either (Either, hush)
+import Control.MonadPlus (guard)
+import Data.Foldable (all, and, elem, foldM, foldr, for_, intercalate)
+import Data.Function (on)
+import Data.FoldableWithIndex (forWithIndex_)
+import Data.TraversableWithIndex (forWithIndex)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
-import Data.List (List(..), length, mapMaybe, nub, (:))
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.List (List(..), drop, length, mapMaybe, nub, null, zipWith, (:))
+import Data.Foldable (lookup) as F
+import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, builtins, predefinedDeps)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
 import Data.Set as Set
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), classFor, erase, extendCxt, extendCxtWith, fields, mergeRes, overrideRes)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Util.Map (constMap)
 import Expr (bv, fv)
+import Expr (Pattern(..)) as S
 import Lattice (Raw)
-import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ListRestPattern(..), Module(..), ParagraphElem(..), Pattern(..), Qualifier(..), Stmt(..), VarDef(..)) as S
-import Util (type (×), singleton, whenever, (×), (∩))
+import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
 -- Member context of a loaded module and its checked body. The program is
@@ -42,7 +49,7 @@ checkProgram
    -> List S.Import
    -> Raw S.Stmt
    -> Either String { cxt :: VarCxt, s :: S.Stmt (WfResult VarCxt), loaded :: Map.Map ModuleName LoadedModule }
-checkProgram mods nativeBuiltins imports s =
+checkProgram mods primitivesCxt imports s =
    runStateT program Map.empty <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
    where
    program :: LoadM (VarCxt × S.Stmt (WfResult VarCxt))
@@ -51,8 +58,8 @@ checkProgram mods nativeBuiltins imports s =
       -- Unlike a module (checkStatements), the program may return: a top-level return yields
       -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
       _ × s' <- lift (wellFormed mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
-      λ <- lift (classes mainModule s)
-      modify_ (Map.insert mainModule { cxt: Class <$> λ, mod: Nothing })
+      decls <- lift (classes mainModule s)
+      modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
       pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
    -- Member context of module q; memoised.
@@ -63,19 +70,19 @@ checkProgram mods nativeBuiltins imports s =
          mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
          importCxt × cxt_imp <- checkImports q is
          δ × mod' <- lift (checkStatements q cxt_imp mod)
-         λ <- lift (classesOfModule q mod)
+         decls <- lift (classesOfModule q mod)
          let subs = submodules (Map.keys mods) q
-         let clash = (Map.keys importCxt ∪ Map.keys δ ∪ Map.keys λ) ∩ Map.keys subs
+         let clash = (Map.keys importCxt ∪ Map.keys δ ∪ Map.keys decls) ∩ Map.keys subs
          when (not Set.isEmpty clash)
             $ throwError
             $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
          when (q == builtins) do
-            let nativeClash = Map.keys nativeBuiltins ∩ (Map.keys δ ∪ Map.keys λ ∪ Map.keys subs)
-            when (not (Set.isEmpty nativeClash))
+            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys decls ∪ Map.keys subs)
+            when (not (Set.isEmpty primitiveClash))
                $ throwError
-               $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable nativeClash :: List Var)
+               $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable primitiveClash :: List Var)
          let
-            cxt = (if q == builtins then nativeBuiltins else Map.empty) `Map.union` subs `Map.union` (Class <$> λ) `Map.union`
+            cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` (Class <$> decls) `Map.union`
                (VarStatus <$> δ)
          modify_ (Map.insert q { cxt, mod: Just mod' })
          pure cxt
@@ -211,7 +218,7 @@ capturesE (S.Lambda (S.LambdaClause (ps × e))) =
 capturesE (S.Attribute e _) = capturesE e
 capturesE (S.ModMember _ _) = Set.empty
 capturesE (S.Subscript e e') = capturesE e ∪ capturesE e'
-capturesE (S.App e e') = capturesE e ∪ capturesE e'
+capturesE (S.App e es) = capturesE e ∪ unions (capturesE <$> es)
 capturesE (S.BinaryApp e _ e') = capturesE e ∪ capturesE e'
 capturesE (S.UnaryPrefixApp _ e) = capturesE e
 capturesE (S.Ternary e e1 e2) = capturesE e ∪ capturesE e1 ∪ capturesE e2
@@ -245,17 +252,19 @@ wellFormed _ cxt (S.Def (S.VarDef p e)) = do
    for_ (Set.toUnfoldable (xs `Set.intersection` capturesE e) :: Array Var) \x ->
       throwError $ "Variable captured by its own definition: " <> x
    e' <- wellFormedExpr cxt e
-   p' <- qualifyPattern cxt p
+   p' <- wellFormedPattern cxt p
    pure (Assigns (constMap true xs) × S.Def (S.VarDef p' (Assigns Map.empty <$ e')))
 wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
+   for_ (NEL.groupBy (eq `on` fst) ds) \clauses ->
+      void $ wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList ps)
    ds' <- traverse
       ( \(x × S.Clause _ (ps × s)) -> do
            let xs = unions (bv <$> ps)
            let ys = assigns s \\ xs
            let cxt'' = cxt' `extendCxt` constMap true xs `extendCxt` constMap false ys
-           ps' <- traverse (qualifyPattern cxt') ps
+           ps' <- traverse (wellFormedPattern cxt') ps
            r × s' <- wellFormed q cxt'' s
            pure (x × S.Clause r (ps' × s'))
       )
@@ -268,8 +277,8 @@ wellFormed q cxt (S.Seq s1 s2) = do
       Assigns δ -> do
          for_ (Set.toUnfoldable (captures s1 `Set.intersection` assigns s2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         λ1 <- classes q s1
-         let cxt' = Map.union (Class <$> (λ1 <#> _ { cxt = cxt })) (cxt `extendCxt` δ)
+         decls <- classes q s1
+         let cxt' = Map.union (Class <$> (decls <#> _ { cxt = cxt })) (cxt `extendCxt` δ)
          r2 × s2' <- wellFormed q cxt' s2
          pure (overrideRes r1 r2 × S.Seq s1' s2')
 wellFormed q cxt (S.If es elseBranch) = do
@@ -284,20 +293,20 @@ wellFormed q cxt (S.If es elseBranch) = do
       Just s -> map Just <$> wellFormed q cxt s
       Nothing -> pure (Assigns Map.empty × Nothing)
    pure (foldl1 mergeRes (NEL.cons rElse (fst <$> es')) × S.If (snd <$> es') elseBranch')
-wellFormed q cxt (S.Match e ps) = do
+wellFormed q cxt (S.Match e bs) = do
    e' <- wellFormedExpr cxt e
-   ps' <- traverse
-      ( \(p × s) -> do
+   ps' <- wellFormedPatterns cxt (fst <$> bs)
+   bs' <- for (NEL.zip ps' bs)
+      ( \(p' × (p × s)) -> do
            let xs = bv p
-           p' <- qualifyPattern cxt p
            r × s' <- wellFormed q (cxt `extendCxt` constMap true xs) s
            pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
       )
-      ps
-   pure (foldl1 mergeRes ((fst <$> ps') `NEL.snoc` rFall) × S.Match (Assigns Map.empty <$ e') (snd <$> ps'))
+   pure (foldl1 mergeRes ((fst <$> bs') `NEL.snoc` rFall) × S.Match (Assigns Map.empty <$ e') (snd <$> bs'))
    where
-   rFall = case fst (NEL.last ps) of
+   rFall = case fst (NEL.last bs) of
       S.PVar _ -> Returns
+      S.PWild -> Returns
       _ -> Assigns Map.empty
 wellFormed q cxt (S.Dataclass c b xs) = do
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
@@ -313,101 +322,78 @@ wellFormed q cxt (S.Dataclass c b xs) = do
                  <> show (Set.toUnfoldable clash :: List Var)
    pure (Assigns Map.empty × S.Dataclass c b xs)
 
-asName :: forall a. S.Expr a -> Maybe Name
-asName (S.Var x) = Just (singleton x)
-asName (S.Attribute e y) = asName e <#> (_ <> singleton y)
-asName _ = Nothing
-
-resolveName :: Cxt -> Name -> Maybe Entry
-resolveName cxt name = case NEL.fromList init of
-   Nothing -> simpleEntry cxt x
-   Just q -> case resolveName cxt q of
-      Just (ModLoaded _ cxt') -> simpleEntry cxt' x
-      _ -> Nothing
-   where
-   { init, last: x } = NEL.unsnoc name
-   simpleEntry g y = case Map.lookup y g of
-      Just e@(VarStatus true) -> Just e
-      Just e@(ModLoaded _ _) -> Just e
-      Just e@(Class _) -> Just e
-      _ -> Nothing
-
--- Validate an expression; rewrite constructor names to fully-qualified form and
--- module projections to ModMember.
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
-wellFormedExpr = wf
+wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
+wellFormedExpr cxt e@(S.Op op) = e <$ var cxt op
+wellFormedExpr _ e@(S.Int _ _) = pure e
+wellFormedExpr _ e@(S.Float _ _) = pure e
+wellFormedExpr _ e@(S.Str _ _) = pure e
+wellFormedExpr cxt (S.Constr α c es Nil) = do
+   cls <- classOf cxt c
+   let fs = fields cls
+   when (length es /= length fs)
+      $ throwError
+      $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
+   (\es' -> S.Constr α cls.name es' Nil) <$> traverse (wellFormedExpr cxt) es
+wellFormedExpr cxt (S.Constr α c es xes) = do
+   cls <- classOf cxt c
+   S.Constr α cls.name <$> traverse (wellFormedExpr cxt) es <*> traverse (\(x × e) -> (x × _) <$> wellFormedExpr cxt e) xes
+wellFormedExpr cxt (S.App e es) = S.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
+wellFormedExpr cxt (S.BinaryApp e op e') = S.BinaryApp <$> wellFormedExpr cxt e <*> (op <$ var cxt op) <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wellFormedExpr cxt e)
+wellFormedExpr cxt (S.Ternary c e e') = S.Ternary <$> wellFormedExpr cxt c <*> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
+   Just (ModLoaded q cxt') -> do
+      when (not (Map.member y cxt'))
+         $ throwError
+         $ "module " <> dottedName q <> " has no member " <> y
+      pure (S.ModMember q y)
+   _ -> flip S.Attribute y <$> wellFormedExpr cxt e
    where
-   wf :: Cxt -> S.Expr a -> Either String (S.Expr a)
-   wf cxt e@(S.Var x) = e <$ var cxt x
-   wf cxt e@(S.Op op) = e <$ var cxt op
-   wf _ e@(S.Int _ _) = pure e
-   wf _ e@(S.Float _ _) = pure e
-   wf _ e@(S.Str _ _) = pure e
-   wf cxt (S.Constr α c es Nil) = case resolveName cxt c of
-      Just (Class cls) -> do
-         let fs = fields cls
-         when (length es /= length fs)
-            $ throwError
-            $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
-         (\es' -> S.Constr α (qualified cls c) es' Nil) <$> traverse (wf cxt) es
-      _ -> throwError $ "Unknown dataclass: " <> dottedName c
-   wf cxt (S.Constr α c es xes) = case resolveName cxt c of
-      Just (Class cls) ->
-         S.Constr α (qualified cls c) <$> traverse (wf cxt) es <*> traverse (\(x × e) -> (x × _) <$> wf cxt e) xes
-      _ -> throwError $ "Unknown dataclass: " <> dottedName c
-   wf cxt (S.App e e') = S.App <$> wf cxt e <*> wf cxt e'
-   wf cxt (S.BinaryApp e op e') = S.BinaryApp <$> wf cxt e <*> (op <$ var cxt op) <*> wf cxt e'
-   wf cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wf cxt e)
-   wf cxt (S.Ternary c e e') = S.Ternary <$> wf cxt c <*> wf cxt e <*> wf cxt e'
-   wf cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
-      Just (ModLoaded q cxt') -> do
-         when (not (Map.member y cxt'))
-            $ throwError
-            $ "module " <> dottedName q <> " has no member " <> y
-         pure (S.ModMember q y)
-      _ -> flip S.Attribute y <$> wf cxt e
-   wf _ e@(S.ModMember _ _) = pure e
-   wf cxt (S.Subscript e e') = S.Subscript <$> wf cxt e <*> wf cxt e'
-   wf cxt (S.Matrix α body (x × y) source) =
-      (\source' body' -> S.Matrix α body' (x × y) source') <$> wf cxt source <*> wf
-         (assignedIn cxt (Set.singleton x ∪ Set.singleton y))
-         body
-   wf cxt (S.Lambda (S.LambdaClause (ps × e))) = do
-      ps' <- traverse (qualifyPattern cxt) ps
-      e' <- wf (assignedIn cxt (unions (bv <$> ps))) e
-      pure (S.Lambda (S.LambdaClause (ps' × e')))
-   wf cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wf cxt v) kvs
-      where
-      dictKey (S.ExprKey e) = S.ExprKey <$> wf cxt e
-      dictKey k@(S.VarKey _ _) = pure k
-   wf cxt (S.Paragraph elems) = S.Paragraph <$> traverse pe elems
-      where
-      pe (S.Unquote e) = S.Unquote <$> wf cxt e
-      pe t@(S.Token _) = pure t
-   wf _ e@(S.ListEmpty _) = pure e
-   wf cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wf cxt e <*> listRest l
-      where
-      listRest l'@(S.End _) = pure l'
-      listRest (S.Next α' e' l') = S.Next α' <$> wf cxt e' <*> listRest l'
-   wf cxt (S.ListEnum e e') = S.ListEnum <$> wf cxt e <*> wf cxt e'
-   wf cxt (S.ListComp α e quals) = (\(e' × quals') -> S.ListComp α e' quals') <$> qualifiers cxt quals
-      where
-      qualifiers cxt' Nil = (_ × Nil) <$> wf cxt' e
-      qualifiers cxt' (q : qs) = case q of
-         S.ListCompGuard cond -> do
-            cond' <- wf cxt' cond
-            map (S.ListCompGuard cond' : _) <$> qualifiers cxt' qs
-         S.ListCompGen p src -> do
-            src' <- wf cxt' src
-            p' <- qualifyPattern cxt' p
-            map (S.ListCompGen p' src' : _) <$> qualifiers (assignedIn cxt' (bv p)) qs
-         S.ListCompDecl (S.VarDef p src) -> do
-            src' <- wf cxt' src
-            p' <- qualifyPattern cxt' p
-            map (S.ListCompDecl (S.VarDef p' src') : _) <$> qualifiers (assignedIn cxt' (bv p)) qs
-   wf cxt (S.DocExpr e e') = S.DocExpr <$> wf cxt e <*> wf cxt e'
-
-   qualified cls _ = cls.name
+   asName :: S.Expr a -> Maybe Name
+   asName (S.Var x) = Just (singleton x)
+   asName (S.Attribute e' y') = asName e' <#> (_ <> singleton y')
+   asName _ = Nothing
+wellFormedExpr _ e@(S.ModMember _ _) = pure e
+wellFormedExpr cxt (S.Subscript e e') = S.Subscript <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.Matrix α e1 (x × y) e2) =
+   (\e2' e1' -> S.Matrix α e1' (x × y) e2') <$> wellFormedExpr cxt e2 <*> wellFormedExpr
+      (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
+      e1
+wellFormedExpr cxt (S.Lambda (S.LambdaClause (ps × e))) = do
+   ps' <- traverse (wellFormedPattern cxt) ps
+   e' <- wellFormedExpr (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
+   pure (S.Lambda (S.LambdaClause (ps' × e')))
+wellFormedExpr cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wellFormedExpr cxt v) kvs
+   where
+   dictKey (S.ExprKey e) = S.ExprKey <$> wellFormedExpr cxt e
+   dictKey k@(S.VarKey _ _) = pure k
+wellFormedExpr cxt (S.Paragraph elems) = S.Paragraph <$> traverse pe elems
+   where
+   pe (S.Unquote e) = S.Unquote <$> wellFormedExpr cxt e
+   pe t@(S.Token _) = pure t
+wellFormedExpr _ e@(S.ListEmpty _) = pure e
+wellFormedExpr cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wellFormedExpr cxt e <*> listRest l
+   where
+   listRest l'@(S.End _) = pure l'
+   listRest (S.Next α' e' l') = S.Next α' <$> wellFormedExpr cxt e' <*> listRest l'
+wellFormedExpr cxt (S.ListEnum e e') = S.ListEnum <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs') <$> qualifiers cxt gs
+   where
+   qualifiers cxt' Nil = (_ × Nil) <$> wellFormedExpr cxt' e
+   qualifiers cxt' (g : gs') = case g of
+      S.ListCompGuard e1 -> do
+         e1' <- wellFormedExpr cxt' e1
+         map (S.ListCompGuard e1' : _) <$> qualifiers cxt' gs'
+      S.ListCompGen p e1 -> do
+         e1' <- wellFormedExpr cxt' e1
+         p' <- wellFormedPattern cxt' p
+         map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
+      S.ListCompDecl (S.VarDef p e1) -> do
+         e1' <- wellFormedExpr cxt' e1
+         p' <- wellFormedPattern cxt' p
+         map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
+wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit
 var cxt x = case Map.lookup x cxt of
@@ -418,21 +404,58 @@ var cxt x = case Map.lookup x cxt of
    Just (Class _) -> throwError $ "class " <> x <> " is not a value"
    Nothing -> throwError $ "Unbound name: " <> x
 
-assignedIn :: Cxt -> Set Var -> Cxt
-assignedIn cxt xs = cxt `extendCxt` constMap true xs
+-- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
+wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String (NEL.NonEmptyList S.Pattern)
+wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
+   forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
+      when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"
+   wellFormedPattern cxt p
 
-qualifyPattern :: Cxt -> S.Pattern -> Either String S.Pattern
-qualifyPattern cxt = qualify
-   where
-   qualify (S.PConstr c ps xps) = do
-      fqn <- fqnOf c
-      S.PConstr fqn <$> traverse qualify ps <*> traverse (traverse qualify) xps
-   qualify (S.PRecord xps) = S.PRecord <$> traverse (traverse qualify) xps
-   qualify (S.PListNonEmpty p lr) = S.PListNonEmpty <$> qualify p <*> qualifyRest lr
-   qualify p = pure p
-   qualifyRest (S.PListNext p lr) = S.PListNext <$> qualify p <*> qualifyRest lr
-   qualifyRest lr = pure lr
-   fqnOf c = case resolveName cxt c of
-      Just (Class cls) -> pure cls.name
-      _ -> throwError $ "Unknown dataclass: " <> dottedName c
+wellFormedPattern :: Cxt -> S.Pattern -> Either String S.Pattern
+wellFormedPattern cxt (S.PConstr c ps xps) = do
+   cls <- classOf cxt c
+   let fs = fields cls
+   when (null xps && length ps /= length fs)
+      $ throwError
+      $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length ps)
+   distinctVars (ps <> (snd <$> xps))
+   S.PConstr cls.name <$> traverse (wellFormedPattern cxt) ps <*> traverse (traverse (wellFormedPattern cxt)) xps
+wellFormedPattern cxt (S.PRecord xps) = do
+   checkDistinct ("Duplicate key in pattern: " <> _) (fst <$> xps)
+   distinctVars (snd <$> xps)
+   S.PRecord <$> traverse (traverse (wellFormedPattern cxt)) xps
+wellFormedPattern cxt (S.PList ps) = do
+   distinctVars ps
+   S.PList <$> traverse (wellFormedPattern cxt) ps
+wellFormedPattern cxt (S.PAs p x) = do
+   distinctVars (p : S.PVar x : Nil)
+   S.PAs <$> wellFormedPattern cxt p <@> x
+wellFormedPattern _ p = pure p
+
+distinctVars :: List S.Pattern -> Either String Unit
+distinctVars ps = checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
+
+subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean
+subsumed _ _ (S.PVar _) = true
+subsumed _ _ S.PWild = true
+subsumed cxt (S.PAs p _) p' = subsumed cxt p p'
+subsumed cxt p (S.PAs p' _) = subsumed cxt p p'
+subsumed _ (S.PInt n) (S.PInt n') = n == n'
+subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
+subsumed _ (S.PStr s) (S.PStr s') = s == s'
+subsumed cxt (S.PRecord xps) (S.PRecord xps') =
+   all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
+subsumed cxt (S.PList ps) (S.PList ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')
+subsumed cxt (S.PList Nil) (S.PConstr c' Nil Nil) = hush (className cxt c') == Just cNil
+subsumed cxt (S.PList (p : ps)) (S.PConstr c' (p' : ps' : Nil) Nil) =
+   hush (className cxt c') == Just cCons && subsumed cxt p p' && subsumed cxt (S.PList ps) ps'
+subsumed cxt (S.PConstr c Nil Nil) (S.PList Nil) = hush (className cxt c) == Just cNil
+subsumed cxt (S.PConstr c (p : ps : Nil) Nil) (S.PList (p' : ps')) =
+   hush (className cxt c) == Just cCons && subsumed cxt p p' && subsumed cxt ps (S.PList ps')
+subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
+   cls <- hush (classOf cxt c)
+   cls' <- hush (classOf cxt c')
+   guard (cls'.name `elem` ancestors cls)
+   pure $ all (\x -> fromMaybe false (subsumed cxt <$> fieldMap cls ps xps x <*> fieldMap cls' ps' xps' x)) (fields cls')
+subsumed _ _ _ = false
 

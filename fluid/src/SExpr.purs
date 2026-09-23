@@ -1,40 +1,37 @@
 module SExpr where
 
-import Prelude hiding (absurd, top, unless)
+import Prelude hiding (top)
 
-import Bind (Bind, Name, Var, dottedName, varAnon, (↦))
-import Bind (keys) as B
-import Data.Set (Set, empty, insert, member, singleton, unions) as Set
+import Bind (Bind, Name, Var, dottedName, (↦))
+import Data.Set (Set, empty, singleton, unions) as Set
 import Control.Monad.Error.Class (class MonadError)
-import Data.Bitraversable (ltraverse, rtraverse)
-import Data.Either (Either(..))
-import Data.Foldable (for_, length)
+import Data.Bitraversable (bitraverse)
+import Data.Foldable (all, for_, length, null)
 import Data.Function (on)
 import Data.Generic.Rep (class Generic)
-import Data.List (List(..), drop, find, sort, take, unzip, zip, zipWith, (:))
-import Data.List (mapMaybe) as L
+import Data.FunctorWithIndex (mapWithIndex)
+import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWith, (:))
 import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
+import Data.Semigroup.Foldable (foldr1)
+import Data.List.NonEmpty (zipWith) as NonEmptyList
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty ((:|))
-import Data.Profunctor.Strong (first, second)
 import Data.Show.Generic (genericShow)
-import Data.Traversable (sequence, traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import Data.Unfoldable (replicate)
-import DataType (class HasClasses, ClassTable, Ctr, DataType(..), askClasses, ctrSig, fieldsOf, cCons, cNone, cParagraph, cFalse, cNil, cTrue, dataType)
+import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cFalse, cNil, cTrue)
 import Data.Map as Map
-import DefiniteAssignment (VarCxt, WfResult(..))
+import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class BV, class FV, Cont(..), Elim(..), asElim, bv, fv)
-import Expr (Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..)) as E
+import Expr (class FV, Pattern(..), bv, fv)
+import Expr (Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
-import Util (type (+), type (×), Endo, absurd, appendList, assert, definitely, error, shapeMismatch, singleton, throw, unimplemented, whenever, (×), (≜))
-import Util.Map (toUnfoldable)
+import Util (type (×), checkDistinct, error, nonEmpty, singleton, throw, unimplemented, (×))
 import Util.Pair (Pair(..))
 
 -- Surface language expressions.
@@ -52,7 +49,7 @@ data Expr a
    | Attribute (Expr a) Var
    | ModMember Name Var -- member x of module q; not parseable, produced by well-formedness from Attribute
    | Subscript (Expr a) (Expr a)
-   | App (Expr a) (Expr a)
+   | App (Expr a) (List (Expr a))
    | BinaryApp (Expr a) Var (Expr a)
    | UnaryPrefixApp Var (Expr a)
    | Ternary (Expr a) (Expr a) (Expr a)
@@ -69,55 +66,13 @@ data ListRest a
    = End a
    | Next a (Expr a) (ListRest a)
 
-data Pattern
-   = PVar Var
-   | PConstr Name (List Pattern) (List (Bind Pattern))
-   | PRecord (List (Bind Pattern))
-   | PListEmpty
-   | PListNonEmpty Pattern ListRestPattern
-
-data ListRestPattern
-   = PListVar Var -- currently unsupported in parser; only arise during desugaring
-   | PListEnd
-   | PListNext Pattern ListRestPattern
-
 data ParagraphElem a = Token String | Unquote (Expr a)
 type Paragraph a = List (ParagraphElem a)
-
-pVarAnon :: Pattern
-pVarAnon = PVar varAnon
-
-pListVarAnon :: ListRestPattern
-pListVarAnon = PListVar varAnon
-
-showPattern :: Pattern + ListRestPattern -> String
-showPattern (Left p') = show p'
-showPattern (Right p') = show p'
-
-ctrFor :: Pattern + ListRestPattern -> Maybe Ctr
-ctrFor (Left (PVar _)) = Nothing
-ctrFor (Left (PConstr c _ _)) = pure (dottedName c)
-ctrFor (Left (PRecord _)) = Nothing
-ctrFor (Left PListEmpty) = pure (dottedName cNil)
-ctrFor (Left (PListNonEmpty _ _)) = pure (dottedName cCons)
-ctrFor (Right (PListVar _)) = Nothing
-ctrFor (Right PListEnd) = pure (dottedName cNil)
-ctrFor (Right (PListNext _ _)) = pure (dottedName cCons)
-
-subpatts :: Pattern + ListRestPattern -> List (Pattern + ListRestPattern)
-subpatts (Left (PVar _)) = Nil
-subpatts (Left (PConstr _ ps xps)) = Left <$> (ps <> (xps <#> snd))
-subpatts (Left (PRecord xps)) = Left <$> (xps <#> snd)
-subpatts (Left PListEmpty) = Nil
-subpatts (Left (PListNonEmpty p o)) = Left p : Right o : Nil
-subpatts (Right (PListVar _)) = Nil
-subpatts (Right PListEnd) = Nil
-subpatts (Right (PListNext p o)) = Left p : Right o : Nil
 
 data Stmt a
    = Return (Expr a)
    | If (NonEmptyList (Expr a × Stmt a)) (Maybe (Stmt a))
-   | Match (Expr a) (NonEmptyList (Pattern × Stmt a))
+   | Match (Expr a) (NonEmptyList (Case a))
    | Def (VarDef a)
    | DefRec (RecDefs a)
    | Pass
@@ -128,13 +83,16 @@ data Stmt a
 
 data Import = Import Name (Maybe (List Var))
 
-data Clause a = Clause a (NonEmptyList Pattern × Stmt a)
+-- Case of a match statement.
+type Case a = Pattern × Stmt a
+
+data Clause a = Clause a (List Pattern × Stmt a)
 
 type Branch a = Var × Clause a
 newtype Clauses a = Clauses (NonEmptyList (Clause a))
 
 -- Lambdas accept exactly one clause whose body is an expression (no defs / return-keyword).
-newtype LambdaClause a = LambdaClause (NonEmptyList Pattern × Expr a)
+newtype LambdaClause a = LambdaClause (List Pattern × Expr a)
 
 newtype RecDef a = RecDef (NonEmptyList (Branch a))
 type RecDefs a = NonEmptyList (Branch a)
@@ -164,11 +122,11 @@ instance Desugarable ListRest E.Expr where
    desug (End α) = pure (enil α)
    desug (Next α s l) = econs α <$> desug s <*> desug l
 
-instance Desugarable Clauses Elim where
-   desug μ = clausesStateFwd (toClausesStateFwd μ) <#> asElim
+instance Desugarable Clauses E.Def where
+   desug (Clauses μ) = clausesFwd (μ <#> \(Clause _ clause) -> clause)
 
-instance Desugarable LambdaClause Elim where
-   desug (LambdaClause (ps × e)) = desug (Clauses (singleton (Clause (Assigns Map.empty) (ps × Return e))))
+instance Desugarable LambdaClause E.Def where
+   desug (LambdaClause (ps × e)) = clausesFwd (singleton (ps × Return e))
 
 desugarModuleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 desugarModuleFwd = moduleFwd
@@ -180,39 +138,34 @@ enil α = E.Constr α cNil Nil
 econs :: forall a. a -> E.Expr a -> E.Expr a -> E.Expr a
 econs α e e' = E.Constr α cCons (e : e' : Nil)
 
-elimBool :: forall a. Cont a -> Cont a -> Elim a
-elimBool κ κ' = ElimConstr (D.fromFoldable [ dottedName cTrue × κ, dottedName cFalse × κ' ])
+-- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
+param :: Int -> Var
+param i = "$" <> show i
+
+-- Cases branching on a Boolean.
+boolCases :: forall a. E.Stmt a -> E.Stmt a -> NonEmptyList (E.Case a)
+boolCases s s' = NonEmptyList ((PConstr cTrue Nil Nil × s) :| (PConstr cFalse Nil Nil × s') : Nil)
+
+-- Unary function matching its argument against the cases.
+matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
+matchFun α bs = E.Lambda α (E.Def (param 1 : Nil) (E.Match (E.Var (param 1)) bs))
 
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
    where
    importFwd (Import q f) = E.Import q f
 
--- Use of eliminators to establish module bindings is a bit naff, because we don't really have a notion of
--- "rest of module" to use as continuation. So use empty dictionary (unit tuple) as continuation, and disregard
--- in evaluation.
-varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.VarDef (WfResult VarCxt))
-varDefFwd (VarDef p s) =
-   E.VarDef <$> desug (Clauses (singleton (Clause (Assigns Map.empty) (singleton p × Return (Dictionary Returns Nil))))) <*> desug
-      s
+varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
+varDefFwd (VarDef p s) = E.Assign <$> patternFwd p <*> desug s
 
 recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
 recDefsFwd xcs = do
    let xcss = map RecDef (groupBy (eq `on` fst) xcs)
    let names = (fst <<< head <<< unwrap) <$> toList xcss
-   for_ (firstDuplicate names) \x ->
-      throw $ "Non-contiguous clauses for: " <> x
+   checkDistinct (error <<< ("Non-contiguous clauses for: " <> _)) names
    E.RecDefs Returns <$> D.fromFoldable <$> traverse recDefFwd xcss
-   where
-   firstDuplicate :: List Var -> Maybe Var
-   firstDuplicate = go Set.empty
-      where
-      go _ Nil = Nothing
-      go seen (x : xs)
-         | x `Set.member` seen = Just x
-         | otherwise = go (Set.insert x seen) xs
 
-recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (Elim (WfResult VarCxt)))
+recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (E.Def (WfResult VarCxt)))
 recDefFwd xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
    where
    close (Clause Returns body) = Clause Returns body
@@ -252,13 +205,13 @@ exprFwd (Float α n) =
 exprFwd (Str α s) =
    pure $ E.Str α s
 exprFwd (Constr α c es Nil) = do
-   λ <- askClasses
-   _ <- ctrSig λ "construct" (dottedName c)
+   classes <- askClasses
+   _ <- ctrSig classes "construct" (dottedName c)
    E.Constr α c <$> traverse desug es
 exprFwd (Constr α c es xes) = do
-   λ <- askClasses
-   _ <- ctrSig λ "construct" (dottedName c)
-   reordered <- positionaliseKw λ c (length es) xes
+   classes <- askClasses
+   _ <- ctrSig classes "construct" (dottedName c)
+   reordered <- positionaliseKw classes c (length es) xes
    E.Constr α c <$> traverse desug (es <> reordered)
 exprFwd (Dictionary α sss) = do
    let ks × ss = unzip sss
@@ -275,16 +228,16 @@ exprFwd (ModMember q x) =
    pure $ E.ModMember q x
 exprFwd (Subscript s x) =
    E.Subscript <$> desug s <*> desug x
-exprFwd (App s1 s2) =
-   E.App <$> desug s1 <*> desug s2
+exprFwd (App s ss) =
+   E.App <$> desug s <*> traverse desug ss
 exprFwd (BinaryApp s1 op s2) =
-   E.App <$> (E.App (E.Op op) <$> desug s1) <*> desug s2
+   E.App (E.Op op) <$> traverse desug (s1 : s2 : Nil)
 exprFwd (UnaryPrefixApp op s) =
-   E.App (E.Op op) <$> desug s
+   E.App (E.Op op) <$> traverse desug (s : Nil)
 exprFwd (Ternary cond e1 e2) =
-   E.App
-      <$> (E.Lambda Returns <$> (elimBool <$> (ContStmt <$> E.Return <$> desug e1) <*> (ContStmt <$> E.Return <$> desug e2)))
-      <*> desug cond
+   E.App <$> branch <*> ((_ : Nil) <$> desug cond)
+   where
+   branch = matchFun Returns <$> (boolCases <$> (E.Return <$> desug e1) <*> (E.Return <$> desug e2))
 exprFwd (Paragraph elems) =
    paragraphFwd elems
 exprFwd (ListEmpty α) =
@@ -292,13 +245,9 @@ exprFwd (ListEmpty α) =
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 exprFwd (ListEnum s1 s2) =
-   E.App
-      <$> (E.App (E.Var "range") <$> desug s1)
-      <*> (E.App <$> (E.App (E.Op "+") <$> desug s2) <@> (E.Int Returns 1))
-exprFwd (ListComp α s (ListCompGen p s' : qs)) = unsafePartial $
-   listCompFwd (α × (ListCompGen p s' : qs) × s)
-exprFwd (ListComp α s qs) =
-   listCompFwd (α × qs × s)
+   (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)) <$> desug s1 <*> desug s2
+exprFwd (ListComp α s gs) =
+   listCompFwd (α × gs × s)
 exprFwd (DocExpr s s') = do
    e <- exprFwd s
    e' <- exprFwd s'
@@ -307,19 +256,17 @@ exprFwd (DocExpr s s') = do
 type IfElseClauses a = NonEmptyList (Expr a × Stmt a) × Stmt a
 
 stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-stmtFwd (Def vd) = E.Def <$> varDefFwd vd
+stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
-stmtFwd (Match s μ) = do
-   κ <- clausesStateFwd (toClausesStateFwd (Clauses (Clause (Assigns Map.empty) <$> first singleton <$> μ)))
-   E.Match <$> desug s <@> asElim κ
+stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse patternFwd stmtFwd) bs
 stmtFwd (If sss s) = ifElseFwd (sss × fromMaybe Pass s)
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
 stmtFwd (ExprStmt e) = E.ExprStmt <$> desug e
 stmtFwd (Assert cond msg_opt) =
-   stmtFwd (If (singleton (App (Var "not") cond × ExprStmt (App (Var "error") msg))) Nothing)
-   where
-   msg = fromMaybe (Str Returns "AssertionError") msg_opt
+   (\c msg -> E.Match c (boolCases E.Pass (E.ExprStmt (E.App (E.Var "error") (msg : Nil)))))
+      <$> desug cond
+      <*> maybe (pure (E.Str Returns "AssertionError")) desug msg_opt
 stmtFwd (Seq s1 s2) = E.Seq <$> stmtFwd s1 <*> stmtFwd s2
 stmtFwd (Dataclass _ _ _) = pure E.Pass
 
@@ -331,7 +278,7 @@ ifElseFwd (sss × s) =
       cond <- desug s1
       b' <- stmtFwd b
       e3' <- e3
-      pure $ E.Match cond (elimBool (ContStmt b') (ContStmt e3'))
+      pure $ E.Match cond (boolCases b' e3')
 
 -- List Qualifier × Expr
 listCompFwd
@@ -342,96 +289,28 @@ listCompFwd
    -> m (E.Expr (WfResult VarCxt))
 listCompFwd (α × Nil × s) =
    econs α <$> desug s <@> enil α
-listCompFwd (α × (ListCompGuard s : qs) × s') = do
-   e <- listCompFwd (α × qs × s')
-   E.App (E.Lambda α (elimBool (ContStmt (E.Return e)) (ContStmt (E.Return (enil α))))) <$> desug s
-listCompFwd (α × (ListCompDecl (VarDef p s) : qs) × s') = do
-   σ <- clausesStateFwd (((Left p : Nil) × Nil × Return (ListComp α s' qs)) : Nil)
-   E.App (E.Lambda α (asElim σ)) <$> desug s
-listCompFwd (α × (ListCompGen p s : qs) × s') = do
-   λ <- askClasses
-   let ks = orElseFwd λ α ((Left p : Nil) × Return (ListComp α s' qs))
-   σ <- clausesStateFwd (toList (ks <#> second (Nil × _)))
-   E.App (E.App (E.Var "concat_map") (E.Lambda α (asElim σ))) <$> desug s
-
--- Clauses
-toClausesStateFwd :: Clauses (WfResult VarCxt) -> ClausesState' (WfResult VarCxt)
-toClausesStateFwd (Clauses μ) = toList μ <#> toClauseStateFwd
-   where
-   toClauseStateFwd :: Clause (WfResult VarCxt) -> ClauseState' (WfResult VarCxt)
-   toClauseStateFwd (Clause _ (NonEmptyList (p :| π) × b)) = (Left p : Nil) × π × b
-
--- Like ClauseState but for curried functions; extra component π' stores remaining top-level patterns.
-type ClauseState' a = List (Pattern + ListRestPattern) × List Pattern × Stmt a
-type ClausesState' a = List (ClauseState' a)
-
-popArgFwd
-   :: forall m. HasClasses m => MonadError Error m => ClausesState' (WfResult VarCxt) -> m (ClausesState' (WfResult VarCxt))
-popArgFwd ((Nil × (p : π) × s) : ks) = (((Left p : Nil) × π × s) : _) <$> popArgFwd ks
-popArgFwd Nil = pure Nil
-popArgFwd _ = throw (shapeMismatch unit)
-
-popVarFwd
-   :: forall m
-    . HasClasses m
-   => MonadError Error m
-   => Var
-   -> ClausesState' (WfResult VarCxt)
-   -> m (ClausesState' (WfResult VarCxt))
-popVarFwd x (((Left (PVar x') : π) × π' × s) : ks) = ((π × π' × s) : _) <$> popVarFwd (x ≜ x') ks
-popVarFwd _ Nil = pure Nil
-popVarFwd _ _ = throw (shapeMismatch unit)
-
-popListVarFwd
-   :: forall m
-    . HasClasses m
-   => MonadError Error m
-   => Var
-   -> ClausesState' (WfResult VarCxt)
-   -> m (ClausesState' (WfResult VarCxt))
-popListVarFwd x (((Right (PListVar x') : π) × π' × s) : ks) = ((π × π' × s) : _) <$> popListVarFwd (x ≜ x') ks
-popListVarFwd _ Nil = pure Nil
-popListVarFwd _ _ = throw (shapeMismatch unit)
-
-popConstrFwd
-   :: forall m
-    . HasClasses m
-   => MonadError Error m
-   => DataType
-   -> ClausesState' (WfResult VarCxt)
-   -> m (List (Ctr × ClausesState' (WfResult VarCxt)))
-popConstrFwd _ ((Nil × _ × _) : _) = error absurd
-popConstrFwd d (((p : π') × π'' × s) : ks) = do
-   λ <- askClasses
-   d' × n <- ctrSig λ "match" c
-   assert (length π == n && d' == d) $
-      forConstrFwd c ((π <> π') × π'' × s) <$> popConstrFwd d ks
-   where
-   π = subpatts p
-   c = definitely ("Failed to distinguish dataclass: " <> showPattern p) (ctrFor p)
-popConstrFwd _ Nil = pure Nil
-
-forConstrFwd :: Ctr -> ClauseState' (WfResult VarCxt) -> Endo (List (Ctr × ClausesState' (WfResult VarCxt)))
-forConstrFwd c k Nil = (c × (k : Nil)) : Nil
-forConstrFwd c k ((c' × ks') : cks)
-   | c == c' = (c' × (k : ks')) : cks
-   | otherwise = (c' × ks') : forConstrFwd c k cks
-
-popRecordFwd
-   :: forall m
-    . HasClasses m
-   => MonadError Error m
-   => List Var
-   -> ClausesState' (WfResult VarCxt)
-   -> m (ClausesState' (WfResult VarCxt))
-popRecordFwd xs (((Left (PRecord xps) : π) × π' × s) : ks) =
-   assert ((xps <#> fst) == xs) $ ((((xps <#> snd >>> Left) <> π) × π' × s) : _) <$> popRecordFwd xs ks
-popRecordFwd _ Nil = pure Nil
-popRecordFwd _ _ = throw (shapeMismatch unit)
+listCompFwd (α × (ListCompGuard s : gs) × s') = do
+   e <- listCompFwd (α × gs × s')
+   E.App (matchFun α (boolCases (E.Return e) (E.Return (enil α)))) <$> ((_ : Nil) <$> desug s)
+listCompFwd (α × (ListCompDecl (VarDef p s) : gs) × s') = do
+   e <- listCompFwd (α × gs × s')
+   p' <- patternFwd p
+   E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
+-- Elements not matching the pattern contribute nothing.
+listCompFwd (α × (ListCompGen p s : gs) × s') = do
+   e <- listCompFwd (α × gs × s')
+   p' <- patternFwd p
+   let
+      bs = case p' of
+         PVar _ -> singleton (p' × E.Return e)
+         PWild -> singleton (p' × E.Return e)
+         _ -> NonEmptyList ((p' × E.Return e) :| (PWild × E.Return (enil α)) : Nil)
+   e' <- desug s
+   pure $ E.App (E.Var "concat_map") (matchFun α bs : e' : Nil)
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
-positionaliseKw λ c n xbs = do
-   fs <- maybe (throw $ "Unknown dataclass: " <> dottedName c) pure (fieldsOf λ (dottedName c))
+positionaliseKw classes c n xbs = do
+   fs <- fields <$> classEntry classes (dottedName c)
    let remaining = drop n fs
    let provided = xbs <#> fst
    when (sort provided /= sort remaining) $ throw $
@@ -440,108 +319,51 @@ positionaliseKw λ c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
-expandKw :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
-expandKw p = do
-   λ <- askClasses
-   go λ p
-   where
-   go λ (PConstr c ps Nil) = (\ps' -> PConstr c ps' Nil) <$> traverse (go λ) ps
-   go λ (PConstr c ps xps) = do
-      reordered <- positionaliseKw λ c (length ps) xps
-      (\ps' -> PConstr c ps' Nil) <$> traverse (go λ) (ps <> reordered)
-   go λ (PRecord xps) = PRecord <$> traverse (traverse (go λ)) xps
-   go λ (PListNonEmpty p' l) = PListNonEmpty <$> go λ p' <*> goRest λ l
-   go _ p' = pure p'
+-- Keyword sub-patterns positionalised; list patterns as Nil and Cons.
+patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
+patternFwd (PConstr c ps xps) = do
+   classes <- askClasses
+   reordered <- if null xps then pure Nil else positionaliseKw classes c (length ps) xps
+   _ <- ctrSig classes "match" (dottedName c)
+   PConstr c <$> traverse patternFwd (ps <> reordered) <@> Nil
+patternFwd (PRecord xps) = PRecord <$> traverse (traverse patternFwd) xps
+patternFwd (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse patternFwd ps
+patternFwd (PAs p x) = PAs <$> patternFwd p <@> x
+patternFwd p = pure p
 
-   goRest :: ClassTable -> ListRestPattern -> m ListRestPattern
-   goRest λ (PListNext p' l) = PListNext <$> go λ p' <*> goRest λ l
-   goRest _ p' = pure p'
-
--- Implementing Desugarable would require another newtype
-clausesStateFwd :: forall m. HasClasses m => MonadError Error m => ClausesState' (WfResult VarCxt) -> m (Cont (WfResult VarCxt))
-clausesStateFwd ks0 = do
-   ks <- traverse (\(π × π' × b) -> (\π'' -> π'' × π' × b) <$> traverse (ltraverse expandKw) π) ks0
-   clausesStateFwd' ks
-
-clausesStateFwd' :: forall m. HasClasses m => MonadError Error m => ClausesState' (WfResult VarCxt) -> m (Cont (WfResult VarCxt))
-clausesStateFwd' ks = case ks of
-   Nil -> error absurd
-   (Nil × Nil × b) : Nil ->
-      ContStmt <$> stmtFwd b
-   (Nil × _) : _ ->
-      ContStmt <$> E.Return <$> E.Lambda Returns <$> asElim <$> (clausesStateFwd' =<< popArgFwd ks)
-   ((Left (PVar x) : _) × _) : _ ->
-      ContElim <$> ElimVar x <$> (clausesStateFwd' =<< popVarFwd x ks)
-   ((Left (PRecord xps) : _) × _) : _ ->
-      ContElim <$> ElimDict (B.keys xps) <$> (clausesStateFwd' =<< popRecordFwd (xps <#> fst) ks)
-   ((Right (PListVar x) : _) × _) : _ ->
-      ContElim <$> ElimVar x <$> (clausesStateFwd' =<< popListVarFwd x ks)
-   ((p : _) × _) : _ -> do
-      λ <- askClasses
-      let c = definitely ("clausesStateFwd ctrFor failed for: " <> showPattern p) (ctrFor p)
-      d <- maybe (throw $ "Unknown dataclass: " <> c) pure (dataType λ c)
-      kss <- popConstrFwd d ks
-      ContElim <$> ElimConstr <$> D.fromFoldable <$> sequence (rtraverse clausesStateFwd <$> kss)
-
--- First component π is stack of subpatterns active during processing of a single top-level pattern p,
--- initially containing only p and empty when the recursion terminates.
-type ClauseState a = List (Pattern + ListRestPattern) × Stmt a
-
-unless :: ClassTable -> Pattern + ListRestPattern -> List (Pattern + ListRestPattern)
-unless _ (Left (PVar _)) = Nil
-unless _ (Left (PRecord _)) = Nil
-unless λ (Left (PConstr c _ _)) =
+-- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
+-- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
+-- there are several.
+clausesFwd
+   :: forall m
+    . HasClasses m
+   => MonadError Error m
+   => NonEmptyList (List Pattern × Stmt (WfResult VarCxt))
+   -> m (E.Def (WfResult VarCxt))
+clausesFwd clauses = do
+   let n = length (fst (head clauses)) :: Int
+   for_ clauses \(ps × _) ->
+      when (length ps /= n) $ throw "Clauses differ in number of parameters"
    let
-      c0 = dottedName c
-      DataType _ sigs = case dataType λ c0 of
-         Just d -> d
-         Nothing -> error $ "Unknown dataclass: " <> c0
-   in
-      (toUnfoldable sigs :: List _) # L.mapMaybe
-         \(c' × n) -> whenever (c' /= c0) (Left (PConstr (singleton c') (replicate n pVarAnon) Nil))
-unless _ (Left PListEmpty) = Left (PConstr cCons (replicate 2 pVarAnon) Nil) : Nil
-unless _ (Left (PListNonEmpty _ _)) = Left PListEmpty : Nil
-unless _ (Right (PListVar _)) = Nil
-unless _ (Right (PListNext _ _)) = Right PListEnd : Nil
-unless _ (Right PListEnd) = Right (PListNext pVarAnon pListVarAnon) : Nil
-
-orElseFwd :: forall a. ClassTable -> a -> ClauseState a -> NonEmptyList (ClauseState a)
-orElseFwd λ α = case _ of
-   Nil × s -> singleton (Nil × s)
-   (p : π) × s ->
-      (orElseFwd λ α ((π' <> π) × s) <#> popPatts (length π') <#> pushPattFor p)
-         `appendList`
-            (unless λ p <#> \p' -> ((π <#> anon) × Return (ListEmpty α)) # pushPatt p')
-      where
-      π' = subpatts p
+      columns = transpose (toList (fst <$> clauses))
+      named = columns # mapWithIndex \i ps -> case sharedVar ps of
+         Just x -> x × Nothing
+         Nothing -> param (i + 1) × Just ps
+      matched = named # mapMaybe \(x × ps_opt) -> (x × _) <$> ps_opt
+   ss <- for clauses (stmtFwd <<< snd)
+   body <- case matched of
+      Nil -> pure (head ss)
+      _ -> do
+         pss <- traverse (traverse patternFwd) (transpose (snd <$> matched))
+         let
+            e = foldr1 (\e1 e2 -> E.Constr Returns cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
+            bs = NonEmptyList.zipWith (\ps s -> foldr1 (\p p' -> PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s) (nonEmpty pss) ss
+         pure (E.Match e bs)
+   pure (E.Def (fst <$> named) body)
    where
-   pushPatt :: Pattern + ListRestPattern -> Endo (ClauseState a)
-   pushPatt p (π × s) = (p : π) × s
-
-   popPatts :: Int -> ClauseState a -> List (Pattern + ListRestPattern) × ClauseState a
-   popPatts n (π' × s) = take n π' × drop n π' × s
-
-   pushPattFor :: Pattern + ListRestPattern -> List (Pattern + ListRestPattern) × ClauseState a -> ClauseState a
-   pushPattFor (Left (PVar x)) = \(_ × k) ->
-      pushPatt (Left (PVar x)) k
-   pushPattFor (Left (PRecord xps)) = \(π × k) ->
-      pushPatt (Left (PRecord (zip (fst <$> xps) (unsafePartial (\(Left p) -> p) <$> π)))) k
-   pushPattFor (Left (PConstr c _ _)) = \(π × k) ->
-      pushPatt (Left (PConstr c (unsafePartial (\(Left p) -> p) <$> π) Nil)) k
-   pushPattFor (Left PListEmpty) = \(_ × k) ->
-      pushPatt (Left PListEmpty) k
-   pushPattFor (Left (PListNonEmpty _ _)) = unsafePartial \((Left p : Right o : Nil) × k) ->
-      pushPatt (Left (PListNonEmpty p o)) k
-   pushPattFor (Right (PListVar x)) = \(_ × k) ->
-      pushPatt (Right (PListVar x)) k
-   pushPattFor (Right (PListNext _ _)) = unsafePartial \((Left p : Right o : Nil) × k) ->
-      pushPatt (Right (PListNext p o)) k
-   pushPattFor (Right PListEnd) = \(_ × k) ->
-      pushPatt (Right PListEnd) k
-
-anon :: Pattern + ListRestPattern -> Pattern + ListRestPattern
-anon (Left _) = Left pVarAnon
-anon (Right _) = Right pListVarAnon
+   sharedVar :: List Pattern -> Maybe Var
+   sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
+   sharedVar _ = Nothing
 
 -- ======================
 -- boilerplate
@@ -579,16 +401,6 @@ instance Show a => Show (Expr a) where
 derive instance Eq a => Eq (ListRest a)
 derive instance Generic (ListRest a) _
 instance Show a => Show (ListRest a) where
-   show c = genericShow c
-
-derive instance Eq Pattern
-derive instance Generic Pattern _
-instance Show Pattern where
-   show c = genericShow c
-
-derive instance Eq ListRestPattern
-derive instance Generic ListRestPattern _
-instance Show ListRestPattern where
    show c = genericShow c
 
 derive instance Eq a => Eq (Stmt a)
@@ -635,18 +447,6 @@ instance Show a => Show (ParagraphElem a) where
 -- Free / bound variables
 -- ======================
 
-instance BV Pattern where
-   bv (PVar x) = Set.singleton x
-   bv (PConstr _ ps xps) = Set.unions (bv <$> ps) ∪ Set.unions ((bv <<< snd) <$> xps)
-   bv (PRecord xps) = Set.unions ((bv <<< snd) <$> xps)
-   bv PListEmpty = Set.empty
-   bv (PListNonEmpty p lr) = bv p ∪ bv lr
-
-instance BV ListRestPattern where
-   bv (PListNext p lr) = bv p ∪ bv lr
-   bv (PListVar x) = Set.singleton x
-   bv PListEnd = Set.empty
-
 instance FV (Expr a) where
    fv (Var x) = Set.singleton x
    fv (Op op) = Set.singleton op
@@ -660,7 +460,7 @@ instance FV (Expr a) where
    fv (Attribute e _) = fv e
    fv (ModMember _ _) = Set.empty
    fv (Subscript e e') = fv e ∪ fv e'
-   fv (App e e') = fv e ∪ fv e'
+   fv (App e es) = fv e ∪ Set.unions (fv <$> es)
    fv (BinaryApp e op e') = fv e ∪ Set.singleton op ∪ fv e'
    fv (UnaryPrefixApp op e) = Set.singleton op ∪ fv e
    fv (Ternary cond e1 e2) = fv cond ∪ fv e1 ∪ fv e2
@@ -668,7 +468,7 @@ instance FV (Expr a) where
    fv (ListEmpty _) = Set.empty
    fv (ListNonEmpty _ e l) = fv e ∪ fv l
    fv (ListEnum e1 e2) = fv e1 ∪ fv e2
-   fv (ListComp _ e quals) = qualsFv quals e
+   fv (ListComp _ e gs) = qualifiersFv gs e
    fv (DocExpr e e') = fv e ∪ fv e'
 
 instance FV (Stmt a) where
@@ -712,9 +512,9 @@ fvRecDefs rs =
 
 -- List-comprehension qualifiers bind their variables for subsequent qualifiers
 -- (and the producing expression). Process right-to-left.
-qualsFv :: forall a. List (Qualifier a) -> Expr a -> Set.Set Var
-qualsFv Nil e = fv e
-qualsFv (q : qs) e = case q of
-   ListCompGuard cond -> fv cond ∪ qualsFv qs e
-   ListCompGen p src -> fv src ∪ (qualsFv qs e \\ bv p)
-   ListCompDecl (VarDef p src) -> fv src ∪ (qualsFv qs e \\ bv p)
+qualifiersFv :: forall a. List (Qualifier a) -> Expr a -> Set.Set Var
+qualifiersFv Nil e = fv e
+qualifiersFv (g : gs) e = case g of
+   ListCompGuard e' -> fv e' ∪ qualifiersFv gs e
+   ListCompGen p e' -> fv e' ∪ (qualifiersFv gs e \\ bv p)
+   ListCompDecl (VarDef p e') -> fv e' ∪ (qualifiersFv gs e \\ bv p)

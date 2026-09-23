@@ -3,26 +3,30 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon)
+import Control.Alternative (guard)
+import Control.Plus (empty) as Plus
+import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
-import Data.List (List(..), find, foldM, length, snoc, unzip, zip, (:))
-import Data.List.NonEmpty (head, snoc, unsnoc, fromList) as NEL
-import Data.List.NonEmpty (last)
+import Data.Foldable (oneOfMap)
+import Data.List (List(..), drop, find, foldM, foldl, length, take, unzip, zip, (:))
+import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (unwrap)
-import Data.Profunctor.Strong ((***))
+import Data.Int (toNumber)
+import Data.Profunctor.Strong (first, second, (***))
 import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
-import Data.Tuple (curry, snd)
-import DataType (class HasClasses, ClassTable, arity, askClasses, checkArity, consistentWith, dataType, fieldsOf, showCtr)
+import Data.Tuple (curry, fst, snd)
+import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Cont(..), Elim(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..), VarDef(..), asStmt, fv)
+import Expr (Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -34,7 +38,7 @@ import Pretty (prettyP)
 import Primitive (intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
 import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, withMsg, (×), (⊆))
-import Util.Map (unionWith_never, delete, get, keys, lookup, lookup', maplet, restrict, (<+>))
+import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
@@ -43,61 +47,66 @@ import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictR
 -- Needs a better name.
 type GraphConfig =
    { n :: Int
-   , γ :: Env Vertex
+   , ρ :: Env Vertex
    , classes :: ClassTable
    }
 
 patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
-match :: forall m. HasClasses m => MonadWithGraphAlloc m => Val Vertex -> Elim Vertex -> m (Env Vertex × Cont Vertex × Set Vertex)
-match v (ElimVar x κ)
-   | x == varAnon = pure (empty × κ × empty)
-   | otherwise = pure (maplet x v × κ × empty)
-match (Val α _ (V.Constr c vs)) (ElimConstr m) = do
-   λ <- askClasses
-   withMsg "Pattern mismatch" $ consistentWith λ (Set.singleton (dottedName c)) (keys m)
-   κ <- lookup (dottedName c) m # orElse ("Incomplete patterns: no branch for " <> showCtr (last c))
-   γ × κ' × αs <- matchMany vs κ
-   pure (γ × κ' × (insert α αs))
-match v (ElimConstr m) = do
-   λ <- askClasses
-   throw (patternMismatch (prettyP v) (show (expected λ)))
+-- Bindings if the pattern matches, with the vertices of the value that matching inspected.
+matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matches (Val α _ u) (PInt n) = guard eq $> (empty × Set.singleton α)
    where
-   -- Any branch names the datatype; the eliminator is non-empty and its constructors are known.
-   expected λ = definitely' (Set.findMin (keys m) >>= dataType λ)
-match (Val α _ (V.Dictionary (DictRep xvs))) (ElimDict xs κ) = do
-   check (Set.subset xs (Set.fromFoldable $ keys xvs))
-      $ patternMismatch (show (keys xvs)) (show xs)
-   let xs' = xs # Set.toUnfoldable
-   let xvs' = unwrap xvs
-   γ × κ' × αs <- matchMany (map (\k -> snd (get k xvs')) xs') κ
-   pure $ γ × κ' × (insert α αs)
-match v (ElimDict xs _) = throw (patternMismatch (prettyP v) (show xs))
+   eq = case u of
+      V.Int n' -> n == n'
+      V.Float x -> toNumber n == x
+      _ -> false
+matches (Val α _ u) (PFloat x) = guard eq $> (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Int n -> toNumber n == x
+      V.Float x' -> x == x'
+      _ -> false
+matches (Val α _ u) (PStr s) = guard eq $> (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Str s' -> s == s'
+      _ -> false
+matches v (PVar x)
+   | x == varAnon = pure (empty × empty)
+   | otherwise = pure (maplet x v × empty)
+matches _ PWild = pure (empty × empty)
+matches v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches v p
+matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil)
+   | c == c' = second (insert α) <$> matchesMany vs ps
+matches _ (PConstr _ _ _) = Plus.empty
+matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
+   vps <- MaybeT $ pure $ traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
+   second (insert α) <$> matchesMany (fst <$> vps) (snd <$> vps)
+matches _ (PRecord _) = Plus.empty
+matches _ (PList _) = error absurd
 
-matchMany
-   :: forall m
-    . HasClasses m
-   => MonadWithGraphAlloc m
-   => List (Val Vertex)
-   -> Cont Vertex
-   -> m (Env Vertex × Cont Vertex × Set Vertex)
-matchMany Nil κ = pure (empty × κ × empty)
-matchMany (v : vs) (ContElim σ) = do
-   γ × κ × αs <- match v σ
-   γ' × κ' × βs <- matchMany vs κ
-   pure $ γ `unionWith_never` γ' × κ' × (αs ∪ βs)
-matchMany (_ : vs) (ContStmt _) = throw $
-   show (length vs + 1) <> " extra argument(s); did you forget parentheses in a lambda pattern?"
+matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matchesMany Nil Nil = pure (empty × empty)
+matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
+   where
+   disjoint (ρ × αs) (ρ' × αs') = (ρ `unionWith_never` ρ') × (αs ∪ αs')
+matchesMany _ _ = error absurd
 
-closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Elim Vertex) -> Set Vertex -> m (Env Vertex)
-closeDefs γ ρ αs =
-   Env <$> for ρ \σ ->
+-- Bindings, body and inspected vertices of the first case whose pattern matches.
+dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
+dispatch v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches v p
+
+closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
+closeDefs ρ ds αs =
+   Env <$> for ds \d ->
       let
-         ρ' = ρ `forDefs` σ
+         ds' = ds `forDefs` d
       in
-         val Nothing αs (V.Fun (V.Closure (restrict (fv ρ' ∪ fv σ) γ) ρ' σ))
+         val Nothing αs (V.Fun (V.Closure (restrict (fv ds' ∪ fv d) ρ) ds' d))
 
+-- Fewer arguments than the arity is a partial application; more applies the result to the rest.
 apply
    :: forall m
     . HasClasses m
@@ -108,36 +117,33 @@ apply
    => LoadFile m
    => Maybe (Val Vertex)
    -> Val Vertex
-   -> Val Vertex
+   -> List (Val Vertex)
    -> m (Val Vertex)
-apply doc_opt (Val α _ (V.Fun (V.Closure γ1 ρ σ))) v = do
-   γ2 <- closeDefs γ1 ρ (singleton α)
-   γ3 × κ × αs <- match v σ
-   asReturns <$> evalStmt doc_opt (γ1 <+> γ2 <+> γ3) (asStmt κ) (insert α αs)
-apply doc_opt (Val α _ (V.Fun (V.Foreign (ForeignOp (id × φ)) vs))) v =
-   apply' φ
+apply doc_opt (Val α _ (V.Fun (V.Partial φ vs))) vs' = apply doc_opt (Val α Nothing (V.Fun φ)) (vs <> vs')
+apply doc_opt (Val α _ (V.Fun φ)) vs = do
+   n <- arity'
+   let k = length vs
+   if k < n then val doc_opt (singleton α) (V.Fun (V.Partial φ vs))
+   else if k == n then call doc_opt vs
+   else call Nothing (take n vs) >>= \v -> apply doc_opt v (drop n vs)
    where
-   vs' = snoc vs v
+   arity' :: m Int
+   arity' = case φ of
+      V.Closure _ _ (Def xs _) -> pure (length xs)
+      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
+      V.Type c -> askClasses >>= \classes -> ctrSig classes "construct" (dottedName c) <#> snd
+      V.Partial _ _ -> error absurd
 
-   apply' :: ForeignOp' -> m (Val Vertex)
-   apply' (ForeignOp' φ') =
-      if φ'.arity > length vs' then
-         val doc_opt (singleton α) v'
-      else
-         φ'.op doc_opt vs'
-      where
-      v' = V.Fun (V.Foreign (ForeignOp (id × φ)) vs')
-apply doc_opt (Val α _ (V.Fun (V.PartialConstr c vs))) v = do
-   n <- askClasses >>= \λ -> maybe (throw $ "Unknown dataclass: " <> showCtr (last c)) pure (arity λ (dottedName c))
-   check (length vs < n) ("Too many arguments to " <> showCtr (last c))
-   let
-      v' =
-         if length vs < n - 1 then
-            V.Fun (V.PartialConstr c (snoc vs v))
-         else
-            V.Constr c (snoc vs v)
-   val doc_opt (singleton α) v'
-apply _ _ v = throw $ "Found " <> prettyP v <> ", expected function"
+   call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
+   call doc_opt' vs' = case φ of
+      V.Closure ρ1 ds (Def xs s) -> do
+         ρ2 <- closeDefs ρ1 ds (singleton α)
+         let ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
+         asReturns <$> evalStmt doc_opt' (ρ1 <+> ρ2 <+> ρ3) s (singleton α)
+      V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
+      V.Type c -> val doc_opt' (singleton α) (V.Constr c vs')
+      V.Partial _ _ -> error absurd
+apply _ v _ = throw $ "Found " <> prettyP v <> ", expected function"
 
 eval
    :: forall m
@@ -152,30 +158,30 @@ eval
    -> Expr Vertex
    -> Set Vertex
    -> m (Val Vertex)
-eval doc_opt γ e0 αs = do
-   αu_opt <- evalVal γ e0 αs
+eval doc_opt ρ e0 αs = do
+   αu_opt <- evalVal ρ e0 αs
    case αu_opt of
       Just (α × u) ->
          new (flip Val doc_opt) (insert α αs) u
       Nothing -> case e0 of
          Var x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (variable " <> x <> ")"
-            pure (definitely' (lookup x γ))
+            pure (definitely' (lookup x ρ))
          Op op -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (operator " <> op <> ")"
-            pure (definitely' (lookup op γ))
+            pure (definitely' (lookup op ρ))
          Attribute e x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (attribute access)"
-            v <- eval Nothing γ e αs
+            v <- eval Nothing ρ e αs
             case v of
                Val _ _ (V.Constr c vs) -> do
-                  xs <- askClasses <#> \λ -> definitely' (fieldsOf λ (dottedName c))
+                  xs <- askClasses <#> \classes -> definitely' (fieldsOf classes (dottedName c))
                   find (\(k × _) -> k == x) (zip xs vs) <#> snd # orElse (dottedName c <> " has no field " <> x)
                _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected object"
          Subscript e e' -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (projection)"
-            v <- eval Nothing γ e αs
-            v' <- eval Nothing γ e' αs
+            v <- eval Nothing ρ e αs
+            v' <- eval Nothing ρ e' αs
             case v, v' of
                Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Str s) ->
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
@@ -184,16 +190,16 @@ eval doc_opt γ e0 αs = do
          ModMember q x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (module member " <> x <> ")"
             { moduleEnv } <- moduleStore
-            let γ_q = definitely "module loaded" (Map.lookup q moduleEnv)
-            withMsg "Module member" $ lookup' x γ_q
-         App e e' -> do
-            v <- eval Nothing γ e αs
-            v' <- eval Nothing γ e' αs
-            withMsg ("In " <> funName e) $ apply doc_opt v v'
+            let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
+            withMsg "Module member" $ lookup' x ρ_q
+         App e es -> do
+            v <- eval Nothing ρ e αs
+            vs <- traverse (\e' -> eval Nothing ρ e' αs) es
+            withMsg ("In " <> funName e) $ apply doc_opt v vs
          DocExpr e e' -> do
-            v <- eval Nothing γ e αs
+            v <- eval Nothing ρ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"
-            eval (Just $ fromMaybe v doc_opt) γ e' αs
+            eval (Just $ fromMaybe v doc_opt) ρ e' αs
          _ -> error absurd
    where
    funName :: forall a. Expr a -> String
@@ -215,32 +221,34 @@ evalStmt
    -> Stmt Vertex
    -> Set Vertex
    -> m (Result Vertex)
-evalStmt doc_opt γ s αs = case s of
-   Return e -> Returns <$> eval doc_opt γ e αs
-   Match e σ -> do
-      v <- eval Nothing γ e αs
-      case σ, v of
-         ElimConstr m, Val _ _ (V.Constr c _) | not (isJust (lookup (dottedName c) m)) ->
-            pure (Assigns empty empty)
-         _, _ -> do
-            γ' × κ × αs' <- match v σ
-            evalStmt doc_opt (γ <+> γ') (asStmt κ) (αs ∪ αs')
-   Def (VarDef σ e) -> do
-      v <- eval Nothing γ e αs
-      γ' × _ × αs' <- withMsg "In assignment" $ match v σ
-      pure (Assigns γ' αs')
-   DefRec (RecDefs α ρ) -> do
-      γ' <- closeDefs γ ρ (insert α αs)
-      pure (Assigns γ' (insert α αs))
+evalStmt doc_opt ρ s αs = case s of
+   Return e -> Returns <$> eval doc_opt ρ e αs
+   Match e bs -> do
+      v <- eval Nothing ρ e αs
+      runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of
+         Nothing -> pure (Assigns empty empty)
+         Just (ρ' × s' × αs') -> do
+            r <- evalStmt doc_opt (ρ <+> ρ') s' (αs ∪ αs')
+            case r of
+               Returns _ -> pure r
+               Assigns ρ'' αs'' -> pure (Assigns (ρ' <+> ρ'') αs'')
+   Assign p e -> do
+      v <- eval Nothing ρ e αs
+      runMaybeT (matches v p) >>= case _ of
+         Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
+         Just (ρ' × αs') -> pure (Assigns ρ' αs')
+   DefRec (RecDefs α ds) -> do
+      ρ' <- closeDefs ρ ds (insert α αs)
+      pure (Assigns ρ' (insert α αs))
    Pass -> pure (Assigns empty empty)
    ExprStmt e -> do
-      _ <- eval Nothing γ e αs
+      _ <- eval Nothing ρ e αs
       pure (Assigns empty empty)
    Seq s1 s2 -> do
-      r1 <- evalStmt Nothing γ s1 αs
+      r1 <- evalStmt Nothing ρ s1 αs
       case r1 of
          Returns _ -> pure r1
-         Assigns γ' αs' -> evalStmt doc_opt (γ <+> γ') s2 αs'
+         Assigns ρ' αs' -> evalStmt doc_opt (ρ <+> ρ') s2 αs'
 
 evalVal
    :: forall m
@@ -260,18 +268,18 @@ evalVal _ (Float α n) _ =
    pure $ Just (α × V.Float n)
 evalVal _ (Str α s) _ =
    pure $ Just (α × V.Str s)
-evalVal γ (Dictionary α ees) αs = do
-   vs × us <- traverse (traverse (flip (eval Nothing γ) αs)) ees <#> P.unzip
+evalVal ρ (Dictionary α ees) αs = do
+   vs × us <- traverse (traverse (flip (eval Nothing ρ) αs)) ees <#> P.unzip
    let
       ss × βs = (vs <#> unpack string) # unzip
       d = D.fromFoldable $ zip ss (zip βs us)
    pure $ Just (α × V.Dictionary (DictRep d))
-evalVal γ (Constr α c es) αs = do
-   askClasses >>= \λ -> checkArity λ (dottedName c) (length es)
-   vs <- traverse (flip (eval Nothing γ) αs) es
+evalVal ρ (Constr α c es) αs = do
+   askClasses >>= \classes -> checkArity classes "construct" (dottedName c) (length es)
+   vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.Constr c vs)
-evalVal γ (Matrix α e (x × y) e') αs = do
-   Val _ _ v <- eval Nothing γ e' αs
+evalVal ρ (Matrix α e (x × y) e') αs = do
+   Val _ _ v <- eval Nothing ρ e' αs
    let (i' × β) × (j' × β') = intPair.unpack v
    check
       (i' × j' >= 1 × 1)
@@ -280,11 +288,11 @@ evalVal γ (Matrix α e (x × y) e') αs = do
       i <- 0 .. (i' - 1)
       singleton $ sequence do
          j <- 0 .. (j' - 1)
-         let γ' = maplet x (Val β Nothing (V.Int i)) `unionWith_never` (maplet y (Val β' Nothing (V.Int j)))
-         singleton (eval Nothing (γ <+> γ') e αs)
+         let ρ' = maplet x (Val β Nothing (V.Int i)) `unionWith_never` (maplet y (Val β' Nothing (V.Int j)))
+         singleton (eval Nothing (ρ <+> ρ') e αs)
    pure $ Just (α × V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
-evalVal γ (Lambda α σ) _ =
-   pure $ Just (α × V.Fun (V.Closure (restrict (fv σ) γ) empty σ))
+evalVal ρ (Lambda α d) _ =
+   pure $ Just (α × V.Fun (V.Closure (restrict (fv d) ρ) empty d))
 evalVal _ _ _ = pure Nothing
 
 eval_module
@@ -300,17 +308,17 @@ eval_module
    -> Module Vertex
    -> Set Vertex
    -> m (Env Vertex)
-eval_module γ0 q (Module is ss0) αs0 = do
-   γ_imp <- foldM (evalImport q) γ0 is
+eval_module ρ0 q (Module is ss0) αs0 = do
+   ρ_imp <- foldM (evalImport q) ρ0 is
    v_name <- val Nothing empty (V.Str (dottedName q))
-   go γ_imp (maplet "__name__" v_name) ss0 αs0
+   go ρ_imp (maplet "__name__" v_name) ss0 αs0
    where
    go :: Env Vertex -> Env Vertex -> List (Stmt Vertex) -> Set Vertex -> m (Env Vertex)
-   go _ γ' Nil _ = pure γ'
-   go γ γ' (s : ss) αs = do
-      r <- evalStmt Nothing (γ <+> γ') s αs
+   go _ ρ' Nil _ = pure ρ'
+   go ρ ρ' (s : ss) αs = do
+      r <- evalStmt Nothing (ρ <+> ρ') s αs
       case r of
-         Assigns γ'' αs' -> go γ (γ' <+> γ'') ss αs'
+         Assigns ρ'' αs' -> go ρ (ρ' <+> ρ'') ss αs'
          Returns _ -> error absurd
 
 -- Bind imported value members; delete bindings for names that now denote modules.
@@ -326,15 +334,15 @@ evalImport
    -> Env Vertex
    -> Import
    -> m (Env Vertex)
-evalImport enclosing γ = case _ of
+evalImport enclosing ρ = case _ of
    Import q Nothing -> do
       _ <- load q
       loadAncestors Nothing q
-      pure (delete (NEL.head q) γ)
+      pure (delete (NEL.head q) ρ)
    Import q (Just xs) -> do
-      γ_q <- load q
+      ρ_q <- load q
       loadAncestors (Just enclosing) q
-      importsFrom q γ_q γ xs
+      importsFrom q ρ_q ρ xs
    where
    loadAncestors bound q = case NEL.fromList (NEL.unsnoc q).init of
       Nothing -> pure unit
@@ -342,14 +350,14 @@ evalImport enclosing γ = case _ of
          | maybe false (q' `prefixOf` _) bound -> pure unit
          | otherwise -> void (load q') *> loadAncestors bound q'
 
-   importsFrom q γ_q = foldM step
+   importsFrom q ρ_q = foldM step
       where
-      step γ' x = case lookup x γ_q of
-         Just v -> pure (γ' <+> maplet x v)
+      step ρ' x = case lookup x ρ_q of
+         Just v -> pure (ρ' <+> maplet x v)
          Nothing -> do
             { moduleBody } <- moduleStore
             when (Map.member (NEL.snoc q x) moduleBody) (void (load (NEL.snoc q x)))
-            pure (delete x γ')
+            pure (delete x ρ')
 
 loadPredefined
    :: forall m
@@ -363,13 +371,13 @@ loadPredefined
    -> Env Vertex
    -> ModuleName
    -> m (Env Vertex)
-loadPredefined primitives γ q = do
+loadPredefined primitives ρ q = do
    { moduleBody } <- moduleStore
-   let native = if q == builtins then primitives else empty
-   γ' <- maybe (pure empty) (\body -> eval_module (γ <+> native) q body empty) (Map.lookup q moduleBody)
-   let members = native <+> γ'
+   let primitives' = if q == builtins then primitives else empty
+   ρ' <- maybe (pure empty) (\body -> eval_module (ρ <+> primitives') q body empty) (Map.lookup q moduleBody)
+   let members = primitives' <+> ρ'
    modifyModuleStore (\s -> s { moduleEnv = Map.insert q members s.moduleEnv })
-   pure (γ <+> members)
+   pure (ρ <+> members)
 
 load
    :: forall m
@@ -382,13 +390,13 @@ load
    => ModuleName
    -> m (Env Vertex)
 load q = do
-   { moduleBody, moduleEnv, γ0 } <- moduleStore
+   { moduleBody, moduleEnv, ρ0 } <- moduleStore
    case Map.lookup q moduleEnv of
-      Just γ -> pure γ
+      Just ρ -> pure ρ
       Nothing -> do
-         γ_q <- maybe (pure empty) (\body -> eval_module γ0 q body empty) (Map.lookup q moduleBody)
-         modifyModuleStore (\s -> s { moduleEnv = Map.insert q γ_q s.moduleEnv })
-         pure γ_q
+         ρ_q <- maybe (pure empty) (\body -> eval_module ρ0 q body empty) (Map.lookup q moduleBody)
+         modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
+         pure ρ_q
 
 type GraphEval g s t =
    { g :: g
@@ -444,14 +452,14 @@ graphEval
    => GraphConfig
    -> Raw Stmt
    -> m (GraphEval GraphImpl EnvStmt Val)
-graphEval { n, γ, classes } stmt =
+graphEval { n, ρ, classes } stmt =
    withClasses classes do
-      { moduleBody, γ0, moduleEnv } <- moduleStore
-      let mαs = Set.unions (vertices <$> Map.values moduleBody) ∪ vertices γ0 ∪ Set.unions (vertices <$> Map.values moduleEnv)
+      { moduleBody, ρ0, moduleEnv } <- moduleStore
+      let mαs = Set.unions (vertices <$> Map.values moduleBody) ∪ vertices ρ0 ∪ Set.unions (vertices <$> Map.values moduleEnv)
       _ × _ × g × inα × outα <- flip runAllocT n do
          sα <- alloc stmt
-         let inα = EnvStmt γ sα
-         g × outα <- runWithGraphT_spy (asReturns <$> evalStmt Nothing γ sα mempty) (vertices inα ∪ mαs)
+         let inα = EnvStmt ρ sα
+         g × outα <- runWithGraphT_spy (asReturns <$> evalStmt Nothing ρ sα mempty) (vertices inα ∪ mαs)
          when checking.outputsInGraph $ check (vertices outα ⊆ vertices g) "outputs in graph"
          pure (g × inα × outα)
       pure { g, graph_bwd, inα, outα }

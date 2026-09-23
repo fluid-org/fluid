@@ -8,17 +8,17 @@ import Control.Monad.State (StateT)
 import Data.Array (some)
 import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
-import Bind (Bind, Name, (↦))
+import Bind (Bind, Name, varAnon, (↦))
 import Data.Either (Either(..))
 import Data.Identity (Identity)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList(..), cons, last, toList)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
-import Data.Traversable (foldl, foldr)
-import DataType (cCons, cNoArgs, cNone, cPair)
+import Data.Traversable (foldr)
+import DataType (cCons, cNone, cPair)
 import Lattice (Raw)
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
@@ -29,17 +29,23 @@ import Parsing.Expr (Assoc(..), OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ListRestPattern(..), Module(..), ParagraphElem(..), Pattern(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import Expr (Pattern(..))
+import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
-pattern = defer \_ -> buildExprParser [ [ P.Infix pConsOp P.AssocRight ] ] simplePattern
+pattern = defer \_ -> do
+   p <- buildExprParser [ [ P.Infix pConsOp P.AssocRight ] ] simplePattern
+   optionMaybe (reserved "as" *> variable) <#> maybe p (PAs p)
 
 simplePattern :: Parser Pattern
-simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
+simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern <|> pLit
    where
    pVar :: Parser Pattern
-   pVar = PVar <$> variable
+   pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
+
+   pLit :: Parser Pattern
+   pLit = try (float <#> PFloat) <|> (integer <#> PInt) <|> (stringLiteral <#> PStr)
 
    pConstr :: Parser Pattern
    pConstr = defer \_ -> try do
@@ -76,9 +82,7 @@ simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    pRecord = defer \_ -> braces (fields variable pattern) <#> PRecord
 
    pList :: Parser Pattern
-   pList = defer \_ -> brackets (trailingCommas pattern) <#> case _ of
-      Nil -> PListEmpty
-      p : ps -> PListNonEmpty p (foldr PListNext PListEnd ps)
+   pList = defer \_ -> brackets (trailingCommas pattern) <#> PList
 
    parensPattern :: Parser Pattern
    parensPattern = do
@@ -205,11 +209,7 @@ recDefs = many1 recDef
       ps0 <- commas pattern
       delim ')'
       b <- blockBody
-      let
-         ps = case ps0 of
-            Nil -> NonEmptyList (PConstr (singleton (last cNoArgs)) Nil Nil :| Nil)
-            x : xs -> NonEmptyList (x :| xs)
-      pure $ p × Clause unit (ps × b)
+      pure $ p × Clause unit (ps0 × b)
 
 expr :: Parser (Raw Expr)
 expr = context "expr" $ ternary <?> "expression"
@@ -280,10 +280,7 @@ expr = context "expr" $ ternary <?> "expression"
                      args <- commas constrArg
                      pure $ Constr a c (es <> takeLefts args) (takeRights args)
                   _ -> do
-                     ps <- commas ternary
-                     pure $ case ps of
-                        Nil -> App e (Constr unit (singleton (last cNoArgs)) Nil Nil)
-                        x : xs -> foldl App e (x : xs)
+                     App e <$> commas ternary
                close ')'
                chain e'
                where
@@ -328,11 +325,7 @@ expr = context "expr" $ ternary <?> "expression"
             ps0 <- commas pattern
             delim ':'
             e <- ternary
-            let
-               ps = case ps0 of
-                  Nil -> NonEmptyList (PConstr (singleton (last cNoArgs)) Nil Nil :| Nil)
-                  x : xs -> NonEmptyList (x :| xs)
-            pure $ Lambda (LambdaClause (ps × e))
+            pure $ Lambda (LambdaClause (ps0 × e))
 
          var :: Parser (Raw Expr)
          var = variable <#> Var

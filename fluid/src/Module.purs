@@ -15,7 +15,7 @@ import Data.Maybe (Maybe(..), isJust)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
-import DataType (class HasClasses, ClassTable, cNoArgs)
+import DataType (class HasClasses, ClassTable)
 import Desugarable (desug)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -30,7 +30,7 @@ import Lattice (Raw)
 import ModuleGraph (DependencyGraph, ModuleName, predefined, predefinedDeps)
 import Parse (parseModule, parseProgram)
 import SExpr (desugarModuleFwd)
-import DefiniteAssignment (ClassEntry, Cxt, Entry(..), WfResult(..), erase)
+import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throwLeft, whenever, withMsg, (×))
@@ -85,9 +85,6 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
            ("import cycle: " <> intercalate " -> " (dottedName <$> (q : reverse (takeWhile (_ /= q) path)) <> (q : Nil)))
       | otherwise = Set.insert q <$> foldM (go (q : path)) done (findWithDefault Nil q edges)
 
-noArgsClass :: ClassEntry
-noArgsClass = { cxt: Map.empty, name: cNoArgs, base: Nothing, fields: Nil }
-
 classTable :: Map ModuleName Cxt -> ClassTable
 classTable modCxt =
    Map.fromFoldable (map (\cls -> dottedName cls.name × cls) (Map.values modCxt >>= classValues))
@@ -110,23 +107,23 @@ allocTopLevel
    -> List S.Import
    -> m (Int × Env Vertex)
 allocTopLevel primitives mods imports = do
-   n × _ × γ <- flip runAllocT 0 do
+   n × _ × ρ <- flip runAllocT 0 do
       primitives' <- alloc primitives
       mods' <- traverse alloc mods
       let mαs = Set.unions (vertices <$> Map.values mods')
-      _ × γ <-
+      _ × ρ <-
          runWithGraphT_spy
             ( do
                  modifyModuleStore (_ { moduleBody = mods' })
-                 γ0 <- foldM (loadPredefined primitives') empty predefined
-                 modifyModuleStore (_ { γ0 = γ0 })
-                 γ1 <- foldM (\γ (S.Import q f) -> evalImport mainModule γ (E.Import q f)) γ0 imports
+                 ρ0 <- foldM (loadPredefined primitives') empty predefined
+                 modifyModuleStore (_ { ρ0 = ρ0 })
+                 ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0 imports
                  vName <- val Nothing Set.empty (V.Str "__main__")
-                 pure (γ1 <+> maplet "__name__" vName)
+                 pure (ρ1 <+> maplet "__name__" vName)
             )
             (vertices primitives' ∪ mαs) :: AllocT m (GraphImpl × _)
-      pure γ
-   pure (n × γ)
+      pure ρ
+   pure (n × ρ)
 
 prepConfig
    :: forall m
@@ -141,22 +138,22 @@ prepConfig
    -> m Config
 prepConfig primitives fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   let nativeBuiltins = constMap (VarStatus true) (keys primitives) `Map.union` Map.singleton "__NoArgs" (Class noArgsClass)
+   let primitivesCxt = constMap (VarStatus true) (keys primitives)
    mods <- parseModules imports
-   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods nativeBuiltins imports s)
+   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods primitivesCxt imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
       desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModuleFwd (Returns <$ m)) (Map.mapMaybe _.mod loaded)
-      n × γ <- allocTopLevel primitives desugaredMods imports
-      check (Map.keys cxt_wf == Set.fromFoldable (keys γ)) "reduced context matches top-level environment"
+      n × ρ <- allocTopLevel primitives desugaredMods imports
+      check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
       { moduleEnv } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
-         when (isJust mod) $ for_ (Map.lookup q moduleEnv) \γ_q ->
-            check (Map.keys (erase cxt) == Set.fromFoldable (keys γ_q))
+         when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q ->
+            check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": members match its environment")
       e_wf <- desug s_wf
       let e = (unit <$ e_wf) :: Raw Stmt
-      let gconfig = { n, γ: restrict (fv e) γ, classes }
+      let gconfig = { n, ρ: restrict (fv e) ρ, classes }
       pure { s, e, gconfig }
 
 parseModules

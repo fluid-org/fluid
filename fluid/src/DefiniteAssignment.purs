@@ -2,15 +2,18 @@ module DefiniteAssignment where
 
 import Prelude
 
-import Bind (Name, Var)
-import Data.Foldable (foldl)
-import Data.List (List)
+import Bind (Name, Var, dottedName)
+import Control.Monad.Error.Class (throwError)
+import Data.Either (Either)
+import Data.List.NonEmpty as NEL
+import Data.Foldable (foldl, lookup)
+import Data.List (List(..), elemIndex, index, length, (:))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
-import Util (definitely')
+import Util (type (×), definitely')
 
 type VarCxt = Map Var Boolean
 
@@ -74,6 +77,28 @@ classFor cxt c = case Map.lookup c cxt of
    Just (Class cls) -> Just cls
    _ -> Nothing
 
+classOf :: Cxt -> Name -> Either String ClassEntry
+classOf cxt c = case resolveName cxt c of
+   Just (Class cls) -> pure cls
+   _ -> throwError $ "Unknown dataclass: " <> dottedName c
+
+className :: Cxt -> Name -> Either String Name
+className cxt c = _.name <$> classOf cxt c
+
+resolveName :: Cxt -> Name -> Maybe Entry
+resolveName cxt name = case NEL.fromList init of
+   Nothing -> simpleEntry cxt x
+   Just q -> case resolveName cxt q of
+      Just (ModLoaded _ cxt') -> simpleEntry cxt' x
+      _ -> Nothing
+   where
+   { init, last: x } = NEL.unsnoc name
+   simpleEntry g y = case Map.lookup y g of
+      Just e@(VarStatus true) -> Just e
+      Just e@(ModLoaded _ _) -> Just e
+      Just e@(Class _) -> Just e
+      _ -> Nothing
+
 extendCxt :: Cxt -> VarCxt -> Cxt
 extendCxt cxt δ = Map.union (VarStatus <$> δ) cxt
 
@@ -81,6 +106,15 @@ fields :: ClassEntry -> List Var
 fields cls = case cls.base of
    Nothing -> cls.fields
    Just b -> fields (definitely' (classFor cls.cxt b)) <> cls.fields
+
+ancestors :: ClassEntry -> List Name
+ancestors cls = cls.name : maybe Nil ancestors (cls.base >>= classFor cls.cxt)
+
+-- Argument for a field, positional then keyword.
+fieldMap :: forall a. ClassEntry -> List a -> List (Var × a) -> Var -> Maybe a
+fieldMap cls xs xys x = case elemIndex x (fields cls) of
+   Just i | i < length xs -> index xs i
+   _ -> lookup x xys
 
 -- ======================
 -- boilerplate
