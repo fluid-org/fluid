@@ -233,12 +233,10 @@ evalStmt
    -> m (Result Vertex)
 evalStmt doc_opt ρ s αs = case s of
    Return e -> Returns <$> eval doc_opt ρ e αs
-   If ess s_opt -> go (NEL.toList ess) αs
-      where
-      go Nil αs' = maybe (pure (Assigns empty empty)) (\s' -> evalStmt doc_opt ρ s' αs') s_opt
-      go ((e × s') : ess') αs' = do
-         α × b <- eval Nothing ρ e αs' >>= truth
-         if b then evalStmt doc_opt ρ s' (insert α αs') else go ess' (insert α αs')
+   If e s' s_opt -> do
+      α × b <- eval Nothing ρ e αs >>= truth
+      if b then evalStmt doc_opt ρ s' (insert α αs)
+      else maybe (pure (Assigns empty empty)) (\s'' -> evalStmt doc_opt ρ s'' (insert α αs)) s_opt
    Match e bs -> do
       v <- eval Nothing ρ e αs
       runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of

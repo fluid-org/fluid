@@ -13,7 +13,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWith, (:))
 import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
 import Data.Semigroup.Foldable (foldr1)
-import Data.List.NonEmpty (zipWith) as NonEmptyList
+import Data.List.NonEmpty (fromList, uncons, zipWith) as NonEmptyList
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, unwrap)
 import Data.NonEmpty ((:|))
@@ -251,7 +251,12 @@ stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt
 stmtFwd (Def vd) = varDefFwd vd
 stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
 stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse patternFwd stmtFwd) bs
-stmtFwd (If ess s_opt) = E.If <$> traverse (bitraverse desug stmtFwd) ess <*> traverse stmtFwd s_opt
+stmtFwd (If ess s_opt) = E.If <$> desug e <*> stmtFwd s <*> rest
+   where
+   { head: e × s, tail } = NonEmptyList.uncons ess
+   rest = case NonEmptyList.fromList tail of
+      Nothing -> traverse stmtFwd s_opt
+      Just ess' -> Just <$> stmtFwd (If ess' s_opt)
 stmtFwd (Return e) = E.Return <$> desug e
 stmtFwd Pass = pure E.Pass
 stmtFwd (ExprStmt e) = E.ExprStmt <$> desug e

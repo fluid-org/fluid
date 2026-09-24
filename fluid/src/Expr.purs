@@ -4,7 +4,6 @@ import Prelude hiding (absurd, top)
 
 import Bind (Bind, Name, Var)
 import Control.Apply (lift2)
-import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldl, foldrDefault, foldMapDefaultL)
 import Data.Generic.Rep (class Generic)
 import Data.List (List, zipWith)
@@ -64,7 +63,7 @@ type Case a = Pattern × Stmt a
 
 data Stmt a
    = Return (Expr a)
-   | If (NonEmptyList (Expr a × Stmt a)) (Maybe (Stmt a))
+   | If (Expr a) (Stmt a) (Maybe (Stmt a)) -- elif chain nested in the else
    | Match (Expr a) (NonEmptyList (Case a))
    | Assign Pattern (Expr a) -- assignment to a pattern; the spec has only variables
    | DefRec (RecDefs a)
@@ -105,7 +104,7 @@ instance FV (RecDefs a) where
 
 instance FV (Stmt a) where
    fv (Return e) = fv e
-   fv (If ess s_opt) = unions (fv <$> ess) ∪ fv s_opt
+   fv (If e s s_opt) = fv e ∪ fv s ∪ fv s_opt
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
    fv (Assign _ e) = fv e
    fv (DefRec ds) = fv ds
@@ -155,7 +154,7 @@ instance BoundedJoinSemilattice a => Expandable (RecDefs a) (Raw RecDefs) where
 
 instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Return e) (Return e') = Return (e ∨ e')
-   join (If ess s_opt) (If ess' s_opt') = If (NEL.zipWith (∨) ess ess') (s_opt ∨ s_opt')
+   join (If e s s_opt) (If e' s' s_opt') = If (e ∨ e') (s ∨ s') (s_opt ∨ s_opt')
    join (Match e bs) (Match e' bs') = Match (e ∨ e') (NEL.zipWith joinCase bs bs')
       where
       joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
@@ -169,9 +168,7 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
 
 instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
    expand (Return e) (Return e') = Return (expand e e')
-   expand (If ess s_opt) (If ess' s_opt') = If (NEL.zipWith expandClause ess ess') (expand s_opt s_opt')
-      where
-      expandClause (e × s) (e' × s') = expand e e' × expand s s'
+   expand (If e s s_opt) (If e' s' s_opt') = If (expand e e') (expand s s') (expand s_opt s_opt')
    expand (Match e bs) (Match e' bs') = Match (expand e e') (NEL.zipWith expandCase bs bs')
       where
       expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
@@ -251,7 +248,7 @@ instance Vertices (RecDefs Vertex) where
 
 instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
-   vertices (If ess s_opt) = unions ((\(e × s) -> vertices e ∪ vertices s) <$> ess) ∪ maybe empty vertices s_opt
+   vertices (If e s s_opt) = vertices e ∪ vertices s ∪ maybe empty vertices s_opt
    vertices (Match e bs) = vertices e ∪ unions ((vertices <<< snd) <$> bs)
    vertices (Assign _ e) = vertices e
    vertices (DefRec ds) = vertices ds
@@ -279,18 +276,7 @@ derive instance Functor Stmt
 derive instance Foldable Stmt
 derive instance Functor Module
 
--- Not derivable: If clauses pair Expr with Stmt.
-instance Traversable Stmt where
-   traverse f (Return e) = Return <$> traverse f e
-   traverse f (If ess s_opt) = If <$> traverse (bitraverse (traverse f) (traverse f)) ess <*> traverse (traverse f) s_opt
-   traverse f (Match e bs) = Match <$> traverse f e <*> traverse (traverse (traverse f)) bs
-   traverse f (Assign p e) = Assign p <$> traverse f e
-   traverse f (DefRec ds) = DefRec <$> traverse f ds
-   traverse _ Pass = pure Pass
-   traverse f (ExprStmt e) = ExprStmt <$> traverse f e
-   traverse f (Assert e e_opt) = Assert <$> traverse f e <*> traverse (traverse f) e_opt
-   traverse f (Seq s1 s2) = Seq <$> traverse f s1 <*> traverse f s2
-   sequence = sequenceDefault
+derive instance Traversable Stmt
 
 -- For terms of a fixed shape.
 instance Apply Expr where
@@ -320,9 +306,7 @@ instance Apply RecDefs where
 
 instance Apply Stmt where
    apply (Return fe) (Return e) = Return (fe <*> e)
-   apply (If fess fs_opt) (If ess s_opt) = If (NEL.zipWith applyClause fess ess) (lift2 (<*>) fs_opt s_opt)
-      where
-      applyClause (fe × fs) (e × s) = (fe <*> e) × (fs <*> s)
+   apply (If fe fs fs_opt) (If e s s_opt) = If (fe <*> e) (fs <*> s) (lift2 (<*>) fs_opt s_opt)
    apply (Match fe fbs) (Match e bs) = Match (fe <*> e) (NEL.zipWith applyCase fbs bs)
       where
       applyCase (p × fs) (_ × s) = p × (fs <*> s)
