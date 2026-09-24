@@ -9,7 +9,7 @@ purepy_cases =
    [ { file: "purepy/attr_non_object.fld", expected_error: "Found 5, expected object" }
    , { file: "purepy/attr_unknown_member.fld", expected_error: "module qual_lib has no member unknown" }
    , { file: "purepy/assert_msg_false.fld", expected_error: "AssertionError: x should not be 5" }
-   , { file: "purepy/cond_nonbool.fld", expected_error: "Found 0, expected boolean" }
+   , { file: "purepy/cond_nonbool.fld", expected_error: "Found 0, expected bool" }
    , { file: "purepy/cond_partial_def.fld", expected_error: "Not definitely assigned: x" }
    , { file: "purepy/constr_bad_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"y\" : Nil), got (\"z\" : Nil)" }
    , { file: "purepy/construct_arity.fld", expected_error: "Point expects 2 argument(s); got 3" }
@@ -24,7 +24,7 @@ purepy_cases =
    , { file: "purepy/forward_class_in_def.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/forward_class_top.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module module.two_vals_lib" }
-   , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected boolean" }
+   , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected bool" }
    , { file: "purepy/import_in_def.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_if.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_match_case.fld", expected_error: "\"ParseError on line 3, column 12:\\nimports must precede statements\"" }
