@@ -85,6 +85,7 @@ misc_cases =
    , { file: "piecewise_def.fld", fwd_expect: "3" }
    , { file: "prefix_op.fld", fwd_expect: "True" }
    , { file: "purepy/assert_stmt.fld", fwd_expect: "10" }
+   , { file: "purepy/assert_msg_lazy.fld", fwd_expect: "5" }
    , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/branch_local.fld", fwd_expect: "6" }
    , { file: "purepy/closure_capture.fld", fwd_expect: "6" }
@@ -94,6 +95,7 @@ misc_cases =
    , { file: "purepy/dataclass_construct.fld", fwd_expect: "Coord(3, 4)" }
    , { file: "purepy/dataclass_decl.fld", fwd_expect: "42" }
    , { file: "purepy/early_return.fld", fwd_expect: "\"smaller\"" }
+   , { file: "purepy/elif_no_else.fld", fwd_expect: "3" }
    , { file: "purepy/expr_stmt.fld", fwd_expect: "6" }
    , { file: "purepy/implicit_none.fld", fwd_expect: "None" }
    , { file: "purepy/implicit_return.fld", fwd_expect: "None" }
@@ -122,5 +124,6 @@ misc_cases =
    , { file: "ternary/looser_than_plus.fld", fwd_expect: "7" }
    , { file: "ternary/right_assoc_false.fld", fwd_expect: "3" }
    , { file: "ternary/right_assoc_true.fld", fwd_expect: "1" }
+   , { file: "ternary/untaken_branch.fld", fwd_expect: "3" }
    , { file: "zero_arg.fld", fwd_expect: "\"hello\"" }
    ]

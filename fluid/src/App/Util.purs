@@ -24,13 +24,13 @@ import Effect.Class.Console (log)
 import Foreign.Object (Object, empty, fromFoldable, union)
 import Lattice (class BoundedJoinSemilattice, class BoundedMeetSemilattice, class JoinSemilattice, class MeetSemilattice, 𝔹, bot, neg, (∧), (∨))
 import Pretty (prettyP)
-import Primitive (as, intOrNumber, unpack)
+import Primitive (as, intOrNumber, unpack')
 import Primitive as P
 import Test.Util.Debug (tracing)
 import Unsafe.Coerce (unsafeCoerce)
 import Util (type (×), Endo, definitely', error, shapeMismatch, spyWhen, (×))
 import Util.Map (get)
-import Val (class Highlightable, Val(..), highlightIf)
+import Val (class Highlightable, Val, highlightIf)
 import Web.Event.Event (Event, EventType(..), target, type_)
 import Web.Event.EventTarget (EventTarget)
 
@@ -160,11 +160,11 @@ unselected :: SelStates 𝔹
 unselected = SelStates $ Reactive { persistent: false, transient: false }
 
 get_intOrNumber :: Var -> Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Selectable Number
-get_intOrNumber x r = first as (unpack intOrNumber (snd (get x r)))
+get_intOrNumber x r = first as (unpack' intOrNumber (snd (get x r)))
 
 -- Assumes fields are all of primitive type.
 dict :: forall a. (Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> a) -> Val (SelStates 𝕊) -> a
-dict toDict (Val _ _ v) = toDict (P.dict.unpack v)
+dict toDict v = toDict (fst (unpack' P.dict v))
 
 runAffs_ :: forall a. (a -> Effect Unit) -> Array (Aff a) -> Effect Unit
 runAffs_ f as = flip runAff_ (sequence as) case _ of

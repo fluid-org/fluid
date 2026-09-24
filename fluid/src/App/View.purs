@@ -26,7 +26,7 @@ import DataType (FieldIndex, cBarChart, cCons, cLineChart, cLinePlot, cLink, cMu
 import Dict (Dict)
 import Link (Link(..))
 import Primitive (boolean, int, string, typeError)
-import Primitive (unpack) as P
+import Primitive (unpack') as P
 import Util (type (×), error, (!), (×))
 import Util.Map (get, mapWithKey)
 import Val (BaseVal(..), DictRep(..), Val(..))
@@ -82,11 +82,11 @@ view fieldIndex options title v@(Val α _ u') = case u' of
 reflectBarChart :: Partial => FieldIndex -> Val (SelStates 𝕊) -> BarChart
 reflectBarChart fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cBarChart -> BarChart
-      { caption: P.unpack string (us ! fieldIndex cBarChart f_caption)
+      { caption: P.unpack' string (us ! fieldIndex cBarChart f_caption)
       , size: dict from (us ! fieldIndex cBarChart f_size)
       , tickLabels: dict from (us ! fieldIndex cBarChart f_tickLabels)
       , stackedBars: dict from <$> from (us ! fieldIndex cBarChart f_stackedBars)
-      , legend: P.unpack boolean (us ! fieldIndex cBarChart f_legend)
+      , legend: P.unpack' boolean (us ! fieldIndex cBarChart f_legend)
       }
    _ -> typeError u "BarChart"
 
@@ -95,7 +95,7 @@ reflectLineChart fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cLineChart -> LineChart
       { size: dict from (us ! fieldIndex cLineChart f_size)
       , tickLabels: dict from (us ! fieldIndex cLineChart f_tickLabels)
-      , caption: P.unpack string (us ! fieldIndex cLineChart f_caption)
+      , caption: P.unpack' string (us ! fieldIndex cLineChart f_caption)
       , plots: reflectLinePlot fieldIndex <$> (from (us ! fieldIndex cLineChart f_plots) :: Array (Val (SelStates 𝕊)))
       }
    _ -> typeError u "LineChart"
@@ -103,7 +103,7 @@ reflectLineChart fieldIndex (Val _ _ u) = case u of
 reflectLinePlot :: Partial => FieldIndex -> Val (SelStates 𝕊) -> LinePlot
 reflectLinePlot fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cLinePlot -> LinePlot
-      { name: P.unpack string (us ! fieldIndex cLinePlot f_name)
+      { name: P.unpack' string (us ! fieldIndex cLinePlot f_name)
       , points: dict from <$> from (us ! fieldIndex cLinePlot f_points)
       }
    _ -> typeError u "LinePlot"
@@ -111,7 +111,7 @@ reflectLinePlot fieldIndex (Val _ _ u) = case u of
 reflectScatterPlot :: Partial => FieldIndex -> Val (SelStates 𝕊) -> ScatterPlot
 reflectScatterPlot fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cScatterPlot -> ScatterPlot
-      { caption: P.unpack string (us ! fieldIndex cScatterPlot f_caption)
+      { caption: P.unpack' string (us ! fieldIndex cScatterPlot f_caption)
       , points: dict from <$> from (us ! fieldIndex cScatterPlot f_points)
       , labels: dict from (us ! fieldIndex cScatterPlot f_labels)
       }
@@ -159,20 +159,20 @@ instance Reflect (Val a) (NonEmptyArray (Val a)) where
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) (Dimensions (Selectable Int)) where
    from r = Dimensions
-      { width: P.unpack int (snd (get f_width r))
-      , height: P.unpack int (snd (get f_height r))
+      { width: P.unpack' int (snd (get f_width r))
+      , height: P.unpack' int (snd (get f_height r))
       }
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) StackedBar where
    from r = StackedBar
-      { x: P.unpack string (snd (get f_x r))
+      { x: P.unpack' string (snd (get f_x r))
       , segments: dict from <$> from (snd (get f_segments r))
       }
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) Segment where
    from :: Partial => Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Segment
    from r = Segment
-      { y: P.unpack string (snd (get f_y r))
+      { y: P.unpack' string (snd (get f_y r))
       , z: get_intOrNumber f_z r
       }
 
@@ -184,12 +184,12 @@ instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) (Point Number) 
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) (Point String) where
    from r = Point
-      { x: P.unpack string (snd (get f_x r))
-      , y: P.unpack string (snd (get f_y r))
+      { x: P.unpack' string (snd (get f_x r))
+      , y: P.unpack' string (snd (get f_y r))
       }
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) (Point Orientation) where
    from r = Point
-      { x: P.unpack orientation (snd (get f_x r))
-      , y: P.unpack orientation (snd (get f_y r))
+      { x: P.unpack' orientation (snd (get f_x r))
+      , y: P.unpack' orientation (snd (get f_y r))
       }

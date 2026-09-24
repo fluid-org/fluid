@@ -1,3 +1,7 @@
-import module.subscript_non_dict_lib
+@dataclass
+class Point:
+  x: Any
+  y: Any
 
-return 0
+p = Point(1, 2)
+p["x"]

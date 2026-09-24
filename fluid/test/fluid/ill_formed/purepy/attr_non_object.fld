@@ -1,3 +1,2 @@
-import module.attr_non_object_lib
-
-return 0
+x = 5
+x.foo

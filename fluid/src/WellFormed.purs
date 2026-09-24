@@ -221,7 +221,7 @@ capturesE (S.Subscript e e') = capturesE e ∪ capturesE e'
 capturesE (S.App e es) = capturesE e ∪ unions (capturesE <$> es)
 capturesE (S.BinaryApp e _ e') = capturesE e ∪ capturesE e'
 capturesE (S.UnaryPrefixApp _ e) = capturesE e
-capturesE (S.Ternary e e1 e2) = capturesE e ∪ capturesE e1 ∪ capturesE e2
+capturesE (S.Cond e1 e e2) = capturesE e1 ∪ capturesE e ∪ capturesE e2
 capturesE (S.Paragraph es) = unions (capturesPe <$> es)
    where
    capturesPe (S.Token _) = Set.empty
@@ -341,7 +341,7 @@ wellFormedExpr cxt (S.Constr α c es xes) = do
 wellFormedExpr cxt (S.App e es) = S.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
 wellFormedExpr cxt (S.BinaryApp e op e') = S.BinaryApp <$> wellFormedExpr cxt e <*> (op <$ var cxt op) <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wellFormedExpr cxt e)
-wellFormedExpr cxt (S.Ternary c e e') = S.Ternary <$> wellFormedExpr cxt c <*> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.Cond e1 e e2) = S.Cond <$> wellFormedExpr cxt e1 <*> wellFormedExpr cxt e <*> wellFormedExpr cxt e2
 wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
    Just (ModLoaded q cxt') -> do
       when (not (Map.member y cxt'))

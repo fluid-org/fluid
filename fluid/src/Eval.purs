@@ -26,7 +26,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv)
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -35,9 +35,9 @@ import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWit
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, builtins)
 import Pretty (prettyP)
-import Primitive (intPair, string, unpack)
+import Primitive (boolean, intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
-import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, singleton, spyFunWhen, throw, traceWhen, withMsg, (×), (⊆))
+import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, orThrow, singleton, spyFunWhen, throw, traceWhen, withMsg, (×), (⊆))
 import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
@@ -185,7 +185,7 @@ eval doc_opt ρ e0 αs = do
             case v, v' of
                Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Str s) ->
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
-               Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected string"
+               Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected str"
                _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected dict"
          ModMember q x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (module member " <> x <> ")"
@@ -196,6 +196,9 @@ eval doc_opt ρ e0 αs = do
             v <- eval Nothing ρ e αs
             vs <- traverse (\e' -> eval Nothing ρ e' αs) es
             withMsg ("In " <> funName e) $ apply doc_opt v vs
+         Cond e1 e e2 -> do
+            b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
+            eval doc_opt ρ (if b then e1 else e2) (insert α αs)
          DocExpr e e' -> do
             v <- eval Nothing ρ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"
@@ -223,6 +226,12 @@ evalStmt
    -> m (Result Vertex)
 evalStmt doc_opt ρ s αs = case s of
    Return e -> Returns <$> eval doc_opt ρ e αs
+   If bs s_opt -> go (NEL.toList bs) αs
+      where
+      go Nil αs' = maybe (pure (Assigns empty empty)) (\s' -> evalStmt doc_opt ρ s' αs') s_opt
+      go (Branch e s' : bs') αs' = do
+         b × α <- eval Nothing ρ e αs' >>= unpack boolean >>> orThrow
+         if b then evalStmt doc_opt ρ s' (insert α αs') else go bs' (insert α αs')
    Match e bs -> do
       v <- eval Nothing ρ e αs
       runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of
@@ -244,6 +253,18 @@ evalStmt doc_opt ρ s αs = case s of
    ExprStmt e -> do
       _ <- eval Nothing ρ e αs
       pure (Assigns empty empty)
+   Assert e e_opt -> do
+      b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
+      if b then pure (Assigns empty empty)
+      else case e_opt of
+         Nothing -> throw "AssertionError"
+         Just e' -> do
+            Val _ _ w <- eval Nothing ρ e' (insert α αs)
+            throw
+               ( "AssertionError: " <> case w of
+                    V.Str str -> str
+                    _ -> prettyP (unit <$ w)
+               )
    Seq s1 s2 -> do
       r1 <- evalStmt Nothing ρ s1 αs
       case r1 of
@@ -270,17 +291,14 @@ evalVal _ (Str α s) _ =
    pure $ Just (α × V.Str s)
 evalVal ρ (Dictionary α ees) αs = do
    vs × us <- traverse (traverse (flip (eval Nothing ρ) αs)) ees <#> P.unzip
-   let
-      ss × βs = (vs <#> unpack string) # unzip
-      d = D.fromFoldable $ zip ss (zip βs us)
-   pure $ Just (α × V.Dictionary (DictRep d))
+   ss × βs <- traverse (unpack string >>> orThrow) vs <#> unzip
+   pure $ Just (α × V.Dictionary (DictRep (D.fromFoldable (zip ss (zip βs us)))))
 evalVal ρ (Constr α c es) αs = do
    askClasses >>= \classes -> checkArity classes "construct" (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.Constr c vs)
 evalVal ρ (Matrix α e (x × y) e') αs = do
-   Val _ _ v <- eval Nothing ρ e' αs
-   let (i' × β) × (j' × β') = intPair.unpack v
+   (i' × β) × (j' × β') <- eval Nothing ρ e' αs >>= unpack intPair >>> orThrow <#> fst
    check
       (i' × j' >= 1 × 1)
       ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
