@@ -165,7 +165,7 @@ classes q = go Map.empty
    where
    go acc (S.Dataclass c b xs)
       | Map.member c acc = throwError $ "Duplicate class declaration: " <> c
-      | otherwise = pure (Map.insert c { cxt: Class <$> acc, name: NEL.snoc q c, base: b, fields: xs } acc)
+      | otherwise = pure (Map.insert c { cxt: Class <$> acc, name: NEL.snoc q c, base: b, fields: fst <$> xs } acc)
    go acc (S.Seq s1 s2) = go acc s1 >>= \acc' -> go acc' s2
    go acc _ = pure acc
 
@@ -308,7 +308,8 @@ wellFormed q cxt (S.Match e bs) = do
       S.PVar _ -> Returns
       S.PWild -> Returns
       _ -> Assigns Map.empty
-wellFormed q cxt (S.Dataclass c b xs) = do
+wellFormed q cxt (S.Dataclass c b xψs) = do
+   let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
    case b of
       Nothing -> pure unit
@@ -320,7 +321,7 @@ wellFormed q cxt (S.Dataclass c b xs) = do
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Assigns Map.empty × S.Dataclass c b xs)
+   pure (Assigns Map.empty × S.Dataclass c b xψs)
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x

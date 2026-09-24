@@ -1,0 +1,28 @@
+@dataclass
+class Coord:
+  x: int
+  y: float | None
+
+@dataclass
+class Shape:
+  name: str
+  closed: bool
+  tag: object
+  nothing: None
+  never: Never
+  sized: Sized
+  points: list[tuple[int, int]]
+  labels: dict[str, str]
+  measure: Callable[[int, float], float]
+  thunk: Callable[[], None]
+  kind: Literal["polygon"]
+  count: Literal[3]
+  offset: Literal[-1]
+  scale: Literal[1.5]
+  flag: Literal[True]
+  absent: Literal[None]
+  parent: Shape | Coord | None
+  origin: geometry.Point
+  unit: tuple[]
+
+Coord(3, None).x

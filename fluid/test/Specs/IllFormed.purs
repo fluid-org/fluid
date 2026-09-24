@@ -21,7 +21,7 @@ purepy_cases =
    , { file: "purepy/dataclass_dup_field.fld", expected_error: "Duplicate field names in class: Point" }
    , { file: "purepy/dataclass_field_default.fld", expected_error: "\"ParseError on line 3, column 10:\\nExpected EOF\"" }
    , { file: "purepy/dataclass_inherited_field_clash.fld", expected_error: "Class Sub redeclares inherited field(s): (\"x\" : Nil)" }
-   , { file: "purepy/dataclass_int_field.fld", expected_error: "\"ParseError on line 3, column 6:\\nExpected uppercase letter\"" }
+   , { file: "purepy/dataclass_dict_key_type.fld", expected_error: "\"ParseError on line 3, column 14:\\nExpected `str`, received `int`\"" }
    , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 10, column 10:\\nExpected ')'\"" }
    , { file: "purepy/dataclass_unknown_base.fld", expected_error: "Unknown class: Unknown" }
    , { file: "purepy/duplicate_def_in_region.fld", expected_error: "case 2 is unreachable" }

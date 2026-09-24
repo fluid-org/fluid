@@ -15,10 +15,12 @@ import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
+import Expr.Literal as L
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
 import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import TypeExpr as T
 import Util (type (×), error, isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
@@ -226,7 +228,35 @@ instance Ann a => Pretty (Stmt a) where
       where
       body = case xs of
          Nil -> text "pass"
-         _ -> vsep ((\x -> text x <> text ": Any") <$> xs)
+         _ -> vsep ((\(x × ψ) -> text x <> text ":" <+> pretty ψ) <$> xs)
+
+instance Pretty T.TypeExpr where
+   pretty (T.Primitive ν) = pretty ν
+   pretty (T.List ψ) = text "list" <> brackets (pretty ψ)
+   pretty (T.Tuple ψs) = text "tuple" <> brackets (prettyList ψs)
+   pretty (T.Dict ψ) = text "dict" <> brackets (text "str," <+> pretty ψ)
+   pretty (T.Callable ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
+   pretty (T.Literal ℓ) = text "Literal" <> brackets (pretty ℓ)
+   pretty (T.ClassName q) = text (dottedName q)
+   pretty (T.Union ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
+
+instance Pretty T.Primitive where
+   pretty T.Object = text "object"
+   pretty T.Never = text "Never"
+   pretty T.None = text "None"
+   pretty T.Bool = text "bool"
+   pretty T.Int = text "int"
+   pretty T.Float = text "float"
+   pretty T.Str = text "str"
+   pretty T.Sized = text "Sized"
+
+instance Pretty L.Literal where
+   pretty (L.Int n) = number n
+   pretty (L.Float n) = number n
+   pretty (L.Str s) = string s
+   pretty (L.Bool true) = text "True"
+   pretty (L.Bool false) = text "False"
+   pretty L.None = text "None"
 
 instance Ann a => Pretty (Clause a) where
    pretty (Clause _ (ps × b)) = lambda ps b

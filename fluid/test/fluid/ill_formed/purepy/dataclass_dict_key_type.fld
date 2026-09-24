@@ -1,5 +1,5 @@
 @dataclass
 class C:
-  x: int
+  d: dict[int, str]
 
 return 0

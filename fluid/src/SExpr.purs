@@ -29,6 +29,7 @@ import Dict as D
 import Effect.Exception (Error)
 import Expr (class FV, Pattern(..), bv, fv)
 import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
+import TypeExpr (TypeExpr)
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
 import Util (type (×), checkDistinct, error, nonEmpty, singleton, throw, unimplemented, (×))
@@ -79,7 +80,7 @@ data Stmt a
    | ExprStmt (Expr a)
    | Assert (Expr a) (Maybe (Expr a))
    | Seq (Stmt a) (Stmt a)
-   | Dataclass Var (Maybe Var) (List Var)
+   | Dataclass Var (Maybe Var) (List (Var × TypeExpr))
 
 data Import = Import Name (Maybe (List Var))
 

@@ -10,6 +10,7 @@ import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
 import Bind (Bind, Name, varAnon, (↦))
 import Data.Either (Either(..))
+import Data.Foldable (foldl)
 import Data.Identity (Identity)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList(..), cons, last, toList)
@@ -20,6 +21,8 @@ import Data.String.CodeUnits as SCU
 import Data.Traversable (foldr)
 import DataType (cCons, cNone, cPair)
 import Lattice (Raw)
+import Expr.Literal (Literal)
+import Expr.Literal (Literal(..)) as L
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
@@ -31,6 +34,8 @@ import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
 import Expr (Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import TypeExpr (TypeExpr)
+import TypeExpr (Primitive(..), TypeExpr(..)) as T
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
@@ -103,6 +108,52 @@ pConsOp :: Parser (Pattern -> Pattern -> Pattern)
 pConsOp = do
    reservedOperator ":|"
    pure \e e' -> PConstr (singleton (last cCons)) (e : e' : Nil) Nil
+
+typeExpr :: Parser TypeExpr
+typeExpr = defer \_ -> do
+   ψ <- typeAtom
+   ψs <- many (reservedOperator "|" *> typeAtom)
+   pure (foldl T.Union ψ ψs)
+   where
+   typeAtom :: Parser TypeExpr
+   typeAtom = defer \_ -> constrType <|> varType
+
+   constrType :: Parser TypeExpr
+   constrType = do
+      prefix <- many (try (variable <* delim '.'))
+      c <- constructor
+      case prefix, c of
+         Nil, "Never" -> pure (T.Primitive T.Never)
+         Nil, "None" -> pure (T.Primitive T.None)
+         Nil, "Sized" -> pure (T.Primitive T.Sized)
+         Nil, "Callable" -> brackets (T.Callable <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
+         Nil, "Literal" -> T.Literal <$> brackets literal
+         _, _ -> pure (T.ClassName (foldr cons (singleton c) prefix))
+
+   varType :: Parser TypeExpr
+   varType = variable >>= case _ of
+      "object" -> pure (T.Primitive T.Object)
+      "bool" -> pure (T.Primitive T.Bool)
+      "int" -> pure (T.Primitive T.Int)
+      "float" -> pure (T.Primitive T.Float)
+      "str" -> pure (T.Primitive T.Str)
+      "list" -> T.List <$> brackets typeExpr
+      "tuple" -> T.Tuple <$> brackets (commas typeExpr)
+      "dict" -> brackets (reserved "str" *> delim ',' *> (T.Dict <$> typeExpr))
+      x -> fail ("Not a type: " <> x)
+
+   literal :: Parser Literal
+   literal =
+      try (float <#> L.Float)
+         <|> (integer <#> L.Int)
+         <|> (stringLiteral <#> L.Str)
+         <|>
+            ( constructor >>= case _ of
+                 "True" -> pure (L.Bool true)
+                 "False" -> pure (L.Bool false)
+                 "None" -> pure L.None
+                 c -> fail ("Not a literal: " <> c)
+            )
 
 varDef :: Parser (Raw VarDef)
 varDef = do
@@ -194,9 +245,8 @@ dataclassStmt = do
       fieldDecl = do
          x <- variable
          delim ':'
-         t <- constructor
-         unless (t == "Any") $ fail $ "Field type must be Any, got: " <> t
-         pure x
+         ψ <- typeExpr
+         pure (x × ψ)
    xs <- block ((reserved "pass" $> Nil) <|> (toList <$> many1 (align fieldDecl)))
    pure $ Dataclass c b xs
 
