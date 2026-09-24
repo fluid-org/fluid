@@ -19,7 +19,7 @@ import Expr.Literal as L
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
-import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import TypeExpr as T
 import Util (type (×), error, isEmpty, (×))
 import Util.Map (toUnfoldable)
@@ -119,9 +119,6 @@ operatorApp n (UnaryPrefixApp op s) =
          else
             text op <+> operatorApp n' s
 operatorApp _ e = prettySimple e
-
-lambda :: forall a. Ann a => List Pattern -> Stmt a -> Doc
-lambda ps s = text "lambda" <+> prettyList ps <> text ":" <+> pretty s
 
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
@@ -259,7 +256,16 @@ instance Pretty L.Literal where
    pretty L.None = text "None"
 
 instance Ann a => Pretty (Clause a) where
-   pretty (Clause _ (ps × b)) = lambda ps b
+   pretty (Clause _ (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
+
+instance Pretty Param where
+   pretty (Param p ψ) = pretty p <> annot ψ
+
+annot :: Maybe T.TypeExpr -> Doc
+annot = maybe mempty \ψ -> text ":" <+> pretty ψ
+
+returnAnnot :: Maybe T.TypeExpr -> Doc
+returnAnnot = maybe mempty \ψ -> text " ->" <+> pretty ψ
 
 instance Ann a => Pretty (LambdaClause a) where
    pretty (LambdaClause (ps × e)) = text "lambda" <+> prettyList ps <> text ":" <+> pretty e
@@ -268,11 +274,7 @@ instance Ann a => Pretty (RecDefs a) where
    pretty bs = sep' (stmtOrExpr line (text " ")) (toList (pretty <$> bs))
 
 instance Ann a => Pretty (Branch a) where
-   pretty (v × Clause _ (ps × b)) =
-      text "def"
-         <+> text v
-         <> parens (prettyList ps)
-         <> block (pretty b)
+   pretty (f × clause) = text "def" <+> text f <> pretty clause
 
 instance Ann a => Pretty (DictEntry a × Expr a) where
    pretty (k × v) =
@@ -358,7 +360,10 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Highlightable a => Pretty (E.Def a) where
-   pretty (E.Def xs s) = parens (commas (text <$> xs)) <> text "->" <> pretty s
+   pretty (E.Def xs ψ s) = parens (prettyList xs) <> returnAnnot ψ <> text "->" <> pretty s
+
+instance Pretty E.Param where
+   pretty (E.Param x ψ) = text x <> annot ψ
 
 instance Highlightable a => Pretty (Dict (E.Def a)) where
    pretty ds = go (toUnfoldable ds)

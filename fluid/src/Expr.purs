@@ -18,6 +18,7 @@ import Data.Tuple (snd)
 import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import TypeExpr (TypeExpr)
 import Util (type (×), shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys)
 import Util.Pair (Pair(..))
@@ -52,8 +53,14 @@ data Pattern
    | PList (List Pattern)
    | PAs Pattern Var
 
--- Parameters and body of a function.
-data Def a = Def (List Var) (Stmt a)
+-- Parameter with optional annotation; the spec requires the annotation.
+data Param = Param Var (Maybe TypeExpr)
+
+-- Parameters, return annotation and body of a function.
+data Def a = Def (List Param) (Maybe TypeExpr) (Stmt a)
+
+paramVar :: Param -> Var
+paramVar (Param x _) = x
 
 -- Mutually recursive function definitions.
 data RecDefs a = RecDefs a (Dict (Def a))
@@ -100,7 +107,7 @@ instance FV (Expr a) where
    fv (DocExpr doc e) = fv doc ∪ fv e
 
 instance FV (Def a) where
-   fv (Def xs s) = fv s \\ S.fromFoldable xs
+   fv (Def xs _ s) = fv s \\ S.fromFoldable (paramVar <$> xs)
 
 instance FV (RecDefs a) where
    fv (RecDefs _ ds) = fv ds
@@ -147,10 +154,10 @@ instance BV Pattern where
    bv (PAs p x) = bv p ∪ singleton x
 
 instance JoinSemilattice a => JoinSemilattice (Def a) where
-   join (Def xs s) (Def xs' s') = Def (xs ≜ xs') (s ∨ s')
+   join (Def xs ψ s) (Def xs' ψ' s') = Def (xs ≜ xs') (ψ ≜ ψ') (s ∨ s')
 
 instance BoundedJoinSemilattice a => Expandable (Def a) (Raw Def) where
-   expand (Def xs s) (Def xs' s') = Def (xs ≜ xs') (expand s s')
+   expand (Def xs ψ s) (Def xs' ψ' s') = Def (xs ≜ xs') (ψ ≜ ψ') (expand s s')
 
 instance JoinSemilattice a => JoinSemilattice (RecDefs a) where
    join (RecDefs α ds) (RecDefs α' ds') = RecDefs (α ∨ α') (ds ∨ ds')
@@ -253,7 +260,7 @@ instance Vertices (Expr Vertex) where
    vertices (DocExpr e e') = vertices e ∪ vertices e'
 
 instance Vertices (Def Vertex) where
-   vertices (Def _ s) = vertices s
+   vertices (Def _ _ s) = vertices s
 
 instance Vertices (RecDefs Vertex) where
    vertices defs@(RecDefs α ds) = singleton (DVertex (α × pack defs)) ∪ vertices ds
@@ -316,7 +323,7 @@ instance Apply Expr where
    apply _ _ = shapeMismatch unit
 
 instance Apply Def where
-   apply (Def xs fs) (Def _ s) = Def xs (fs <*> s)
+   apply (Def xs ψ fs) (Def _ _ s) = Def xs ψ (fs <*> s)
 
 instance Apply RecDefs where
    apply (RecDefs fα fds) (RecDefs α ds) = RecDefs (fα α) (((<*>) <$> fds) <*> ds)
@@ -351,6 +358,11 @@ instance Traversable Module where
    sequence = sequenceDefault
 
 derive instance Eq a => Eq (Expr a)
+derive instance Eq Param
+derive instance Generic Param _
+instance Show Param where
+   show c = genericShow c
+
 derive instance Eq a => Eq (Def a)
 derive instance Eq Pattern
 derive instance Generic Pattern _

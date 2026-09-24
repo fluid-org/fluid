@@ -10,7 +10,7 @@ import Data.Foldable (all, for_, length, null)
 import Data.Function (on)
 import Data.Generic.Rep (class Generic)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWith, (:))
+import Data.List (List(..), drop, find, mapMaybe, nubEq, sort, transpose, unzip, zipWith, (:))
 import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
 import Data.Semigroup.Foldable (foldr1)
 import Data.List.NonEmpty (zipWith) as NonEmptyList
@@ -27,8 +27,8 @@ import Lattice (class JoinSemilattice)
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class FV, Pattern(..), bv, fv)
-import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), RecDefs(..), Stmt(..)) as E
+import Expr (class BV, class FV, Pattern(..), bv, fv)
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
 import TypeExpr (TypeExpr)
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
@@ -87,7 +87,11 @@ data Import = Import Name (Maybe (List Var))
 -- Case of a match statement.
 type Case a = Pattern × Stmt a
 
-data Clause a = Clause a (List Pattern × Stmt a)
+-- Parameter with optional annotation; the spec requires the annotation and has only variables.
+data Param = Param Pattern (Maybe TypeExpr)
+
+-- Parameters, return annotation and body of a def clause.
+data Clause a = Clause a (List Param × Maybe TypeExpr × Stmt a)
 
 type Branch a = Var × Clause a
 newtype Clauses a = Clauses (NonEmptyList (Clause a))
@@ -127,7 +131,7 @@ instance Desugarable Clauses E.Def where
    desug (Clauses μ) = clausesFwd (μ <#> \(Clause _ clause) -> clause)
 
 instance Desugarable LambdaClause E.Def where
-   desug (LambdaClause (ps × e)) = clausesFwd (singleton (ps × Return e))
+   desug (LambdaClause (ps × e)) = clausesFwd (singleton ((ps <#> \p -> Param p Nothing) × Nothing × Return e))
 
 desugarModuleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 desugarModuleFwd = moduleFwd
@@ -145,7 +149,7 @@ param i = "$" <> show i
 
 -- Unary function matching its argument against the cases.
 matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
-matchFun α bs = E.Lambda α (E.Def (param 1 : Nil) (E.Match (E.Var (param 1)) bs))
+matchFun α bs = E.Lambda α (E.Def (E.Param (param 1) Nothing : Nil) Nothing (E.Match (E.Var (param 1)) bs))
 
 moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
@@ -166,7 +170,7 @@ recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult Va
 recDefFwd xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
    where
    close (Clause Returns body) = Clause Returns body
-   close (Clause (Assigns δ) (ps × s)) = Clause (Assigns δ) (ps × Seq s (Return (Constr Returns cNone Nil Nil)))
+   close (Clause (Assigns δ) (ps × ψ × s)) = Clause (Assigns δ) (ps × ψ × Seq s (Return (Constr Returns cNone Nil Nil)))
 
 paragraphFwd
    :: forall m. HasClasses m => MonadError Error m => List (ParagraphElem (WfResult VarCxt)) -> m (E.Expr (WfResult VarCxt))
@@ -318,19 +322,21 @@ clausesFwd
    :: forall m
     . HasClasses m
    => MonadError Error m
-   => NonEmptyList (List Pattern × Stmt (WfResult VarCxt))
+   => NonEmptyList (List Param × Maybe TypeExpr × Stmt (WfResult VarCxt))
    -> m (E.Def (WfResult VarCxt))
 clausesFwd clauses = do
    let n = length (fst (head clauses)) :: Int
    for_ clauses \(ps × _) ->
       when (length ps /= n) $ throw "Clauses differ in number of parameters"
+   ψs <- traverse (shared "parameter annotations") (transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param _ ψ) -> ψ)))
+   ψ <- shared "return annotation" (toList (clauses <#> \(_ × ψ × _) -> ψ))
    let
-      columns = transpose (toList (fst <$> clauses))
+      columns = transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param p _) -> p))
       named = columns # mapWithIndex \i ps -> case sharedVar ps of
          Just x -> x × Nothing
          Nothing -> param (i + 1) × Just ps
       matched = named # mapMaybe \(x × ps_opt) -> (x × _) <$> ps_opt
-   ss <- for clauses (stmtFwd <<< snd)
+   ss <- for clauses \(_ × _ × s) -> stmtFwd s
    body <- case matched of
       Nil -> pure (head ss)
       _ -> do
@@ -339,11 +345,16 @@ clausesFwd clauses = do
             e = foldr1 (\e1 e2 -> E.Constr Returns cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
             bs = NonEmptyList.zipWith (\ps s -> foldr1 (\p p' -> PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s) (nonEmpty pss) ss
          pure (E.Match e bs)
-   pure (E.Def (fst <$> named) body)
+   pure (E.Def (zipWith E.Param (fst <$> named) ψs) ψ body)
    where
    sharedVar :: List Pattern -> Maybe Var
    sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
    sharedVar _ = Nothing
+
+   shared :: forall b. Eq b => String -> List b -> m b
+   shared what xs = case nubEq xs of
+      x : Nil -> pure x
+      _ -> throw ("Clauses differ in " <> what)
 
 -- ======================
 -- boilerplate
@@ -391,6 +402,11 @@ instance Show a => Show (Stmt a) where
 derive instance Eq Import
 derive instance Generic Import _
 instance Show Import where
+   show c = genericShow c
+
+derive instance Eq Param
+derive instance Generic Param _
+instance Show Param where
    show c = genericShow c
 
 derive instance Eq a => Eq (Clause a)
@@ -472,7 +488,10 @@ instance FV (LambdaClause a) where
    fv (LambdaClause (ps × e)) = fv e \\ Set.unions (bv <$> ps)
 
 instance FV (Clause a) where
-   fv (Clause _ (ps × b)) = fv b \\ Set.unions (bv <$> ps)
+   fv (Clause _ (ps × _ × b)) = fv b \\ Set.unions (bv <$> ps)
+
+instance BV Param where
+   bv (Param p _) = bv p
 
 instance FV (DictEntry a) where
    fv (ExprKey e) = fv e

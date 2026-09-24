@@ -26,7 +26,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv)
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -129,16 +129,16 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
    where
    arity' :: m Int
    arity' = case φ of
-      V.Closure _ _ (Def xs _) -> pure (length xs)
+      V.Closure _ _ (Def xs _ _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
       V.Type c -> askClasses >>= \classes -> ctrSig classes "construct" (dottedName c) <#> snd
       V.Partial _ _ -> error absurd
 
    call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
    call doc_opt' vs' = case φ of
-      V.Closure ρ1 ds (Def xs s) -> do
+      V.Closure ρ1 ds (Def xs _ s) -> do
          ρ2 <- closeDefs ρ1 ds (singleton α)
-         let ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
+         let ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip (paramVar <$> xs) vs')
          asReturns <$> evalStmt doc_opt' (ρ1 <+> ρ2 <+> ρ3) s (singleton α)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> φ'.op doc_opt' vs'
       V.Type c -> val doc_opt' (singleton α) (V.Constr c vs')

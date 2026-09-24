@@ -30,7 +30,7 @@ import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
-import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
@@ -194,7 +194,7 @@ captures (S.Match e ps) =
 captures (S.DefRec ds) =
    (unions (clauseCaptures <$> ds)) \\ unions (Set.singleton <<< fst <$> ds)
    where
-   clauseCaptures (_ × S.Clause _ (ps × s)) =
+   clauseCaptures (_ × S.Clause _ (ps × _ × s)) =
       (fv s \\ unions (bv <$> ps)) \\ assigns s
 captures (S.Seq s1 s2) = captures s1 ∪ captures s2
 captures (S.Dataclass _ _ _) = Set.empty
@@ -258,15 +258,15 @@ wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
    for_ (NEL.groupBy (eq `on` fst) ds) \clauses ->
-      void $ wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList ps)
+      void $ wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
    ds' <- traverse
-      ( \(x × S.Clause _ (ps × s)) -> do
+      ( \(x × S.Clause _ (ps × ψ × s)) -> do
            let xs = unions (bv <$> ps)
            let ys = assigns s \\ xs
            let cxt'' = cxt' `extendCxt` constMap true xs `extendCxt` constMap false ys
-           ps' <- traverse (wellFormedPattern cxt') ps
+           ps' <- traverse (\(S.Param p ψ') -> S.Param <$> wellFormedPattern cxt' p <@> ψ') ps
            r × s' <- wellFormed q cxt'' s
-           pure (x × S.Clause r (ps' × s'))
+           pure (x × S.Clause r (ps' × ψ × s'))
       )
       ds
    pure (Assigns (constMap true fs) × S.DefRec ds')

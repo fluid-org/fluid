@@ -33,7 +33,7 @@ import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
 import Expr (Pattern(..))
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import TypeExpr (TypeExpr)
 import TypeExpr (Primitive(..), TypeExpr(..)) as T
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
@@ -255,11 +255,15 @@ recDefs = many1 recDef
    where
    recDef :: Parser (Raw Branch)
    recDef = do
-      p <- try (reserved "def" *> variable <* delim '(')
-      ps0 <- commas pattern
+      f <- try (reserved "def" *> variable <* delim '(')
+      ps <- commas param
       delim ')'
-      b <- blockBody
-      pure $ p × Clause unit (ps0 × b)
+      ψ <- optionMaybe (reservedOperator "->" *> typeExpr)
+      s <- blockBody
+      pure $ f × Clause unit (ps × ψ × s)
+
+   param :: Parser Param
+   param = Param <$> pattern <*> optionMaybe (delim ':' *> typeExpr)
 
 expr :: Parser (Raw Expr)
 expr = context "expr" $ cond <?> "expression"

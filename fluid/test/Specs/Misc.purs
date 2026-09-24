@@ -95,6 +95,7 @@ misc_cases =
    , { file: "purepy/dataclass_construct.fld", fwd_expect: "Coord(3, 4)" }
    , { file: "purepy/dataclass_decl.fld", fwd_expect: "42" }
    , { file: "purepy/dataclass_field_types.fld", fwd_expect: "3" }
+   , { file: "purepy/def_annotations.fld", fwd_expect: "(12, (\"a\", 5))" }
    , { file: "purepy/early_return.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/elif_no_else.fld", fwd_expect: "3" }
    , { file: "purepy/expr_stmt.fld", fwd_expect: "6" }
