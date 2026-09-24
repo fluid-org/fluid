@@ -1,0 +1,6 @@
+def f(0: int) -> int:
+  return 1
+def f(n: str) -> int:
+  return 2
+
+f(1)
