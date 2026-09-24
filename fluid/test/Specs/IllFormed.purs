@@ -10,6 +10,10 @@ purepy_cases =
    , { file: "purepy/attr_unknown_member.fld", expected_error: "module qual_lib has no member unknown" }
    , { file: "purepy/assert_msg_false.fld", expected_error: "AssertionError: x should not be 5" }
    , { file: "purepy/cond_nonbool.fld", expected_error: "Found 0, expected bool" }
+   , { file: "purepy/binop_operand_type.fld", expected_error: "Found \"a\", expected int or float\nIn +" }
+   , { file: "purepy/unary_operand_type.fld", expected_error: "Found \"x\", expected float\nIn floor" }
+   , { file: "purepy/dict_key_type.fld", expected_error: "Found 1, expected str" }
+   , { file: "purepy/matrix_dim_type.fld", expected_error: "Found \"a\", expected int" }
    , { file: "purepy/cond_partial_def.fld", expected_error: "Not definitely assigned: x" }
    , { file: "purepy/constr_bad_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"y\" : Nil), got (\"z\" : Nil)" }
    , { file: "purepy/construct_arity.fld", expected_error: "Point expects 2 argument(s); got 3" }

@@ -1,3 +1,2 @@
-import module.dict_attr_lib
-
-return 0
+d = { ["a"]: 1 }
+d.a

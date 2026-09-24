@@ -16,6 +16,7 @@ import Data.Maybe (Maybe(..))
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (fst, uncurry)
 import Effect.Aff (Error, message)
+import Eval (graphEval)
 import Effect.Aff.Class (class MonadAff)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (botOf)
@@ -116,10 +117,15 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
    asTest :: IllFormedSpec -> m Unit
    asTest { file, expected_error } = do
       fluidSrc <- loadFile [ Folder "fluid", Folder "test/fluid" ] (folder </> File file)
-      result <- catchError (prepConfig primitives fluidSrc *> pure (Left unit)) (pure <<< Right)
+      result <- catchError (run fluidSrc *> pure (Left unit)) (pure <<< Right)
       case result of
          Right err ->
             when (message err /= expected_error)
                $ throw
                $ "Expected error: " <> expected_error <> "; got: " <> message err
          Left _ -> throw $ "Expected ill-formed: " <> file
+
+   run :: String -> m Unit
+   run fluidSrc = do
+      { e, gconfig } <- prepConfig primitives fluidSrc
+      void $ graphEval gconfig e

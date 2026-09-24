@@ -1,3 +1,1 @@
-import module.cond_nonbool_lib
-
-return 0
+1 if 0 else 2
