@@ -85,6 +85,7 @@ misc_cases =
    , { file: "piecewise_def.fld", fwd_expect: "3" }
    , { file: "prefix_op.fld", fwd_expect: "True" }
    , { file: "purepy/assert_stmt.fld", fwd_expect: "10" }
+   , { file: "purepy/assign_annotation.fld", fwd_expect: "11" }
    , { file: "purepy/assert_msg_lazy.fld", fwd_expect: "5" }
    , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/branch_local.fld", fwd_expect: "6" }

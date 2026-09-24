@@ -157,9 +157,13 @@ typeExpr = defer \_ -> do
 
 varDef :: Parser (Raw VarDef)
 varDef = do
-   p <- try (pattern <* reservedOperator "=")
+   p × ψ <- try do
+      p <- pattern
+      ψ <- optionMaybe (delim ':' *> typeExpr)
+      reservedOperator "="
+      pure (p × ψ)
    e <- sameOrIndented *> withPos expr
-   pure $ VarDef p e
+   pure $ VarDef p ψ e
 
 varDefs :: Parser (Raw VarDefs)
 varDefs = many1 varDef
@@ -485,7 +489,7 @@ expr = context "expr" $ cond <?> "expression"
                                     p <- pattern
                                     delim ':'
                                     e' <- opTree
-                                    pure $ ListCompDecl (VarDef p e')
+                                    pure $ ListCompDecl (VarDef p Nothing e')
                                , context "listCompGen" do
                                     reserved "for"
                                     p <- pattern

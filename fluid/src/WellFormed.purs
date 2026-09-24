@@ -171,7 +171,7 @@ classes q = go Map.empty
 
 assigns :: forall a. S.Stmt a -> Set Var
 assigns S.Pass = Set.empty
-assigns (S.Def (S.VarDef p _)) = bv p
+assigns (S.Def (S.VarDef p _ _)) = bv p
 assigns (S.ExprStmt _) = Set.empty
 assigns (S.Assert _ _) = Set.empty
 assigns (S.Return _) = Set.empty
@@ -183,7 +183,7 @@ assigns (S.Dataclass c _ _) = Set.singleton c
 
 captures :: forall a. S.Stmt a -> Set Var
 captures S.Pass = Set.empty
-captures (S.Def (S.VarDef _ e)) = capturesE e
+captures (S.Def (S.VarDef _ _ e)) = capturesE e
 captures (S.ExprStmt e) = capturesE e
 captures (S.Assert e e') = capturesE e ∪ maybe Set.empty capturesE e'
 captures (S.Return e) = capturesE e
@@ -247,13 +247,13 @@ wellFormed _ cxt (S.Assert e e') = do
    e1 <- wellFormedExpr cxt e
    e2 <- traverse (wellFormedExpr cxt) e'
    pure (Assigns Map.empty × S.Assert (Assigns Map.empty <$ e1) ((Assigns Map.empty <$ _) <$> e2))
-wellFormed _ cxt (S.Def (S.VarDef p e)) = do
+wellFormed _ cxt (S.Def (S.VarDef p ψ e)) = do
    let xs = bv p
    for_ (Set.toUnfoldable (xs `Set.intersection` capturesE e) :: Array Var) \x ->
       throwError $ "Variable captured by its own definition: " <> x
    e' <- wellFormedExpr cxt e
    p' <- wellFormedPattern cxt p
-   pure (Assigns (constMap true xs) × S.Def (S.VarDef p' (Assigns Map.empty <$ e')))
+   pure (Assigns (constMap true xs) × S.Def (S.VarDef p' ψ (Assigns Map.empty <$ e')))
 wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
@@ -390,10 +390,10 @@ wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs')
          e1' <- wellFormedExpr cxt' e1
          p' <- wellFormedPattern cxt' p
          map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
-      S.ListCompDecl (S.VarDef p e1) -> do
+      S.ListCompDecl (S.VarDef p ψ e1) -> do
          e1' <- wellFormedExpr cxt' e1
          p' <- wellFormedPattern cxt' p
-         map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
+         map (S.ListCompDecl (S.VarDef p' ψ e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit

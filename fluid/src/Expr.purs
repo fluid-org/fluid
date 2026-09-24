@@ -75,7 +75,7 @@ data Stmt a
    = Return (Expr a)
    | If (NonEmptyList (Branch a)) (Maybe (Stmt a))
    | Match (Expr a) (NonEmptyList (Case a))
-   | Assign Pattern (Expr a) -- assignment to a pattern; the spec has only variables
+   | Assign Pattern (Maybe TypeExpr) (Expr a) -- assignment to a pattern; the spec has only variables
    | DefRec (RecDefs a)
    | Pass
    | ExprStmt (Expr a)
@@ -119,7 +119,7 @@ instance FV (Stmt a) where
    fv (Return e) = fv e
    fv (If bs s_opt) = unions (fv <$> bs) ∪ fv s_opt
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
-   fv (Assign _ e) = fv e
+   fv (Assign _ _ e) = fv e
    fv (DefRec ds) = fv ds
    fv Pass = empty
    fv (ExprStmt e) = fv e
@@ -177,7 +177,7 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Match e bs) (Match e' bs') = Match (e ∨ e') (NEL.zipWith joinCase bs bs')
       where
       joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
-   join (Assign p e) (Assign p' e') = Assign (p ≜ p') (e ∨ e')
+   join (Assign p ψ e) (Assign p' ψ' e') = Assign (p ≜ p') (ψ ≜ ψ') (e ∨ e')
    join (DefRec ds) (DefRec ds') = DefRec (ds ∨ ds')
    join Pass Pass = Pass
    join (ExprStmt e) (ExprStmt e') = ExprStmt (e ∨ e')
@@ -191,7 +191,7 @@ instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
    expand (Match e bs) (Match e' bs') = Match (expand e e') (NEL.zipWith expandCase bs bs')
       where
       expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
-   expand (Assign p e) (Assign p' e') = Assign (p ≜ p') (expand e e')
+   expand (Assign p ψ e) (Assign p' ψ' e') = Assign (p ≜ p') (ψ ≜ ψ') (expand e e')
    expand (DefRec ds) (DefRec ds') = DefRec (expand ds ds')
    expand Pass Pass = Pass
    expand (ExprStmt e) (ExprStmt e') = ExprStmt (expand e e')
@@ -272,7 +272,7 @@ instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
    vertices (If bs s_opt) = unions (vertices <$> bs) ∪ maybe empty vertices s_opt
    vertices (Match e bs) = vertices e ∪ unions ((vertices <<< snd) <$> bs)
-   vertices (Assign _ e) = vertices e
+   vertices (Assign _ _ e) = vertices e
    vertices (DefRec ds) = vertices ds
    vertices Pass = empty
    vertices (ExprStmt e) = vertices e
@@ -337,7 +337,7 @@ instance Apply Stmt where
    apply (Match fe fbs) (Match e bs) = Match (fe <*> e) (NEL.zipWith applyCase fbs bs)
       where
       applyCase (p × fs) (_ × s) = p × (fs <*> s)
-   apply (Assign p fe) (Assign _ e) = Assign p (fe <*> e)
+   apply (Assign p ψ fe) (Assign _ _ e) = Assign p ψ (fe <*> e)
    apply (DefRec fds) (DefRec ds) = DefRec (fds <*> ds)
    apply Pass Pass = Pass
    apply (ExprStmt fe) (ExprStmt e) = ExprStmt (fe <*> e)

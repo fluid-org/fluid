@@ -103,7 +103,7 @@ newtype RecDef a = RecDef (NonEmptyList (Branch a))
 type RecDefs a = NonEmptyList (Branch a)
 
 -- The pattern/expr relationship is different to the one in branch (the expr is the "argument", not the "body").
-data VarDef a = VarDef Pattern (Expr a)
+data VarDef a = VarDef Pattern (Maybe TypeExpr) (Expr a)
 type VarDefs a = NonEmptyList (VarDef a)
 
 data Qualifier a
@@ -157,7 +157,7 @@ moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
    importFwd (Import q f) = E.Import q f
 
 varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-varDefFwd (VarDef p s) = E.Assign <$> patternFwd p <*> desug s
+varDefFwd (VarDef p ψ s) = E.Assign <$> patternFwd p <@> ψ <*> desug s
 
 recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
 recDefsFwd xcs = do
@@ -276,7 +276,7 @@ listCompFwd (α × Nil × s) =
 listCompFwd (α × (ListCompGuard s : gs) × s') = do
    e <- listCompFwd (α × gs × s')
    E.Cond e <$> desug s <@> enil α
-listCompFwd (α × (ListCompDecl (VarDef p s) : gs) × s') = do
+listCompFwd (α × (ListCompDecl (VarDef p _ s) : gs) × s') = do
    e <- listCompFwd (α × gs × s')
    p' <- patternFwd p
    E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
@@ -482,7 +482,7 @@ instance FV (Stmt a) where
    fv (Dataclass _ _ _) = Set.empty
 
 instance FV (VarDef a) where
-   fv (VarDef _ e) = fv e
+   fv (VarDef _ _ e) = fv e
 
 instance FV (LambdaClause a) where
    fv (LambdaClause (ps × e)) = fv e \\ Set.unions (bv <$> ps)
@@ -516,4 +516,4 @@ qualifiersFv Nil e = fv e
 qualifiersFv (g : gs) e = case g of
    ListCompGuard e' -> fv e' ∪ qualifiersFv gs e
    ListCompGen p e' -> fv e' ∪ (qualifiersFv gs e \\ bv p)
-   ListCompDecl (VarDef p e') -> fv e' ∪ (qualifiersFv gs e \\ bv p)
+   ListCompDecl (VarDef p _ e') -> fv e' ∪ (qualifiersFv gs e \\ bv p)

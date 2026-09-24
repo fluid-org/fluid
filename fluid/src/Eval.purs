@@ -241,7 +241,7 @@ evalStmt doc_opt ρ s αs = case s of
             case r of
                Returns _ -> pure r
                Assigns ρ'' αs'' -> pure (Assigns (ρ' <+> ρ'') αs'')
-   Assign p e -> do
+   Assign p _ e -> do
       v <- eval Nothing ρ e αs
       runMaybeT (matches v p) >>= case _ of
          Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)

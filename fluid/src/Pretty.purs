@@ -161,7 +161,7 @@ instance Ann a => Pretty (Expr a) where
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e
 
 instance Ann a => Pretty (List (Qualifier a)) where
-   pretty (Cons (ListCompDecl (VarDef v s)) Nil) =
+   pretty (Cons (ListCompDecl (VarDef v _ s)) Nil) =
       text "def" <+> pretty v <> text ":" <+> pretty s
    pretty (Cons (ListCompGuard s) Nil) = text "if" <+> pretty s
    pretty (Cons (ListCompGen p s) Nil) = text "for" <+> pretty p <+> text "in" <+> pretty s
@@ -192,7 +192,7 @@ instance Pretty (String × Pattern) where
    pretty (k × v) = text k <> text ":" <+> pretty v
 
 instance Ann a => Pretty (VarDef a) where
-   pretty (VarDef v s) = pretty v <+> assignment (pretty s)
+   pretty (VarDef v ψ s) = pretty v <> annot ψ <+> assignment (pretty s)
 
 instance Ann a => Pretty (VarDefs a) where
    pretty ds = sep' (stmtOrExpr line (text " ")) (toList (pretty <$> ds))
@@ -351,7 +351,7 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
-   pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e
+   pretty (E.Assign p ψ e) = pretty p <> annot ψ <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs _ ds)) = text "def" <+> pretty ds
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
