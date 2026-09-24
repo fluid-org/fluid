@@ -311,8 +311,11 @@ instance Highlightable a => Pretty (E.Expr a) where
 
 instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Return e) = text "return" <+> pretty e
-   pretty (E.If e s s_opt) =
-      text "if" <+> expr (pretty e) <> block (pretty s) <++> maybe mempty (\s' -> text "else" <> block (pretty s')) s_opt
+   pretty (E.If (NonEmptyList (b :| bs)) s_opt) =
+      vsep (prettyBranch "if" b : (prettyBranch "elif" <$> bs))
+         <++> maybe mempty (\s -> text "else" <> block (pretty s)) s_opt
+      where
+      prettyBranch w (E.Branch e s) = text w <+> expr (pretty e) <> block (pretty s)
    pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)

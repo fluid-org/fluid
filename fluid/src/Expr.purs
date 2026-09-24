@@ -61,9 +61,12 @@ data RecDefs a = RecDefs a (Dict (Def a))
 -- Case of a match statement.
 type Case a = Pattern × Stmt a
 
+-- Condition and body of an if or elif clause.
+data Branch a = Branch (Expr a) (Stmt a)
+
 data Stmt a
    = Return (Expr a)
-   | If (Expr a) (Stmt a) (Maybe (Stmt a)) -- elif chain nested in the else
+   | If (NonEmptyList (Branch a)) (Maybe (Stmt a))
    | Match (Expr a) (NonEmptyList (Case a))
    | Assign Pattern (Expr a) -- assignment to a pattern; the spec has only variables
    | DefRec (RecDefs a)
@@ -102,9 +105,12 @@ instance FV (Def a) where
 instance FV (RecDefs a) where
    fv (RecDefs _ ds) = fv ds
 
+instance FV (Branch a) where
+   fv (Branch e s) = fv e ∪ fv s
+
 instance FV (Stmt a) where
    fv (Return e) = fv e
-   fv (If e s s_opt) = fv e ∪ fv s ∪ fv s_opt
+   fv (If bs s_opt) = unions (fv <$> bs) ∪ fv s_opt
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
    fv (Assign _ e) = fv e
    fv (DefRec ds) = fv ds
@@ -152,9 +158,15 @@ instance JoinSemilattice a => JoinSemilattice (RecDefs a) where
 instance BoundedJoinSemilattice a => Expandable (RecDefs a) (Raw RecDefs) where
    expand (RecDefs α ds) (RecDefs _ ds') = RecDefs α (expand ds ds')
 
+instance JoinSemilattice a => JoinSemilattice (Branch a) where
+   join (Branch e s) (Branch e' s') = Branch (e ∨ e') (s ∨ s')
+
+instance BoundedJoinSemilattice a => Expandable (Branch a) (Raw Branch) where
+   expand (Branch e s) (Branch e' s') = Branch (expand e e') (expand s s')
+
 instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Return e) (Return e') = Return (e ∨ e')
-   join (If e s s_opt) (If e' s' s_opt') = If (e ∨ e') (s ∨ s') (s_opt ∨ s_opt')
+   join (If bs s_opt) (If bs' s_opt') = If (NEL.zipWith (∨) bs bs') (s_opt ∨ s_opt')
    join (Match e bs) (Match e' bs') = Match (e ∨ e') (NEL.zipWith joinCase bs bs')
       where
       joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
@@ -168,7 +180,7 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
 
 instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
    expand (Return e) (Return e') = Return (expand e e')
-   expand (If e s s_opt) (If e' s' s_opt') = If (expand e e') (expand s s') (expand s_opt s_opt')
+   expand (If bs s_opt) (If bs' s_opt') = If (NEL.zipWith expand bs bs') (expand s_opt s_opt')
    expand (Match e bs) (Match e' bs') = Match (expand e e') (NEL.zipWith expandCase bs bs')
       where
       expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
@@ -246,9 +258,12 @@ instance Vertices (Def Vertex) where
 instance Vertices (RecDefs Vertex) where
    vertices defs@(RecDefs α ds) = singleton (DVertex (α × pack defs)) ∪ vertices ds
 
+instance Vertices (Branch Vertex) where
+   vertices (Branch e s) = vertices e ∪ vertices s
+
 instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
-   vertices (If e s s_opt) = vertices e ∪ vertices s ∪ maybe empty vertices s_opt
+   vertices (If bs s_opt) = unions (vertices <$> bs) ∪ maybe empty vertices s_opt
    vertices (Match e bs) = vertices e ∪ unions ((vertices <<< snd) <$> bs)
    vertices (Assign _ e) = vertices e
    vertices (DefRec ds) = vertices ds
@@ -272,11 +287,13 @@ derive instance Traversable Expr
 derive instance Functor RecDefs
 derive instance Foldable RecDefs
 derive instance Traversable RecDefs
+derive instance Functor Branch
+derive instance Foldable Branch
+derive instance Traversable Branch
 derive instance Functor Stmt
 derive instance Foldable Stmt
-derive instance Functor Module
-
 derive instance Traversable Stmt
+derive instance Functor Module
 
 -- For terms of a fixed shape.
 instance Apply Expr where
@@ -304,9 +321,12 @@ instance Apply Def where
 instance Apply RecDefs where
    apply (RecDefs fα fds) (RecDefs α ds) = RecDefs (fα α) (((<*>) <$> fds) <*> ds)
 
+instance Apply Branch where
+   apply (Branch fe fs) (Branch e s) = Branch (fe <*> e) (fs <*> s)
+
 instance Apply Stmt where
    apply (Return fe) (Return e) = Return (fe <*> e)
-   apply (If fe fs fs_opt) (If e s s_opt) = If (fe <*> e) (fs <*> s) (lift2 (<*>) fs_opt s_opt)
+   apply (If fbs fs_opt) (If bs s_opt) = If (NEL.zipWith (<*>) fbs bs) (lift2 (<*>) fs_opt s_opt)
    apply (Match fe fbs) (Match e bs) = Match (fe <*> e) (NEL.zipWith applyCase fbs bs)
       where
       applyCase (p × fs) (_ × s) = p × (fs <*> s)
@@ -338,6 +358,7 @@ instance Show Pattern where
    show c = genericShow c
 
 derive instance Eq a => Eq (RecDefs a)
+derive instance Eq a => Eq (Branch a)
 derive instance Eq a => Eq (Stmt a)
 
 instance TypeName (RecDefs a) where

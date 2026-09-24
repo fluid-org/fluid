@@ -26,7 +26,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv)
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -233,10 +233,12 @@ evalStmt
    -> m (Result Vertex)
 evalStmt doc_opt ρ s αs = case s of
    Return e -> Returns <$> eval doc_opt ρ e αs
-   If e s' s_opt -> do
-      α × b <- eval Nothing ρ e αs >>= truth
-      if b then evalStmt doc_opt ρ s' (insert α αs)
-      else maybe (pure (Assigns empty empty)) (\s'' -> evalStmt doc_opt ρ s'' (insert α αs)) s_opt
+   If bs s_opt -> go (NEL.toList bs) αs
+      where
+      go Nil αs' = maybe (pure (Assigns empty empty)) (\s' -> evalStmt doc_opt ρ s' αs') s_opt
+      go (Branch e s' : bs') αs' = do
+         α × b <- eval Nothing ρ e αs' >>= truth
+         if b then evalStmt doc_opt ρ s' (insert α αs') else go bs' (insert α αs')
    Match e bs -> do
       v <- eval Nothing ρ e αs
       runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of
