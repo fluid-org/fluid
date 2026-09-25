@@ -3,7 +3,7 @@ def add(x: int, y: int) -> int:
 
 def fact(0: int) -> int:
   return 1
-def fact(n: int) -> int:
+def fact(n):
   return n * fact(n - 1)
 
 def first(xs: list[int]) -> int | None:

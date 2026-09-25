@@ -10,8 +10,8 @@ import Data.Foldable (all, for_, length, null)
 import Data.Function (on)
 import Data.Generic.Rep (class Generic)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.List (List(..), drop, find, mapMaybe, nubEq, sort, transpose, unzip, zipWith, (:))
-import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, toList)
+import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWith, (:))
+import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, tail, toList)
 import Data.Semigroup.Foldable (foldr1)
 import Data.List.NonEmpty (zipWith) as NonEmptyList
 import Data.Maybe (Maybe(..), maybe)
@@ -323,8 +323,8 @@ clausesFwd clauses = do
    let n = length (fst (head clauses)) :: Int
    for_ clauses \(ps × _) ->
       when (length ps /= n) $ throw "Clauses differ in number of parameters"
-   ψs <- traverse (shared "parameter annotations") (transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param _ ψ) -> ψ)))
-   ψ <- shared "return annotation" (toList (clauses <#> \(_ × ψ × _) -> ψ))
+   ψs <- traverse (signature "parameter annotations" <<< nonEmpty) (transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param _ ψ) -> ψ)))
+   ψ <- signature "return annotation" (clauses <#> \(_ × ψ × _) -> ψ)
    let
       columns = transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param p _) -> p))
       named = columns # mapWithIndex \i ps -> case sharedVar ps of
@@ -346,10 +346,10 @@ clausesFwd clauses = do
    sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
    sharedVar _ = Nothing
 
-   shared :: forall b. Eq b => String -> List b -> m b
-   shared what xs = case nubEq xs of
-      x : Nil -> pure x
-      _ -> throw ("Clauses differ in " <> what)
+   signature :: String -> NonEmptyList (Maybe T.Type) -> m (Maybe T.Type)
+   signature what ψs
+      | all (\ψ -> ψ == Nothing || ψ == head ψs) (tail ψs) = pure (head ψs)
+      | otherwise = throw ("Clauses differ in " <> what)
 
 -- ======================
 -- boilerplate

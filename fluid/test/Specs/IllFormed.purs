@@ -24,6 +24,7 @@ purepy_cases =
    , { file: "purepy/dataclass_dict_key_type.fld", expected_error: "\"ParseError on line 3, column 14:\\nExpected `str`, received `int`\"" }
    , { file: "purepy/param_type_unknown.fld", expected_error: "\"ParseError on line 1, column 13:\\nNot a type: lst\"" }
    , { file: "purepy/clauses_annotation_mismatch.fld", expected_error: "Clauses differ in parameter annotations" }
+   , { file: "purepy/clauses_annotation_later.fld", expected_error: "Clauses differ in parameter annotations" }
    , { file: "purepy/annotation_unknown_class.fld", expected_error: "Unknown dataclass: Shape" }
    , { file: "purepy/dataclass_field_forward_class.fld", expected_error: "Unknown dataclass: B" }
    , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 10, column 10:\\nExpected ')'\"" }
