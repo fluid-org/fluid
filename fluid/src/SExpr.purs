@@ -115,23 +115,20 @@ instance Desugarable DictEntry E.Expr where
    desug (VarKey α v) = pure (E.Lit α (Str v))
 
 instance Desugarable Expr E.Expr where
-   desug = exprFwd
+   desug = expr
 
 instance Desugarable Stmt E.Stmt where
-   desug = stmtFwd
+   desug = stmt
 
 instance Desugarable ListRest E.Expr where
    desug (End α) = pure (enil α)
    desug (Next α s l) = econs α <$> desug s <*> desug l
 
 instance Desugarable Clauses E.Def where
-   desug (Clauses μ) = clausesFwd (μ <#> \(Clause _ clause) -> clause)
+   desug (Clauses μ) = clauses (μ <#> \(Clause _ clause) -> clause)
 
 instance Desugarable LambdaClause E.Def where
-   desug (LambdaClause (ps × e)) = clausesFwd (singleton ((ps <#> \p -> Param p Nothing) × Nothing × Return e))
-
-desugarModuleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
-desugarModuleFwd = moduleFwd
+   desug (LambdaClause (ps × e)) = clauses (singleton ((ps <#> \p -> Param p Nothing) × Nothing × Return e))
 
 -- helpers
 enil :: forall a. a -> E.Expr a
@@ -148,135 +145,133 @@ param i = "$" <> show i
 matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
 matchFun α bs = E.Lambda α (E.Def (E.Param (param 1) Nothing : Nil) Nothing (E.Match (E.Var (param 1)) bs))
 
-moduleFwd :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
-moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
-   where
-   importFwd (Import q f) = E.Import q f
+desugarModule :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
+desugarModule (Module is ss) = E.Module (is <#> \(Import q f) -> E.Import q f) <$> traverse stmt ss
 
-varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-varDefFwd (VarDef p ψ s) = E.Assign <$> patternFwd p <@> (typeFwd <$> ψ) <*> desug s
+varDef :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
+varDef (VarDef p ψ s) = E.Assign <$> pattern p <@> (typeExpr <$> ψ) <*> desug s
 
-recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
-recDefsFwd xcs = do
+recDefs :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
+recDefs xcs = do
    let xcss = map RecDef (groupBy (eq `on` fst) xcs)
    let names = (fst <<< head <<< unwrap) <$> toList xcss
    checkDistinct (error <<< ("Non-contiguous clauses for: " <> _)) names
-   E.RecDefs Returns <$> D.fromFoldable <$> traverse recDefFwd xcss
+   E.RecDefs Returns <$> D.fromFoldable <$> traverse recDef xcss
 
-recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (E.Def (WfResult VarCxt)))
-recDefFwd xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
+recDef :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult VarCxt) -> m (Bind (E.Def (WfResult VarCxt)))
+recDef xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
    where
    close (Clause Returns body) = Clause Returns body
    close (Clause (Assigns δ) (ps × ψ × s)) = Clause (Assigns δ) (ps × ψ × Seq s (Return (Lit Returns None)))
 
-paragraphFwd
+paragraph
    :: forall m. HasClasses m => MonadError Error m => List (ParagraphElem (WfResult VarCxt)) -> m (E.Expr (WfResult VarCxt))
-paragraphFwd elems = do
-   es <- paragraphElemsFwd elems
+paragraph elems = do
+   es <- paragraphElems elems
    pure (E.Constr (Assigns Map.empty) cParagraph (es : Nil))
 
-paragraphElemsFwd
+paragraphElems
    :: forall m
     . HasClasses m
    => MonadError Error m
    => List (ParagraphElem (WfResult VarCxt))
    -> m (E.Expr (WfResult VarCxt))
-paragraphElemsFwd Nil = pure (enil (Assigns Map.empty))
-paragraphElemsFwd (Token s : elems) = do
-   e' <- paragraphElemsFwd elems
+paragraphElems Nil = pure (enil (Assigns Map.empty))
+paragraphElems (Token s : elems) = do
+   e' <- paragraphElems elems
    pure (econs (Assigns Map.empty) (E.Lit (Assigns Map.empty) (Str s)) e')
-paragraphElemsFwd (Unquote s : elems) = do
+paragraphElems (Unquote s : elems) = do
    e <- desug s
-   e' <- paragraphElemsFwd elems
+   e' <- paragraphElems elems
    pure (econs (Assigns Map.empty) e e')
 
 -- Expr
-exprFwd :: forall m. HasClasses m => MonadError Error m => Expr (WfResult VarCxt) -> m (E.Expr (WfResult VarCxt))
-exprFwd (Var x) =
+expr :: forall m. HasClasses m => MonadError Error m => Expr (WfResult VarCxt) -> m (E.Expr (WfResult VarCxt))
+expr (Var x) =
    pure $ E.Var x
-exprFwd (Op op) =
+expr (Op op) =
    pure $ E.Op op
-exprFwd (Lit α ℓ) =
+expr (Lit α ℓ) =
    pure $ E.Lit α ℓ
-exprFwd (Constr α c es Nil) = do
+expr (Constr α c es Nil) = do
    classes <- askClasses
    _ <- ctrSig classes "construct" (dottedName c)
    E.Constr α c <$> traverse desug es
-exprFwd (Constr α c es xes) = do
+expr (Constr α c es xes) = do
    classes <- askClasses
    _ <- ctrSig classes "construct" (dottedName c)
    reordered <- positionaliseKw classes c (length es) xes
    E.Constr α c <$> traverse desug (es <> reordered)
-exprFwd (Dictionary α sss) = do
+expr (Dictionary α sss) = do
    let ks × ss = unzip sss
    ks' <- traverse desug ks
    es <- traverse desug ss
    E.Dictionary α <$> pure (zipWith Pair ks' es)
-exprFwd (Matrix α s (x × y) s') =
+expr (Matrix α s (x × y) s') =
    E.Matrix α <$> desug s <@> x × y <*> desug s'
-exprFwd (Lambda μ) =
+expr (Lambda μ) =
    E.Lambda Returns <$> desug μ
-exprFwd (Attribute s x) =
+expr (Attribute s x) =
    E.Attribute <$> desug s <@> x
-exprFwd (ModMember q x) =
+expr (ModMember q x) =
    pure $ E.ModMember q x
-exprFwd (Subscript s x) =
+expr (Subscript s x) =
    E.Subscript <$> desug s <*> desug x
-exprFwd (App s ss) =
+expr (App s ss) =
    E.App <$> desug s <*> traverse desug ss
-exprFwd (BinaryApp s1 op s2) =
+expr (BinaryApp s1 op s2) =
    E.App (E.Op op) <$> traverse desug (s1 : s2 : Nil)
-exprFwd (UnaryPrefixApp op s) =
+expr (UnaryPrefixApp op s) =
    E.App (E.Op op) <$> traverse desug (s : Nil)
-exprFwd (Cond e1 e e2) =
+expr (Cond e1 e e2) =
    E.Cond <$> desug e1 <*> desug e <*> desug e2
-exprFwd (Paragraph elems) =
-   paragraphFwd elems
-exprFwd (ListEmpty α) =
+expr (Paragraph elems) =
+   paragraph elems
+expr (ListEmpty α) =
    pure $ enil α
-exprFwd (ListNonEmpty α s l) =
+expr (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
-exprFwd (ListEnum s1 s2) =
+expr (ListEnum s1 s2) =
    (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Lit Returns (Int 1) : Nil) : Nil)) <$> desug s1 <*> desug s2
-exprFwd (ListComp α s gs) =
-   listCompFwd (α × gs × s)
-exprFwd (DocExpr s s') = do
-   e <- exprFwd s
-   e' <- exprFwd s'
+expr (ListComp α s gs) =
+   listComp (α × gs × s)
+expr (DocExpr s s') = do
+   e <- expr s
+   e' <- expr s'
    pure $ E.DocExpr e e'
 
-stmtFwd :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-stmtFwd (Def vd) = varDefFwd vd
-stmtFwd (DefRec xcs) = E.DefRec <$> recDefsFwd xcs
-stmtFwd (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse patternFwd stmtFwd) bs
-stmtFwd (If ess s_opt) = E.If <$> traverse (\(e × s) -> E.Branch <$> desug e <*> stmtFwd s) ess <*> traverse stmtFwd s_opt
-stmtFwd (Return e) = E.Return <$> desug e
-stmtFwd Pass = pure E.Pass
-stmtFwd (ExprStmt e) = E.ExprStmt <$> desug e
-stmtFwd (Assert e e_opt) = E.Assert <$> desug e <*> traverse desug e_opt
-stmtFwd (Seq s1 s2) = E.Seq <$> stmtFwd s1 <*> stmtFwd s2
-stmtFwd (Dataclass _ _ _) = pure E.Pass
+stmt :: forall m. HasClasses m => MonadError Error m => Stmt (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
+stmt (Def vd) = varDef vd
+stmt (DefRec xcs) = E.DefRec <$> recDefs xcs
+stmt (Match s bs) = E.Match <$> desug s <*> traverse (bitraverse pattern stmt) bs
+stmt (If ess s_opt) = E.If <$> traverse (\(e × s) -> E.Branch <$> desug e <*> stmt s) ess <*> traverse stmt s_opt
+stmt (Return e) = E.Return <$> desug e
+stmt Pass = pure E.Pass
+stmt (ExprStmt e) = E.ExprStmt <$> desug e
+stmt (Assert e e_opt) = E.Assert <$> desug e <*> traverse desug e_opt
+stmt (Seq s1 s2) = E.Seq <$> stmt s1 <*> stmt s2
+stmt (Dataclass _ _ _) = pure E.Pass
 
 -- List Qualifier × Expr
-listCompFwd
+listComp
    :: forall m
     . HasClasses m
    => MonadError Error m
    => (WfResult VarCxt) × List (Qualifier (WfResult VarCxt)) × Expr (WfResult VarCxt)
    -> m (E.Expr (WfResult VarCxt))
-listCompFwd (α × Nil × s) =
+listComp (α × Nil × s) =
    econs α <$> desug s <@> enil α
-listCompFwd (α × (ListCompGuard s : gs) × s') = do
-   e <- listCompFwd (α × gs × s')
+listComp (α × (ListCompGuard s : gs) × s') = do
+   e <- listComp (α × gs × s')
    E.Cond e <$> desug s <@> enil α
-listCompFwd (α × (ListCompDecl (VarDef p _ s) : gs) × s') = do
-   e <- listCompFwd (α × gs × s')
-   p' <- patternFwd p
+listComp (α × (ListCompDecl (VarDef p _ s) : gs) × s') = do
+   e <- listComp (α × gs × s')
+   p' <- pattern p
    E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
 -- Elements not matching the pattern contribute nothing.
-listCompFwd (α × (ListCompGen p s : gs) × s') = do
-   e <- listCompFwd (α × gs × s')
-   p' <- patternFwd p
+listComp (α × (ListCompGen p s : gs) × s') = do
+   e <- listComp (α × gs × s')
+   p' <- pattern p
    let
       bs = case p' of
          PVar _ -> singleton (p' × E.Return e)
@@ -296,52 +291,52 @@ positionaliseKw classes c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
-typeFwd :: T.TypeExpr Name -> T.Type
-typeFwd = map T.Class
+typeExpr :: T.TypeExpr Name -> T.Type
+typeExpr = map T.Class
 
 -- Keyword sub-patterns positionalised; list patterns as Nil and Cons.
-patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
-patternFwd (PConstr c ps xps) = do
+pattern :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
+pattern (PConstr c ps xps) = do
    classes <- askClasses
    reordered <- if null xps then pure Nil else positionaliseKw classes c (length ps) xps
    _ <- ctrSig classes "match" (dottedName c)
-   PConstr c <$> traverse patternFwd (ps <> reordered) <@> Nil
-patternFwd (PRecord xps) = PRecord <$> traverse (traverse patternFwd) xps
-patternFwd (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse patternFwd ps
-patternFwd (PAs p x) = PAs <$> patternFwd p <@> x
-patternFwd p = pure p
+   PConstr c <$> traverse pattern (ps <> reordered) <@> Nil
+pattern (PRecord xps) = PRecord <$> traverse (traverse pattern) xps
+pattern (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse pattern ps
+pattern (PAs p x) = PAs <$> pattern p <@> x
+pattern p = pure p
 
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
 -- there are several.
-clausesFwd
+clauses
    :: forall m
     . HasClasses m
    => MonadError Error m
    => NonEmptyList (List Param × Maybe (T.TypeExpr Name) × Stmt (WfResult VarCxt))
    -> m (E.Def (WfResult VarCxt))
-clausesFwd clauses = do
-   let n = length (fst (head clauses)) :: Int
-   for_ clauses \(ps × _) ->
+clauses cs = do
+   let n = length (fst (head cs)) :: Int
+   for_ cs \(ps × _) ->
       when (length ps /= n) $ throw "Clauses differ in number of parameters"
-   ψs <- traverse (signature "parameter annotations" <<< nonEmpty) (transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param _ ψ) -> ψ)))
-   ψ <- signature "return annotation" (clauses <#> \(_ × ψ × _) -> ψ)
+   ψs <- traverse (signature "parameter annotations" <<< nonEmpty) (transpose (toList (cs <#> \(ps × _) -> ps <#> \(Param _ ψ) -> ψ)))
+   ψ <- signature "return annotation" (cs <#> \(_ × ψ × _) -> ψ)
    let
-      columns = transpose (toList (clauses <#> \(ps × _) -> ps <#> \(Param p _) -> p))
+      columns = transpose (toList (cs <#> \(ps × _) -> ps <#> \(Param p _) -> p))
       named = columns # mapWithIndex \i ps -> case sharedVar ps of
          Just x -> x × Nothing
          Nothing -> param (i + 1) × Just ps
       matched = named # mapMaybe \(x × ps_opt) -> (x × _) <$> ps_opt
-   ss <- for clauses \(_ × _ × s) -> stmtFwd s
+   ss <- for cs \(_ × _ × s) -> stmt s
    body <- case matched of
       Nil -> pure (head ss)
       _ -> do
-         pss <- traverse (traverse patternFwd) (transpose (snd <$> matched))
+         pss <- traverse (traverse pattern) (transpose (snd <$> matched))
          let
             e = foldr1 (\e1 e2 -> E.Constr Returns cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
             bs = NonEmptyList.zipWith (\ps s -> foldr1 (\p p' -> PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s) (nonEmpty pss) ss
          pure (E.Match e bs)
-   pure (E.Def (zipWith E.Param (fst <$> named) (map typeFwd <$> ψs)) (typeFwd <$> ψ) body)
+   pure (E.Def (zipWith E.Param (fst <$> named) (map typeExpr <$> ψs)) (typeExpr <$> ψ) body)
    where
    sharedVar :: List Pattern -> Maybe Var
    sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
@@ -463,8 +458,8 @@ instance FV (Expr a) where
 
 instance FV (Stmt a) where
    fv (Return e) = fv e
-   fv (If clauses elseBody) =
-      Set.unions ((\(c × b) -> fv c ∪ fv b) <$> clauses) ∪ fv elseBody
+   fv (If ess s_opt) =
+      Set.unions ((\(e × s) -> fv e ∪ fv s) <$> ess) ∪ fv s_opt
    fv (Match scrut branches) =
       fv scrut ∪ Set.unions ((\(p × b) -> fv b \\ bv p) <$> branches)
    fv (Def vd) = fv vd

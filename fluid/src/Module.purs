@@ -29,7 +29,7 @@ import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
 import Lattice (Raw)
 import ModuleGraph (DependencyGraph, ModuleName, predefined, predefinedDeps)
 import Parse (parseModule, parseProgram)
-import SExpr (desugarModuleFwd)
+import SExpr (desugarModule)
 import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
@@ -143,7 +143,7 @@ prepConfig primitives fluidSrc = do
    { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods primitivesCxt imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
-      desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModuleFwd (Returns <$ m)) (Map.mapMaybe _.mod loaded)
+      desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModule (Returns <$ m)) (Map.mapMaybe _.mod loaded)
       n × ρ <- allocTopLevel primitives desugaredMods imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
       { moduleEnv } <- moduleStore
