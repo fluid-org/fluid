@@ -15,7 +15,7 @@ import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
-import Expr.Literal as L
+import Literal as L
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
@@ -123,9 +123,7 @@ operatorApp _ e = prettySimple e
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
    pretty (Op o) = parens $ text o
-   pretty (Int α n) = highlightIf α (number n)
-   pretty (Float α n) = highlightIf α (number n)
-   pretty (Str α str) = highlightIf α (string str)
+   pretty (Lit α ℓ) = highlightIf α (pretty ℓ)
    pretty (Constr α c Nil Nil) = highlightIf α (text (dottedName c))
    pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
    pretty (Constr α c es xes) =
@@ -175,9 +173,7 @@ instance Ann a => Pretty (Case a) where
    pretty (p × b) = text "case" <+> (pretty p) <> block (pretty b)
 
 instance Pretty Pattern where
-   pretty (PInt n) = number n
-   pretty (PFloat n) = number n
-   pretty (PStr s) = string s
+   pretty (PLit ℓ) = pretty ℓ
    pretty (PVar x) = text x
    pretty PWild = text "_"
    pretty (PRecord xps) = record $ map pretty xps
@@ -233,7 +229,7 @@ instance Pretty T.TypeExpr where
    pretty (T.Tuple ψs) = text "tuple" <> brackets (prettyList ψs)
    pretty (T.Dict ψ) = text "dict" <> brackets (text "str," <+> pretty ψ)
    pretty (T.Callable ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
-   pretty (T.Literal ℓ) = text "Literal" <> brackets (pretty ℓ)
+   pretty (T.Lit ℓ) = text "Literal" <> brackets (pretty ℓ)
    pretty (T.ClassName q) = text (dottedName q)
    pretty (T.Union ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
 
@@ -326,9 +322,7 @@ instance Highlightable a => Pretty (Pair (E.Expr a)) where
 instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Var x) = text x
    pretty (E.Op op) = parens (text op)
-   pretty (E.Int a n) = highlightIf a (number n)
-   pretty (E.Float a n) = highlightIf a (number n)
-   pretty (E.Str a str) = highlightIf a (string str)
+   pretty (E.Lit a ℓ) = highlightIf a (pretty ℓ)
    pretty (E.Dictionary a ees) = highlightIf a $ record (pretty <$> ees)
    pretty (E.Constr a c es) = highlightIf a (prettyConstr (last c) es)
    pretty (E.Matrix a e1 (i × j) e2) =

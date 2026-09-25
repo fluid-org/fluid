@@ -6,7 +6,7 @@ import Bind (Name)
 import Data.Generic.Rep (class Generic)
 import Data.List (List)
 import Data.Show.Generic (genericShow)
-import Expr.Literal (Literal)
+import Literal (Literal)
 
 -- Primitive types ν.
 data Primitive
@@ -26,7 +26,7 @@ data TypeExpr
    | Tuple (List TypeExpr)
    | Dict TypeExpr
    | Callable (List TypeExpr) TypeExpr
-   | Literal Literal
+   | Lit Literal
    | ClassName Name
    | Union TypeExpr TypeExpr
 

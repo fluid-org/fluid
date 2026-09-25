@@ -18,6 +18,7 @@ import Data.Tuple (snd)
 import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Literal (Literal)
 import TypeExpr (TypeExpr)
 import Util (type (×), shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys)
@@ -28,9 +29,7 @@ import Util.Set ((\\), (∪))
 data Expr a
    = Var Var
    | Op Var
-   | Int a Int
-   | Float a Number
-   | Str a String
+   | Lit a Literal
    | Dictionary a (List (Pair (Expr a))) -- constructor name Dict borks (import of same name)
    | Constr a Name (List (Expr a))
    | Matrix a (Expr a) (Var × Var) (Expr a)
@@ -43,9 +42,7 @@ data Expr a
    | DocExpr (Expr a) (Expr a)
 
 data Pattern
-   = PInt Int
-   | PFloat Number
-   | PStr String
+   = PLit Literal
    | PVar Var
    | PWild
    | PConstr Name (List Pattern) (List (Bind Pattern))
@@ -92,9 +89,7 @@ class FV a where
 instance FV (Expr a) where
    fv (Var x) = singleton x
    fv (Op op) = singleton op
-   fv (Int _ _) = empty
-   fv (Float _ _) = empty
-   fv (Str _ _) = empty
+   fv (Lit _ _) = empty
    fv (Dictionary _ ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ _ es) = unions (fv <$> es)
    fv (Matrix _ e1 _ e2) = fv e1 ∪ fv e2
@@ -143,9 +138,7 @@ class BV a where
    bv :: a -> Set Var
 
 instance BV Pattern where
-   bv (PInt _) = empty
-   bv (PFloat _) = empty
-   bv (PStr _) = empty
+   bv (PLit _) = empty
    bv (PVar x) = singleton x
    bv PWild = empty
    bv (PConstr _ ps xps) = unions (bv <$> ps) ∪ unions ((bv <<< snd) <$> xps)
@@ -202,9 +195,7 @@ instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
 instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Var x) (Var x') = Var (x ≜ x')
    join (Op op) (Op op') = Op (op ≜ op')
-   join (Int α n) (Int α' n') = Int (α ∨ α') (n ≜ n')
-   join (Str α str) (Str α' str') = Str (α ∨ α') (str ≜ str')
-   join (Float α n) (Float α' n') = Float (α ∨ α') (n ≜ n')
+   join (Lit α ℓ) (Lit α' ℓ') = Lit (α ∨ α') (ℓ ≜ ℓ')
    join (Dictionary α ees) (Dictionary α' ees') = Dictionary (α ∨ α') (ees ∨ ees')
    join (Constr α c es) (Constr α' c' es') = Constr (α ∨ α') (c ≜ c') (es ∨ es')
    join (Matrix α e1 (x × y) e2) (Matrix α' e1' (x' × y') e2') =
@@ -221,9 +212,7 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
 instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Var x) (Var x') = Var (x ≜ x')
    expand (Op op) (Op op') = Op (op ≜ op')
-   expand (Int α n) (Int _ n') = Int α (n ≜ n')
-   expand (Str α str) (Str _ str') = Str α (str ≜ str')
-   expand (Float α n) (Float _ n') = Float α (n ≜ n')
+   expand (Lit α ℓ) (Lit _ ℓ') = Lit α (ℓ ≜ ℓ')
    expand (Dictionary α ees) (Dictionary _ ees') = Dictionary α (expand ees ees')
    expand (Constr α c es) (Constr _ c' es') = Constr α (c ≜ c') (expand es es')
    expand (Matrix α e1 (x × y) e2) (Matrix _ e1' (x' × y') e2') =
@@ -243,9 +232,7 @@ instance MeetSemilattice a => MeetSemilattice (Expr a) where
 instance Vertices (Expr Vertex) where
    vertices (Var _) = empty
    vertices (Op _) = empty
-   vertices e@(Int α _) = singleton (DVertex (α × pack e))
-   vertices e@(Float α _) = singleton (DVertex (α × pack e))
-   vertices e@(Str α _) = singleton (DVertex (α × pack e))
+   vertices e@(Lit α _) = singleton (DVertex (α × pack e))
    vertices d@(Dictionary α ees) = singleton (DVertex (α × pack d)) ∪ unions (go <$> ees)
       where
       go (Pair e e') = vertices e ∪ vertices e'
@@ -306,9 +293,7 @@ derive instance Functor Module
 instance Apply Expr where
    apply (Var x) (Var x') = Var (x ≜ x')
    apply (Op op) (Op _) = Op op
-   apply (Int fα n) (Int α n') = Int (fα α) (n ≜ n')
-   apply (Float fα n) (Float α n') = Float (fα α) (n ≜ n')
-   apply (Str fα s) (Str α s') = Str (fα α) (s ≜ s')
+   apply (Lit fα ℓ) (Lit α ℓ') = Lit (fα α) (ℓ ≜ ℓ')
    apply (Dictionary fα fxes) (Dictionary α xes) = Dictionary (fα α) (zipWith (lift2 (<*>)) fxes xes)
    apply (Constr fα c fes) (Constr α c' es) = Constr (fα α) (c ≜ c') (zipWith (<*>) fes es)
    apply (Matrix fα fe1 (x × y) fe2) (Matrix α e1 (x' × y') e2) =

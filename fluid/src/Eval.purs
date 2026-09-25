@@ -15,7 +15,6 @@ import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (unwrap)
-import Data.Int (toNumber)
 import Data.Profunctor.Strong (first, second, (***))
 import Data.Set (Set, insert)
 import Data.Set as Set
@@ -42,7 +41,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, literalMatches, literalVal, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -56,23 +55,7 @@ patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the vertices of the value that matching inspected.
 matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
-matches (Val α _ u) (PInt n) = guard eq $> (empty × Set.singleton α)
-   where
-   eq = case u of
-      V.Int n' -> n == n'
-      V.Float x -> toNumber n == x
-      _ -> false
-matches (Val α _ u) (PFloat x) = guard eq $> (empty × Set.singleton α)
-   where
-   eq = case u of
-      V.Int n -> toNumber n == x
-      V.Float x' -> x == x'
-      _ -> false
-matches (Val α _ u) (PStr s) = guard eq $> (empty × Set.singleton α)
-   where
-   eq = case u of
-      V.Str s' -> s == s'
-      _ -> false
+matches (Val α _ u) (PLit ℓ) = guard (literalMatches ℓ u) $> (empty × Set.singleton α)
 matches v (PVar x)
    | x == varAnon = pure (empty × empty)
    | otherwise = pure (maplet x v × empty)
@@ -283,12 +266,8 @@ evalVal
    -> Expr Vertex
    -> Set Vertex
    -> m (Maybe (Vertex × BaseVal Vertex))
-evalVal _ (Int α n) _ =
-   pure $ Just (α × V.Int n)
-evalVal _ (Float α n) _ =
-   pure $ Just (α × V.Float n)
-evalVal _ (Str α s) _ =
-   pure $ Just (α × V.Str s)
+evalVal _ (Lit α ℓ) _ =
+   pure $ Just (α × literalVal ℓ)
 evalVal ρ (Dictionary α ees) αs = do
    vs × us <- traverse (traverse (flip (eval Nothing ρ) αs)) ees <#> P.unzip
    ss × βs <- traverse (unpack string >>> orThrow) vs <#> unzip

@@ -1,11 +1,11 @@
-module Expr.Literal where
+module Literal where
 
 import Prelude
 
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 
--- Literals ℓ; numbers may be negative, covering negative literal types.
+-- Literals ℓ; a negative number is a literal, so the spec's negative-literal pattern and type need no separate form.
 data Literal
    = Int Int
    | Float Number

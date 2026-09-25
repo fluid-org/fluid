@@ -202,9 +202,7 @@ captures (S.Dataclass _ _ _) = Set.empty
 capturesE :: forall a. S.Expr a -> Set Var
 capturesE (S.Var _) = Set.empty
 capturesE (S.Op _) = Set.empty
-capturesE (S.Int _ _) = Set.empty
-capturesE (S.Float _ _) = Set.empty
-capturesE (S.Str _ _) = Set.empty
+capturesE (S.Lit _ _) = Set.empty
 capturesE (S.Constr _ _ es xes) = unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
 capturesE (S.Dictionary _ es) =
    unions ((\(k × v) -> capturesEntry k ∪ capturesE v) <$> es)
@@ -326,9 +324,7 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
 wellFormedExpr cxt e@(S.Op op) = e <$ var cxt op
-wellFormedExpr _ e@(S.Int _ _) = pure e
-wellFormedExpr _ e@(S.Float _ _) = pure e
-wellFormedExpr _ e@(S.Str _ _) = pure e
+wellFormedExpr _ e@(S.Lit _ _) = pure e
 wellFormedExpr cxt (S.Constr α c es Nil) = do
    cls <- classOf cxt c
    let fs = fields cls
@@ -441,9 +437,7 @@ subsumed _ _ (S.PVar _) = true
 subsumed _ _ S.PWild = true
 subsumed cxt (S.PAs p _) p' = subsumed cxt p p'
 subsumed cxt p (S.PAs p' _) = subsumed cxt p p'
-subsumed _ (S.PInt n) (S.PInt n') = n == n'
-subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
-subsumed _ (S.PStr s) (S.PStr s') = s == s'
+subsumed _ (S.PLit ℓ) (S.PLit ℓ') = ℓ == ℓ'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
 subsumed cxt (S.PList ps) (S.PList ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')

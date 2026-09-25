@@ -20,10 +20,11 @@ import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cNone, cPair, cParagraph, cNil)
+import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cPair, cParagraph, cNil)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
+import Literal (Literal(..))
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
@@ -40,9 +41,7 @@ import Util.Pair (Pair(..))
 data Expr a
    = Var Var
    | Op Var
-   | Int a Int
-   | Float a Number
-   | Str a String
+   | Lit a Literal
    | Constr a Name (List (Expr a)) (List (Bind (Expr a)))
    | Dictionary a (List (DictEntry a × Expr a))
    | Matrix a (Expr a) (Var × Var) (Expr a)
@@ -115,7 +114,7 @@ data Module a = Module (List Import) (List (Stmt a))
 
 instance Desugarable DictEntry E.Expr where
    desug (ExprKey e) = desug e
-   desug (VarKey α v) = pure (E.Str α v)
+   desug (VarKey α v) = pure (E.Lit α (Str v))
 
 instance Desugarable Expr E.Expr where
    desug = exprFwd
@@ -170,7 +169,7 @@ recDefFwd :: forall m. HasClasses m => MonadError Error m => RecDef (WfResult Va
 recDefFwd xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <$> unwrap xcs))
    where
    close (Clause Returns body) = Clause Returns body
-   close (Clause (Assigns δ) (ps × ψ × s)) = Clause (Assigns δ) (ps × ψ × Seq s (Return (Constr Returns cNone Nil Nil)))
+   close (Clause (Assigns δ) (ps × ψ × s)) = Clause (Assigns δ) (ps × ψ × Seq s (Return (Lit Returns None)))
 
 paragraphFwd
    :: forall m. HasClasses m => MonadError Error m => List (ParagraphElem (WfResult VarCxt)) -> m (E.Expr (WfResult VarCxt))
@@ -187,7 +186,7 @@ paragraphElemsFwd
 paragraphElemsFwd Nil = pure (enil (Assigns Map.empty))
 paragraphElemsFwd (Token s : elems) = do
    e' <- paragraphElemsFwd elems
-   pure (econs (Assigns Map.empty) (E.Str (Assigns Map.empty) s) e')
+   pure (econs (Assigns Map.empty) (E.Lit (Assigns Map.empty) (Str s)) e')
 paragraphElemsFwd (Unquote s : elems) = do
    e <- desug s
    e' <- paragraphElemsFwd elems
@@ -199,12 +198,8 @@ exprFwd (Var x) =
    pure $ E.Var x
 exprFwd (Op op) =
    pure $ E.Op op
-exprFwd (Int α n) =
-   pure $ E.Int α n
-exprFwd (Float α n) =
-   pure $ (E.Float α n)
-exprFwd (Str α s) =
-   pure $ E.Str α s
+exprFwd (Lit α ℓ) =
+   pure $ E.Lit α ℓ
 exprFwd (Constr α c es Nil) = do
    classes <- askClasses
    _ <- ctrSig classes "construct" (dottedName c)
@@ -244,7 +239,7 @@ exprFwd (ListEmpty α) =
 exprFwd (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 exprFwd (ListEnum s1 s2) =
-   (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Int Returns 1 : Nil) : Nil)) <$> desug s1 <*> desug s2
+   (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Lit Returns (Int 1) : Nil) : Nil)) <$> desug s1 <*> desug s2
 exprFwd (ListComp α s gs) =
    listCompFwd (α × gs × s)
 exprFwd (DocExpr s s') = do
@@ -446,9 +441,7 @@ instance Show a => Show (ParagraphElem a) where
 instance FV (Expr a) where
    fv (Var x) = Set.singleton x
    fv (Op op) = Set.singleton op
-   fv (Int _ _) = Set.empty
-   fv (Float _ _) = Set.empty
-   fv (Str _ _) = Set.empty
+   fv (Lit _ _) = Set.empty
    fv (Constr _ c es xes) = Set.singleton (head c) ∪ Set.unions (fv <$> es) ∪ Set.unions ((fv <<< snd) <$> xes)
    fv (Dictionary _ entries) = Set.unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
    fv (Matrix _ body (x × y) source) = (fv body \\ (Set.singleton x ∪ Set.singleton y)) ∪ fv source

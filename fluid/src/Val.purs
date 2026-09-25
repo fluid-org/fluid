@@ -3,7 +3,7 @@ module Val where
 import Prelude hiding (absurd, append)
 
 import Bind (Name, Var)
-import DataType (class HasClasses)
+import DataType (class HasClasses, cFalse, cNone, cTrue)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except (ExceptT)
@@ -17,6 +17,7 @@ import Data.Map as Map
 import Data.Array (zipWith) as A
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
+import Data.Int (toNumber)
 import Data.List (List(..), (:), zipWith)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -34,6 +35,8 @@ import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Literal (Literal)
+import Literal as L
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
 import Util (class IsEmpty, type (×), Endo, definitely, error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -63,6 +66,24 @@ data BaseVal a
 
 val :: forall m. MonadWithGraphAlloc m => Maybe (Val Vertex) -> Set Vertex -> BaseVal Vertex -> m (Val Vertex)
 val doc_opt = new (flip Val doc_opt)
+
+literalVal :: forall a. Literal -> BaseVal a
+literalVal (L.Int n) = Int n
+literalVal (L.Float x) = Float x
+literalVal (L.Str s) = Str s
+literalVal (L.Bool b) = Constr (if b then cTrue else cFalse) Nil
+literalVal L.None = Constr cNone Nil
+
+-- Equality of a value with a literal, numeric across int and float as in Python.
+literalMatches :: forall a. Literal -> BaseVal a -> Boolean
+literalMatches (L.Int n) (Float x) = toNumber n == x
+literalMatches (L.Float x) (Int n) = x == toNumber n
+literalMatches ℓ v = case literalVal ℓ, v of
+   Int n, Int n' -> n == n'
+   Float x, Float x' -> x == x'
+   Str s, Str s' -> s == s'
+   Constr c Nil, Constr c' Nil -> c == c'
+   _, _ -> false
 
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
