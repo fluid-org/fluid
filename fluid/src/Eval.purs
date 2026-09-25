@@ -371,25 +371,12 @@ load
    => LoadFile m
    => ModuleName
    -> m (Env Vertex)
-load q = moduleStore >>= \{ ρ0 } -> loadUnder ρ0 q
-
-loadUnder
-   :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadWithGraphAlloc m
-   => MonadReader FileCxt m
-   => MonadAff m
-   => LoadFile m
-   => Env Vertex
-   -> ModuleName
-   -> m (Env Vertex)
-loadUnder ρ q = do
-   { moduleBody, moduleEnv } <- moduleStore
+load q = do
+   { moduleBody, moduleEnv, ρ0 } <- moduleStore
    case Map.lookup q moduleEnv of
       Just ρ_q -> pure ρ_q
       Nothing -> do
-         ρ_q <- maybe (pure empty) (\body -> eval_module ρ q body empty) (Map.lookup q moduleBody)
+         ρ_q <- maybe (pure empty) (\body -> eval_module ρ0 q body empty) (Map.lookup q moduleBody)
          modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
          pure ρ_q
 

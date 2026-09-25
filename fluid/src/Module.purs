@@ -20,7 +20,7 @@ import DataType (class HasClasses, ClassTable)
 import Desugarable (desug)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig, evalImport, loadUnder)
+import Eval (GraphConfig, evalImport, load)
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
@@ -38,7 +38,7 @@ import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
-import Util.Set (empty, (∪))
+import Util.Set ((∪))
 import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env)
 import Val (BaseVal(..)) as V
 
@@ -117,8 +117,8 @@ allocTopLevel mods imports = do
          runWithGraphT_spy
             ( do
                  modifyModuleStore (_ { moduleBody = mods', moduleEnv = predefined' })
-                 ρ0 <- foldM (\ρ q -> (ρ <+> _) <$> loadUnder ρ q) empty implicit
-                 modifyModuleStore (_ { ρ0 = ρ0 })
+                 for_ implicit \q -> load q >>= \ρ_q -> modifyModuleStore (\s -> s { ρ0 = s.ρ0 <+> ρ_q })
+                 { ρ0 } <- moduleStore
                  ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0 imports
                  vName <- val Nothing Set.empty (V.Lit (Str "__main__"))
                  pure (ρ1 <+> maplet "__name__" vName)
