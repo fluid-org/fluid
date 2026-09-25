@@ -13,7 +13,7 @@ class Rotated(Orientation):
 @dataclass
 class LinePlot:
   name: str
-  points: list[dict[str, float]]
+  points: list[dict[str, float]]  # List { x: Float, y: Float }
 
 @dataclass
 class View:
@@ -22,15 +22,15 @@ class View:
 @dataclass
 class BarChart(View):
   caption: str
-  size: dict[str, int]
-  tickLabels: dict[str, Orientation]
-  stackedBars: list[dict[str, object]]
+  size: dict[str, int]  # { width: Int, height: Int }
+  tickLabels: dict[str, Orientation]  # { x: Orientation, y: Orientation }
+  stackedBars: list[dict[str, object]]  # List { x: Str, segments: List { y: Str, z: Float } }
   legend: bool
 
 @dataclass
 class LineChart(View):
-  size: dict[str, int]
-  tickLabels: dict[str, Orientation]
+  size: dict[str, int]  # { width: Int, height: Int }
+  tickLabels: dict[str, Orientation]  # { x: Orientation, y: Orientation }
   caption: str
   plots: list[LinePlot]
 
@@ -45,8 +45,8 @@ class Paragraph(View):
 @dataclass
 class ScatterPlot(View):
   caption: str
-  points: list[dict[str, float]]
-  labels: dict[str, str]
+  points: list[dict[str, float]]  # List { x: Float, y: Float }
+  labels: dict[str, str]  # { x: Str, y: Str }
 
 @dataclass
 class ParaFragment:
