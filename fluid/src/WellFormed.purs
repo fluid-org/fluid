@@ -134,7 +134,6 @@ submodules modules q = Map.fromFoldable (mapMaybe sub (Set.toUnfoldable modules)
    where
    sub m = let { init, last: x } = NEL.unsnoc m in whenever (NEL.fromList init == Just q) (x × Mod m)
 
--- Signature of module q: its classes and definitely assigned variables, with __name__.
 checkStatements :: Name -> Cxt -> Raw S.Module -> Either String (Cxt × S.Module (WfResult VarCxt))
 checkStatements q cxt_imp (S.Module imports ss) =
    case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
@@ -292,7 +291,6 @@ wellFormed q cxt (S.Match e bs) = do
       _ -> Assigns Map.empty
 wellFormed _ _ (S.Dataclass c _ _) = throwError $ "Class declaration not at top level: " <> c
 
--- Top-level statement t of module q: the classes it declares, keyed by local name, and its outcome.
 wellFormedTop :: forall a. Name -> Cxt -> S.Stmt a -> Either String (Map.Map Var ClassEntry × WfResult VarCxt × S.Stmt (WfResult VarCxt))
 wellFormedTop q cxt (S.Dataclass c b xψs) = do
    let xs = fst <$> xψs
