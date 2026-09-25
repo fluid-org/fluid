@@ -296,7 +296,6 @@ positionaliseKw classes c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
--- Class names are fully qualified by well-formedness.
 typeFwd :: T.TypeExpr Name -> T.Type
 typeFwd = map T.Class
 
