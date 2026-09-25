@@ -1,26 +1,24 @@
 from math import ceil, log
+from typing import Callable
 
 # "Num" throughout means (Int + Float).
 
 # To resolve in new semantics: expected dependencies don't arise for and/or unless they  make a fresh value.
-# Bool -> Bool
-def and(False, y):
+def and(False: bool, y: bool) -> bool:
   return False
 def and(True, True):
   return True
 def and(True, False):
   return False
 
-# Bool -> Bool
-def or(True, y):
+def or(True: bool, y: bool) -> bool:
   return True
 def or(False, True):
   return True
 def or(False, False):
   return False
 
-# Bool -> Bool
-def not(True):
+def not(True: bool) -> bool:
   return False
 def not(False):
   return True
@@ -37,16 +35,13 @@ def compare(x, y):
 def on(bin_op, prop, x, y):
   return bin_op(prop(x), prop(y))
 
-# Num -> Num
-negate = (-)(0)
+negate: Callable[[int | float], int | float] = (-)(0)
 
 # Log of x in base y.
-# Float -> Float -> Float
-def log_base(x, y):
+def log_base(x: float, y: float) -> float:
   return log(y) / log(x)
 
-# Float -> Float -> Float
-def ceiling_to_nearest(n, m):
+def ceiling_to_nearest(n: float, m: float) -> float:
   return ceil(n / m) * m
 
 # (b -> c) -> (a -> b) -> a -> c
