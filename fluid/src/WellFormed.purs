@@ -319,17 +319,15 @@ wellFormedTop q cxt s = do
    pure (Map.empty × r × s')
 
 resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
-resolveType cxt = go
-   where
-   go ψ = case ψ of
-      T.Primitive ν -> ψ <$ predefName cxt (T.primitiveName ν)
-      T.ClassName q -> T.ClassName <$> className cxt q
-      T.Lit _ -> ψ <$ predefName cxt "Literal"
-      T.List ψ' -> predefName cxt "list" *> (T.List <$> go ψ')
-      T.Dict ψ' -> predefName cxt "dict" *> predefName cxt "str" *> (T.Dict <$> go ψ')
-      T.Tuple ψs -> predefName cxt "tuple" *> (T.Tuple <$> traverse go ψs)
-      T.Callable ψs ψ' -> predefName cxt "Callable" *> (T.Callable <$> traverse go ψs <*> go ψ')
-      T.Union ψ1 ψ2 -> T.Union <$> go ψ1 <*> go ψ2
+resolveType cxt ψ@(T.Primitive ν) = ψ <$ predefName cxt (T.primitiveName ν)
+resolveType cxt (T.ClassName q) = T.ClassName <$> className cxt q
+resolveType cxt ψ@(T.Lit _) = ψ <$ predefName cxt "Literal"
+resolveType cxt (T.List ψ) = predefName cxt "list" *> (T.List <$> resolveType cxt ψ)
+resolveType cxt (T.Dict ψ) = predefName cxt "dict" *> predefName cxt "str" *> (T.Dict <$> resolveType cxt ψ)
+resolveType cxt (T.Tuple ψs) = predefName cxt "tuple" *> (T.Tuple <$> traverse (resolveType cxt) ψs)
+resolveType cxt (T.Callable ψs ψ) =
+   predefName cxt "Callable" *> (T.Callable <$> traverse (resolveType cxt) ψs <*> resolveType cxt ψ)
+resolveType cxt (T.Union ψ ψ') = T.Union <$> resolveType cxt ψ <*> resolveType cxt ψ'
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
