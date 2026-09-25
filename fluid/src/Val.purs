@@ -74,7 +74,6 @@ literalVal (L.Str s) = Str s
 literalVal (L.Bool b) = Constr (if b then cTrue else cFalse) Nil
 literalVal L.None = Constr cNone Nil
 
--- Equality of a value with a literal, numeric across int and float as in Python.
 literalMatches :: forall a. Literal -> BaseVal a -> Boolean
 literalMatches (L.Int n) (Float x) = toNumber n == x
 literalMatches (L.Float x) (Int n) = x == toNumber n

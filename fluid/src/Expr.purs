@@ -50,7 +50,6 @@ data Pattern
    | PList (List Pattern)
    | PAs Pattern Var
 
--- Parameter with optional annotation; the spec requires the annotation.
 data Param = Param Var (Maybe T.Type)
 
 -- Parameters, return annotation and body of a function.

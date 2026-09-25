@@ -16,7 +16,6 @@ import DefiniteAssignment (ancestors)
 import Literal (Literal)
 import Literal as L
 
--- Primitive types ν.
 data Primitive
    = Object
    | Never
@@ -27,7 +26,6 @@ data Primitive
    | Str
    | Sized
 
--- Type expressions ψ over class references c: a name in source, a class once resolved.
 data TypeExpr c
    = Primitive Primitive
    | List (TypeExpr c)

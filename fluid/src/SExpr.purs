@@ -86,10 +86,8 @@ data Import = Import Name (Maybe (List Var))
 -- Case of a match statement.
 type Case a = Pattern × Stmt a
 
--- Parameter with optional annotation; the spec requires the annotation and has only variables.
 data Param = Param Pattern (Maybe (T.TypeExpr Name))
 
--- Parameters, return annotation and body of a def clause.
 data Clause a = Clause a (List Param × Maybe (T.TypeExpr Name) × Stmt a)
 
 type Branch a = Var × Clause a

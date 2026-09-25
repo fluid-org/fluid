@@ -325,8 +325,6 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
                  <> show (Set.toUnfoldable clash :: List Var)
    pure (Assigns Map.empty × S.Dataclass c b xτs)
 
--- Type expression resolved to a type. The spec also requires each predefined type name to be
--- bound in the context; Fluid has no such entries yet.
 resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
 resolveType cxt = go
    where
