@@ -265,8 +265,8 @@ def mk_point(Vert, x, y):
 # Orient -> Float -> Float -> Float -> GraphicsElement
 def axis(orient, x, start, end):
   tick_sp = tick_every(end - start)
-  first_tick = ceiling_to_nearest(start, tick_sp)
-  last_tick = ceiling_to_nearest(end, tick_sp)
+  first_tick = ceil_to_nearest(start, tick_sp)
+  last_tick = ceil_to_nearest(end, tick_sp)
   n = floor((end - first_tick) / tick_sp) + 1
   ys = iterate(n, (+)(tick_sp), first_tick)
   ys = start :| ys if first_tick > start else ys

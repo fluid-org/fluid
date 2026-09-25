@@ -1,8 +1,6 @@
 from math import ceil, log
 from typing import Callable
 
-# "Num" throughout means (Int + Float).
-
 # To resolve in new semantics: expected dependencies don't arise for and/or unless they  make a fresh value.
 def and(False: bool, y: bool) -> bool:
   return False
@@ -41,7 +39,7 @@ negate: Callable[[int | float], int | float] = (-)(0)
 def log_base(x: float, y: float) -> float:
   return log(y) / log(x)
 
-def ceiling_to_nearest(n: float, m: float) -> float:
+def ceil_to_nearest(n: float, m: float) -> float:
   return ceil(n / m) * m
 
 # (b -> c) -> (a -> b) -> a -> c
@@ -259,11 +257,9 @@ def iterate(n, f, z):
     return []
   return z :| map(f, iterate(n - 1, f, z))
 
-# List Num -> Num
-sum = foldr((+), 0)
+sum: Callable[[list[int | float]], int | float] = foldr((+), 0)
 
-# List Num -> Num
-def mean(xs):
+def mean(xs: list[int | float]) -> float:
   (s, n) = foldl(lambda (s, n), x: (s + x, n + 1), (0, 0), xs)
   return s / n
 
