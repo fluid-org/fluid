@@ -11,15 +11,28 @@ import Bind (Name)
 type ModuleName = Name
 
 builtins :: ModuleName
-builtins = NonEmptyList ("lib" :| "builtins" : Nil)
+builtins = pure "builtins"
 
-prelude :: ModuleName
-prelude = NonEmptyList ("lib" :| "prelude" : Nil)
+math :: ModuleName
+math = pure "math"
 
-predefined :: List ModuleName
-predefined = builtins : prelude : Nil
+typing :: ModuleName
+typing = pure "typing"
 
-predefinedDeps :: ModuleName -> List ModuleName
-predefinedDeps q = takeWhile (_ /= q) predefined
+dataclasses :: ModuleName
+dataclasses = pure "dataclasses"
+
+libBuiltins :: ModuleName
+libBuiltins = NonEmptyList ("lib" :| "builtins" : Nil)
+
+libPrelude :: ModuleName
+libPrelude = NonEmptyList ("lib" :| "prelude" : Nil)
+
+-- Modules in scope without import, each under the members of those before it.
+implicit :: List ModuleName
+implicit = builtins : libBuiltins : libPrelude : Nil
+
+implicitDeps :: ModuleName -> List ModuleName
+implicitDeps q = takeWhile (_ /= q) implicit
 
 type DependencyGraph = Map ModuleName (List ModuleName)

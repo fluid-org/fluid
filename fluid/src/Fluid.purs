@@ -23,7 +23,6 @@ import Options.Applicative (Parser, command, execParser, fullDesc, header, help,
 import Options.Applicative.Builder (info)
 import Parse (parseProgram)
 import Pretty (prettyP)
-import Primitive.Defs (primitives)
 import Util (Endo)
 import Val (Val)
 
@@ -99,7 +98,7 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/fluid") ] else []
    runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
-      { e, gconfig } <- prepConfig primitives fluidSrc
+      { e, gconfig } <- prepConfig fluidSrc
       { outα } <- graphEval gconfig e
       pure (erase outα)
 

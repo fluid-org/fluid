@@ -11,7 +11,7 @@ purepy_cases =
    , { file: "purepy/assert_msg_false.fld", expected_error: "AssertionError: x should not be 5" }
    , { file: "purepy/cond_nonbool.fld", expected_error: "Found 0, expected bool" }
    , { file: "purepy/binop_operand_type.fld", expected_error: "Found \"a\", expected int or float\nIn +" }
-   , { file: "purepy/unary_operand_type.fld", expected_error: "Found \"x\", expected float\nIn floor" }
+   , { file: "purepy/unary_operand_type.fld", expected_error: "Found \"x\", expected int or float\nIn floor" }
    , { file: "purepy/dict_key_type.fld", expected_error: "Found 1, expected str" }
    , { file: "purepy/matrix_dim_type.fld", expected_error: "Found \"a\", expected int" }
    , { file: "purepy/cond_partial_def.fld", expected_error: "Not definitely assigned: x" }
@@ -19,15 +19,15 @@ purepy_cases =
    , { file: "purepy/construct_arity.fld", expected_error: "Point expects 2 argument(s); got 3" }
    , { file: "purepy/dataclass_dup_class.fld", expected_error: "Duplicate class declaration: Point" }
    , { file: "purepy/dataclass_dup_field.fld", expected_error: "Duplicate field names in class: Point" }
-   , { file: "purepy/dataclass_field_default.fld", expected_error: "\"ParseError on line 3, column 10:\\nExpected EOF\"" }
+   , { file: "purepy/dataclass_field_default.fld", expected_error: "\"ParseError on line 5, column 10:\\nExpected EOF\"" }
    , { file: "purepy/dataclass_inherited_field_clash.fld", expected_error: "Class Sub redeclares inherited field(s): (\"x\" : Nil)" }
-   , { file: "purepy/dataclass_dict_key_type.fld", expected_error: "\"ParseError on line 3, column 14:\\nExpected `str`, received `int`\"" }
+   , { file: "purepy/dataclass_dict_key_type.fld", expected_error: "\"ParseError on line 5, column 14:\\nExpected `str`, received `int`\"" }
    , { file: "purepy/param_type_unknown.fld", expected_error: "\"ParseError on line 1, column 13:\\nNot a type: lst\"" }
    , { file: "purepy/clauses_annotation_mismatch.fld", expected_error: "Clauses differ in parameter annotations" }
    , { file: "purepy/clauses_annotation_later.fld", expected_error: "Clauses differ in parameter annotations" }
    , { file: "purepy/annotation_unknown_class.fld", expected_error: "Unknown dataclass: Shape" }
    , { file: "purepy/dataclass_field_forward_class.fld", expected_error: "Unknown dataclass: B" }
-   , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 10, column 10:\\nExpected ')'\"" }
+   , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 12, column 10:\\nExpected ')'\"" }
    , { file: "purepy/dataclass_unknown_base.fld", expected_error: "Unknown class: Unknown" }
    , { file: "purepy/duplicate_def_in_region.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/forward_class_in_def.fld", expected_error: "Unknown dataclass: Point" }
@@ -35,6 +35,12 @@ purepy_cases =
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module module.two_vals_lib" }
    , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected bool" }
    , { file: "purepy/nested_class.fld", expected_error: "Class declaration not at top level: C" }
+   , { file: "purepy/dataclass_not_imported.fld", expected_error: "Not bound as a predefined name: dataclass" }
+   , { file: "purepy/callable_not_imported.fld", expected_error: "Not bound as a predefined name: Callable" }
+   , { file: "purepy/sized_not_imported.fld", expected_error: "Not bound as a predefined name: Sized" }
+   , { file: "purepy/shadowed_list.fld", expected_error: "Not bound as a predefined name: list" }
+   , { file: "purepy/any_not_defined.fld", expected_error: "Cannot import name Any from module typing" }
+   , { file: "purepy/predefined_member_unknown.fld", expected_error: "module math has no member tau" }
    , { file: "purepy/import_in_def.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_if.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_match_case.fld", expected_error: "\"ParseError on line 3, column 12:\\nimports must precede statements\"" }

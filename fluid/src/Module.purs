@@ -15,11 +15,12 @@ import Data.Maybe (Maybe(..), isJust)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
+import Data.Tuple (fst, snd)
 import DataType (class HasClasses, ClassTable)
 import Desugarable (desug)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig, evalImport, loadPredefined)
+import Eval (GraphConfig, evalImport, loadUnder)
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
@@ -28,10 +29,11 @@ import Graph.GraphImpl (GraphImpl)
 import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
 import Lattice (Raw)
 import Literal (Literal(..))
-import ModuleGraph (DependencyGraph, ModuleName, predefined, predefinedDeps)
+import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitDeps)
 import Parse (parseModule, parseProgram)
 import SExpr (desugarModule)
 import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
+import Primitive.Defs (predefined)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throwLeft, whenever, withMsg, (×))
@@ -103,26 +105,25 @@ allocTopLevel
    => MonadError Error m
    => MonadReader FileCxt m
    => LoadFile m
-   => Raw Env
-   -> Map ModuleName (Raw Module)
+   => Map ModuleName (Raw Module)
    -> List S.Import
    -> m (Int × Env Vertex)
-allocTopLevel primitives mods imports = do
+allocTopLevel mods imports = do
    n × _ × ρ <- flip runAllocT 0 do
-      primitives' <- alloc primitives
+      predefined' <- traverse (alloc <<< snd) predefined
       mods' <- traverse alloc mods
-      let mαs = Set.unions (vertices <$> Map.values mods')
+      let αs = Set.unions (vertices <$> Map.values predefined') ∪ Set.unions (vertices <$> Map.values mods')
       _ × ρ <-
          runWithGraphT_spy
             ( do
-                 modifyModuleStore (_ { moduleBody = mods' })
-                 ρ0 <- foldM (loadPredefined primitives') empty predefined
+                 modifyModuleStore (_ { moduleBody = mods', moduleEnv = predefined' })
+                 ρ0 <- foldM (\ρ q -> (ρ <+> _) <$> loadUnder ρ q) empty implicit
                  modifyModuleStore (_ { ρ0 = ρ0 })
                  ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0 imports
                  vName <- val Nothing Set.empty (V.Lit (Str "__main__"))
                  pure (ρ1 <+> maplet "__name__" vName)
             )
-            (vertices primitives' ∪ mαs) :: AllocT m (GraphImpl × _)
+            αs :: AllocT m (GraphImpl × _)
       pure ρ
    pure (n × ρ)
 
@@ -134,18 +135,16 @@ prepConfig
    => MonadError Error m
    => MonadReader FileCxt m
    => LoadFile m
-   => Raw Env
-   -> String
+   => String
    -> m Config
-prepConfig primitives fluidSrc = do
+prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   let primitivesCxt = constMap (VarStatus true) (keys primitives)
    mods <- parseModules imports
-   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods primitivesCxt imports s)
+   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods (fst <$> predefined) imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
       desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModule (Returns <$ m)) (Map.mapMaybe _.mod loaded)
-      n × ρ <- allocTopLevel primitives desugaredMods imports
+      n × ρ <- allocTopLevel desugaredMods imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
       { moduleEnv } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
@@ -167,7 +166,7 @@ parseModules
    -> m (Map ModuleName (Raw S.Module))
 parseModules imports = do
    deps <- traverse (importDeps mainModule) imports
-   let roots = predefined <> (deps >>= _.load)
+   let roots = implicit <> (deps >>= _.load)
    depGraph × mods <- collectModules Set.empty Map.empty Map.empty roots
    orThrow (checkAcyclic depGraph (deps >>= _.edges))
    -- prefix-closed: a package with no source file of its own is an empty module
@@ -185,7 +184,7 @@ parseModules imports = do
    collectModules visited depGraph mods pending = case pending of
       Nil -> pure $ (depGraph × mods)
       mod : rest ->
-         if Set.member mod visited then
+         if Set.member mod visited || Map.member mod predefined then
             collectModules visited depGraph mods rest
          else do
             mod' × edges × toLoad <- parseAndCollect mod
@@ -204,7 +203,7 @@ parseModules imports = do
             mod × _ <- throwLeft <#> withMsg ("Loading module " <> dottedName path) $ parseModule src
             deps <- case mod of S.Module is _ -> traverse (importDeps path) is
             let edges = deps >>= _.edges
-            let toLoad = predefinedDeps path <> (deps >>= _.load)
+            let toLoad = implicitDeps path <> (deps >>= _.load)
             pure $ mod × edges × toLoad
          Nothing -> hasDirectory fluidSrcPaths (File (pathName path)) >>= case _ of
             true -> pure (S.Module Nil Nil × Nil × Nil)

@@ -1,3 +1,4 @@
+from math import ceil
 from nap3_ccra3_data import nap3_actions, ccra3_risks
 
 from lib.view import BarChart, MultiView, Default, Rotated, Link
@@ -17,7 +18,7 @@ def actions_by(key, keys):
       ] } for key_ in keys
   ]
 
-risks_ = dict([ (r[ "ID#" ], r) for r in ccra3_risks ])
+risks_ = pairs_to_dict([ (r[ "ID#" ], r) for r in ccra3_risks ])
 
 actions_by_chapter = [ { x: chapter,
       segments: [
@@ -102,7 +103,7 @@ MultiView([
   dominated, although only a small portion of were fully or significantly addressed. Departments
   with cross-sectoral mandates such as DSIT (Science & Technology) and HMT (Treasury) had smaller action bases
   and weaker scores. No department had more than {
-    ceiling(max_with_score(by_action_owner, "Fully addressed") * 100)
+    ceil(max_with_score(by_action_owner, "Fully addressed") * 100)
   }% of its actions fully addressed, reinforcing the impression of a fragmented governance system where adaptation
   remains siloed and under-resourced.
   """,

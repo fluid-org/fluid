@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from math import floor
+
 # type Colour = Str
 # type Colours = List Colour
 # type Cat = Str
@@ -128,7 +131,7 @@ def get_y(g):
 # Want some kind of typeclass mechanism plus record accessors/updaters.
 # Float -> GraphicsElement -> GraphicsElement
 def set_x(x, Group(gs)):
-  return error("Group has immutable coordinates")
+  assert False, "Group has immutable coordinates"
 def set_x(x, Rect(_, y, w, h, fill)):
   return Rect(x=x, y=y, width=w, height=h, fill=fill)
 def set_x(x, String(_, y, str, anchor, baseline)):

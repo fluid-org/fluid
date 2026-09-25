@@ -31,7 +31,7 @@ def mat_mul(a, b):
   ((m, n), (i, j)) = (dims(a), dims(b))
 
   if not(n == i):
-    return error("Dimensions don't line up")
+    assert False, "Dimensions don't line up"
   else:
     return @doc(f"""Intermediate matrix""")
       [| sum([a!(i_, k) * b!(k, j_) for k in range(0, n)]) for (i_, j_) in (m, j) |]

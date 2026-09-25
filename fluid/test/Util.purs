@@ -44,11 +44,11 @@ type SelectionSpec =
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "fluid", Folder "test/fluid" ]
 
-test ∷ forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Raw Env -> SelectionSpec -> Int × Boolean -> AffError m BenchRow
-test file primitives spec (n × _) = do
+test ∷ forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> SelectionSpec -> Int × Boolean -> AffError m BenchRow
+test file spec (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
-   { s, e, gconfig } <- prepConfig primitives fluidSrc
+   { s, e, gconfig } <- prepConfig fluidSrc
    testPretty s
    _ × res <- runWriterT (replicateM n (testProperties s e gconfig spec))
    pure $ res `divRow` n

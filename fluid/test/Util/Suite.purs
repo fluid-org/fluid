@@ -21,7 +21,6 @@ import Effect.Aff.Class (class MonadAff)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (botOf)
 import Module (prepConfig)
-import Primitive.Defs (primitives)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
 import Test.Util (checkEq, test)
 import Test.Util.Debug (timing)
@@ -66,7 +65,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) primitives { δv: \_ -> identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
+      test (File file) { δv: \_ -> identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
 
 bwdSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestBwdSpec -> BenchSuite m
 bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) >>> show) &&& asTest)
@@ -75,7 +74,7 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
 
    asTest :: TestBwdSpec -> m BenchRow
    asTest { file, bwd_expect, δv, fwd_expect, inputs } = do
-      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
+      test (folder </> File file) { δv, fwd_expect, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
 
 linkedOutputsTest :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
@@ -127,5 +126,5 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
 
    run :: String -> m Unit
    run fluidSrc = do
-      { e, gconfig } <- prepConfig primitives fluidSrc
+      { e, gconfig } <- prepConfig fluidSrc
       void $ graphEval gconfig e

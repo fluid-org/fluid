@@ -39,6 +39,16 @@ data TypeExpr c
 
 newtype Class = Class Name
 
+primitiveName :: Primitive -> String
+primitiveName Object = "object"
+primitiveName Never = "Never"
+primitiveName None = "None"
+primitiveName Bool = "bool"
+primitiveName Int = "int"
+primitiveName Float = "float"
+primitiveName Str = "str"
+primitiveName Sized = "Sized"
+
 type Type = TypeExpr Class
 
 baseType :: Type -> Type

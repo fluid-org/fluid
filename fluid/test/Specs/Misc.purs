@@ -87,6 +87,8 @@ misc_cases =
    , { file: "purepy/assert_stmt.fld", fwd_expect: "10" }
    , { file: "purepy/assign_annotation.fld", fwd_expect: "11" }
    , { file: "purepy/assert_msg_lazy.fld", fwd_expect: "5" }
+   , { file: "purepy/math_members.fld", fwd_expect: "3 :| 3 :| 4 :| 2 :| []" }
+   , { file: "purepy/len.fld", fwd_expect: "3 :| 2 :| 4 :| 0 :| []" }
    , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/branch_local.fld", fwd_expect: "6" }
    , { file: "purepy/closure_capture.fld", fwd_expect: "6" }

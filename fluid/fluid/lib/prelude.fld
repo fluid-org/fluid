@@ -1,3 +1,5 @@
+from math import ceil, log
+
 # "Num" throughout means (Int + Float).
 
 # To resolve in new semantics: expected dependencies don't arise for and/or unless they  make a fresh value.
@@ -45,7 +47,7 @@ def log_base(x, y):
 
 # Float -> Float -> Float
 def ceiling_to_nearest(n, m):
-  return ceiling(n / m) * m
+  return ceil(n / m) * m
 
 # (b -> c) -> (a -> b) -> a -> c
 # Want infix <<<
@@ -99,13 +101,13 @@ def swap((a, b)):
 
 # List a -> a
 def head([]):
-  return error("Can't take head of empty list")
+  assert False, "Can't take head of empty list"
 def head(x :| _):
   return x
 
 # List a -> List a
 def tail([]):
-  return error("Can't take tail of empty list")
+  assert False, "Can't take tail of empty list"
 def tail(_ :| xs):
   return xs
 
@@ -129,7 +131,7 @@ def find_with_key(k, v, rs):
 
 # Option a -> a
 def from_just(Nothing):
-  return error("Expected Just!")
+  assert False, "Expected Just!"
 def from_just(Just(x)):
   return x
 
@@ -329,7 +331,7 @@ def nth2(i, j, xss):
 # Partial; requires k to be in the map.
 # Int -> List (Int, b) -> b
 def lookup(k, []):
-  return error("Key not found in map")
+  assert False, "Key not found in map"
 def lookup(k, (k_, v) :| kvs):
   if k == k_:
     return v

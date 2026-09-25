@@ -30,7 +30,7 @@ def model(m, t):
   return find_with_key_("model", m, t)
 
 def maximumBy(f, []):
-  return error("Empty list!")
+  assert False, "Empty list!"
 def maximumBy(f, x :| xs):
   def helper([], current):
     return current
