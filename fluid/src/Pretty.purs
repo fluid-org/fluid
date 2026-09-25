@@ -15,10 +15,12 @@ import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
+import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
-import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import Type as T
 import Util (type (×), error, isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
@@ -118,15 +120,10 @@ operatorApp n (UnaryPrefixApp op s) =
             text op <+> operatorApp n' s
 operatorApp _ e = prettySimple e
 
-lambda :: forall a. Ann a => List Pattern -> Stmt a -> Doc
-lambda ps s = text "lambda" <+> prettyList ps <> text ":" <+> pretty s
-
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
    pretty (Op o) = parens $ text o
-   pretty (Int α n) = highlightIf α (number n)
-   pretty (Float α n) = highlightIf α (number n)
-   pretty (Str α str) = highlightIf α (string str)
+   pretty (Lit α ℓ) = highlightIf α (pretty ℓ)
    pretty (Constr α c Nil Nil) = highlightIf α (text (dottedName c))
    pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
    pretty (Constr α c es xes) =
@@ -162,7 +159,7 @@ instance Ann a => Pretty (Expr a) where
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e
 
 instance Ann a => Pretty (List (Qualifier a)) where
-   pretty (Cons (ListCompDecl (VarDef v s)) Nil) =
+   pretty (Cons (ListCompDecl (VarDef v _ s)) Nil) =
       text "def" <+> pretty v <> text ":" <+> pretty s
    pretty (Cons (ListCompGuard s) Nil) = text "if" <+> pretty s
    pretty (Cons (ListCompGen p s) Nil) = text "for" <+> pretty p <+> text "in" <+> pretty s
@@ -176,9 +173,7 @@ instance Ann a => Pretty (Case a) where
    pretty (p × b) = text "case" <+> (pretty p) <> block (pretty b)
 
 instance Pretty Pattern where
-   pretty (PInt n) = number n
-   pretty (PFloat n) = number n
-   pretty (PStr s) = string s
+   pretty (PLit ℓ) = pretty ℓ
    pretty (PVar x) = text x
    pretty PWild = text "_"
    pretty (PRecord xps) = record $ map pretty xps
@@ -193,7 +188,7 @@ instance Pretty (String × Pattern) where
    pretty (k × v) = text k <> text ":" <+> pretty v
 
 instance Ann a => Pretty (VarDef a) where
-   pretty (VarDef v s) = pretty v <+> assignment (pretty s)
+   pretty (VarDef v ψ s) = pretty v <> annot ψ <+> assignment (pretty s)
 
 instance Ann a => Pretty (VarDefs a) where
    pretty ds = sep' (stmtOrExpr line (text " ")) (toList (pretty <$> ds))
@@ -226,10 +221,53 @@ instance Ann a => Pretty (Stmt a) where
       where
       body = case xs of
          Nil -> text "pass"
-         _ -> vsep ((\x -> text x <> text ": Any") <$> xs)
+         _ -> vsep ((\(x × ψ) -> text x <> text ":" <+> pretty ψ) <$> xs)
+
+instance Pretty c => Pretty (T.TypeExpr c) where
+   pretty (T.Primitive ν) = pretty ν
+   pretty (T.List ψ) = text "list" <> brackets (pretty ψ)
+   pretty (T.Tuple ψs) = text "tuple" <> brackets (prettyList ψs)
+   pretty (T.Dict ψ) = text "dict" <> brackets (text "str," <+> pretty ψ)
+   pretty (T.Callable ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
+   pretty (T.Lit ℓ) = text "Literal" <> brackets (pretty ℓ)
+   pretty (T.ClassName c) = pretty c
+   pretty (T.Union ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
+
+instance Pretty T.Class where
+   pretty (T.Class q) = text "~" <> text (dottedName q)
+
+instance Pretty (NonEmptyList String) where
+   pretty = text <<< dottedName
+
+instance Pretty T.Primitive where
+   pretty T.Object = text "object"
+   pretty T.Never = text "Never"
+   pretty T.None = text "None"
+   pretty T.Bool = text "bool"
+   pretty T.Int = text "int"
+   pretty T.Float = text "float"
+   pretty T.Str = text "str"
+   pretty T.Sized = text "Sized"
+
+instance Pretty Literal where
+   pretty (Int n) = number n
+   pretty (Float n) = number n
+   pretty (Str s) = string s
+   pretty (Bool true) = text "True"
+   pretty (Bool false) = text "False"
+   pretty None = text "None"
 
 instance Ann a => Pretty (Clause a) where
-   pretty (Clause _ (ps × b)) = lambda ps b
+   pretty (Clause _ (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
+
+instance Pretty Param where
+   pretty (Param p ψ) = pretty p <> annot ψ
+
+annot :: forall c. Pretty c => Maybe (T.TypeExpr c) -> Doc
+annot = maybe mempty \ψ -> text ":" <+> pretty ψ
+
+returnAnnot :: forall c. Pretty c => Maybe (T.TypeExpr c) -> Doc
+returnAnnot = maybe mempty \ψ -> text " ->" <+> pretty ψ
 
 instance Ann a => Pretty (LambdaClause a) where
    pretty (LambdaClause (ps × e)) = text "lambda" <+> prettyList ps <> text ":" <+> pretty e
@@ -238,11 +276,7 @@ instance Ann a => Pretty (RecDefs a) where
    pretty bs = sep' (stmtOrExpr line (text " ")) (toList (pretty <$> bs))
 
 instance Ann a => Pretty (Branch a) where
-   pretty (v × Clause _ (ps × b)) =
-      text "def"
-         <+> text v
-         <> parens (prettyList ps)
-         <> block (pretty b)
+   pretty (f × clause) = text "def" <+> text f <> pretty clause
 
 instance Ann a => Pretty (DictEntry a × Expr a) where
    pretty (k × v) =
@@ -294,9 +328,7 @@ instance Highlightable a => Pretty (Pair (E.Expr a)) where
 instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Var x) = text x
    pretty (E.Op op) = parens (text op)
-   pretty (E.Int a n) = highlightIf a (number n)
-   pretty (E.Float a n) = highlightIf a (number n)
-   pretty (E.Str a str) = highlightIf a (string str)
+   pretty (E.Lit a ℓ) = highlightIf a (pretty ℓ)
    pretty (E.Dictionary a ees) = highlightIf a $ record (pretty <$> ees)
    pretty (E.Constr a c es) = highlightIf a (prettyConstr (last c) es)
    pretty (E.Matrix a e1 (i × j) e2) =
@@ -319,7 +351,7 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
-   pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e
+   pretty (E.Assign p ψ e) = pretty p <> annot ψ <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs _ ds)) = text "def" <+> pretty ds
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
@@ -328,7 +360,10 @@ instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Highlightable a => Pretty (E.Def a) where
-   pretty (E.Def xs s) = parens (commas (text <$> xs)) <> text "->" <> pretty s
+   pretty (E.Def xs ψ s) = parens (prettyList xs) <> returnAnnot ψ <> text "->" <> pretty s
+
+instance Pretty E.Param where
+   pretty (E.Param x ψ) = text x <> annot ψ
 
 instance Highlightable a => Pretty (Dict (E.Def a)) where
    pretty ds = go (toUnfoldable ds)
@@ -360,9 +395,7 @@ instance Highlightable a => Pretty (Var × (a × Val a)) where
    pretty (k × (a × v)) = highlightIf a (pretty k) <> text ":" <+> pretty v -- ???
 
 instance Highlightable a => Pretty (BaseVal a) where
-   pretty (V.Int n) = number n
-   pretty (V.Float n) = number n
-   pretty (V.Str str) = string str
+   pretty (V.Lit ℓ) = pretty ℓ
    pretty (V.Dictionary (DictRep svs))
       | isEmpty svs = text "{}"
       | otherwise = record (pretty <$> (toUnfoldable svs))

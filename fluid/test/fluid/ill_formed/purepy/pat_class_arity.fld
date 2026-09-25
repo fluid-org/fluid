@@ -1,7 +1,7 @@
 @dataclass
 class Point:
-  x: Any
-  y: Any
+  x: int
+  y: int
 
 match Point(1, 2):
   case Point():

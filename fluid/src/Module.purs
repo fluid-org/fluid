@@ -27,9 +27,10 @@ import Graph (Vertex, vertices)
 import Graph.GraphImpl (GraphImpl)
 import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
 import Lattice (Raw)
+import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, predefined, predefinedDeps)
 import Parse (parseModule, parseProgram)
-import SExpr (desugarModuleFwd)
+import SExpr (desugarModule)
 import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
@@ -118,7 +119,7 @@ allocTopLevel primitives mods imports = do
                  ρ0 <- foldM (loadPredefined primitives') empty predefined
                  modifyModuleStore (_ { ρ0 = ρ0 })
                  ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0 imports
-                 vName <- val Nothing Set.empty (V.Str "__main__")
+                 vName <- val Nothing Set.empty (V.Lit (Str "__main__"))
                  pure (ρ1 <+> maplet "__name__" vName)
             )
             (vertices primitives' ∪ mαs) :: AllocT m (GraphImpl × _)
@@ -143,7 +144,7 @@ prepConfig primitives fluidSrc = do
    { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods primitivesCxt imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
-      desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModuleFwd (Returns <$ m)) (Map.mapMaybe _.mod loaded)
+      desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModule (Returns <$ m)) (Map.mapMaybe _.mod loaded)
       n × ρ <- allocTopLevel primitives desugaredMods imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
       { moduleEnv } <- moduleStore

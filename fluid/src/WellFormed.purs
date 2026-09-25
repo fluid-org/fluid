@@ -30,7 +30,8 @@ import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
-import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import Type as T
 import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
@@ -57,8 +58,7 @@ checkProgram mods primitivesCxt imports s =
       _ × cxt_imp <- checkImports mainModule imports
       -- Unlike a module (checkStatements), the program may return: a top-level return yields
       -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
-      _ × s' <- lift (wellFormed mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
-      decls <- lift (classes mainModule s)
+      decls × _ × s' <- lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
       modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
       pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
@@ -70,20 +70,17 @@ checkProgram mods primitivesCxt imports s =
          mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
          importCxt × cxt_imp <- checkImports q is
          δ × mod' <- lift (checkStatements q cxt_imp mod)
-         decls <- lift (classesOfModule q mod)
          let subs = submodules (Map.keys mods) q
-         let clash = (Map.keys importCxt ∪ Map.keys δ ∪ Map.keys decls) ∩ Map.keys subs
+         let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
          when (not Set.isEmpty clash)
             $ throwError
             $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
          when (q == builtins) do
-            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys decls ∪ Map.keys subs)
+            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys subs)
             when (not (Set.isEmpty primitiveClash))
                $ throwError
                $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable primitiveClash :: List Var)
-         let
-            cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` (Class <$> decls) `Map.union`
-               (VarStatus <$> δ)
+         let cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` δ
          modify_ (Map.insert q { cxt, mod: Just mod' })
          pure cxt
 
@@ -137,21 +134,16 @@ submodules modules q = Map.fromFoldable (mapMaybe sub (Set.toUnfoldable modules)
    where
    sub m = let { init, last: x } = NEL.unsnoc m in whenever (NEL.fromList init == Just q) (x × Mod m)
 
-classesOfModule :: forall a. Name -> S.Module a -> Either String (Map.Map Var ClassEntry)
-classesOfModule q (S.Module _ ss) =
-   case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
-      Nothing -> pure Map.empty
-      Just s -> classes q s
-
-checkStatements :: Name -> Cxt -> Raw S.Module -> Either String (VarCxt × S.Module (WfResult VarCxt))
+checkStatements :: Name -> Cxt -> Raw S.Module -> Either String (Cxt × S.Module (WfResult VarCxt))
 checkStatements q cxt_imp (S.Module imports ss) =
    case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
-      Nothing -> pure (Map.singleton "__name__" true × S.Module imports Nil)
+      Nothing -> pure (Map.singleton "__name__" (VarStatus true) × S.Module imports Nil)
       Just s -> do
-         r × s' <- wellFormed q (Map.insert "__name__" (VarStatus true) cxt_imp) s
+         decls × r × s' <- wellFormedTop q (Map.insert "__name__" (VarStatus true) cxt_imp) s
          case r of
             Returns -> throwError "Module body cannot return"
-            Assigns δ -> pure (Map.insert "__name__" true δ × S.Module imports (unSeq s'))
+            Assigns δ ->
+               pure (Map.insert "__name__" (VarStatus true) (Map.union (Class <$> decls) (VarStatus <$> δ)) × S.Module imports (unSeq s'))
    where
    unSeq (S.Seq s1 s2) = s1 : unSeq s2
    unSeq s = s : Nil
@@ -160,18 +152,9 @@ checkStatements q cxt_imp (S.Module imports ss) =
 mainModule :: Name
 mainModule = pure "__main__"
 
-classes :: forall a. Name -> S.Stmt a -> Either String (Map.Map Var ClassEntry)
-classes q = go Map.empty
-   where
-   go acc (S.Dataclass c b xs)
-      | Map.member c acc = throwError $ "Duplicate class declaration: " <> c
-      | otherwise = pure (Map.insert c { cxt: Class <$> acc, name: NEL.snoc q c, base: b, fields: xs } acc)
-   go acc (S.Seq s1 s2) = go acc s1 >>= \acc' -> go acc' s2
-   go acc _ = pure acc
-
 assigns :: forall a. S.Stmt a -> Set Var
 assigns S.Pass = Set.empty
-assigns (S.Def (S.VarDef p _)) = bv p
+assigns (S.Def (S.VarDef p _ _)) = bv p
 assigns (S.ExprStmt _) = Set.empty
 assigns (S.Assert _ _) = Set.empty
 assigns (S.Return _) = Set.empty
@@ -183,7 +166,7 @@ assigns (S.Dataclass c _ _) = Set.singleton c
 
 captures :: forall a. S.Stmt a -> Set Var
 captures S.Pass = Set.empty
-captures (S.Def (S.VarDef _ e)) = capturesE e
+captures (S.Def (S.VarDef _ _ e)) = capturesE e
 captures (S.ExprStmt e) = capturesE e
 captures (S.Assert e e') = capturesE e ∪ maybe Set.empty capturesE e'
 captures (S.Return e) = capturesE e
@@ -194,7 +177,7 @@ captures (S.Match e ps) =
 captures (S.DefRec ds) =
    (unions (clauseCaptures <$> ds)) \\ unions (Set.singleton <<< fst <$> ds)
    where
-   clauseCaptures (_ × S.Clause _ (ps × s)) =
+   clauseCaptures (_ × S.Clause _ (ps × _ × s)) =
       (fv s \\ unions (bv <$> ps)) \\ assigns s
 captures (S.Seq s1 s2) = captures s1 ∪ captures s2
 captures (S.Dataclass _ _ _) = Set.empty
@@ -202,9 +185,7 @@ captures (S.Dataclass _ _ _) = Set.empty
 capturesE :: forall a. S.Expr a -> Set Var
 capturesE (S.Var _) = Set.empty
 capturesE (S.Op _) = Set.empty
-capturesE (S.Int _ _) = Set.empty
-capturesE (S.Float _ _) = Set.empty
-capturesE (S.Str _ _) = Set.empty
+capturesE (S.Lit _ _) = Set.empty
 capturesE (S.Constr _ _ es xes) = unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
 capturesE (S.Dictionary _ es) =
    unions ((\(k × v) -> capturesEntry k ∪ capturesE v) <$> es)
@@ -247,26 +228,28 @@ wellFormed _ cxt (S.Assert e e') = do
    e1 <- wellFormedExpr cxt e
    e2 <- traverse (wellFormedExpr cxt) e'
    pure (Assigns Map.empty × S.Assert (Assigns Map.empty <$ e1) ((Assigns Map.empty <$ _) <$> e2))
-wellFormed _ cxt (S.Def (S.VarDef p e)) = do
+wellFormed _ cxt (S.Def (S.VarDef p ψ e)) = do
    let xs = bv p
    for_ (Set.toUnfoldable (xs `Set.intersection` capturesE e) :: Array Var) \x ->
       throwError $ "Variable captured by its own definition: " <> x
    e' <- wellFormedExpr cxt e
    p' <- wellFormedPattern cxt p
-   pure (Assigns (constMap true xs) × S.Def (S.VarDef p' (Assigns Map.empty <$ e')))
+   τ <- traverse (resolveType cxt) ψ
+   pure (Assigns (constMap true xs) × S.Def (S.VarDef p' τ (Assigns Map.empty <$ e')))
 wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
    for_ (NEL.groupBy (eq `on` fst) ds) \clauses ->
-      void $ wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList ps)
+      void $ wellFormedPatterns cxt' (clauses <#> \(_ × S.Clause _ (ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
    ds' <- traverse
-      ( \(x × S.Clause _ (ps × s)) -> do
+      ( \(x × S.Clause _ (ps × ψ × s)) -> do
            let xs = unions (bv <$> ps)
            let ys = assigns s \\ xs
            let cxt'' = cxt' `extendCxt` constMap true xs `extendCxt` constMap false ys
-           ps' <- traverse (wellFormedPattern cxt') ps
+           ps' <- traverse (\(S.Param p ψ') -> S.Param <$> wellFormedPattern cxt' p <*> traverse (resolveType cxt') ψ') ps
+           τ <- traverse (resolveType cxt') ψ
            r × s' <- wellFormed q cxt'' s
-           pure (x × S.Clause r (ps' × s'))
+           pure (x × S.Clause r (ps' × τ × s'))
       )
       ds
    pure (Assigns (constMap true fs) × S.DefRec ds')
@@ -277,9 +260,7 @@ wellFormed q cxt (S.Seq s1 s2) = do
       Assigns δ -> do
          for_ (Set.toUnfoldable (captures s1 `Set.intersection` assigns s2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         decls <- classes q s1
-         let cxt' = Map.union (Class <$> (decls <#> _ { cxt = cxt })) (cxt `extendCxt` δ)
-         r2 × s2' <- wellFormed q cxt' s2
+         r2 × s2' <- wellFormed q (cxt `extendCxt` δ) s2
          pure (overrideRes r1 r2 × S.Seq s1' s2')
 wellFormed q cxt (S.If es elseBranch) = do
    es' <- traverse
@@ -308,8 +289,13 @@ wellFormed q cxt (S.Match e bs) = do
       S.PVar _ -> Returns
       S.PWild -> Returns
       _ -> Assigns Map.empty
-wellFormed q cxt (S.Dataclass c b xs) = do
+wellFormed _ _ (S.Dataclass c _ _) = throwError $ "Class declaration not at top level: " <> c
+
+wellFormedTop :: forall a. Name -> Cxt -> S.Stmt a -> Either String (Map.Map Var ClassEntry × WfResult VarCxt × S.Stmt (WfResult VarCxt))
+wellFormedTop q cxt (S.Dataclass c b xψs) = do
+   let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
+   xτs <- traverse (traverse (resolveType cxt)) xψs
    case b of
       Nothing -> pure unit
       Just base -> do
@@ -320,14 +306,29 @@ wellFormed q cxt (S.Dataclass c b xs) = do
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Assigns Map.empty × S.Dataclass c b xs)
+   pure (Map.singleton c { cxt, name: NEL.snoc q c, base: b, fields: xs } × Assigns Map.empty × S.Dataclass c b xτs)
+wellFormedTop q cxt (S.Seq t1 t2) = do
+   decls1 × r1 × t1' <- wellFormedTop q cxt t1
+   case r1 of
+      Returns -> throwError "Unreachable statement"
+      Assigns δ -> do
+         for_ (Set.toUnfoldable (captures t1 `Set.intersection` assigns t2) :: Array Var) \x ->
+            throwError $ "Captured variable reassigned: " <> x
+         for_ (Set.toUnfoldable (Map.keys decls1 `Set.intersection` assigns t2) :: Array Var) \c ->
+            throwError $ "Duplicate class declaration: " <> c
+         decls2 × r2 × t2' <- wellFormedTop q (Map.union (Class <$> decls1) (cxt `extendCxt` δ)) t2
+         pure (Map.union decls2 decls1 × overrideRes r1 r2 × S.Seq t1' t2')
+wellFormedTop q cxt s = do
+   r × s' <- wellFormed q cxt s
+   pure (Map.empty × r × s')
+
+resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
+resolveType cxt = traverse (className cxt)
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
 wellFormedExpr cxt e@(S.Op op) = e <$ var cxt op
-wellFormedExpr _ e@(S.Int _ _) = pure e
-wellFormedExpr _ e@(S.Float _ _) = pure e
-wellFormedExpr _ e@(S.Str _ _) = pure e
+wellFormedExpr _ e@(S.Lit _ _) = pure e
 wellFormedExpr cxt (S.Constr α c es Nil) = do
    cls <- classOf cxt c
    let fs = fields cls
@@ -389,10 +390,11 @@ wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs')
          e1' <- wellFormedExpr cxt' e1
          p' <- wellFormedPattern cxt' p
          map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
-      S.ListCompDecl (S.VarDef p e1) -> do
+      S.ListCompDecl (S.VarDef p ψ e1) -> do
+         τ <- traverse (resolveType cxt') ψ
          e1' <- wellFormedExpr cxt' e1
          p' <- wellFormedPattern cxt' p
-         map (S.ListCompDecl (S.VarDef p' e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
+         map (S.ListCompDecl (S.VarDef p' τ e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit
@@ -440,9 +442,7 @@ subsumed _ _ (S.PVar _) = true
 subsumed _ _ S.PWild = true
 subsumed cxt (S.PAs p _) p' = subsumed cxt p p'
 subsumed cxt p (S.PAs p' _) = subsumed cxt p p'
-subsumed _ (S.PInt n) (S.PInt n') = n == n'
-subsumed _ (S.PFloat x) (S.PFloat x') = x == x'
-subsumed _ (S.PStr s) (S.PStr s') = s == s'
+subsumed _ (S.PLit ℓ) (S.PLit ℓ') = ℓ == ℓ'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
 subsumed cxt (S.PList ps) (S.PList ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')

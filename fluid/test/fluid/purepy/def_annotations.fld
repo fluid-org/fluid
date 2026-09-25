@@ -1,0 +1,19 @@
+def add(x: int, y: int) -> int:
+  return x + y
+
+def fact(0: int) -> int:
+  return 1
+def fact(n):
+  return n * fact(n - 1)
+
+def first(xs: list[int]) -> int | None:
+  match xs:
+    case []:
+      return None
+    case x :| _:
+      return x
+
+def swap((x, y): tuple[int, str]) -> tuple[str, int]:
+  return (y, x)
+
+(add(1, 2) + fact(3) + first([3, 4]), swap((5, "a")))

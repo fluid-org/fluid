@@ -18,6 +18,8 @@ import Data.Tuple (snd)
 import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Literal (Literal)
+import Type as T
 import Util (type (×), shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys)
 import Util.Pair (Pair(..))
@@ -27,9 +29,7 @@ import Util.Set ((\\), (∪))
 data Expr a
    = Var Var
    | Op Var
-   | Int a Int
-   | Float a Number
-   | Str a String
+   | Lit a Literal
    | Dictionary a (List (Pair (Expr a))) -- constructor name Dict borks (import of same name)
    | Constr a Name (List (Expr a))
    | Matrix a (Expr a) (Var × Var) (Expr a)
@@ -42,9 +42,7 @@ data Expr a
    | DocExpr (Expr a) (Expr a)
 
 data Pattern
-   = PInt Int
-   | PFloat Number
-   | PStr String
+   = PLit Literal
    | PVar Var
    | PWild
    | PConstr Name (List Pattern) (List (Bind Pattern))
@@ -52,8 +50,13 @@ data Pattern
    | PList (List Pattern)
    | PAs Pattern Var
 
--- Parameters and body of a function.
-data Def a = Def (List Var) (Stmt a)
+data Param = Param Var (Maybe T.Type)
+
+-- Parameters, return annotation and body of a function.
+data Def a = Def (List Param) (Maybe T.Type) (Stmt a)
+
+paramVar :: Param -> Var
+paramVar (Param x _) = x
 
 -- Mutually recursive function definitions.
 data RecDefs a = RecDefs a (Dict (Def a))
@@ -68,7 +71,7 @@ data Stmt a
    = Return (Expr a)
    | If (NonEmptyList (Branch a)) (Maybe (Stmt a))
    | Match (Expr a) (NonEmptyList (Case a))
-   | Assign Pattern (Expr a) -- assignment to a pattern; the spec has only variables
+   | Assign Pattern (Maybe T.Type) (Expr a) -- assignment to a pattern; the spec has only variables
    | DefRec (RecDefs a)
    | Pass
    | ExprStmt (Expr a)
@@ -85,9 +88,7 @@ class FV a where
 instance FV (Expr a) where
    fv (Var x) = singleton x
    fv (Op op) = singleton op
-   fv (Int _ _) = empty
-   fv (Float _ _) = empty
-   fv (Str _ _) = empty
+   fv (Lit _ _) = empty
    fv (Dictionary _ ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ _ es) = unions (fv <$> es)
    fv (Matrix _ e1 _ e2) = fv e1 ∪ fv e2
@@ -100,7 +101,7 @@ instance FV (Expr a) where
    fv (DocExpr doc e) = fv doc ∪ fv e
 
 instance FV (Def a) where
-   fv (Def xs s) = fv s \\ S.fromFoldable xs
+   fv (Def xs _ s) = fv s \\ S.fromFoldable (paramVar <$> xs)
 
 instance FV (RecDefs a) where
    fv (RecDefs _ ds) = fv ds
@@ -112,7 +113,7 @@ instance FV (Stmt a) where
    fv (Return e) = fv e
    fv (If bs s_opt) = unions (fv <$> bs) ∪ fv s_opt
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
-   fv (Assign _ e) = fv e
+   fv (Assign _ _ e) = fv e
    fv (DefRec ds) = fv ds
    fv Pass = empty
    fv (ExprStmt e) = fv e
@@ -136,9 +137,7 @@ class BV a where
    bv :: a -> Set Var
 
 instance BV Pattern where
-   bv (PInt _) = empty
-   bv (PFloat _) = empty
-   bv (PStr _) = empty
+   bv (PLit _) = empty
    bv (PVar x) = singleton x
    bv PWild = empty
    bv (PConstr _ ps xps) = unions (bv <$> ps) ∪ unions ((bv <<< snd) <$> xps)
@@ -147,10 +146,10 @@ instance BV Pattern where
    bv (PAs p x) = bv p ∪ singleton x
 
 instance JoinSemilattice a => JoinSemilattice (Def a) where
-   join (Def xs s) (Def xs' s') = Def (xs ≜ xs') (s ∨ s')
+   join (Def xs ψ s) (Def xs' ψ' s') = Def (xs ≜ xs') (ψ ≜ ψ') (s ∨ s')
 
 instance BoundedJoinSemilattice a => Expandable (Def a) (Raw Def) where
-   expand (Def xs s) (Def xs' s') = Def (xs ≜ xs') (expand s s')
+   expand (Def xs ψ s) (Def xs' ψ' s') = Def (xs ≜ xs') (ψ ≜ ψ') (expand s s')
 
 instance JoinSemilattice a => JoinSemilattice (RecDefs a) where
    join (RecDefs α ds) (RecDefs α' ds') = RecDefs (α ∨ α') (ds ∨ ds')
@@ -170,7 +169,7 @@ instance JoinSemilattice a => JoinSemilattice (Stmt a) where
    join (Match e bs) (Match e' bs') = Match (e ∨ e') (NEL.zipWith joinCase bs bs')
       where
       joinCase (p × s) (p' × s') = (p ≜ p') × (s ∨ s')
-   join (Assign p e) (Assign p' e') = Assign (p ≜ p') (e ∨ e')
+   join (Assign p ψ e) (Assign p' ψ' e') = Assign (p ≜ p') (ψ ≜ ψ') (e ∨ e')
    join (DefRec ds) (DefRec ds') = DefRec (ds ∨ ds')
    join Pass Pass = Pass
    join (ExprStmt e) (ExprStmt e') = ExprStmt (e ∨ e')
@@ -184,7 +183,7 @@ instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
    expand (Match e bs) (Match e' bs') = Match (expand e e') (NEL.zipWith expandCase bs bs')
       where
       expandCase (p × s) (p' × s') = (p ≜ p') × expand s s'
-   expand (Assign p e) (Assign p' e') = Assign (p ≜ p') (expand e e')
+   expand (Assign p ψ e) (Assign p' ψ' e') = Assign (p ≜ p') (ψ ≜ ψ') (expand e e')
    expand (DefRec ds) (DefRec ds') = DefRec (expand ds ds')
    expand Pass Pass = Pass
    expand (ExprStmt e) (ExprStmt e') = ExprStmt (expand e e')
@@ -195,9 +194,7 @@ instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
 instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Var x) (Var x') = Var (x ≜ x')
    join (Op op) (Op op') = Op (op ≜ op')
-   join (Int α n) (Int α' n') = Int (α ∨ α') (n ≜ n')
-   join (Str α str) (Str α' str') = Str (α ∨ α') (str ≜ str')
-   join (Float α n) (Float α' n') = Float (α ∨ α') (n ≜ n')
+   join (Lit α ℓ) (Lit α' ℓ') = Lit (α ∨ α') (ℓ ≜ ℓ')
    join (Dictionary α ees) (Dictionary α' ees') = Dictionary (α ∨ α') (ees ∨ ees')
    join (Constr α c es) (Constr α' c' es') = Constr (α ∨ α') (c ≜ c') (es ∨ es')
    join (Matrix α e1 (x × y) e2) (Matrix α' e1' (x' × y') e2') =
@@ -214,9 +211,7 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
 instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Var x) (Var x') = Var (x ≜ x')
    expand (Op op) (Op op') = Op (op ≜ op')
-   expand (Int α n) (Int _ n') = Int α (n ≜ n')
-   expand (Str α str) (Str _ str') = Str α (str ≜ str')
-   expand (Float α n) (Float _ n') = Float α (n ≜ n')
+   expand (Lit α ℓ) (Lit _ ℓ') = Lit α (ℓ ≜ ℓ')
    expand (Dictionary α ees) (Dictionary _ ees') = Dictionary α (expand ees ees')
    expand (Constr α c es) (Constr _ c' es') = Constr α (c ≜ c') (expand es es')
    expand (Matrix α e1 (x × y) e2) (Matrix _ e1' (x' × y') e2') =
@@ -236,9 +231,7 @@ instance MeetSemilattice a => MeetSemilattice (Expr a) where
 instance Vertices (Expr Vertex) where
    vertices (Var _) = empty
    vertices (Op _) = empty
-   vertices e@(Int α _) = singleton (DVertex (α × pack e))
-   vertices e@(Float α _) = singleton (DVertex (α × pack e))
-   vertices e@(Str α _) = singleton (DVertex (α × pack e))
+   vertices e@(Lit α _) = singleton (DVertex (α × pack e))
    vertices d@(Dictionary α ees) = singleton (DVertex (α × pack d)) ∪ unions (go <$> ees)
       where
       go (Pair e e') = vertices e ∪ vertices e'
@@ -253,7 +246,7 @@ instance Vertices (Expr Vertex) where
    vertices (DocExpr e e') = vertices e ∪ vertices e'
 
 instance Vertices (Def Vertex) where
-   vertices (Def _ s) = vertices s
+   vertices (Def _ _ s) = vertices s
 
 instance Vertices (RecDefs Vertex) where
    vertices defs@(RecDefs α ds) = singleton (DVertex (α × pack defs)) ∪ vertices ds
@@ -265,7 +258,7 @@ instance Vertices (Stmt Vertex) where
    vertices (Return e) = vertices e
    vertices (If bs s_opt) = unions (vertices <$> bs) ∪ maybe empty vertices s_opt
    vertices (Match e bs) = vertices e ∪ unions ((vertices <<< snd) <$> bs)
-   vertices (Assign _ e) = vertices e
+   vertices (Assign _ _ e) = vertices e
    vertices (DefRec ds) = vertices ds
    vertices Pass = empty
    vertices (ExprStmt e) = vertices e
@@ -299,9 +292,7 @@ derive instance Functor Module
 instance Apply Expr where
    apply (Var x) (Var x') = Var (x ≜ x')
    apply (Op op) (Op _) = Op op
-   apply (Int fα n) (Int α n') = Int (fα α) (n ≜ n')
-   apply (Float fα n) (Float α n') = Float (fα α) (n ≜ n')
-   apply (Str fα s) (Str α s') = Str (fα α) (s ≜ s')
+   apply (Lit fα ℓ) (Lit α ℓ') = Lit (fα α) (ℓ ≜ ℓ')
    apply (Dictionary fα fxes) (Dictionary α xes) = Dictionary (fα α) (zipWith (lift2 (<*>)) fxes xes)
    apply (Constr fα c fes) (Constr α c' es) = Constr (fα α) (c ≜ c') (zipWith (<*>) fes es)
    apply (Matrix fα fe1 (x × y) fe2) (Matrix α e1 (x' × y') e2) =
@@ -316,7 +307,7 @@ instance Apply Expr where
    apply _ _ = shapeMismatch unit
 
 instance Apply Def where
-   apply (Def xs fs) (Def _ s) = Def xs (fs <*> s)
+   apply (Def xs ψ fs) (Def _ _ s) = Def xs ψ (fs <*> s)
 
 instance Apply RecDefs where
    apply (RecDefs fα fds) (RecDefs α ds) = RecDefs (fα α) (((<*>) <$> fds) <*> ds)
@@ -330,7 +321,7 @@ instance Apply Stmt where
    apply (Match fe fbs) (Match e bs) = Match (fe <*> e) (NEL.zipWith applyCase fbs bs)
       where
       applyCase (p × fs) (_ × s) = p × (fs <*> s)
-   apply (Assign p fe) (Assign _ e) = Assign p (fe <*> e)
+   apply (Assign p ψ fe) (Assign _ _ e) = Assign p ψ (fe <*> e)
    apply (DefRec fds) (DefRec ds) = DefRec (fds <*> ds)
    apply Pass Pass = Pass
    apply (ExprStmt fe) (ExprStmt e) = ExprStmt (fe <*> e)
@@ -351,6 +342,11 @@ instance Traversable Module where
    sequence = sequenceDefault
 
 derive instance Eq a => Eq (Expr a)
+derive instance Eq Param
+derive instance Generic Param _
+instance Show Param where
+   show c = genericShow c
+
 derive instance Eq a => Eq (Def a)
 derive instance Eq Pattern
 derive instance Generic Pattern _

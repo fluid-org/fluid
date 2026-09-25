@@ -1,11 +1,11 @@
 @dataclass
 class C:
-   x: Any
+   x: int
 
 k = lambda z: C(z)
 
 @dataclass
 class C:
-   x: Any
+   x: int
 
 k

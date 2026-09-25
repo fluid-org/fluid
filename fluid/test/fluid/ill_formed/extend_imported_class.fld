@@ -2,6 +2,6 @@ from module.shape_lib import Base
 
 @dataclass
 class Local(Base):
-   y: Any
+   y: int
 
 0

@@ -25,6 +25,8 @@ import Data.Tuple (snd)
 import DataType (FieldIndex, cBarChart, cCons, cLineChart, cLinePlot, cLink, cMultiView, cNil, cParagraph, cScatterPlot, cText, f_caption, f_fragments, f_height, f_label, f_labels, f_legend, f_name, f_plots, f_points, f_segments, f_size, f_stackedBars, f_text, f_tickLabels, f_value, f_views, f_width, f_x, f_y, f_z)
 import Dict (Dict)
 import Link (Link(..))
+import Literal (Literal(..))
+import Pretty (prettyP)
 import Primitive (boolean, int, string, typeError)
 import Primitive (unpack') as P
 import Util (type (×), error, (!), (×))
@@ -32,20 +34,15 @@ import Util.Map (get, mapWithKey)
 import Val (BaseVal(..), DictRep(..), Val(..))
 
 -- TODO: merge with 'view' below.
-view' :: Partial => FieldIndex -> Options -> String -> Val (SelStates 𝕊) -> View
+view' :: FieldIndex -> Options -> String -> Val (SelStates 𝕊) -> View
 view' fieldIndex options title v@(Val _ v_opt _) =
-   pack $ DocView { doc: viewParagraph <$> v_opt, view: view fieldIndex options title v }
-   where
-   viewParagraph v'@(Val _ _ (Constr c _)) | c == cParagraph =
-      reflectParagraph fieldIndex options v'
+   pack $ DocView { doc: reflectParagraph fieldIndex options <$> v_opt, view: view fieldIndex options title v }
 
 -- Convert annotated value to appropriate view, discarding top-level annotations for now.
--- TODO: given the typeError clause, Partial no longer needed
-view :: Partial => FieldIndex -> Options -> String -> Val (SelStates 𝕊) -> View
+view :: FieldIndex -> Options -> String -> Val (SelStates 𝕊) -> View
 view fieldIndex options title v@(Val α _ u') = case u' of
-   Int n -> pack (Text (show n × α))
-   Float n -> pack (Text (show n × α))
-   Str str -> pack (Text (str × α))
+   Lit (Str str) -> pack (Text (str × α))
+   Lit ℓ -> pack (Text (prettyP ℓ × α))
    Constr c _
       | c == cText -> pack (reflectText fieldIndex v)
       | c == cMultiView -> pack (reflectMultiView fieldIndex options v)
@@ -76,10 +73,10 @@ view fieldIndex options title v@(Val α _ u') = case u' of
       pack (viewDict d)
    _ -> typeError u' "Viewable"
    where
-   viewDict :: Partial => Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Dict (View × View)
+   viewDict :: Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Dict (View × View)
    viewDict = mapWithKey \k (α' × v') -> pack (Text (k × α')) × view fieldIndex options k v'
 
-reflectBarChart :: Partial => FieldIndex -> Val (SelStates 𝕊) -> BarChart
+reflectBarChart :: FieldIndex -> Val (SelStates 𝕊) -> BarChart
 reflectBarChart fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cBarChart -> BarChart
       { caption: P.unpack' string (us ! fieldIndex cBarChart f_caption)
@@ -90,7 +87,7 @@ reflectBarChart fieldIndex (Val _ _ u) = case u of
       }
    _ -> typeError u "BarChart"
 
-reflectLineChart :: Partial => FieldIndex -> Val (SelStates 𝕊) -> LineChart
+reflectLineChart :: FieldIndex -> Val (SelStates 𝕊) -> LineChart
 reflectLineChart fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cLineChart -> LineChart
       { size: dict from (us ! fieldIndex cLineChart f_size)
@@ -100,7 +97,7 @@ reflectLineChart fieldIndex (Val _ _ u) = case u of
       }
    _ -> typeError u "LineChart"
 
-reflectLinePlot :: Partial => FieldIndex -> Val (SelStates 𝕊) -> LinePlot
+reflectLinePlot :: FieldIndex -> Val (SelStates 𝕊) -> LinePlot
 reflectLinePlot fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cLinePlot -> LinePlot
       { name: P.unpack' string (us ! fieldIndex cLinePlot f_name)
@@ -108,7 +105,7 @@ reflectLinePlot fieldIndex (Val _ _ u) = case u of
       }
    _ -> typeError u "LinePlot"
 
-reflectScatterPlot :: Partial => FieldIndex -> Val (SelStates 𝕊) -> ScatterPlot
+reflectScatterPlot :: FieldIndex -> Val (SelStates 𝕊) -> ScatterPlot
 reflectScatterPlot fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cScatterPlot -> ScatterPlot
       { caption: P.unpack' string (us ! fieldIndex cScatterPlot f_caption)
@@ -117,45 +114,48 @@ reflectScatterPlot fieldIndex (Val _ _ u) = case u of
       }
    _ -> typeError u "ScatterPlot"
 
-reflectText :: Partial => FieldIndex -> Val (SelStates 𝕊) -> Text
+reflectText :: FieldIndex -> Val (SelStates 𝕊) -> Text
 reflectText fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cText -> case us ! fieldIndex cText f_text of
-      Val α _ (Str s) -> Text (s × α)
+      Val α _ (Lit (Str s)) -> Text (s × α)
       _ -> typeError u "Text expects string"
    _ -> typeError u "Text"
 
-reflectLink :: Partial => FieldIndex -> Val (SelStates 𝕊) -> Link
+reflectLink :: FieldIndex -> Val (SelStates 𝕊) -> Link
 reflectLink fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cLink -> case us ! fieldIndex cLink f_label of
-      Val α' _ (Str s) -> Link (us ! fieldIndex cLink f_value) (s × α')
+      Val α' _ (Lit (Str s)) -> Link (us ! fieldIndex cLink f_value) (s × α')
       _ -> typeError u "Link expects string label"
    _ -> typeError u "Link"
 
-reflectMultiView :: Partial => FieldIndex -> Options -> Val (SelStates 𝕊) -> MultiView
+reflectMultiView :: FieldIndex -> Options -> Val (SelStates 𝕊) -> MultiView
 reflectMultiView fieldIndex options (Val _ _ u) = case u of
    Constr c us | c == cMultiView ->
       MultiView (view fieldIndex options "" <$> from (us ! fieldIndex cMultiView f_views))
    _ -> typeError u "MultiView"
 
-reflectParagraph :: Partial => FieldIndex -> Options -> Val (SelStates 𝕊) -> Paragraph
+reflectParagraph :: FieldIndex -> Options -> Val (SelStates 𝕊) -> Paragraph
 reflectParagraph fieldIndex options (Val _ _ u) = case u of
    Constr c us | c == cParagraph ->
       Paragraph (view fieldIndex options "" <$> from (us ! fieldIndex cParagraph f_fragments))
    _ -> typeError u "Paragraph"
 
 class Reflect a b where
-   from :: Partial => a -> b
+   from :: a -> b
 
 instance Reflect (Val a) (Dict (a × Val a)) where
    from (Val _ _ (Dictionary (DictRep d))) = d
+   from (Val _ _ u) = typeError u "dict"
 
 instance Reflect (Val a) (Array (Val a)) where
    from (Val _ _ (Constr c Nil)) | c == cNil = []
    from (Val _ _ (Constr c (u1 : u2 : Nil))) | c == cCons = u1 A.: from u2
+   from (Val _ _ u) = typeError u "list"
 
 instance Reflect (Val a) (NonEmptyArray (Val a)) where
-   from (Val _ _ (Constr c Nil)) | c == cNil = error "expected non-empty list"
-   from (Val _ _ (Constr c (u1 : u2 : Nil))) | c == cCons = cons' u1 (from u2)
+   from v = case A.uncons (from v) of
+      Just { head, tail } -> cons' head tail
+      Nothing -> error "Expected non-empty list"
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) (Dimensions (Selectable Int)) where
    from r = Dimensions
@@ -170,7 +170,7 @@ instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) StackedBar wher
       }
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) Segment where
-   from :: Partial => Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Segment
+   from :: Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Segment
    from r = Segment
       { y: P.unpack' string (snd (get f_y r))
       , z: get_intOrNumber f_z r

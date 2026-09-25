@@ -1,7 +1,7 @@
 @dataclass
 class Coord:
-  x: Any
-  y: Any
+  x: int
+  y: int
 
 match Coord(1, 2):
   case Coord(x, z=v):

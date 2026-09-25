@@ -4,11 +4,11 @@ class Singleton:
 
 @dataclass
 class Coord:
-  x: Any
-  y: Any
+  x: int
+  y: int
 
 @dataclass
 class ColouredCoord(Coord):
-  c: Any
+  c: str
 
 return 42

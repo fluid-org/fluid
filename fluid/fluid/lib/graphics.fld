@@ -4,8 +4,8 @@
 
 @dataclass
 class Point:
-  x: Any  # Float
-  y: Any  # Float
+  x: float
+  y: float
 
 @dataclass
 class Orient:
@@ -25,62 +25,49 @@ class GraphicsElement:
 
 @dataclass
 class Circle(GraphicsElement):
-  x: Any  # Float
-  y: Any  # Float
-  radius: Any  # Float
-  fill: Any  # Colour
+  x: float
+  y: float
+  radius: float
+  fill: str
 
 @dataclass
 class Group(GraphicsElement):
-  children: Any  # List GraphicsElement
+  children: list[GraphicsElement]
 
 @dataclass
 class Line(GraphicsElement):
-  p1: Any  # Point
-  p2: Any  # Point
-  stroke: Any  # Colour
-  strokeWidth: Any  # Float
+  p1: Point
+  p2: Point
+  stroke: str
+  strokeWidth: float
 
 @dataclass
 class Polyline(GraphicsElement):
-  points: Any  # List Point
-  stroke: Any  # Colour
-  strokeWidth: Any  # Float
+  points: list[Point]
+  stroke: str
+  strokeWidth: float
 
 @dataclass
 class Polymarkers(GraphicsElement):
-  points: Any  # List Point
-  markers: Any  # List GraphicsElement
+  points: list[Point]
+  markers: list[GraphicsElement]
 
 @dataclass
 class Rect(GraphicsElement):
-  x: Any  # Float
-  y: Any  # Float
-  width: Any  # Float
-  height: Any  # Float
-  fill: Any  # Colour
+  x: float
+  y: float
+  width: float
+  height: float
+  fill: str
 
 # SVG text-anchor and alignment-baseline properties
 @dataclass
 class String(GraphicsElement):
-  x: Any  # Float
-  y: Any  # Float
-  str: Any  # Str
-  anchor: Any  # Str
-  baseline: Any  # Str
-
-# Margin is in parent reference frame; scaling applies to translated coordinates.
-@dataclass
-class Viewport(GraphicsElement):
-  x: Any  # Float
-  y: Any  # Float
-  width: Any  # Float
-  height: Any  # Float
-  fill: Any  # Colour
-  margin: Any  # Float
-  scale: Any  # Transform
-  translate: Any  # Transform
-  g: Any  # GraphicsElement
+  x: float
+  y: float
+  str: str
+  anchor: str
+  baseline: str
 
 @dataclass
 class Transform:
@@ -88,13 +75,26 @@ class Transform:
 
 @dataclass
 class Scale(Transform):
-  x: Any  # Float
-  y: Any  # Float
+  x: float
+  y: float
 
 @dataclass
 class Translate(Transform):
-  x: Any  # Float
-  y: Any  # Float
+  x: float
+  y: float
+
+# Margin is in parent reference frame; scaling applies to translated coordinates.
+@dataclass
+class Viewport(GraphicsElement):
+  x: float
+  y: float
+  width: float
+  height: float
+  fill: str
+  margin: float
+  scale: Transform
+  translate: Transform
+  g: GraphicsElement
 
 @dataclass
 class Marker:

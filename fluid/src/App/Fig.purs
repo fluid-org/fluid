@@ -32,7 +32,6 @@ import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
 import Lattice (𝔹, botOf, erase, topOf)
 import Module (prepConfig)
-import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Primitive.Defs (primitives)
 import Test.Util.Debug (tracing)
@@ -169,13 +168,13 @@ drawFig divId fig@{ spec: options } = do
 
    for_ unused \α -> rootSelect ("#" <> prefix <> "-" <> α) >>= remove
    sequence_ $ flip mapWithKey (unwrap ι) \α v ->
-      drawView arg { divId: prefix, suffix: α, view: unsafePartial $ view' fig.fieldIndex options str.intermediate (map to𝕊 <$> v) }
+      drawView arg { divId: prefix, suffix: α, view: view' fig.fieldIndex options str.intermediate (map to𝕊 <$> v) }
          (selectIntermediate (Vertex α) >>> redraw)
    where
    arg = constrArg fig.fieldIndex
    { v, ρ, ι } = selectionResult fig
-   out_view = unsafePartial $ view' fig.fieldIndex options str.output v
-   in_views = ρ # \(Env ρ) -> unsafePartial (mapWithKey (view' fig.fieldIndex options) ρ)
+   out_view = view' fig.fieldIndex options str.output v
+   in_views = ρ # \(Env ρ) -> mapWithKey (view' fig.fieldIndex options) ρ
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
    unused = keys fig.ι \\ keys ι
    prefix = divId <> "-" <> str.intermediate

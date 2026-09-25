@@ -1,9 +1,9 @@
 @dataclass
 class Base:
-  x: Any
+  x: int
 
 @dataclass
 class Sub(Base):
-  x: Any
+  x: int
 
 return 0

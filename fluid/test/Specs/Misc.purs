@@ -85,6 +85,7 @@ misc_cases =
    , { file: "piecewise_def.fld", fwd_expect: "3" }
    , { file: "prefix_op.fld", fwd_expect: "True" }
    , { file: "purepy/assert_stmt.fld", fwd_expect: "10" }
+   , { file: "purepy/assign_annotation.fld", fwd_expect: "11" }
    , { file: "purepy/assert_msg_lazy.fld", fwd_expect: "5" }
    , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/branch_local.fld", fwd_expect: "6" }
@@ -94,6 +95,8 @@ misc_cases =
    , { file: "purepy/dataclass_attr.fld", fwd_expect: "7" }
    , { file: "purepy/dataclass_construct.fld", fwd_expect: "Coord(3, 4)" }
    , { file: "purepy/dataclass_decl.fld", fwd_expect: "42" }
+   , { file: "purepy/dataclass_field_types.fld", fwd_expect: "3" }
+   , { file: "purepy/def_annotations.fld", fwd_expect: "(12, (\"a\", 5))" }
    , { file: "purepy/early_return.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/elif_no_else.fld", fwd_expect: "3" }
    , { file: "purepy/expr_stmt.fld", fwd_expect: "6" }

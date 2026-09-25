@@ -1,7 +1,7 @@
 @dataclass
 class Point:
-  x: Any
-  y: Any
-  z: Any
+  x: int
+  y: int
+  z: int
 
 Point(1, z=3, y=2)

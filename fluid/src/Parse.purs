@@ -10,6 +10,7 @@ import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
 import Bind (Bind, Name, varAnon, (↦))
 import Data.Either (Either(..))
+import Data.Foldable (foldl)
 import Data.Identity (Identity)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList(..), cons, last, toList)
@@ -18,8 +19,9 @@ import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
 import Data.Traversable (foldr)
-import DataType (cCons, cNone, cPair)
+import DataType (cCons, cPair)
 import Lattice (Raw)
+import Literal (Literal(..))
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
@@ -30,7 +32,8 @@ import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
 import Expr (Pattern(..))
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import Type (Primitive(..), TypeExpr(..)) as T
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
@@ -39,13 +42,13 @@ pattern = defer \_ -> do
    optionMaybe (reserved "as" *> variable) <#> maybe p (PAs p)
 
 simplePattern :: Parser Pattern
-simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern <|> pLit
+simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    where
    pVar :: Parser Pattern
    pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
 
    pLit :: Parser Pattern
-   pLit = try (float <#> PFloat) <|> (integer <#> PInt) <|> (stringLiteral <#> PStr)
+   pLit = literal <#> PLit
 
    pConstr :: Parser Pattern
    pConstr = defer \_ -> try do
@@ -104,11 +107,61 @@ pConsOp = do
    reservedOperator ":|"
    pure \e e' -> PConstr (singleton (last cCons)) (e : e' : Nil) Nil
 
+typeExpr :: Parser (T.TypeExpr Name)
+typeExpr = defer \_ -> do
+   ψ <- typeAtom
+   ψs <- many (reservedOperator "|" *> typeAtom)
+   pure (foldl T.Union ψ ψs)
+   where
+   typeAtom :: Parser (T.TypeExpr Name)
+   typeAtom = defer \_ -> constrType <|> varType
+
+   constrType :: Parser (T.TypeExpr Name)
+   constrType = do
+      prefix <- many (try (variable <* delim '.'))
+      c <- constructor
+      case prefix, c of
+         Nil, "Never" -> pure (T.Primitive T.Never)
+         Nil, "None" -> pure (T.Primitive T.None)
+         Nil, "Sized" -> pure (T.Primitive T.Sized)
+         Nil, "Callable" -> brackets (T.Callable <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
+         Nil, "Literal" -> T.Lit <$> brackets literal
+         _, _ -> pure (T.ClassName (foldr cons (singleton c) prefix))
+
+   varType :: Parser (T.TypeExpr Name)
+   varType = variable >>= case _ of
+      "object" -> pure (T.Primitive T.Object)
+      "bool" -> pure (T.Primitive T.Bool)
+      "int" -> pure (T.Primitive T.Int)
+      "float" -> pure (T.Primitive T.Float)
+      "str" -> pure (T.Primitive T.Str)
+      "list" -> T.List <$> brackets typeExpr
+      "tuple" -> T.Tuple <$> brackets (commas typeExpr)
+      "dict" -> brackets (reserved "str" *> delim ',' *> (T.Dict <$> typeExpr))
+      x -> fail ("Not a type: " <> x)
+
+literal :: Parser Literal
+literal =
+   try (float <#> Float)
+      <|> (integer <#> Int)
+      <|> (stringLiteral <#> Str)
+      <|> try
+         ( constructor >>= case _ of
+              "True" -> pure (Bool true)
+              "False" -> pure (Bool false)
+              "None" -> pure None
+              c -> fail ("Not a literal: " <> c)
+         )
+
 varDef :: Parser (Raw VarDef)
 varDef = do
-   p <- try (pattern <* reservedOperator "=")
+   p × ψ <- try do
+      p <- pattern
+      ψ <- optionMaybe (delim ':' *> typeExpr)
+      reservedOperator "="
+      pure (p × ψ)
    e <- sameOrIndented *> withPos expr
-   pure $ VarDef p e
+   pure $ VarDef p ψ e
 
 varDefs :: Parser (Raw VarDefs)
 varDefs = many1 varDef
@@ -120,7 +173,7 @@ returnStmt :: Parser (Raw Stmt)
 returnStmt = do
    reserved "return"
    e <- optionMaybe (sameOrIndented *> expr)
-   pure $ Return $ fromMaybe (Constr unit (singleton (last cNone)) Nil Nil) e
+   pure $ Return $ fromMaybe (Lit unit None) e
 
 assertStmt :: Parser (Raw Stmt)
 assertStmt = do
@@ -194,9 +247,8 @@ dataclassStmt = do
       fieldDecl = do
          x <- variable
          delim ':'
-         t <- constructor
-         unless (t == "Any") $ fail $ "Field type must be Any, got: " <> t
-         pure x
+         ψ <- typeExpr
+         pure (x × ψ)
    xs <- block ((reserved "pass" $> Nil) <|> (toList <$> many1 (align fieldDecl)))
    pure $ Dataclass c b xs
 
@@ -205,11 +257,15 @@ recDefs = many1 recDef
    where
    recDef :: Parser (Raw Branch)
    recDef = do
-      p <- try (reserved "def" *> variable <* delim '(')
-      ps0 <- commas pattern
+      f <- try (reserved "def" *> variable <* delim '(')
+      ps <- commas param
       delim ')'
-      b <- blockBody
-      pure $ p × Clause unit (ps0 × b)
+      ψ <- optionMaybe (reservedOperator "->" *> typeExpr)
+      s <- blockBody
+      pure $ f × Clause unit (ps × ψ × s)
+
+   param :: Parser Param
+   param = Param <$> pattern <*> optionMaybe (delim ':' *> typeExpr)
 
 expr :: Parser (Raw Expr)
 expr = context "expr" $ cond <?> "expression"
@@ -310,12 +366,11 @@ expr = context "expr" $ cond <?> "expression"
             <|> lambda
             <|> dict
             <|> paragraph
-            <|> str
+            <|> lit
             <|> constr
             <|> var
             <|> parensExpr
             <|> docExpr
-            <|> number
                <?> "simple expression"
          where
 
@@ -336,11 +391,8 @@ expr = context "expr" $ cond <?> "expression"
             c <- constructor
             pure (Constr unit (foldr cons (singleton c) prefix) Nil Nil)
 
-         number :: Parser (Raw Expr)
-         number = try (float <#> Float unit) <|> (integer <#> Int unit)
-
-         str :: Parser (Raw Expr)
-         str = stringLiteral <#> Str unit
+         lit :: Parser (Raw Expr)
+         lit = literal <#> Lit unit
 
          paragraph :: Parser (Raw Expr)
          paragraph = do
@@ -431,7 +483,7 @@ expr = context "expr" $ cond <?> "expression"
                                     p <- pattern
                                     delim ':'
                                     e' <- opTree
-                                    pure $ ListCompDecl (VarDef p e')
+                                    pure $ ListCompDecl (VarDef p Nothing e')
                                , context "listCompGen" do
                                     reserved "for"
                                     p <- pattern
