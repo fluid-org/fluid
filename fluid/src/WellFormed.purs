@@ -1,6 +1,6 @@
 module WellFormed where
 
-import Prelude hiding (absurd)
+import Prelude
 
 import Bind (Name, Var, dottedName, prefixOf, properPrefixOf)
 import Control.Monad.Error.Class (throwError)
@@ -32,7 +32,7 @@ import Expr (Pattern(..)) as S
 import Lattice (Raw)
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Type as T
-import Util (type (×), absurd, checkDistinct, error, singleton, whenever, (×), (∩))
+import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
 -- Member context of a loaded module and its checked body. The program is
@@ -327,11 +327,10 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
 
 -- Type expression resolved to a type. The spec also requires each predefined type name to be
 -- bound in the context; Fluid has no such entries yet.
-resolveType :: Cxt -> T.Type -> Either String T.Type
+resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
 resolveType cxt = go
    where
-   go (T.ClassName q) = T.Class <$> className cxt q
-   go (T.Class _) = error absurd
+   go (T.ClassName q) = T.ClassName <$> className cxt q
    go (T.List ψ) = T.List <$> go ψ
    go (T.Tuple ψs) = T.Tuple <$> traverse go ψs
    go (T.Dict ψ) = T.Dict <$> go ψ

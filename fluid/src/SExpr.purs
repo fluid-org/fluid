@@ -79,7 +79,7 @@ data Stmt a
    | ExprStmt (Expr a)
    | Assert (Expr a) (Maybe (Expr a))
    | Seq (Stmt a) (Stmt a)
-   | Dataclass Var (Maybe Var) (List (Var × T.Type))
+   | Dataclass Var (Maybe Var) (List (Var × T.TypeExpr Name))
 
 data Import = Import Name (Maybe (List Var))
 
@@ -87,10 +87,10 @@ data Import = Import Name (Maybe (List Var))
 type Case a = Pattern × Stmt a
 
 -- Parameter with optional annotation; the spec requires the annotation and has only variables.
-data Param = Param Pattern (Maybe T.Type)
+data Param = Param Pattern (Maybe (T.TypeExpr Name))
 
 -- Parameters, return annotation and body of a def clause.
-data Clause a = Clause a (List Param × Maybe T.Type × Stmt a)
+data Clause a = Clause a (List Param × Maybe (T.TypeExpr Name) × Stmt a)
 
 type Branch a = Var × Clause a
 newtype Clauses a = Clauses (NonEmptyList (Clause a))
@@ -102,7 +102,7 @@ newtype RecDef a = RecDef (NonEmptyList (Branch a))
 type RecDefs a = NonEmptyList (Branch a)
 
 -- The pattern/expr relationship is different to the one in branch (the expr is the "argument", not the "body").
-data VarDef a = VarDef Pattern (Maybe T.Type) (Expr a)
+data VarDef a = VarDef Pattern (Maybe (T.TypeExpr Name)) (Expr a)
 type VarDefs a = NonEmptyList (VarDef a)
 
 data Qualifier a
@@ -156,7 +156,7 @@ moduleFwd (Module is ss) = E.Module (importFwd <$> is) <$> traverse stmtFwd ss
    importFwd (Import q f) = E.Import q f
 
 varDefFwd :: forall m. HasClasses m => MonadError Error m => VarDef (WfResult VarCxt) -> m (E.Stmt (WfResult VarCxt))
-varDefFwd (VarDef p ψ s) = E.Assign <$> patternFwd p <@> ψ <*> desug s
+varDefFwd (VarDef p ψ s) = E.Assign <$> patternFwd p <@> (typeFwd <$> ψ) <*> desug s
 
 recDefsFwd :: forall m. HasClasses m => MonadError Error m => RecDefs (WfResult VarCxt) -> m (E.RecDefs (WfResult VarCxt))
 recDefsFwd xcs = do
@@ -298,6 +298,10 @@ positionaliseKw classes c n xbs = do
       unsafePartial $ case find (\(k ↦ _) -> k == f) xbs of
          Just (_ ↦ b) -> b
 
+-- Class names are fully qualified by well-formedness.
+typeFwd :: T.TypeExpr Name -> T.Type
+typeFwd = map T.Class
+
 -- Keyword sub-patterns positionalised; list patterns as Nil and Cons.
 patternFwd :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
 patternFwd (PConstr c ps xps) = do
@@ -317,7 +321,7 @@ clausesFwd
    :: forall m
     . HasClasses m
    => MonadError Error m
-   => NonEmptyList (List Param × Maybe T.Type × Stmt (WfResult VarCxt))
+   => NonEmptyList (List Param × Maybe (T.TypeExpr Name) × Stmt (WfResult VarCxt))
    -> m (E.Def (WfResult VarCxt))
 clausesFwd clauses = do
    let n = length (fst (head clauses)) :: Int
@@ -340,13 +344,13 @@ clausesFwd clauses = do
             e = foldr1 (\e1 e2 -> E.Constr Returns cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
             bs = NonEmptyList.zipWith (\ps s -> foldr1 (\p p' -> PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s) (nonEmpty pss) ss
          pure (E.Match e bs)
-   pure (E.Def (zipWith E.Param (fst <$> named) ψs) ψ body)
+   pure (E.Def (zipWith E.Param (fst <$> named) (map typeFwd <$> ψs)) (typeFwd <$> ψ) body)
    where
    sharedVar :: List Pattern -> Maybe Var
    sharedVar (PVar x : ps) | all (_ == PVar x) ps = Just x
    sharedVar _ = Nothing
 
-   signature :: String -> NonEmptyList (Maybe T.Type) -> m (Maybe T.Type)
+   signature :: String -> NonEmptyList (Maybe (T.TypeExpr Name)) -> m (Maybe (T.TypeExpr Name))
    signature what ψs
       | all (\ψ -> ψ == Nothing || ψ == head ψs) (tail ψs) = pure (head ψs)
       | otherwise = throw ("Clauses differ in " <> what)

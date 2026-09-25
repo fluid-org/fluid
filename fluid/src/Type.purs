@@ -9,6 +9,7 @@ import Data.Generic.Rep (class Generic)
 import Data.List (List, length, zipWith)
 import Data.Map (lookup)
 import Data.Maybe (maybe)
+import Data.Newtype (class Newtype)
 import Data.Show.Generic (genericShow)
 import DataType (ClassTable)
 import DefiniteAssignment (ancestors)
@@ -26,17 +27,20 @@ data Primitive
    | Str
    | Sized
 
--- Type expressions ψ. A type is a type expression whose class names are resolved to classes.
-data Type
+-- Type expressions ψ over class references c: a name in source, a class once resolved.
+data TypeExpr c
    = Primitive Primitive
-   | List Type
-   | Tuple (List Type)
-   | Dict Type
-   | Callable (List Type) Type
+   | List (TypeExpr c)
+   | Tuple (List (TypeExpr c))
+   | Dict (TypeExpr c)
+   | Callable (List (TypeExpr c)) (TypeExpr c)
    | Lit Literal
-   | ClassName Name
-   | Class Name -- class by fully qualified name; doesn't occur in source text
-   | Union Type Type
+   | ClassName c
+   | Union (TypeExpr c) (TypeExpr c)
+
+newtype Class = Class Name
+
+type Type = TypeExpr Class
 
 baseType :: Type -> Type
 baseType (Lit (L.Int _)) = Primitive Int
@@ -57,7 +61,7 @@ subtype classes σ τ
            _, Union τ1 τ2 -> subtype classes σ τ1 || subtype classes σ τ2
            Lit _, _ -> subtype classes (baseType σ) τ
            Primitive Int, Primitive Float -> true
-           Class c, Class d -> maybe false (elem d <<< ancestors) (lookup (dottedName c) classes)
+           ClassName (Class c), ClassName (Class d) -> maybe false (elem d <<< ancestors) (lookup (dottedName c) classes)
            _, Primitive Sized -> sized σ
            List σ', List τ' -> equiv classes σ' τ'
            Dict σ', Dict τ' -> equiv classes σ' τ'
@@ -81,7 +85,7 @@ join classes σ τ
    | subtype classes τ σ = σ
    | otherwise = Union σ τ
 
-joins :: ClassTable -> List Type -> Type
+joins :: ClassTable -> List (Type) -> Type
 joins classes = foldr (join classes) (Primitive Never)
 
 derive instance Eq Primitive
@@ -89,7 +93,14 @@ derive instance Generic Primitive _
 instance Show Primitive where
    show = genericShow
 
-derive instance Eq Type
-derive instance Generic Type _
-instance Show Type where
+derive instance Functor TypeExpr
+derive instance Eq c => Eq (TypeExpr c)
+derive instance Generic (TypeExpr c) _
+instance Show c => Show (TypeExpr c) where
    show x = genericShow x
+
+derive instance Newtype Class _
+derive instance Eq Class
+derive instance Generic Class _
+instance Show Class where
+   show = genericShow

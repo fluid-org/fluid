@@ -223,16 +223,21 @@ instance Ann a => Pretty (Stmt a) where
          Nil -> text "pass"
          _ -> vsep ((\(x × ψ) -> text x <> text ":" <+> pretty ψ) <$> xs)
 
-instance Pretty T.Type where
+instance Pretty c => Pretty (T.TypeExpr c) where
    pretty (T.Primitive ν) = pretty ν
    pretty (T.List ψ) = text "list" <> brackets (pretty ψ)
    pretty (T.Tuple ψs) = text "tuple" <> brackets (prettyList ψs)
    pretty (T.Dict ψ) = text "dict" <> brackets (text "str," <+> pretty ψ)
    pretty (T.Callable ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
    pretty (T.Lit ℓ) = text "Literal" <> brackets (pretty ℓ)
-   pretty (T.ClassName q) = text (dottedName q)
-   pretty (T.Class q) = text "~" <> text (dottedName q)
+   pretty (T.ClassName c) = pretty c
    pretty (T.Union ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
+
+instance Pretty T.Class where
+   pretty (T.Class q) = text "~" <> text (dottedName q)
+
+instance Pretty (NonEmptyList String) where
+   pretty = text <<< dottedName
 
 instance Pretty T.Primitive where
    pretty T.Object = text "object"
@@ -258,10 +263,10 @@ instance Ann a => Pretty (Clause a) where
 instance Pretty Param where
    pretty (Param p ψ) = pretty p <> annot ψ
 
-annot :: Maybe T.Type -> Doc
+annot :: forall c. Pretty c => Maybe (T.TypeExpr c) -> Doc
 annot = maybe mempty \ψ -> text ":" <+> pretty ψ
 
-returnAnnot :: Maybe T.Type -> Doc
+returnAnnot :: forall c. Pretty c => Maybe (T.TypeExpr c) -> Doc
 returnAnnot = maybe mempty \ψ -> text " ->" <+> pretty ψ
 
 instance Ann a => Pretty (LambdaClause a) where
