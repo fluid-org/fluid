@@ -1,0 +1,7 @@
+def f() -> int:
+  @dataclass
+  class C:
+    a: int
+  return 0
+
+return f()

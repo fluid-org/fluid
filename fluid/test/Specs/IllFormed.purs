@@ -34,6 +34,7 @@ purepy_cases =
    , { file: "purepy/forward_class_top.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module module.two_vals_lib" }
    , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected bool" }
+   , { file: "purepy/nested_class.fld", expected_error: "Class declaration not at top level: C" }
    , { file: "purepy/import_in_def.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_if.fld", expected_error: "\"ParseError on line 2, column 10:\\nimports must precede statements\"" }
    , { file: "purepy/import_in_match_case.fld", expected_error: "\"ParseError on line 3, column 12:\\nimports must precede statements\"" }
@@ -65,7 +66,7 @@ purepy_cases =
 illFormed_cases :: Array IllFormedSpec
 illFormed_cases =
    [ { file: "bare_module.fld", expected_error: "module qual_lib is not a value" }
-   , { file: "capture_redefined_class.fld", expected_error: "Captured variable reassigned: C" }
+   , { file: "capture_redefined_class.fld", expected_error: "Duplicate class declaration: C" }
    , { file: "constr_dup_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"x\" : \"y\" : Nil), got (\"x\" : \"x\" : \"y\" : Nil)" }
    , { file: "construct_non_leaf.fld", expected_error: "Cannot construct non-leaf class: Base" }
    , { file: "dict_attr.fld", expected_error: "Found { a: 1 }, expected object" }

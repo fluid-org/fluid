@@ -58,8 +58,7 @@ checkProgram mods primitivesCxt imports s =
       _ × cxt_imp <- checkImports mainModule imports
       -- Unlike a module (checkStatements), the program may return: a top-level return yields
       -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
-      _ × s' <- lift (wellFormed mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
-      decls <- lift (classes mainModule s)
+      decls × _ × s' <- lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
       modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
       pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
@@ -71,20 +70,17 @@ checkProgram mods primitivesCxt imports s =
          mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
          importCxt × cxt_imp <- checkImports q is
          δ × mod' <- lift (checkStatements q cxt_imp mod)
-         decls <- lift (classesOfModule q mod)
          let subs = submodules (Map.keys mods) q
-         let clash = (Map.keys importCxt ∪ Map.keys δ ∪ Map.keys decls) ∩ Map.keys subs
+         let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
          when (not Set.isEmpty clash)
             $ throwError
             $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
          when (q == builtins) do
-            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys decls ∪ Map.keys subs)
+            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys subs)
             when (not (Set.isEmpty primitiveClash))
                $ throwError
                $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable primitiveClash :: List Var)
-         let
-            cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` (Class <$> decls) `Map.union`
-               (VarStatus <$> δ)
+         let cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` δ
          modify_ (Map.insert q { cxt, mod: Just mod' })
          pure cxt
 
@@ -138,21 +134,17 @@ submodules modules q = Map.fromFoldable (mapMaybe sub (Set.toUnfoldable modules)
    where
    sub m = let { init, last: x } = NEL.unsnoc m in whenever (NEL.fromList init == Just q) (x × Mod m)
 
-classesOfModule :: forall a. Name -> S.Module a -> Either String (Map.Map Var ClassEntry)
-classesOfModule q (S.Module _ ss) =
-   case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
-      Nothing -> pure Map.empty
-      Just s -> classes q s
-
-checkStatements :: Name -> Cxt -> Raw S.Module -> Either String (VarCxt × S.Module (WfResult VarCxt))
+-- Signature of module q: its classes and definitely assigned variables, with __name__.
+checkStatements :: Name -> Cxt -> Raw S.Module -> Either String (Cxt × S.Module (WfResult VarCxt))
 checkStatements q cxt_imp (S.Module imports ss) =
    case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
-      Nothing -> pure (Map.singleton "__name__" true × S.Module imports Nil)
+      Nothing -> pure (Map.singleton "__name__" (VarStatus true) × S.Module imports Nil)
       Just s -> do
-         r × s' <- wellFormed q (Map.insert "__name__" (VarStatus true) cxt_imp) s
+         decls × r × s' <- wellFormedTop q (Map.insert "__name__" (VarStatus true) cxt_imp) s
          case r of
             Returns -> throwError "Module body cannot return"
-            Assigns δ -> pure (Map.insert "__name__" true δ × S.Module imports (unSeq s'))
+            Assigns δ ->
+               pure (Map.insert "__name__" (VarStatus true) (Map.union (Class <$> decls) (VarStatus <$> δ)) × S.Module imports (unSeq s'))
    where
    unSeq (S.Seq s1 s2) = s1 : unSeq s2
    unSeq s = s : Nil
@@ -160,15 +152,6 @@ checkStatements q cxt_imp (S.Module imports ss) =
 -- Entry program's module (spec entry point E; its __name__ is "__main__").
 mainModule :: Name
 mainModule = pure "__main__"
-
-classes :: forall a. Name -> S.Stmt a -> Either String (Map.Map Var ClassEntry)
-classes q = go Map.empty
-   where
-   go acc (S.Dataclass c b xs)
-      | Map.member c acc = throwError $ "Duplicate class declaration: " <> c
-      | otherwise = pure (Map.insert c { cxt: Class <$> acc, name: NEL.snoc q c, base: b, fields: fst <$> xs } acc)
-   go acc (S.Seq s1 s2) = go acc s1 >>= \acc' -> go acc' s2
-   go acc _ = pure acc
 
 assigns :: forall a. S.Stmt a -> Set Var
 assigns S.Pass = Set.empty
@@ -278,9 +261,7 @@ wellFormed q cxt (S.Seq s1 s2) = do
       Assigns δ -> do
          for_ (Set.toUnfoldable (captures s1 `Set.intersection` assigns s2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         decls <- classes q s1
-         let cxt' = Map.union (Class <$> (decls <#> _ { cxt = cxt })) (cxt `extendCxt` δ)
-         r2 × s2' <- wellFormed q cxt' s2
+         r2 × s2' <- wellFormed q (cxt `extendCxt` δ) s2
          pure (overrideRes r1 r2 × S.Seq s1' s2')
 wellFormed q cxt (S.If es elseBranch) = do
    es' <- traverse
@@ -309,7 +290,11 @@ wellFormed q cxt (S.Match e bs) = do
       S.PVar _ -> Returns
       S.PWild -> Returns
       _ -> Assigns Map.empty
-wellFormed q cxt (S.Dataclass c b xψs) = do
+wellFormed _ _ (S.Dataclass c _ _) = throwError $ "Class declaration not at top level: " <> c
+
+-- Top-level statement t of module q: the classes it declares, keyed by local name, and its outcome.
+wellFormedTop :: forall a. Name -> Cxt -> S.Stmt a -> Either String (Map.Map Var ClassEntry × WfResult VarCxt × S.Stmt (WfResult VarCxt))
+wellFormedTop q cxt (S.Dataclass c b xψs) = do
    let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
    xτs <- traverse (traverse (resolveType cxt)) xψs
@@ -323,7 +308,21 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Assigns Map.empty × S.Dataclass c b xτs)
+   pure (Map.singleton c { cxt, name: NEL.snoc q c, base: b, fields: xs } × Assigns Map.empty × S.Dataclass c b xτs)
+wellFormedTop q cxt (S.Seq t1 t2) = do
+   decls1 × r1 × t1' <- wellFormedTop q cxt t1
+   case r1 of
+      Returns -> throwError "Unreachable statement"
+      Assigns δ -> do
+         for_ (Set.toUnfoldable (captures t1 `Set.intersection` assigns t2) :: Array Var) \x ->
+            throwError $ "Captured variable reassigned: " <> x
+         for_ (Set.toUnfoldable (Map.keys decls1 `Set.intersection` assigns t2) :: Array Var) \c ->
+            throwError $ "Duplicate class declaration: " <> c
+         decls2 × r2 × t2' <- wellFormedTop q (Map.union (Class <$> decls1) (cxt `extendCxt` δ)) t2
+         pure (Map.union decls2 decls1 × overrideRes r1 r2 × S.Seq t1' t2')
+wellFormedTop q cxt s = do
+   r × s' <- wellFormed q cxt s
+   pure (Map.empty × r × s')
 
 resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
 resolveType cxt = traverse (className cxt)
