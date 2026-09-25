@@ -20,6 +20,7 @@ import Dict (Dict)
 import Effect (Effect, foreachE)
 import Util (type (×), absurd, error, length, nonEmpty, (!), (×))
 import Util.Map (get, keys)
+import Literal as L
 import Val (Array2, BaseVal(..), Val(..))
 
 type Record' = Array (Val (SelStates 𝕊)) -- somewhat anomalous, as elsewhere we have Selectables
@@ -59,9 +60,9 @@ visible filter (Val α _ _) = visible' filter α
 
 prim :: Val (SelStates 𝕊) -> String
 prim (Val _ _ v) = v # case _ of
-   Int n -> show n
-   Float n -> toStringWith (fixed 2) n
-   Str s -> s
+   Lit (L.Int n) -> show n
+   Lit (L.Float n) -> toStringWith (fixed 2) n
+   Lit (L.Str s) -> s
    _ -> error $ "TableView only supports primitive values."
 
 data BorderVis = Transparent | Faint

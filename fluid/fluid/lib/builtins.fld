@@ -1,24 +1,4 @@
 @dataclass
-class Bool:
-  pass
-
-@dataclass
-class True(Bool):
-  pass
-
-@dataclass
-class False(Bool):
-  pass
-
-@dataclass
-class NoneType:
-  pass
-
-@dataclass
-class None(NoneType):
-  pass
-
-@dataclass
 class List:
   pass
 

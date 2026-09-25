@@ -3,7 +3,7 @@ module Val where
 import Prelude hiding (absurd, append)
 
 import Bind (Name, Var)
-import DataType (class HasClasses, cFalse, cNone, cTrue)
+import DataType (class HasClasses)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except (ExceptT)
@@ -17,7 +17,6 @@ import Data.Map as Map
 import Data.Array (zipWith) as A
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
-import Data.Int (toNumber)
 import Data.List (List(..), (:), zipWith)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -36,7 +35,6 @@ import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexDa
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
-import Literal as L
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
 import Util (class IsEmpty, type (×), Endo, definitely, error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -56,9 +54,7 @@ asAssigns (Assigns ρ αs) = ρ × αs
 asAssigns (Returns _) = error "Assigns expected"
 
 data BaseVal a
-   = Int Int
-   | Float Number
-   | Str String
+   = Lit Literal
    | Constr Name (List (Val a)) -- always saturated
    | Dictionary (DictRep a)
    | Matrix (MatrixRep a)
@@ -66,23 +62,6 @@ data BaseVal a
 
 val :: forall m. MonadWithGraphAlloc m => Maybe (Val Vertex) -> Set Vertex -> BaseVal Vertex -> m (Val Vertex)
 val doc_opt = new (flip Val doc_opt)
-
-literalVal :: forall a. Literal -> BaseVal a
-literalVal (L.Int n) = Int n
-literalVal (L.Float x) = Float x
-literalVal (L.Str s) = Str s
-literalVal (L.Bool b) = Constr (if b then cTrue else cFalse) Nil
-literalVal L.None = Constr cNone Nil
-
-literalMatches :: forall a. Literal -> BaseVal a -> Boolean
-literalMatches (L.Int n) (Float x) = toNumber n == x
-literalMatches (L.Float x) (Int n) = x == toNumber n
-literalMatches ℓ v = case literalVal ℓ, v of
-   Int n, Int n' -> n == n'
-   Float x, Float x' -> x == x'
-   Str s, Str s' -> s == s'
-   Constr c Nil, Constr c' Nil -> c == c'
-   _, _ -> false
 
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
@@ -263,9 +242,7 @@ instance Apply Val where
    apply _ _ = shapeMismatch unit
 
 instance Apply BaseVal where
-   apply (Int n) (Int n') = Int (n ≜ n')
-   apply (Float n) (Float n') = Float (n ≜ n')
-   apply (Str s) (Str s') = Str (s ≜ s')
+   apply (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    apply (Constr c fes) (Constr c' es) = Constr (c ≜ c') (zipWith (<*>) fes es)
    apply (Dictionary fxvs) (Dictionary xvs) = Dictionary (fxvs <*> xvs)
    apply (Matrix fm) (Matrix m) = Matrix (fm <*> m)
@@ -334,9 +311,7 @@ instance JoinSemilattice a => JoinSemilattice (Val a) where
 -- Not equivalent to sequence (join <$> x <*> y) because Dict.join only requires compatibility
 -- whereas Dict.apply requires domains to be equal.
 instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
-   join (Int n) (Int n') = Int (n ≜ n')
-   join (Float n) (Float n') = Float (n ≜ n')
-   join (Str s) (Str s') = Str (s ≜ s')
+   join (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    join (Dictionary d) (Dictionary d') = Dictionary (d ∨ d')
    join (Constr c vs) (Constr c' us) = Constr (c ≜ c') (vs ∨ us)
    join (Matrix m) (Matrix m') = Matrix (m ∨ m')
@@ -374,9 +349,7 @@ instance BoundedJoinSemilattice a => Expandable (Val a) (Raw Val) where
    expand (Val α doc u) (Val _ doc' v) = Val α (expand doc doc') (expand u v)
 
 instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
-   expand (Int n) (Int n') = Int (n ≜ n')
-   expand (Float n) (Float n') = Float (n ≜ n')
-   expand (Str s) (Str s') = Str (s ≜ s')
+   expand (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    expand (Dictionary d) (Dictionary d') = Dictionary (expand d d')
    expand (Constr c vs) (Constr c' us) = Constr (c ≜ c') (expand vs us)
    expand (Matrix m) (Matrix m') = Matrix (expand m m')
@@ -418,9 +391,7 @@ instance Vertices (Val Vertex) where
    vertices v@(Val α _ v') = singleton (DVertex (α × pack v)) ∪ vertices v'
 
 instance Vertices (BaseVal Vertex) where
-   vertices (Int _) = empty
-   vertices (Float _) = empty
-   vertices (Str _) = empty
+   vertices (Lit _) = empty
    vertices (Constr _ vs) = unions (vertices <$> vs)
    vertices (Dictionary d) = vertices d
    vertices (Matrix m) = vertices m

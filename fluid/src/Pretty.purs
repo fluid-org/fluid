@@ -395,9 +395,7 @@ instance Highlightable a => Pretty (Var × (a × Val a)) where
    pretty (k × (a × v)) = highlightIf a (pretty k) <> text ":" <+> pretty v -- ???
 
 instance Highlightable a => Pretty (BaseVal a) where
-   pretty (V.Int n) = number n
-   pretty (V.Float n) = number n
-   pretty (V.Str str) = string str
+   pretty (V.Lit ℓ) = pretty ℓ
    pretty (V.Dictionary (DictRep svs))
       | isEmpty svs = text "{}"
       | otherwise = record (pretty <$> (toUnfoldable svs))

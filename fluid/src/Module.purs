@@ -38,6 +38,7 @@ import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
 import Util.Set (empty, (∪))
 import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env)
 import Val (BaseVal(..)) as V
+import Literal as L
 
 type Config = { s :: Raw S.Stmt, e :: Raw Stmt, gconfig :: GraphConfig }
 
@@ -118,7 +119,7 @@ allocTopLevel primitives mods imports = do
                  ρ0 <- foldM (loadPredefined primitives') empty predefined
                  modifyModuleStore (_ { ρ0 = ρ0 })
                  ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0 imports
-                 vName <- val Nothing Set.empty (V.Str "__main__")
+                 vName <- val Nothing Set.empty (V.Lit (L.Str "__main__"))
                  pure (ρ1 <+> maplet "__name__" vName)
             )
             (vertices primitives' ∪ mαs) :: AllocT m (GraphImpl × _)

@@ -31,6 +31,8 @@ import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVe
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
+import Literal (eqLiteral)
+import Literal as L
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, builtins)
 import Pretty (prettyP)
@@ -41,7 +43,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, literalMatches, literalVal, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -55,7 +57,11 @@ patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the vertices of the value that matching inspected.
 matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
-matches (Val α _ u) (PLit ℓ) = guard (literalMatches ℓ u) $> (empty × Set.singleton α)
+matches (Val α _ u) (PLit ℓ) = guard eq $> (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Lit ℓ' -> eqLiteral ℓ ℓ'
+      _ -> false
 matches v (PVar x)
    | x == varAnon = pure (empty × empty)
    | otherwise = pure (maplet x v × empty)
@@ -166,7 +172,7 @@ eval doc_opt ρ e0 αs = do
             v <- eval Nothing ρ e αs
             v' <- eval Nothing ρ e' αs
             case v, v' of
-               Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Str s) ->
+               Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (L.Str s)) ->
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
                Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected str"
                _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected dict"
@@ -245,7 +251,7 @@ evalStmt doc_opt ρ s αs = case s of
             Val _ _ w <- eval Nothing ρ e' (insert α αs)
             throw
                ( "AssertionError: " <> case w of
-                    V.Str str -> str
+                    V.Lit (L.Str str) -> str
                     _ -> prettyP (unit <$ w)
                )
    Seq s1 s2 -> do
@@ -267,7 +273,7 @@ evalVal
    -> Set Vertex
    -> m (Maybe (Vertex × BaseVal Vertex))
 evalVal _ (Lit α ℓ) _ =
-   pure $ Just (α × literalVal ℓ)
+   pure $ Just (α × V.Lit ℓ)
 evalVal ρ (Dictionary α ees) αs = do
    vs × us <- traverse (traverse (flip (eval Nothing ρ) αs)) ees <#> P.unzip
    ss × βs <- traverse (unpack string >>> orThrow) vs <#> unzip
@@ -285,7 +291,7 @@ evalVal ρ (Matrix α e (x × y) e') αs = do
       i <- 0 .. (i' - 1)
       singleton $ sequence do
          j <- 0 .. (j' - 1)
-         let ρ' = maplet x (Val β Nothing (V.Int i)) `unionWith_never` (maplet y (Val β' Nothing (V.Int j)))
+         let ρ' = maplet x (Val β Nothing (V.Lit (L.Int i))) `unionWith_never` (maplet y (Val β' Nothing (V.Lit (L.Int j))))
          singleton (eval Nothing (ρ <+> ρ') e αs)
    pure $ Just (α × V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
 evalVal ρ (Lambda α d) _ =
@@ -307,7 +313,7 @@ eval_module
    -> m (Env Vertex)
 eval_module ρ0 q (Module is ss0) αs0 = do
    ρ_imp <- foldM (evalImport q) ρ0 is
-   v_name <- val Nothing empty (V.Str (dottedName q))
+   v_name <- val Nothing empty (V.Lit (L.Str (dottedName q)))
    go ρ_imp (maplet "__name__" v_name) ss0 αs0
    where
    go :: Env Vertex -> Env Vertex -> List (Stmt Vertex) -> Set Vertex -> m (Env Vertex)
