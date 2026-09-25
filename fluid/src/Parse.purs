@@ -34,8 +34,7 @@ import Parsing.String (eof, satisfy)
 import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
 import Expr (Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
-import TypeExpr (TypeExpr)
-import TypeExpr (Primitive(..), TypeExpr(..)) as T
+import Type (Primitive(..), Type(..)) as T
 import Util (type (+), type (×), error, nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
@@ -109,16 +108,16 @@ pConsOp = do
    reservedOperator ":|"
    pure \e e' -> PConstr (singleton (last cCons)) (e : e' : Nil) Nil
 
-typeExpr :: Parser TypeExpr
+typeExpr :: Parser T.Type
 typeExpr = defer \_ -> do
    ψ <- typeAtom
    ψs <- many (reservedOperator "|" *> typeAtom)
    pure (foldl T.Union ψ ψs)
    where
-   typeAtom :: Parser TypeExpr
+   typeAtom :: Parser T.Type
    typeAtom = defer \_ -> constrType <|> varType
 
-   constrType :: Parser TypeExpr
+   constrType :: Parser T.Type
    constrType = do
       prefix <- many (try (variable <* delim '.'))
       c <- constructor
@@ -130,7 +129,7 @@ typeExpr = defer \_ -> do
          Nil, "Literal" -> T.Lit <$> brackets literal
          _, _ -> pure (T.ClassName (foldr cons (singleton c) prefix))
 
-   varType :: Parser TypeExpr
+   varType :: Parser T.Type
    varType = variable >>= case _ of
       "object" -> pure (T.Primitive T.Object)
       "bool" -> pure (T.Primitive T.Bool)

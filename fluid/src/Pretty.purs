@@ -20,7 +20,7 @@ import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtO
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
 import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
-import TypeExpr as T
+import Type as T
 import Util (type (×), error, isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
@@ -223,7 +223,7 @@ instance Ann a => Pretty (Stmt a) where
          Nil -> text "pass"
          _ -> vsep ((\(x × ψ) -> text x <> text ":" <+> pretty ψ) <$> xs)
 
-instance Pretty T.TypeExpr where
+instance Pretty T.Type where
    pretty (T.Primitive ν) = pretty ν
    pretty (T.List ψ) = text "list" <> brackets (pretty ψ)
    pretty (T.Tuple ψs) = text "tuple" <> brackets (prettyList ψs)
@@ -258,10 +258,10 @@ instance Ann a => Pretty (Clause a) where
 instance Pretty Param where
    pretty (Param p ψ) = pretty p <> annot ψ
 
-annot :: Maybe T.TypeExpr -> Doc
+annot :: Maybe T.Type -> Doc
 annot = maybe mempty \ψ -> text ":" <+> pretty ψ
 
-returnAnnot :: Maybe T.TypeExpr -> Doc
+returnAnnot :: Maybe T.Type -> Doc
 returnAnnot = maybe mempty \ψ -> text " ->" <+> pretty ψ
 
 instance Ann a => Pretty (LambdaClause a) where

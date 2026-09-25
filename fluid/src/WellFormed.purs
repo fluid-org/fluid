@@ -31,8 +31,7 @@ import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
-import TypeExpr (TypeExpr)
-import TypeExpr as T
+import Type as T
 import Util (type (×), absurd, checkDistinct, error, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
@@ -328,7 +327,7 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
 
 -- Type expression resolved to a type. The spec also requires each predefined type name to be
 -- bound in the context; Fluid has no such entries yet.
-resolveType :: Cxt -> TypeExpr -> Either String TypeExpr
+resolveType :: Cxt -> T.Type -> Either String T.Type
 resolveType cxt = go
    where
    go (T.ClassName q) = T.Class <$> className cxt q

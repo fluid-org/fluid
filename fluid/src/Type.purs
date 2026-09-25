@@ -1,6 +1,7 @@
-module TypeExpr where
+module Type where
 
 import Prelude
+import Prim hiding (Type)
 
 import Bind (Name)
 import Data.Generic.Rep (class Generic)
@@ -20,23 +21,23 @@ data Primitive
    | Sized
 
 -- Type expressions ψ. A type is a type expression whose class names are resolved to classes.
-data TypeExpr
+data Type
    = Primitive Primitive
-   | List TypeExpr
-   | Tuple (List TypeExpr)
-   | Dict TypeExpr
-   | Callable (List TypeExpr) TypeExpr
+   | List Type
+   | Tuple (List Type)
+   | Dict Type
+   | Callable (List Type) Type
    | Lit Literal
    | ClassName Name
    | Class Name -- class by fully qualified name; doesn't occur in source text
-   | Union TypeExpr TypeExpr
+   | Union Type Type
 
 derive instance Eq Primitive
 derive instance Generic Primitive _
 instance Show Primitive where
    show = genericShow
 
-derive instance Eq TypeExpr
-derive instance Generic TypeExpr _
-instance Show TypeExpr where
+derive instance Eq Type
+derive instance Generic Type _
+instance Show Type where
    show x = genericShow x

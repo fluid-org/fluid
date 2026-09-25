@@ -19,7 +19,7 @@ import Dict (Dict)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex, pack, vertices)
 import Lattice (class BoundedJoinSemilattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
-import TypeExpr (TypeExpr)
+import Type as T
 import Util (type (×), shapeMismatch, singleton, (×), (≜))
 import Util.Map (keys)
 import Util.Pair (Pair(..))
@@ -51,10 +51,10 @@ data Pattern
    | PAs Pattern Var
 
 -- Parameter with optional annotation; the spec requires the annotation.
-data Param = Param Var (Maybe TypeExpr)
+data Param = Param Var (Maybe T.Type)
 
 -- Parameters, return annotation and body of a function.
-data Def a = Def (List Param) (Maybe TypeExpr) (Stmt a)
+data Def a = Def (List Param) (Maybe T.Type) (Stmt a)
 
 paramVar :: Param -> Var
 paramVar (Param x _) = x
@@ -72,7 +72,7 @@ data Stmt a
    = Return (Expr a)
    | If (NonEmptyList (Branch a)) (Maybe (Stmt a))
    | Match (Expr a) (NonEmptyList (Case a))
-   | Assign Pattern (Maybe TypeExpr) (Expr a) -- assignment to a pattern; the spec has only variables
+   | Assign Pattern (Maybe T.Type) (Expr a) -- assignment to a pattern; the spec has only variables
    | DefRec (RecDefs a)
    | Pass
    | ExprStmt (Expr a)

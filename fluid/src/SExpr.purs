@@ -30,7 +30,7 @@ import Dict as D
 import Effect.Exception (Error)
 import Expr (class BV, class FV, Pattern(..), bv, fv)
 import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
-import TypeExpr (TypeExpr)
+import Type as T
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
 import Util (type (×), checkDistinct, error, nonEmpty, singleton, throw, unimplemented, (×))
@@ -79,7 +79,7 @@ data Stmt a
    | ExprStmt (Expr a)
    | Assert (Expr a) (Maybe (Expr a))
    | Seq (Stmt a) (Stmt a)
-   | Dataclass Var (Maybe Var) (List (Var × TypeExpr))
+   | Dataclass Var (Maybe Var) (List (Var × T.Type))
 
 data Import = Import Name (Maybe (List Var))
 
@@ -87,10 +87,10 @@ data Import = Import Name (Maybe (List Var))
 type Case a = Pattern × Stmt a
 
 -- Parameter with optional annotation; the spec requires the annotation and has only variables.
-data Param = Param Pattern (Maybe TypeExpr)
+data Param = Param Pattern (Maybe T.Type)
 
 -- Parameters, return annotation and body of a def clause.
-data Clause a = Clause a (List Param × Maybe TypeExpr × Stmt a)
+data Clause a = Clause a (List Param × Maybe T.Type × Stmt a)
 
 type Branch a = Var × Clause a
 newtype Clauses a = Clauses (NonEmptyList (Clause a))
@@ -102,7 +102,7 @@ newtype RecDef a = RecDef (NonEmptyList (Branch a))
 type RecDefs a = NonEmptyList (Branch a)
 
 -- The pattern/expr relationship is different to the one in branch (the expr is the "argument", not the "body").
-data VarDef a = VarDef Pattern (Maybe TypeExpr) (Expr a)
+data VarDef a = VarDef Pattern (Maybe T.Type) (Expr a)
 type VarDefs a = NonEmptyList (VarDef a)
 
 data Qualifier a
@@ -317,7 +317,7 @@ clausesFwd
    :: forall m
     . HasClasses m
    => MonadError Error m
-   => NonEmptyList (List Param × Maybe TypeExpr × Stmt (WfResult VarCxt))
+   => NonEmptyList (List Param × Maybe T.Type × Stmt (WfResult VarCxt))
    -> m (E.Def (WfResult VarCxt))
 clausesFwd clauses = do
    let n = length (fst (head clauses)) :: Int
