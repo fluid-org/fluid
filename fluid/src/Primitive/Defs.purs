@@ -37,12 +37,12 @@ import Foreign.Object as FO
 import Graph (Vertex)
 import Graph.WithGraph (class MonadWithGraphAlloc)
 import Lattice (class BoundedJoinSemilattice, Raw, bot)
+import Literal (Literal(..))
 import Primitive (binary, binaryZero, boolean, int, intOrNumber, intOrNumberOrString, number, string, unary, union, union1, unionStr)
 import Util (type (+), type (×), Endo, definitely, definitely', error, singleton, throw, (×))
 import Util.Map (unionWith_never, intersectionWith, lookup, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Literal as L
 import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), matrixGet, matrixPut, val)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
@@ -98,7 +98,7 @@ error_ =
    ForeignOp ("error" × ForeignOp' { arity: 1, op })
    where
    op :: Op
-   op _ (Val _ _ (Lit (L.Str s)) : Nil) = throw s
+   op _ (Val _ _ (Lit (Str s)) : Nil) = throw s
    op _ _ = throw "String expected"
 
 print_ :: ForeignOp
@@ -106,7 +106,7 @@ print_ =
    ForeignOp ("print" × ForeignOp' { arity: 1, op })
    where
    op :: Op
-   op doc_opt (x : Nil) = trace x \_ -> val doc_opt empty (Lit L.None)
+   op doc_opt (x : Nil) = trace x \_ -> val doc_opt empty (Lit None)
    op _ _ = throw "Single argument expected"
 
 loadJson :: ForeignOp
@@ -114,7 +114,7 @@ loadJson =
    ForeignOp ("load_json" × ForeignOp' { arity: 1, op })
    where
    op :: Op
-   op doc_opt (Val _ _ (Lit (L.Str path)) : Nil) = do
+   op doc_opt (Val _ _ (Lit (Str path)) : Nil) = do
       str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
       case parseJson str of
          Left err -> throw ("Failed to parse JSON: " <> show err)
@@ -137,17 +137,17 @@ fromJson doc_opt =
 
    caseBool :: Boolean -> m (Val Vertex)
    caseBool b =
-      val doc_opt empty (Lit (L.Bool b))
+      val doc_opt empty (Lit (Bool b))
 
    caseNumber :: Number -> m (Val Vertex)
    caseNumber n =
       case Int.fromNumber n of
-         Just n' -> val doc_opt empty (Lit (L.Int n'))
-         Nothing -> val doc_opt empty (Lit (L.Float n))
+         Just n' -> val doc_opt empty (Lit (Int n'))
+         Nothing -> val doc_opt empty (Lit (Float n))
 
    caseString :: String -> m (Val Vertex)
    caseString s =
-      val doc_opt empty (Lit (L.Str s))
+      val doc_opt empty (Lit (Str s))
 
    caseArray :: Array Json -> m (Val Vertex)
    caseArray xs = do
@@ -164,7 +164,7 @@ fromJson doc_opt =
    caseObject obj = do
       let kvs = FO.toUnfoldable obj :: Array (String × Json)
       entries <- for kvs \(k × x) -> do
-         Val α _ _ <- val doc_opt empty (Lit (L.Str k))
+         Val α _ _ <- val doc_opt empty (Lit (Str k))
          v <- fromJson Nothing x
          pure (k × α × v)
       val doc_opt empty (Dictionary (DictRep (D.fromFoldable entries)))
@@ -175,8 +175,8 @@ dims =
    where
    op :: Op
    op doc_opt (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) = do
-      v1 <- val Nothing (singleton β1) $ Lit (L.Int i)
-      v2 <- val Nothing (singleton β2) $ Lit (L.Int j)
+      v1 <- val Nothing (singleton β1) $ Lit (Int i)
+      v2 <- val Nothing (singleton β2) $ Lit (Int j)
       val doc_opt (singleton α) $ Constr cPair (v1 : v2 : Nil)
    op _ _ = throw "Matrix expected"
 
@@ -185,7 +185,7 @@ matrixLookup =
    ForeignOp ("!" × ForeignOp' { arity: 2, op })
    where
    op :: Op
-   op _ (Val _ _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (L.Int i)) : Val _ _ (Lit (L.Int j)) : Nil)) : Nil) | c == cPair =
+   op _ (Val _ _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : Nil) | c == cPair =
       pure $ matrixGet i j r
    op _ _ = throw "Matrix and pair of integers expected"
 
@@ -194,7 +194,7 @@ matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, op })
    where
    op :: Op
-   op doc_opt (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (L.Int i)) : Val _ _ (Lit (L.Int j)) : Nil)) : v : Nil)
+   op doc_opt (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
       | c == cPair = val doc_opt (singleton α) (Matrix (matrixPut i j (const v) r))
    op _ _ = throw "Matrix, pair of integers and value expected"
 
@@ -203,8 +203,8 @@ find_str =
    ForeignOp ("find_str" × ForeignOp' { arity: 2, op })
    where
    op :: Op
-   op doc_opt (Val α _ (Lit (L.Str s1)) : Val β _ (Lit (L.Str s2)) : Nil) = do
-      val doc_opt (singleton α # Set.insert β) (Lit (L.Int i))
+   op doc_opt (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) = do
+      val doc_opt (singleton α # Set.insert β) (Lit (Int i))
       where
       i = fromMaybe (-1) (String.indexOf (Pattern s1) s2)
    op _ _ = throw "Two strings expected"
@@ -214,7 +214,7 @@ search =
    ForeignOp ("search" × ForeignOp' { arity: 2, op })
    where
    op :: Op
-   op doc_opt (Val α _ (Lit (L.Str regex)) : Val β _ (Lit (L.Str str)) : Nil) = do
+   op doc_opt (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = do
       case Regex.regex regex noFlags of
          Left msg -> throw $ "Regex expected: " <> msg
          Right regex' -> do
@@ -222,7 +222,7 @@ search =
             case Regex.search regex' str of
                Nothing -> val doc_opt αs (Constr cNothing Nil)
                Just n -> do
-                  v <- val Nothing αs (Lit (L.Int n))
+                  v <- val Nothing αs (Lit (Int n))
                   val doc_opt αs (Constr cJust (v : Nil))
    op _ _ = throw "Two strings expected"
 
@@ -232,10 +232,10 @@ split =
    ForeignOp ("search" × ForeignOp' { arity: 2, op })
    where
    op :: Op
-   op doc_opt (Val α _ (Lit (L.Int n)) : Val β _ (Lit (L.Str str)) : Nil) = do
+   op doc_opt (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) = do
       let αs = singleton α # Set.insert β
-      before <- val Nothing αs $ Lit $ L.Str $ String.take n str
-      after <- val Nothing αs $ Lit $ L.Str $ String.drop n str
+      before <- val Nothing αs $ Lit $ Str $ String.take n str
+      after <- val Nothing αs $ Lit $ Str $ String.drop n str
       val doc_opt αs (Constr cPair (before : after : Nil))
    op _ _ = throw "Int and string expected"
 
@@ -265,7 +265,7 @@ foldl_with_index =
    op doc_opt (v : u : Val _ _ (Dictionary (DictRep d)) : Nil) =
       foldM
          ( \(u1 × doc_opt') (k × (α × u2)) ->
-              G.apply doc_opt' v (Val α Nothing (Lit (L.Str k)) : u1 : u2 : Nil)
+              G.apply doc_opt' v (Val α Nothing (Lit (Str k)) : u1 : u2 : Nil)
                  <#> (_ × Nothing)
          )
          (u × doc_opt)
@@ -281,7 +281,7 @@ get =
    ForeignOp ("get" × ForeignOp' { arity: 2, op })
    where
    op :: Op
-   op doc_opt (Val α _ (Lit (L.Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
+   op doc_opt (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
       case lookup s d of
          Nothing -> val doc_opt (singleton α) (Constr cNothing Nil)
          Just (β × v) -> val doc_opt (Set.insert β (singleton α)) (Constr cJust (v : Nil))
@@ -292,7 +292,7 @@ insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, op })
    where
    op :: Op
-   op doc_opt (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (L.Str k)) : v : Nil) =
+   op doc_opt (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (Str k)) : v : Nil) =
       val doc_opt (singleton α) (Dictionary (DictRep (Map.insert k (α' × v) d)))
    op _ _ = throw "Dictionary, key and value expected"
 
@@ -332,7 +332,7 @@ dict =
       where
       kvs' :: forall m. MonadError Error m => Val Vertex -> m (Set Vertex × List (String × (Vertex × Val Vertex)))
       kvs' (Val α _ (Constr c Nil)) | c == cNil = pure $ singleton α × Nil
-      kvs' (Val α _ (Constr c (Val β' _ (Constr c' (Val β _ (Lit (L.Str k)) : u : Nil)) : v' : Nil)))
+      kvs' (Val α _ (Constr c (Val β' _ (Constr c' (Val β _ (Lit (Str k)) : u : Nil)) : v' : Nil)))
          | c == cCons && c' == cPair = do
               αs' × kvs <- kvs' v'
               pure $ Set.insert α (Set.insert β' αs') × ((k × (β × u)) : kvs)

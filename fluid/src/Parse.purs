@@ -21,8 +21,7 @@ import Data.String.CodeUnits as SCU
 import Data.Traversable (foldr)
 import DataType (cCons, cPair)
 import Lattice (Raw)
-import Literal (Literal)
-import Literal (Literal(..)) as L
+import Literal (Literal(..))
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
@@ -143,14 +142,14 @@ typeExpr = defer \_ -> do
 
 literal :: Parser Literal
 literal =
-   try (float <#> L.Float)
-      <|> (integer <#> L.Int)
-      <|> (stringLiteral <#> L.Str)
+   try (float <#> Float)
+      <|> (integer <#> Int)
+      <|> (stringLiteral <#> Str)
       <|> try
          ( constructor >>= case _ of
-              "True" -> pure (L.Bool true)
-              "False" -> pure (L.Bool false)
-              "None" -> pure L.None
+              "True" -> pure (Bool true)
+              "False" -> pure (Bool false)
+              "None" -> pure None
               c -> fail ("Not a literal: " <> c)
          )
 
@@ -174,7 +173,7 @@ returnStmt :: Parser (Raw Stmt)
 returnStmt = do
    reserved "return"
    e <- optionMaybe (sameOrIndented *> expr)
-   pure $ Return $ fromMaybe (Lit unit L.None) e
+   pure $ Return $ fromMaybe (Lit unit None) e
 
 assertStmt :: Parser (Raw Stmt)
 assertStmt = do

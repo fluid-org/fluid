@@ -31,8 +31,7 @@ import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVe
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
-import Literal (eqLiteral)
-import Literal as L
+import Literal (Literal(..), eqLiteral)
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName, builtins)
 import Pretty (prettyP)
@@ -172,7 +171,7 @@ eval doc_opt ρ e0 αs = do
             v <- eval Nothing ρ e αs
             v' <- eval Nothing ρ e' αs
             case v, v' of
-               Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (L.Str s)) ->
+               Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (Str s)) ->
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
                Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected str"
                _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected dict"
@@ -251,7 +250,7 @@ evalStmt doc_opt ρ s αs = case s of
             Val _ _ w <- eval Nothing ρ e' (insert α αs)
             throw
                ( "AssertionError: " <> case w of
-                    V.Lit (L.Str str) -> str
+                    V.Lit (Str str) -> str
                     _ -> prettyP (unit <$ w)
                )
    Seq s1 s2 -> do
@@ -291,7 +290,7 @@ evalVal ρ (Matrix α e (x × y) e') αs = do
       i <- 0 .. (i' - 1)
       singleton $ sequence do
          j <- 0 .. (j' - 1)
-         let ρ' = maplet x (Val β Nothing (V.Lit (L.Int i))) `unionWith_never` (maplet y (Val β' Nothing (V.Lit (L.Int j))))
+         let ρ' = maplet x (Val β Nothing (V.Lit (Int i))) `unionWith_never` (maplet y (Val β' Nothing (V.Lit (Int j))))
          singleton (eval Nothing (ρ <+> ρ') e αs)
    pure $ Just (α × V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
 evalVal ρ (Lambda α d) _ =
@@ -313,7 +312,7 @@ eval_module
    -> m (Env Vertex)
 eval_module ρ0 q (Module is ss0) αs0 = do
    ρ_imp <- foldM (evalImport q) ρ0 is
-   v_name <- val Nothing empty (V.Lit (L.Str (dottedName q)))
+   v_name <- val Nothing empty (V.Lit (Str (dottedName q)))
    go ρ_imp (maplet "__name__" v_name) ss0 αs0
    where
    go :: Env Vertex -> Env Vertex -> List (Stmt Vertex) -> Set Vertex -> m (Env Vertex)

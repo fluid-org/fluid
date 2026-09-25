@@ -15,7 +15,7 @@ import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
-import Literal as L
+import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Primitive.Parse (getPrec)
@@ -249,13 +249,13 @@ instance Pretty T.Primitive where
    pretty T.Str = text "str"
    pretty T.Sized = text "Sized"
 
-instance Pretty L.Literal where
-   pretty (L.Int n) = number n
-   pretty (L.Float n) = number n
-   pretty (L.Str s) = string s
-   pretty (L.Bool true) = text "True"
-   pretty (L.Bool false) = text "False"
-   pretty L.None = text "None"
+instance Pretty Literal where
+   pretty (Int n) = number n
+   pretty (Float n) = number n
+   pretty (Str s) = string s
+   pretty (Bool true) = text "True"
+   pretty (Bool false) = text "False"
+   pretty None = text "None"
 
 instance Ann a => Pretty (Clause a) where
    pretty (Clause _ (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)

@@ -25,7 +25,7 @@ import Data.Tuple (snd)
 import DataType (FieldIndex, cBarChart, cCons, cLineChart, cLinePlot, cLink, cMultiView, cNil, cParagraph, cScatterPlot, cText, f_caption, f_fragments, f_height, f_label, f_labels, f_legend, f_name, f_plots, f_points, f_segments, f_size, f_stackedBars, f_text, f_tickLabels, f_value, f_views, f_width, f_x, f_y, f_z)
 import Dict (Dict)
 import Link (Link(..))
-import Literal as L
+import Literal (Literal(..))
 import Pretty (prettyP)
 import Primitive (boolean, int, string, typeError)
 import Primitive (unpack') as P
@@ -45,7 +45,7 @@ view' fieldIndex options title v@(Val _ v_opt _) =
 -- TODO: given the typeError clause, Partial no longer needed
 view :: Partial => FieldIndex -> Options -> String -> Val (SelStates 𝕊) -> View
 view fieldIndex options title v@(Val α _ u') = case u' of
-   Lit (L.Str str) -> pack (Text (str × α))
+   Lit (Str str) -> pack (Text (str × α))
    Lit ℓ -> pack (Text (prettyP ℓ × α))
    Constr c _
       | c == cText -> pack (reflectText fieldIndex v)
@@ -121,14 +121,14 @@ reflectScatterPlot fieldIndex (Val _ _ u) = case u of
 reflectText :: Partial => FieldIndex -> Val (SelStates 𝕊) -> Text
 reflectText fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cText -> case us ! fieldIndex cText f_text of
-      Val α _ (Lit (L.Str s)) -> Text (s × α)
+      Val α _ (Lit (Str s)) -> Text (s × α)
       _ -> typeError u "Text expects string"
    _ -> typeError u "Text"
 
 reflectLink :: Partial => FieldIndex -> Val (SelStates 𝕊) -> Link
 reflectLink fieldIndex (Val _ _ u) = case u of
    Constr c us | c == cLink -> case us ! fieldIndex cLink f_label of
-      Val α' _ (Lit (L.Str s)) -> Link (us ! fieldIndex cLink f_value) (s × α')
+      Val α' _ (Lit (Str s)) -> Link (us ! fieldIndex cLink f_value) (s × α')
       _ -> typeError u "Link expects string label"
    _ -> typeError u "Link"
 

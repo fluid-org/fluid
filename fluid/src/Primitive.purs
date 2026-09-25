@@ -12,7 +12,7 @@ import Data.Set (insert)
 import DataType (cPair)
 import Dict (Dict)
 import Lattice (class BoundedJoinSemilattice, bot, erase)
-import Literal as L
+import Literal (Literal(..))
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Util (type (+), type (×), error, orThrow, singleton, (×))
@@ -43,49 +43,49 @@ typeError v typeName = error (typeMismatch v typeName)
 
 int :: forall a. ToFrom Int a
 int =
-   { pack: Lit <<< L.Int
+   { pack: Lit <<< Int
    , unpack: case _ of
-        Lit (L.Int n) -> Right n
+        Lit (Int n) -> Right n
         v -> Left (typeMismatch v "int")
    }
 
 number :: forall a. ToFrom Number a
 number =
-   { pack: Lit <<< L.Float
+   { pack: Lit <<< Float
    , unpack: case _ of
-        Lit (L.Float n) -> Right n
+        Lit (Float n) -> Right n
         v -> Left (typeMismatch v "float")
    }
 
 string :: forall a. ToFrom String a
 string =
-   { pack: Lit <<< L.Str
+   { pack: Lit <<< Str
    , unpack: case _ of
-        Lit (L.Str str) -> Right str
+        Lit (Str str) -> Right str
         v -> Left (typeMismatch v "str")
    }
 
 intOrNumber :: forall a. ToFrom (Int + Number) a
 intOrNumber =
    { pack: case _ of
-        Left n -> Lit (L.Int n)
-        Right n -> Lit (L.Float n)
+        Left n -> Lit (Int n)
+        Right n -> Lit (Float n)
    , unpack: case _ of
-        Lit (L.Int n) -> Right (Left n)
-        Lit (L.Float n) -> Right (Right n)
+        Lit (Int n) -> Right (Left n)
+        Lit (Float n) -> Right (Right n)
         v -> Left (typeMismatch v "int or float")
    }
 
 intOrNumberOrString :: forall a. ToFrom (Int + Number + String) a
 intOrNumberOrString =
    { pack: case _ of
-        Left n -> Lit (L.Int n)
-        Right (Left n) -> Lit (L.Float n)
-        Right (Right str) -> Lit (L.Str str)
+        Left n -> Lit (Int n)
+        Right (Left n) -> Lit (Float n)
+        Right (Right str) -> Lit (Str str)
    , unpack: case _ of
-        Lit (L.Int n) -> Right (Left n)
-        Lit (L.Float n) -> Right (Right (Left n))
-        Lit (L.Str str) -> Right (Right (Right str))
+        Lit (Int n) -> Right (Left n)
+        Lit (Float n) -> Right (Right (Left n))
+        Lit (Str str) -> Right (Right (Right str))
         v -> Left (typeMismatch v "int, float or str")
    }
 
@@ -115,9 +115,9 @@ dict =
 
 boolean :: forall a. ToFrom Boolean a
 boolean =
-   { pack: Lit <<< L.Bool
+   { pack: Lit <<< Bool
    , unpack: case _ of
-        Lit (L.Bool b) -> Right b
+        Lit (Bool b) -> Right b
         v -> Left (typeMismatch v "bool")
    }
 
