@@ -141,13 +141,11 @@ cLinePlot = lib_view "LinePlot" :: Name
 cMultiView = lib_view "MultiView" :: Name
 cScatterPlot = lib_view "ScatterPlot" :: Name
 cParagraph = lib_view "Paragraph" :: Name
-
 cNil = lib_builtins "Nil" :: Name -- List
 cCons = lib_builtins "Cons" :: Name
 cPair = lib_builtins "Pair" :: Name -- Pair
 cNothing = lib_builtins "Nothing" :: Name -- Maybe
 cJust = lib_builtins "Just" :: Name
-
 cNonEmpty = lib_builtins "NonEmpty" :: Name -- Tree
 cText = lib_view "Text" :: Name
 cLink = lib_view "Link" :: Name
