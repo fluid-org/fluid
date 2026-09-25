@@ -326,15 +326,7 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
    pure (Assigns Map.empty × S.Dataclass c b xτs)
 
 resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
-resolveType cxt = go
-   where
-   go (T.ClassName q) = T.ClassName <$> className cxt q
-   go (T.List ψ) = T.List <$> go ψ
-   go (T.Tuple ψs) = T.Tuple <$> traverse go ψs
-   go (T.Dict ψ) = T.Dict <$> go ψ
-   go (T.Callable ψs ψ) = T.Callable <$> traverse go ψs <*> go ψ
-   go (T.Union ψ ψ') = T.Union <$> go ψ <*> go ψ'
-   go ψ = pure ψ
+resolveType cxt = traverse (className cxt)
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
