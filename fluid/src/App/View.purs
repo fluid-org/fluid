@@ -29,7 +29,7 @@ import Literal (Literal(..))
 import Pretty (prettyP)
 import Primitive (boolean, int, string, typeError)
 import Primitive (unpack') as P
-import Util (type (×), (!), (×))
+import Util (type (×), error, (!), (×))
 import Util.Map (get, mapWithKey)
 import Val (BaseVal(..), DictRep(..), Val(..))
 
@@ -153,8 +153,9 @@ instance Reflect (Val a) (Array (Val a)) where
    from (Val _ _ u) = typeError u "list"
 
 instance Reflect (Val a) (NonEmptyArray (Val a)) where
-   from (Val _ _ (Constr c (u1 : u2 : Nil))) | c == cCons = cons' u1 (from u2)
-   from (Val _ _ u) = typeError u "non-empty list"
+   from v = case A.uncons (from v) of
+      Just { head, tail } -> cons' head tail
+      Nothing -> error "Expected non-empty list"
 
 instance Reflect (Dict (SelStates 𝕊 × Val (SelStates 𝕊))) (Dimensions (Selectable Int)) where
    from r = Dimensions
