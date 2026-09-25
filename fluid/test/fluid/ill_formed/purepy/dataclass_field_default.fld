@@ -1,5 +1,5 @@
 @dataclass
 class C:
-  x: Any = None
+  x: int = None
 
 return 0

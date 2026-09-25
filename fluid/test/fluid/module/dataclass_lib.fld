@@ -1,4 +1,4 @@
 @dataclass
 class Coord:
-  x: Any
-  y: Any
+  x: int
+  y: int

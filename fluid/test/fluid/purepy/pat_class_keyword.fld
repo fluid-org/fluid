@@ -1,7 +1,7 @@
 @dataclass
 class Coord:
-  x: Any
-  y: Any
+  x: int
+  y: int
 
 def get_y(Coord(y=v, x=_)):
   return v

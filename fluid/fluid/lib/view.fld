@@ -1,42 +1,4 @@
 @dataclass
-class View:
-  pass
-
-@dataclass
-class BarChart(View):
-  caption: Any  # Str
-  size: Any  # { width: Int, height: Int }
-  tickLabels: Any  # { x: Orientation, y: Orientation }
-  stackedBars: Any  # List StackedBar
-  legend: Any  # Bool
-
-@dataclass
-class LineChart(View):
-  size: Any  # { width: Int, height: Int }
-  tickLabels: Any  # { x: Orientation, y: Orientation }
-  caption: Any  # Str
-  plots: Any  # List LinePlot
-
-@dataclass
-class MultiView(View):
-  views: Any  # List View
-
-@dataclass
-class Paragraph(View):
-  fragments: Any  # List View
-
-@dataclass
-class ScatterPlot(View):
-  caption: Any  # Str
-  points: Any  # List { x: Float, y: Float }
-  labels: Any  # { x: Str, y: Str }
-
-@dataclass
-class LinePlot:
-  name: Any  # Str
-  points: Any  # List { x: Float, y: Float }
-
-@dataclass
 class Orientation:
   pass
 
@@ -49,14 +11,52 @@ class Rotated(Orientation):
   pass
 
 @dataclass
+class LinePlot:
+  name: str
+  points: list[dict[str, float]]
+
+@dataclass
+class View:
+  pass
+
+@dataclass
+class BarChart(View):
+  caption: str
+  size: dict[str, int]
+  tickLabels: dict[str, Orientation]
+  stackedBars: list[dict[str, object]]
+  legend: bool
+
+@dataclass
+class LineChart(View):
+  size: dict[str, int]
+  tickLabels: dict[str, Orientation]
+  caption: str
+  plots: list[LinePlot]
+
+@dataclass
+class MultiView(View):
+  views: list[View]
+
+@dataclass
+class Paragraph(View):
+  fragments: list[View]
+
+@dataclass
+class ScatterPlot(View):
+  caption: str
+  points: list[dict[str, float]]
+  labels: dict[str, str]
+
+@dataclass
 class ParaFragment:
   pass
 
 @dataclass
 class Text(ParaFragment):
-  text: Any  # Str
+  text: str
 
 @dataclass
 class Link(ParaFragment):
-  value: Any  # Val
-  label: Any  # Str
+  value: object
+  label: str

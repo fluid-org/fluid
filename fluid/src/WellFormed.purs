@@ -1,6 +1,6 @@
 module WellFormed where
 
-import Prelude
+import Prelude hiding (absurd)
 
 import Bind (Name, Var, dottedName, prefixOf, properPrefixOf)
 import Control.Monad.Error.Class (throwError)
@@ -31,7 +31,9 @@ import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
 import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
-import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
+import TypeExpr (TypeExpr)
+import TypeExpr as T
+import Util (type (×), absurd, checkDistinct, error, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
 -- Member context of a loaded module and its checked body. The program is
@@ -251,7 +253,8 @@ wellFormed _ cxt (S.Def (S.VarDef p ψ e)) = do
       throwError $ "Variable captured by its own definition: " <> x
    e' <- wellFormedExpr cxt e
    p' <- wellFormedPattern cxt p
-   pure (Assigns (constMap true xs) × S.Def (S.VarDef p' ψ (Assigns Map.empty <$ e')))
+   τ <- traverse (resolveType cxt) ψ
+   pure (Assigns (constMap true xs) × S.Def (S.VarDef p' τ (Assigns Map.empty <$ e')))
 wellFormed q cxt (S.DefRec ds) = do
    let fs = unions (Set.singleton <<< fst <$> ds)
    let cxt' = cxt `extendCxt` constMap true fs
@@ -262,9 +265,10 @@ wellFormed q cxt (S.DefRec ds) = do
            let xs = unions (bv <$> ps)
            let ys = assigns s \\ xs
            let cxt'' = cxt' `extendCxt` constMap true xs `extendCxt` constMap false ys
-           ps' <- traverse (\(S.Param p ψ') -> S.Param <$> wellFormedPattern cxt' p <@> ψ') ps
+           ps' <- traverse (\(S.Param p ψ') -> S.Param <$> wellFormedPattern cxt' p <*> traverse (resolveType cxt') ψ') ps
+           τ <- traverse (resolveType cxt') ψ
            r × s' <- wellFormed q cxt'' s
-           pure (x × S.Clause r (ps' × ψ × s'))
+           pure (x × S.Clause r (ps' × τ × s'))
       )
       ds
    pure (Assigns (constMap true fs) × S.DefRec ds')
@@ -309,6 +313,7 @@ wellFormed q cxt (S.Match e bs) = do
 wellFormed q cxt (S.Dataclass c b xψs) = do
    let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
+   xτs <- traverse (traverse (resolveType cxt)) xψs
    case b of
       Nothing -> pure unit
       Just base -> do
@@ -319,7 +324,21 @@ wellFormed q cxt (S.Dataclass c b xψs) = do
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Assigns Map.empty × S.Dataclass c b xψs)
+   pure (Assigns Map.empty × S.Dataclass c b xτs)
+
+-- Type expression resolved to a type. The spec also requires each predefined type name to be
+-- bound in the context; Fluid has no such entries yet.
+resolveType :: Cxt -> TypeExpr -> Either String TypeExpr
+resolveType cxt = go
+   where
+   go (T.ClassName q) = T.Class <$> className cxt q
+   go (T.Class _) = error absurd
+   go (T.List ψ) = T.List <$> go ψ
+   go (T.Tuple ψs) = T.Tuple <$> traverse go ψs
+   go (T.Dict ψ) = T.Dict <$> go ψ
+   go (T.Callable ψs ψ) = T.Callable <$> traverse go ψs <*> go ψ
+   go (T.Union ψ ψ') = T.Union <$> go ψ <*> go ψ'
+   go ψ = pure ψ
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
@@ -387,9 +406,10 @@ wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs')
          p' <- wellFormedPattern cxt' p
          map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
       S.ListCompDecl (S.VarDef p ψ e1) -> do
+         τ <- traverse (resolveType cxt') ψ
          e1' <- wellFormedExpr cxt' e1
          p' <- wellFormedPattern cxt' p
-         map (S.ListCompDecl (S.VarDef p' ψ e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
+         map (S.ListCompDecl (S.VarDef p' τ e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 var :: Cxt -> Var -> Either String Unit

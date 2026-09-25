@@ -19,7 +19,7 @@ data Primitive
    | Str
    | Sized
 
--- Type expressions ψ, carried but not consulted. Marked names don't occur in source.
+-- Type expressions ψ. A type is a type expression whose class names are resolved to classes.
 data TypeExpr
    = Primitive Primitive
    | List TypeExpr
@@ -28,6 +28,7 @@ data TypeExpr
    | Callable (List TypeExpr) TypeExpr
    | Lit Literal
    | ClassName Name
+   | Class Name -- class by fully qualified name; doesn't occur in source text
    | Union TypeExpr TypeExpr
 
 derive instance Eq Primitive

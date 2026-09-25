@@ -1,9 +1,9 @@
 @dataclass
 class Point:
-  x: Any
+  x: int
 
 @dataclass
 class Point:
-  y: Any
+  y: int
 
 return 0

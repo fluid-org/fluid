@@ -28,8 +28,8 @@ class Nil(List):
 
 @dataclass
 class Cons(List):
-  head: Any
-  tail: Any
+  head: object
+  tail: List
 
 @dataclass
 class Maybe:
@@ -41,12 +41,12 @@ class Nothing(Maybe):
 
 @dataclass
 class Just(Maybe):
-  value: Any
+  value: object
 
 @dataclass
 class Pair:
-  fst: Any
-  snd: Any
+  fst: object
+  snd: object
 
 @dataclass
 class Tree:
@@ -58,9 +58,9 @@ class Empty(Tree):
 
 @dataclass
 class NonEmpty(Tree):
-  left: Any
-  value: Any
-  right: Any
+  left: Tree
+  value: object
+  right: Tree
 
 @dataclass
 class Ordering:
@@ -84,7 +84,7 @@ class InfNum:
 
 @dataclass
 class FNum(InfNum):
-  value: Any
+  value: float
 
 @dataclass
 class Infty(InfNum):

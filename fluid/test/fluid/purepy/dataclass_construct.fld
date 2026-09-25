@@ -1,7 +1,7 @@
 @dataclass
 class Coord:
-  x: Any
-  y: Any
+  x: int
+  y: int
 
 def origin():
   return Coord(0, 0)

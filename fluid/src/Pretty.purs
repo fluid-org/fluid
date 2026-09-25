@@ -231,6 +231,7 @@ instance Pretty T.TypeExpr where
    pretty (T.Callable ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
    pretty (T.Lit ℓ) = text "Literal" <> brackets (pretty ℓ)
    pretty (T.ClassName q) = text (dottedName q)
+   pretty (T.Class q) = text "~" <> text (dottedName q)
    pretty (T.Union ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
 
 instance Pretty T.Primitive where

@@ -1,9 +1,9 @@
 @dataclass
 class Base:
-   x: Any
+   x: int
 
 @dataclass
 class Derived(Base):
-   y: Any
+   y: int
 
 Base(1)

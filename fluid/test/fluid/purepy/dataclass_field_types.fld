@@ -1,3 +1,5 @@
+import module.dataclass_lib
+
 @dataclass
 class Coord:
   x: int
@@ -21,8 +23,8 @@ class Shape:
   scale: Literal[1.5]
   flag: Literal[True]
   absent: Literal[None]
-  parent: Shape | Coord | None
-  origin: geometry.Point
+  parent: Coord | None
+  origin: module.dataclass_lib.Coord
   unit: tuple[]
 
 Coord(3, None).x

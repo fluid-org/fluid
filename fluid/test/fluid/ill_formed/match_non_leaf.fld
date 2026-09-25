@@ -1,10 +1,10 @@
 @dataclass
 class Base:
-   x: Any
+   x: int
 
 @dataclass
 class Derived(Base):
-   y: Any
+   y: int
 
 match Derived(1, 2):
     case Base(x):

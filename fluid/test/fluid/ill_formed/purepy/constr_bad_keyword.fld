@@ -1,6 +1,6 @@
 @dataclass
 class Coord:
-  x: Any
-  y: Any
+  x: int
+  y: int
 
 Coord(1, z=2)
