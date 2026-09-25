@@ -53,7 +53,6 @@ extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × φ))))
 
--- Predefined modules, each with its signature and the values of its members.
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
    [ predefinedModule builtins ("None" : "object" : "bool" : "int" : "float" : "str" : "list" : "dict" : "tuple" : Nil)

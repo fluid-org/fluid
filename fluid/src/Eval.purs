@@ -373,7 +373,6 @@ load
    -> m (Env Vertex)
 load q = moduleStore >>= \{ ρ0 } -> loadUnder ρ0 q
 
--- Members of module q, evaluating its body under ρ unless already loaded.
 loadUnder
    :: forall m
     . HasClasses m
