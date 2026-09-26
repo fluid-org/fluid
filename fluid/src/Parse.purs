@@ -420,11 +420,36 @@ expr = context "expr" $ cond <?> "expression"
          dict :: Parser (Raw Expr)
          dict = context "dict" do
             delim '{'
-            kvs <- fields (exprKey <|> varKey) expr
-            close '}'
-            pure $ Dictionary unit kvs
+            choice
+               [ do
+                    close '}'
+                    pure $ Dictionary unit Nil
+               , do
+                    k <- key
+                    delim ':'
+                    e <- expr
+                    choice
+                       [ context "dictNonEmpty" do
+                            delim ','
+                            rest <- fields key expr
+                            close '}'
+                            pure $ Dictionary unit ((k × e) : rest)
+                       , do
+                            close '}'
+                            pure $ Dictionary unit ((k × e) : Nil)
+                       , context "dictComp" do
+                            qs <- qualifiers
+                            close '}'
+                            pure $ DictComp unit k e qs
+                       , fail "Expected `}`"
+                       ]
+               , fail "Expected `}` or a dictionary entry after `{`"
+               ]
 
             where
+            key :: Parser (Raw DictEntry)
+            key = exprKey <|> varKey
+
             exprKey :: Parser (Raw DictEntry)
             exprKey = defer \_ -> brackets cond <#> ExprKey
 
@@ -465,30 +490,35 @@ expr = context "expr" $ cond <?> "expression"
                             close ']'
                             pure $ ListNonEmpty unit e (End unit)
                        , context "listComp" do
-                            qs <- many1 $ choice
-                               [ context "listCompGuard" do
-                                    reserved "if"
-                                    e' <- opTree
-                                    pure $ ListCompGuard e'
-                               , context "listCompDecl" do
-                                    reserved "def"
-                                    p <- pattern
-                                    delim ':'
-                                    e' <- opTree
-                                    pure $ ListCompDecl (VarDef p Nothing e')
-                               , context "listCompGen" do
-                                    reserved "for"
-                                    p <- pattern
-                                    reserved "in"
-                                    e' <- opTree
-                                    pure $ ListCompGen p e'
-                               ]
+                            qs <- qualifiers
                             close ']'
-                            pure $ ListComp unit e (toList qs)
+                            pure $ ListComp unit e qs
                        , fail "Expected `]"
                        ]
                , fail "Expected `]` or a list expression after `[`"
                ]
+
+         qualifiers :: Parser (List (Raw Qualifier))
+         qualifiers = toList <$> many1 (choice [ guard, decl, generator ])
+            where
+            guard = context "guard" do
+               reserved "if"
+               e <- opTree
+               pure $ Guard e
+
+            decl = context "decl" do
+               reserved "def"
+               p <- pattern
+               delim ':'
+               e <- opTree
+               pure $ Decl (VarDef p Nothing e)
+
+            generator = context "generator" do
+               reserved "for"
+               p <- pattern
+               reserved "in"
+               e <- opTree
+               pure $ Generator p e
 
          parensExpr :: Parser (Raw Expr)
          parensExpr = context "parens" do

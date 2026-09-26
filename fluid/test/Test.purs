@@ -17,7 +17,7 @@ import Module.Web (runWebT)
 import Test.Specs.Bwd (bwd_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
 import Test.Specs.Comments (comments_cases)
-import Test.Specs.Desugar (desugar_cases)
+import Test.Specs.Comprehension (comprehension_cases)
 import Test.Specs.Graphics (graphics_cases)
 import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
@@ -57,7 +57,7 @@ asTestSuite suite = second void <$> suite (1 × false)
 
 benchmarks :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array (BenchSuite m)
 benchmarks =
-   [ suite desugar_cases
+   [ suite comprehension_cases
    , suite misc_cases
    , suite comments_cases
    , suite paragraph_cases

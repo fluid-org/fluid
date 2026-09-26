@@ -18,7 +18,7 @@ def actions_by(key, keys):
       ] } for key_ in keys
   ]
 
-risks_ = pairs_to_dict([ (r[ "ID#" ], r) for r in ccra3_risks ])
+risks_ = { [r[ "ID#" ]]: r for r in ccra3_risks }
 
 actions_by_chapter = [ { x: chapter,
       segments: [

@@ -6,7 +6,7 @@ import Bind (Bind, Name, Var)
 import Control.Apply (lift2)
 import Data.Foldable (class Foldable, foldl, foldrDefault, foldMapDefaultL)
 import Data.Generic.Rep (class Generic)
-import Data.List (List, zipWith)
+import Data.List (List(..), zipWith, (:))
 import Data.List.NonEmpty (NonEmptyList)
 import Data.List.NonEmpty (zipWith) as NEL
 import Data.Maybe (Maybe(..), maybe)
@@ -45,7 +45,15 @@ data Expr a
    | And (Expr a) (Expr a)
    | Or (Expr a) (Expr a)
    | Cond (Expr a) (Expr a) (Expr a) -- e1 if e else e2
+   | ListComp a (Expr a) (List (Qualifier a))
+   | DictComp a (Expr a) (Expr a) (List (Qualifier a))
    | DocExpr (Expr a) (Expr a)
+
+-- Comprehension qualifiers; the spec has only guards and generators over variables.
+data Qualifier a
+   = Guard (Expr a)
+   | Generator Pattern (Expr a)
+   | Decl Pattern (Expr a)
 
 data Pattern
    = PLit Literal
@@ -107,7 +115,15 @@ instance FV (Expr a) where
    fv (And e e') = fv e ∪ fv e'
    fv (Or e e') = fv e ∪ fv e'
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
+   fv (ListComp _ e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
+   fv (DictComp _ e e' gs) = fvQualifiers gs ∪ ((fv e ∪ fv e') \\ bv gs)
    fv (DocExpr doc e) = fv doc ∪ fv e
+
+fvQualifiers :: forall a. List (Qualifier a) -> Set Var
+fvQualifiers Nil = empty
+fvQualifiers (Guard e : gs) = fv e ∪ fvQualifiers gs
+fvQualifiers (Generator p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
+fvQualifiers (Decl p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
 
 instance FV (Def a) where
    fv (Def xs _ s) = fv s \\ S.fromFoldable (paramVar <$> xs)
@@ -153,6 +169,14 @@ instance BV Pattern where
    bv (PRecord xps) = unions ((bv <<< snd) <$> xps)
    bv (PList ps) = unions (bv <$> ps)
    bv (PAs p x) = bv p ∪ singleton x
+
+instance BV (Qualifier a) where
+   bv (Guard _) = empty
+   bv (Generator p _) = bv p
+   bv (Decl p _) = bv p
+
+instance BV a => BV (List a) where
+   bv xs = unions (bv <$> xs)
 
 instance JoinSemilattice a => JoinSemilattice (Def a) where
    join (Def xs ψ s) (Def xs' ψ' s') = Def (xs ≜ xs') (ψ ≜ ψ') (s ∨ s')
@@ -217,8 +241,22 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (And e1 e2) (And e1' e2') = And (e1 ∨ e1') (e2 ∨ e2')
    join (Or e1 e2) (Or e1' e2') = Or (e1 ∨ e1') (e2 ∨ e2')
    join (Cond e1 e e2) (Cond e1' e' e2') = Cond (e1 ∨ e1') (e ∨ e') (e2 ∨ e2')
+   join (ListComp α e gs) (ListComp α' e' gs') = ListComp (α ∨ α') (e ∨ e') (gs ∨ gs')
+   join (DictComp α e1 e2 gs) (DictComp α' e1' e2' gs') = DictComp (α ∨ α') (e1 ∨ e1') (e2 ∨ e2') (gs ∨ gs')
    join (DocExpr doc e) (DocExpr doc' e') = DocExpr (doc ∨ doc') (e ∨ e')
    join _ _ = shapeMismatch unit
+
+instance JoinSemilattice a => JoinSemilattice (Qualifier a) where
+   join (Guard e) (Guard e') = Guard (e ∨ e')
+   join (Generator p e) (Generator p' e') = Generator (p ≜ p') (e ∨ e')
+   join (Decl p e) (Decl p' e') = Decl (p ≜ p') (e ∨ e')
+   join _ _ = shapeMismatch unit
+
+instance BoundedJoinSemilattice a => Expandable (Qualifier a) (Raw Qualifier) where
+   expand (Guard e) (Guard e') = Guard (expand e e')
+   expand (Generator p e) (Generator p' e') = Generator (p ≜ p') (expand e e')
+   expand (Decl p e) (Decl p' e') = Decl (p ≜ p') (expand e e')
+   expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Var x) (Var x') = Var (x ≜ x')
@@ -237,6 +275,8 @@ instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (And e1 e2) (And e1' e2') = And (expand e1 e1') (expand e2 e2')
    expand (Or e1 e2) (Or e1' e2') = Or (expand e1 e1') (expand e2 e2')
    expand (Cond e1 e e2) (Cond e1' e' e2') = Cond (expand e1 e1') (expand e e') (expand e2 e2')
+   expand (ListComp α e gs) (ListComp _ e' gs') = ListComp α (expand e e') (expand gs gs')
+   expand (DictComp α e1 e2 gs) (DictComp _ e1' e2' gs') = DictComp α (expand e1 e1') (expand e2 e2') (expand gs gs')
    expand (DocExpr doc e) (DocExpr doc' e') = DocExpr (expand doc doc') (expand e e')
    expand _ _ = shapeMismatch unit
 
@@ -261,7 +301,14 @@ instance Vertices (Expr Vertex) where
    vertices (And e e') = vertices e ∪ vertices e'
    vertices (Or e e') = vertices e ∪ vertices e'
    vertices (Cond e1 e e2) = vertices e1 ∪ vertices e ∪ vertices e2
+   vertices e@(ListComp α e1 gs) = singleton (DVertex (α × pack e)) ∪ vertices e1 ∪ unions (vertices <$> gs)
+   vertices e@(DictComp α e1 e2 gs) = singleton (DVertex (α × pack e)) ∪ vertices e1 ∪ vertices e2 ∪ unions (vertices <$> gs)
    vertices (DocExpr e e') = vertices e ∪ vertices e'
+
+instance Vertices (Qualifier Vertex) where
+   vertices (Guard e) = vertices e
+   vertices (Generator _ e) = vertices e
+   vertices (Decl _ e) = vertices e
 
 instance Vertices (Def Vertex) where
    vertices (Def _ _ s) = vertices s
@@ -295,6 +342,9 @@ derive instance Traversable Def
 derive instance Functor Expr
 derive instance Foldable Expr
 derive instance Traversable Expr
+derive instance Functor Qualifier
+derive instance Foldable Qualifier
+derive instance Traversable Qualifier
 derive instance Functor RecDefs
 derive instance Foldable RecDefs
 derive instance Traversable RecDefs
@@ -324,7 +374,15 @@ instance Apply Expr where
    apply (And fe1 fe2) (And e1 e2) = And (fe1 <*> e1) (fe2 <*> e2)
    apply (Or fe1 fe2) (Or e1 e2) = Or (fe1 <*> e1) (fe2 <*> e2)
    apply (Cond fe1 fe fe2) (Cond e1 e e2) = Cond (fe1 <*> e1) (fe <*> e) (fe2 <*> e2)
+   apply (ListComp fα fe fgs) (ListComp α e gs) = ListComp (fα α) (fe <*> e) (zipWith (<*>) fgs gs)
+   apply (DictComp fα fe1 fe2 fgs) (DictComp α e1 e2 gs) = DictComp (fα α) (fe1 <*> e1) (fe2 <*> e2) (zipWith (<*>) fgs gs)
    apply (DocExpr fe fe') (DocExpr e e') = DocExpr (fe <*> e) (fe' <*> e')
+   apply _ _ = shapeMismatch unit
+
+instance Apply Qualifier where
+   apply (Guard fe) (Guard e) = Guard (fe <*> e)
+   apply (Generator p fe) (Generator _ e) = Generator p (fe <*> e)
+   apply (Decl p fe) (Decl _ e) = Decl p (fe <*> e)
    apply _ _ = shapeMismatch unit
 
 instance Apply Def where
@@ -363,6 +421,7 @@ instance Traversable Module where
    sequence = sequenceDefault
 
 derive instance Eq a => Eq (Expr a)
+derive instance Eq a => Eq (Qualifier a)
 derive instance Eq Binop
 derive instance Generic Binop _
 instance Show Binop where
