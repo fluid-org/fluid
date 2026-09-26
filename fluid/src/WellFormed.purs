@@ -406,7 +406,6 @@ wellFormedDictKey :: forall a. Cxt -> S.DictEntry a -> Either String (S.DictEntr
 wellFormedDictKey cxt (S.ExprKey e) = S.ExprKey <$> wellFormedExpr cxt e
 wellFormedDictKey _ k@(S.VarKey _ _) = pure k
 
--- Qualifiers of a comprehension, then its body under the context they extend.
 wellFormedQualifiers
    :: forall a b
     . Cxt
