@@ -1,13 +1,13 @@
 import fluid.view
 
 d = {}
-e = { ["a"]: 5, ["a" ++ "b"]: 6 }
+e = { ["a"]: 5, ["a" + "b"]: 6 }
 f = { ["ab"]: 12 }
 
 @doc(f"""We can have a docComment before a dict!""") {
   d: d,
   e: e,
   e_ab: e["ab"],
-  f: dict_map((+)(1), e),
+  f: dict_map(lambda x: 1 + x, e),
   g: dict_difference(e, f)
 }

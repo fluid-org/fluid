@@ -25,10 +25,12 @@ import Util.Map (keys)
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
--- Deviate from POPL paper by having closures depend on originating lambda or letrec
+data Binop = Eq | Ne | Lt | Le | Gt | Ge | In | NotIn | Add | Sub | Mul | Div | FloorDiv | Mod | Pow
+
+data Unop = Not | Pos | Neg
+
 data Expr a
    = Var Var
-   | Op Var
    | Lit a Literal
    | Dictionary a (List (Pair (Expr a))) -- constructor name Dict borks (import of same name)
    | Constr a Name (List (Expr a))
@@ -38,6 +40,10 @@ data Expr a
    | Subscript (Expr a) (Expr a)
    | ModMember Name Var -- member x of module q; only arises during desugaring
    | App (Expr a) (List (Expr a))
+   | BinOp (Expr a) Binop (Expr a)
+   | UnOp Unop (Expr a)
+   | And (Expr a) (Expr a)
+   | Or (Expr a) (Expr a)
    | Cond (Expr a) (Expr a) (Expr a) -- e1 if e else e2
    | DocExpr (Expr a) (Expr a)
 
@@ -87,7 +93,6 @@ class FV a where
 
 instance FV (Expr a) where
    fv (Var x) = singleton x
-   fv (Op op) = singleton op
    fv (Lit _ _) = empty
    fv (Dictionary _ ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ _ es) = unions (fv <$> es)
@@ -97,6 +102,10 @@ instance FV (Expr a) where
    fv (Subscript e x) = fv e ∪ fv x
    fv (ModMember _ _) = empty
    fv (App e es) = fv e ∪ unions (fv <$> es)
+   fv (BinOp e _ e') = fv e ∪ fv e'
+   fv (UnOp _ e) = fv e
+   fv (And e e') = fv e ∪ fv e'
+   fv (Or e e') = fv e ∪ fv e'
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
    fv (DocExpr doc e) = fv doc ∪ fv e
 
@@ -193,7 +202,6 @@ instance BoundedJoinSemilattice a => Expandable (Stmt a) (Raw Stmt) where
 
 instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Var x) (Var x') = Var (x ≜ x')
-   join (Op op) (Op op') = Op (op ≜ op')
    join (Lit α ℓ) (Lit α' ℓ') = Lit (α ∨ α') (ℓ ≜ ℓ')
    join (Dictionary α ees) (Dictionary α' ees') = Dictionary (α ∨ α') (ees ∨ ees')
    join (Constr α c es) (Constr α' c' es') = Constr (α ∨ α') (c ≜ c') (es ∨ es')
@@ -204,13 +212,16 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Subscript e1 e2) (Subscript e1' e2') = Subscript (e1 ∨ e1') (e2 ∨ e2')
    join (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
    join (App e es) (App e' es') = App (e ∨ e') (es ∨ es')
+   join (BinOp e1 op e2) (BinOp e1' op' e2') = BinOp (e1 ∨ e1') (op ≜ op') (e2 ∨ e2')
+   join (UnOp op e) (UnOp op' e') = UnOp (op ≜ op') (e ∨ e')
+   join (And e1 e2) (And e1' e2') = And (e1 ∨ e1') (e2 ∨ e2')
+   join (Or e1 e2) (Or e1' e2') = Or (e1 ∨ e1') (e2 ∨ e2')
    join (Cond e1 e e2) (Cond e1' e' e2') = Cond (e1 ∨ e1') (e ∨ e') (e2 ∨ e2')
    join (DocExpr doc e) (DocExpr doc' e') = DocExpr (doc ∨ doc') (e ∨ e')
    join _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Var x) (Var x') = Var (x ≜ x')
-   expand (Op op) (Op op') = Op (op ≜ op')
    expand (Lit α ℓ) (Lit _ ℓ') = Lit α (ℓ ≜ ℓ')
    expand (Dictionary α ees) (Dictionary _ ees') = Dictionary α (expand ees ees')
    expand (Constr α c es) (Constr _ c' es') = Constr α (c ≜ c') (expand es es')
@@ -221,6 +232,10 @@ instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Subscript e1 e2) (Subscript e1' e2') = Subscript (expand e1 e1') (expand e2 e2')
    expand (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
    expand (App e es) (App e' es') = App (expand e e') (expand es es')
+   expand (BinOp e1 op e2) (BinOp e1' op' e2') = BinOp (expand e1 e1') (op ≜ op') (expand e2 e2')
+   expand (UnOp op e) (UnOp op' e') = UnOp (op ≜ op') (expand e e')
+   expand (And e1 e2) (And e1' e2') = And (expand e1 e1') (expand e2 e2')
+   expand (Or e1 e2) (Or e1' e2') = Or (expand e1 e1') (expand e2 e2')
    expand (Cond e1 e e2) (Cond e1' e' e2') = Cond (expand e1 e1') (expand e e') (expand e2 e2')
    expand (DocExpr doc e) (DocExpr doc' e') = DocExpr (expand doc doc') (expand e e')
    expand _ _ = shapeMismatch unit
@@ -230,7 +245,6 @@ instance MeetSemilattice a => MeetSemilattice (Expr a) where
 
 instance Vertices (Expr Vertex) where
    vertices (Var _) = empty
-   vertices (Op _) = empty
    vertices e@(Lit α _) = singleton (DVertex (α × pack e))
    vertices d@(Dictionary α ees) = singleton (DVertex (α × pack d)) ∪ unions (go <$> ees)
       where
@@ -242,6 +256,10 @@ instance Vertices (Expr Vertex) where
    vertices (Subscript e e') = vertices e ∪ vertices e'
    vertices (ModMember _ _) = empty
    vertices (App e es) = vertices e ∪ unions (vertices <$> es)
+   vertices (BinOp e _ e') = vertices e ∪ vertices e'
+   vertices (UnOp _ e) = vertices e
+   vertices (And e e') = vertices e ∪ vertices e'
+   vertices (Or e e') = vertices e ∪ vertices e'
    vertices (Cond e1 e e2) = vertices e1 ∪ vertices e ∪ vertices e2
    vertices (DocExpr e e') = vertices e ∪ vertices e'
 
@@ -291,7 +309,6 @@ derive instance Functor Module
 -- For terms of a fixed shape.
 instance Apply Expr where
    apply (Var x) (Var x') = Var (x ≜ x')
-   apply (Op op) (Op _) = Op op
    apply (Lit fα ℓ) (Lit α ℓ') = Lit (fα α) (ℓ ≜ ℓ')
    apply (Dictionary fα fxes) (Dictionary α xes) = Dictionary (fα α) (zipWith (lift2 (<*>)) fxes xes)
    apply (Constr fα c fes) (Constr α c' es) = Constr (fα α) (c ≜ c') (zipWith (<*>) fes es)
@@ -302,6 +319,10 @@ instance Apply Expr where
    apply (Subscript fd fk) (Subscript d k) = Subscript (fd <*> d) (fk <*> k)
    apply (ModMember q x) (ModMember q' x') = ModMember (q ≜ q') (x ≜ x')
    apply (App fe fes) (App e es) = App (fe <*> e) (zipWith (<*>) fes es)
+   apply (BinOp fe1 op fe2) (BinOp e1 op' e2) = BinOp (fe1 <*> e1) (op ≜ op') (fe2 <*> e2)
+   apply (UnOp op fe) (UnOp op' e) = UnOp (op ≜ op') (fe <*> e)
+   apply (And fe1 fe2) (And e1 e2) = And (fe1 <*> e1) (fe2 <*> e2)
+   apply (Or fe1 fe2) (Or e1 e2) = Or (fe1 <*> e1) (fe2 <*> e2)
    apply (Cond fe1 fe fe2) (Cond e1 e e2) = Cond (fe1 <*> e1) (fe <*> e) (fe2 <*> e2)
    apply (DocExpr fe fe') (DocExpr e e') = DocExpr (fe <*> e) (fe' <*> e')
    apply _ _ = shapeMismatch unit
@@ -342,6 +363,16 @@ instance Traversable Module where
    sequence = sequenceDefault
 
 derive instance Eq a => Eq (Expr a)
+derive instance Eq Binop
+derive instance Generic Binop _
+instance Show Binop where
+   show = genericShow
+
+derive instance Eq Unop
+derive instance Generic Unop _
+instance Show Unop where
+   show = genericShow
+
 derive instance Eq Param
 derive instance Generic Param _
 instance Show Param where

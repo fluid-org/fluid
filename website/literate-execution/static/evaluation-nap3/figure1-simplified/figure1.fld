@@ -39,7 +39,7 @@ def actions_by_chapter(owner):
         } for eval_score in eval_scores  ] }
     for chapter in ["3", "4", "5", "6", "7"]
     chapter_actions = [ action for action in nap3_actions
-        if risks_[ action["Risk ID#" ] ][ "Chapter" ] == chapter and find_str(owner, action["Action Owner"]) /= -1
+        if risks_[ action["Risk ID#" ] ][ "Chapter" ] == chapter and find_str(owner, action["Action Owner"]) != -1
       ]
   ]
 

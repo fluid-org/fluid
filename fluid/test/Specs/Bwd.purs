@@ -110,7 +110,7 @@ bwd_cases =
      , bwd_expect: \_ -> envVal "xs" (listElement 1 select) >.> envVal "ys" (listElement 1 select)
      , δv: \_ -> listElement 1 select'
      , inputs: []
-     , fwd_expect: "13.0 :| ⸨25.0⸩ :| 41.0 :| []"
+     , fwd_expect: "13 :| ⸨25⸩ :| 41 :| []"
      }
    , { file: "section_5_example.fld"
      , bwd_expect: \_ -> envVal "types" (listElement 0 select) >.> envVal "data" (listElement 1 (dictVal "energyType" select))

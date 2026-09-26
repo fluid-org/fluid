@@ -5,18 +5,28 @@ import Prelude hiding (absurd, apply, div, top)
 import Bind (Bind)
 import Data.Either (Either(..), either)
 import Data.Int (toNumber)
-import Data.List (List(..), (:))
+import Data.Int as Int
+import Data.Array (replicate)
+import Data.List (List(..), concat, fromFoldable, (:))
 import Data.Maybe (Maybe(..))
-import Data.Profunctor.Choice ((|||))
-import Data.Set (insert)
-import DataType (cPair)
+import Data.Number as N
+import Data.Profunctor.Strong (first)
+import Data.Set (Set)
+import Data.Set as Set
+import Data.String (Pattern(..))
+import Data.String as String
+import Data.Tuple (fst, snd)
+import DataType (cCons, cNil, cPair)
 import Dict (Dict)
+import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, bot, erase)
-import Literal (Literal(..))
+import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (type (+), type (×), error, orThrow, singleton, (×))
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep, Op, Val(..), val)
+import Util (type (+), type (×), absurd, definitely', error, orThrow, singleton, (×))
+import Util.Map (keys, lookup, values)
+import Util.Set ((∪))
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), val)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -121,36 +131,11 @@ boolean =
         v -> Left (typeMismatch v "bool")
    }
 
-class IsZero a where
-   isZero :: a -> Boolean
-
-instance IsZero Int where
-   isZero = ((==) 0)
-
-instance IsZero Number where
-   isZero = ((==) 0.0)
-
-instance (IsZero a, IsZero b) => IsZero (a + b) where
-   isZero = isZero ||| isZero
-
 -- Need to be careful about type variables escaping higher-rank quantification.
 type Unary i o a =
    { i :: ToFrom i a
    , o :: ToFrom o a
    , fwd :: i -> o
-   }
-
-type Binary i1 i2 o a =
-   { i1 :: ToFrom i1 a
-   , i2 :: ToFrom i2 a
-   , o :: ToFrom o a
-   , fwd :: i1 -> i2 -> o
-   }
-
-type BinaryZero i o a =
-   { i :: ToFrom i a
-   , o :: ToFrom o a
-   , fwd :: i -> i -> o
    }
 
 unary :: forall i o a'. BoundedJoinSemilattice a' => String -> (forall a. Unary i o a) -> Bind (Val a')
@@ -165,92 +150,178 @@ unary id f =
       x <- orThrow (f.i.unpack v)
       val doc_opt (singleton α) (f.o.pack (f.fwd x))
 
-binary :: forall i1 i2 o a'. BoundedJoinSemilattice a' => String -> (forall a. Binary i1 i2 o a) -> Bind (Val a')
-binary id f =
-   id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
-   where
-   op :: ForeignOp'
-   op = ForeignOp' { arity: 2, op: unsafePartial op' }
-
-   op' :: Partial => Op
-   op' doc_opt (Val α _ v1 : Val β _ v2 : Nil) = do
-      x <- orThrow (f.i1.unpack v1)
-      y <- orThrow (f.i2.unpack v2)
-      val doc_opt (singleton α # insert β) (f.o.pack (f.fwd x y))
-
--- If both are zero, depend only on the first.
-binaryZero :: forall i o a'. BoundedJoinSemilattice a' => IsZero i => String -> (forall a. BinaryZero i o a) -> Bind (Val a')
-binaryZero id f =
-   id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
-   where
-   op :: ForeignOp'
-   op = ForeignOp' { arity: 2, op: unsafePartial op' }
-
-   op' :: Partial => Op
-   op' doc_opt (Val α _ v1 : Val β _ v2 : Nil) = do
-      x <- orThrow (f.i.unpack v1)
-      y <- orThrow (f.i.unpack v2)
-      let
-         αs =
-            if isZero x then singleton α
-            else if isZero y then singleton β
-            else singleton α # insert β
-      val doc_opt αs (f.o.pack (f.fwd x y))
-
 class As a b where
    as :: a -> b
+
+instance asIntNumber :: As Int Number where
+   as = toNumber
+
+instance asIntorNumberNumber :: As (Int + Number) Number where
+   as (Left n) = as n
+   as (Right n) = n
 
 union1 :: forall a1 b. (a1 -> b) -> (Number -> b) -> a1 + Number -> b
 union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
--- Biased towards g: if arguments are of mixed types, we try to coerce to an application of g.
-union
-   :: forall a1 b1 c1 a2 b2 c2 c
-    . As c1 c
-   => As c2 c
-   => As a1 a2
-   => As b1 b2
-   => (a1 -> b1 -> c1)
-   -> (a2 -> b2 -> c2)
-   -> a1 + a2
-   -> b1 + b2
-   -> c
-union f _ (Left x) (Left y) = as (f x y)
-union _ g (Left x) (Right y) = as (g (as x) y)
-union _ g (Right x) (Right y) = as (g x y)
-union _ g (Right x) (Left y) = as (g x (as y))
+binop :: forall a. Ord a => Binop -> Val a -> Val a -> Either String (BaseVal a × Set a)
+binop Eq v v'
+   | bothNan v v' = pure (Lit (Bool false) × vertices2 v v')
+   | otherwise = first (Lit <<< Bool) <$> eqOp v v'
+binop Ne v v'
+   | bothNan v v' = pure (Lit (Bool true) × vertices2 v v')
+   | otherwise = first (Lit <<< Bool <<< not) <$> eqOp v v'
+binop In v v' = first (Lit <<< Bool) <$> contains v' v
+binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
+binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) =
+   pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
+binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w α n β)
+binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w β n α)
+binop op (Val α _ u) (Val β _ u') = do
+   x <- operand u
+   y <- operand u'
+   case op of
+      Lt -> compare (<) x y
+      Le -> compare (<=) x y
+      Gt -> compare (>) x y
+      Ge -> compare (>=) x y
+      Add -> (_ × both) <$> arith (+) (+) x y
+      Sub -> (_ × both) <$> arith (-) (-) x y
+      Mul -> (_ × zeroDeps x y) <$> arith (*) (*) x y
+      Pow -> (_ × zeroDeps x y) <$> case x, y of
+         Left m, Left n | n >= 0 -> pure (Lit (Int (Int.pow m n)))
+         _, _ -> Lit <<< Float <$> (N.pow <$> float x <*> float y)
+      Div -> nonZero y *> (Lit <<< Float <$> ((/) <$> float x <*> float y)) <#> (_ × both)
+      FloorDiv -> nonZero y *> arith floorDiv (\r r' -> N.floor (r / r')) x y <#> (_ × both)
+      Mod -> nonZero y *> arith (\m n -> m - n * floorDiv m n) (\r r' -> r - r' * N.floor (r / r')) x y <#> (_ × both)
+      _ -> error absurd
+   where
+   both = Set.fromFoldable [ α, β ]
 
--- Helper to avoid some explicit type annotations when defining primitives.
-unionStr
-   :: forall a b
-    . As a a
-   => As b String
-   => (b -> b -> a)
-   -> (String -> String -> a)
-   -> b + String
-   -> b + String
-   -> a
-unionStr = union
+   -- Zero operand determines the result, so dependencies of the zero operand alone
+   zeroDeps :: Operand -> Operand -> Set a
+   zeroDeps x y
+      | isZero x = Set.singleton α
+      | isZero y = Set.singleton β
+      | otherwise = both
 
-instance asIntIntOrNumber :: As Int (Int + a) where
-   as = Left
+   operand :: BaseVal a -> Either String Operand
+   operand (Lit (Int n)) = pure (Left n)
+   operand (Lit (Float r)) = pure (Right (Left r))
+   operand (Lit (Str w)) = pure (Right (Right w))
+   operand u'' = Left (typeMismatch u'' "int, float or str")
 
-instance asNumberIntOrNumber :: As Number (a + Number) where
-   as = Right
+   float :: Operand -> Either String Number
+   float (Left n) = pure (toNumber n)
+   float (Right (Left r)) = pure r
+   float (Right (Right w)) = Left (typeMismatch (Lit (Str w)) "int or float")
 
-instance asIntNumber :: As Int Number where
-   as = toNumber
+   compare :: (forall b. Ord b => b -> b -> Boolean) -> Operand -> Operand -> Either String (BaseVal a × Set a)
+   compare f (Right (Right w)) (Right (Right w')) = pure (Lit (Bool (f w w')) × both)
+   compare f (Left m) (Left n) = pure (Lit (Bool (f m n)) × both)
+   compare f x y = (\r r' -> Lit (Bool (f r r')) × both) <$> float x <*> float y
 
-instance asBooleanBoolean :: As Boolean Boolean where
-   as = identity
+   arith :: (Int -> Int -> Int) -> (Number -> Number -> Number) -> Operand -> Operand -> Either String (BaseVal a)
+   arith f _ (Left m) (Left n) = pure (Lit (Int (f m n)))
+   arith _ g x y = Lit <<< Float <$> (g <$> float x <*> float y)
 
-instance asNumberString :: As Number String where
-   as _ = error "Non-uniform argument types"
+   floorDiv :: Int -> Int -> Int
+   floorDiv m n = Int.floor (toNumber m / toNumber n)
 
-instance asIntNumberOrString :: As Int (Number + a) where
-   as = toNumber >>> Left
+   nonZero :: Operand -> Either String Unit
+   nonZero y = when (isZero y) (Left "ZeroDivisionError: division by zero")
 
-instance asIntorNumberNumber :: As (Int + Number) Number where
-   as (Left n) = as n
-   as (Right n) = n
+   isZero :: Operand -> Boolean
+   isZero (Left 0) = true
+   isZero (Right (Left 0.0)) = true
+   isZero _ = false
+
+type Operand = Int + Number + String
+
+bothNan :: forall a. Val a -> Val a -> Boolean
+bothNan (Val _ _ (Lit (Float r))) (Val _ _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
+bothNan _ _ = false
+
+vertices2 :: forall a. Ord a => Val a -> Val a -> Set a
+vertices2 (Val α _ _) (Val β _ _) = Set.fromFoldable [ α, β ]
+
+repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
+repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
+   where
+   deps = if n == 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+
+unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
+unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
+unop Not (Val _ _ u) = Left (typeMismatch u "bool")
+unop Neg (Val α _ (Lit (Int n))) = pure (Lit (Int (negate n)) × Set.singleton α)
+unop Neg (Val α _ (Lit (Float r))) = pure (Lit (Float (negate r)) × Set.singleton α)
+unop Pos (Val α _ u@(Lit (Int _))) = pure (u × Set.singleton α)
+unop Pos (Val α _ u@(Lit (Float _))) = pure (u × Set.singleton α)
+unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
+
+eqOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
+eqOp (Val α _ u) (Val β _ u') = case u, u' of
+   Lit (Float r), Lit (Float r') | N.isNaN r || N.isNaN r' -> Left "Cannot compare nan"
+   Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
+   Lit None, _ -> pure (false × both)
+   _, Lit None -> pure (false × both)
+   Constr c vs, Constr d ws
+      | c == d -> eqElems both vs ws
+      | otherwise -> pure (false × both)
+   Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
+   Matrix r, Matrix r' -> eqMatrix r r'
+   _, _ -> Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
+   where
+   both = Set.fromFoldable [ α, β ]
+
+   eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> Either String (Boolean × Set a)
+   eqDict d d' =
+      if keys d == keys d' then
+         eqElems αs (snd <$> values d) (snd <<< definitely' <<< flip lookup d' <$> Set.toUnfoldable (keys d))
+      else pure (false × αs)
+      where
+      αs = both ∪ keyVertices d ∪ keyVertices d'
+
+   keyVertices :: Dict (a × Val a) -> Set a
+   keyVertices = values >>> map fst >>> Set.fromFoldable
+
+   eqMatrix :: MatrixRep a -> MatrixRep a -> Either String (Boolean × Set a)
+   eqMatrix
+      (MatrixRep (vss × MatrixDim (i × γ) × MatrixDim (j × δ)))
+      (MatrixRep (vss' × MatrixDim (i' × γ') × MatrixDim (j' × δ'))) =
+      if i == i' && j == j' then eqElems αs (elems vss) (elems vss') else pure (false × αs)
+      where
+      αs = both ∪ Set.fromFoldable [ γ, δ, γ', δ' ]
+
+   elems :: Array (Array (Val a)) -> List (Val a)
+   elems = fromFoldable >>> map fromFoldable >>> concat
+
+   sameKind :: Literal -> Literal -> Boolean
+   sameKind ℓ ℓ' = case ℓ, ℓ' of
+      Int _, Int _ -> true
+      Int _, Float _ -> true
+      Float _, Int _ -> true
+      Float _, Float _ -> true
+      Str _, Str _ -> true
+      Bool _, Bool _ -> true
+      None, None -> true
+      _, _ -> false
+
+eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> Either String (Boolean × Set a)
+eqElems αs Nil Nil = pure (true × αs)
+eqElems αs (v : vs) (v' : vs') = do
+   b × βs <- eqOp v v'
+   if b then eqElems (αs ∪ βs) vs vs' else pure (false × (αs ∪ βs))
+eqElems αs _ _ = pure (false × αs)
+
+contains :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
+contains (Val α _ u') v@(Val β _ u) = case u', u of
+   Constr c Nil, _ | c == cNil -> pure (false × Set.singleton α)
+   Constr c (v' : vs : Nil), _ | c == cCons -> do
+      b × βs <- eqOp v v'
+      if b then pure (true × Set.insert α βs) else map (Set.insert α <<< (βs ∪ _)) <$> contains vs v
+   Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
+   Dictionary _, _ -> Left (typeMismatch u "str")
+   Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])
+   Lit (Str _), _ -> Left (typeMismatch u "str")
+   _, _ -> Left (typeMismatch u' "list, dict or str")

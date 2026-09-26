@@ -1,4 +1,4 @@
 from slicing.array.lookup_inputs import xs
 
 ys = [| nth2(i, j, xs) for (i, j) in (3, 3) |]
-ys ! (2, 1)
+ys[2, 1]

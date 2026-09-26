@@ -1,4 +1,1 @@
-def untaken():
-  assert False, "untaken"
-
-(1 if True else untaken()) + (untaken() if False else 2)
+(1 if True else 1 // 0) + (1 // 0 if False else 2)

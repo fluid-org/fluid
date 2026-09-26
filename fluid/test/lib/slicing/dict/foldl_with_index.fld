@@ -1,3 +1,3 @@
 from slicing.dict.foldl_with_index_inputs import d
 
-foldl((*), 1, foldl_with_index(lambda _: concat2, [], d))
+foldl(lambda x, y: x * y, 1, foldl_with_index(lambda _: concat2, [], d))

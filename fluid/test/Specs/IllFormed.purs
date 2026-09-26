@@ -35,6 +35,11 @@ purepy_cases =
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module two_vals_lib" }
    , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected bool" }
    , { file: "purepy/nested_class.fld", expected_error: "Class declaration not at top level: C" }
+   , { file: "purepy/div_zero.fld", expected_error: "ZeroDivisionError: division by zero\nIn //" }
+   , { file: "purepy/binop_bool_int.fld", expected_error: "Found True, expected int, float or str\nIn +" }
+   , { file: "purepy/eq_int_str.fld", expected_error: "Cannot compare 1 with \"a\"\nIn ==" }
+   , { file: "purepy/and_nonbool.fld", expected_error: "Found 0, expected bool" }
+   , { file: "purepy/eq_nan_container.fld", expected_error: "Cannot compare nan\nIn ==" }
    , { file: "purepy/dataclass_not_imported.fld", expected_error: "Not bound as a predefined name: dataclass" }
    , { file: "purepy/callable_not_imported.fld", expected_error: "Not bound as a predefined name: Callable" }
    , { file: "purepy/sized_not_imported.fld", expected_error: "Not bound as a predefined name: Sized" }
@@ -96,7 +101,7 @@ illFormed_cases =
    , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }
    , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module clash_pkg: sub\nChecking module clash_pkg" }
    , { file: "submodule_self_import.fld", expected_error: "import cycle: ssi.b -> ssi.b" }
-   , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict" }
+   , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict or matrix" }
    , { file: "use_before_import.fld", expected_error: "\"ParseError on line 2, column 6:\\nimports must precede statements\"\nLoading module use_before_import_mod" }
    ]
 

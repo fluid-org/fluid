@@ -6,4 +6,4 @@ year = 2015
 def exclude(countries, yearData):
   return flip(map, yearData, second(filter(lambda (country, countryData): not(elem(country, countries)))))
 
-caption("Renewables (GW) by country and energy type, " ++ num_to_str(year), grouped_bar_chart(True, colours1, 0.2, exclude([], lookup(year, data))))
+caption("Renewables (GW) by country and energy type, " + num_to_str(year), grouped_bar_chart(True, colours1, 0.2, exclude([], lookup(year, data))))

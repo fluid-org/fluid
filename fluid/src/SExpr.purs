@@ -28,8 +28,8 @@ import Literal (Literal(..))
 import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
-import Expr (class BV, class FV, Pattern(..), bv, fv)
-import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
+import Expr (class BV, class FV, Binop, Pattern(..), Unop, bv, fv)
+import Expr (Binop(..), Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
 import Type as T
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
@@ -40,7 +40,6 @@ import Util.Pair (Pair(..))
 
 data Expr a
    = Var Var
-   | Op Var
    | Lit a Literal
    | Constr a Name (List (Expr a)) (List (Bind (Expr a)))
    | Dictionary a (List (DictEntry a × Expr a))
@@ -50,8 +49,11 @@ data Expr a
    | ModMember Name Var -- member x of module q; not parseable, produced by well-formedness from Attribute
    | Subscript (Expr a) (Expr a)
    | App (Expr a) (List (Expr a))
-   | BinaryApp (Expr a) Var (Expr a)
-   | UnaryPrefixApp Var (Expr a)
+   | BinOp (Expr a) Binop (Expr a)
+   | UnOp Unop (Expr a)
+   | And (Expr a) (Expr a)
+   | Or (Expr a) (Expr a)
+   | InfixApp (Expr a) Var (Expr a) -- e |f| e', sugar for f(e, e')
    | Cond (Expr a) (Expr a) (Expr a) -- e1 if e else e2
    | Paragraph (Paragraph a)
    | ListEmpty a
@@ -189,8 +191,6 @@ paragraphElems (Unquote s : elems) = do
 expr :: forall m. HasClasses m => MonadError Error m => Expr (WfResult VarCxt) -> m (E.Expr (WfResult VarCxt))
 expr (Var x) =
    pure $ E.Var x
-expr (Op op) =
-   pure $ E.Op op
 expr (Lit α ℓ) =
    pure $ E.Lit α ℓ
 expr (Constr α c es Nil) = do
@@ -219,10 +219,16 @@ expr (Subscript s x) =
    E.Subscript <$> desug s <*> desug x
 expr (App s ss) =
    E.App <$> desug s <*> traverse desug ss
-expr (BinaryApp s1 op s2) =
-   E.App (E.Op op) <$> traverse desug (s1 : s2 : Nil)
-expr (UnaryPrefixApp op s) =
-   E.App (E.Op op) <$> traverse desug (s : Nil)
+expr (BinOp s1 op s2) =
+   E.BinOp <$> desug s1 <@> op <*> desug s2
+expr (UnOp op s) =
+   E.UnOp op <$> desug s
+expr (And s1 s2) =
+   E.And <$> desug s1 <*> desug s2
+expr (Or s1 s2) =
+   E.Or <$> desug s1 <*> desug s2
+expr (InfixApp s1 f s2) =
+   E.App (E.Var f) <$> traverse desug (s1 : s2 : Nil)
 expr (Cond e1 e e2) =
    E.Cond <$> desug e1 <*> desug e <*> desug e2
 expr (Paragraph elems) =
@@ -232,7 +238,7 @@ expr (ListEmpty α) =
 expr (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 expr (ListEnum s1 s2) =
-   (\e1 e2 -> E.App (E.Var "range") (e1 : E.App (E.Op "+") (e2 : E.Lit Returns (Int 1) : Nil) : Nil)) <$> desug s1 <*> desug s2
+   (\e1 e2 -> E.App (E.Var "range") (e1 : E.BinOp e2 E.Add (E.Lit Returns (Int 1)) : Nil)) <$> desug s1 <*> desug s2
 expr (ListComp α s gs) =
    listComp (α × gs × s)
 expr (DocExpr s s') = do
@@ -436,7 +442,6 @@ instance Show a => Show (ParagraphElem a) where
 
 instance FV (Expr a) where
    fv (Var x) = Set.singleton x
-   fv (Op op) = Set.singleton op
    fv (Lit _ _) = Set.empty
    fv (Constr _ c es xes) = Set.singleton (head c) ∪ Set.unions (fv <$> es) ∪ Set.unions ((fv <<< snd) <$> xes)
    fv (Dictionary _ entries) = Set.unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
@@ -446,8 +451,11 @@ instance FV (Expr a) where
    fv (ModMember _ _) = Set.empty
    fv (Subscript e e') = fv e ∪ fv e'
    fv (App e es) = fv e ∪ Set.unions (fv <$> es)
-   fv (BinaryApp e op e') = fv e ∪ Set.singleton op ∪ fv e'
-   fv (UnaryPrefixApp op e) = Set.singleton op ∪ fv e
+   fv (BinOp e _ e') = fv e ∪ fv e'
+   fv (UnOp _ e) = fv e
+   fv (And e e') = fv e ∪ fv e'
+   fv (Or e e') = fv e ∪ fv e'
+   fv (InfixApp e f e') = fv e ∪ Set.singleton f ∪ fv e'
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
    fv (Paragraph elems) = Set.unions (fv <$> elems)
    fv (ListEmpty _) = Set.empty

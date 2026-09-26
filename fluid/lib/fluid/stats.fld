@@ -67,7 +67,7 @@ def likelihood_map(table, prob):
   return from_just(find(lambda x: x["prob"] <= prob, table))["msg"]
 
 def mk_percent(num):
-  return num_to_str(num * 100) ++ "%"
+  return num_to_str(num * 100) + "%"
 
 def leq_p(n, m):
   if n <= m:

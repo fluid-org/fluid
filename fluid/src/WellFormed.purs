@@ -177,7 +177,6 @@ captures (S.Dataclass _ _ _) = Set.empty
 
 capturesE :: forall a. S.Expr a -> Set Var
 capturesE (S.Var _) = Set.empty
-capturesE (S.Op _) = Set.empty
 capturesE (S.Lit _ _) = Set.empty
 capturesE (S.Constr _ _ es xes) = unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
 capturesE (S.Dictionary _ es) =
@@ -193,8 +192,11 @@ capturesE (S.Attribute e _) = capturesE e
 capturesE (S.ModMember _ _) = Set.empty
 capturesE (S.Subscript e e') = capturesE e ∪ capturesE e'
 capturesE (S.App e es) = capturesE e ∪ unions (capturesE <$> es)
-capturesE (S.BinaryApp e _ e') = capturesE e ∪ capturesE e'
-capturesE (S.UnaryPrefixApp _ e) = capturesE e
+capturesE (S.BinOp e _ e') = capturesE e ∪ capturesE e'
+capturesE (S.UnOp _ e) = capturesE e
+capturesE (S.And e e') = capturesE e ∪ capturesE e'
+capturesE (S.Or e e') = capturesE e ∪ capturesE e'
+capturesE (S.InfixApp e _ e') = capturesE e ∪ capturesE e'
 capturesE (S.Cond e1 e e2) = capturesE e1 ∪ capturesE e ∪ capturesE e2
 capturesE (S.Paragraph es) = unions (capturesPe <$> es)
    where
@@ -329,7 +331,6 @@ resolveType cxt (T.Union ψ ψ') = T.Union <$> resolveType cxt ψ <*> resolveTyp
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
-wellFormedExpr cxt e@(S.Op op) = e <$ var cxt op
 wellFormedExpr _ e@(S.Lit _ _) = pure e
 wellFormedExpr cxt (S.Constr α c es Nil) = do
    cls <- classOf cxt c
@@ -342,8 +343,11 @@ wellFormedExpr cxt (S.Constr α c es xes) = do
    cls <- classOf cxt c
    S.Constr α cls.name <$> traverse (wellFormedExpr cxt) es <*> traverse (\(x × e) -> (x × _) <$> wellFormedExpr cxt e) xes
 wellFormedExpr cxt (S.App e es) = S.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
-wellFormedExpr cxt (S.BinaryApp e op e') = S.BinaryApp <$> wellFormedExpr cxt e <*> (op <$ var cxt op) <*> wellFormedExpr cxt e'
-wellFormedExpr cxt (S.UnaryPrefixApp op e) = var cxt op *> (S.UnaryPrefixApp op <$> wellFormedExpr cxt e)
+wellFormedExpr cxt (S.BinOp e op e') = S.BinOp <$> wellFormedExpr cxt e <@> op <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.UnOp op e) = S.UnOp op <$> wellFormedExpr cxt e
+wellFormedExpr cxt (S.And e e') = S.And <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.Or e e') = S.Or <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.InfixApp e f e') = S.InfixApp <$> wellFormedExpr cxt e <*> (f <$ var cxt f) <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.Cond e1 e e2) = S.Cond <$> wellFormedExpr cxt e1 <*> wellFormedExpr cxt e <*> wellFormedExpr cxt e2
 wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
    Just (ModLoaded q cxt') -> do

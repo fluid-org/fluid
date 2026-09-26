@@ -74,26 +74,6 @@ class FNum(InfNum):
 class Infty(InfNum):
   pass
 
-# To resolve in new semantics: expected dependencies don't arise for and/or unless they  make a fresh value.
-def and(False: bool, y: bool) -> bool:
-  return False
-def and(True, True):
-  return True
-def and(True, False):
-  return False
-
-def or(True: bool, y: bool) -> bool:
-  return True
-def or(False, True):
-  return True
-def or(False, False):
-  return False
-
-def not(True: bool) -> bool:
-  return False
-def not(False):
-  return True
-
 # Int -> Int -> Ordering
 def compare(x, y):
   if x > y:
@@ -106,7 +86,8 @@ def compare(x, y):
 def on(bin_op, prop, x, y):
   return bin_op(prop(x), prop(y))
 
-negate: Callable[[int | float], int | float] = (-)(0)
+def negate(x: int | float) -> int | float:
+  return -x
 
 # Log of x in base y.
 def log_base(x: float, y: float) -> float:
@@ -300,7 +281,7 @@ def append((x :| xs, ys)):
   return x :| append((xs, ys))
 
 # List a -> List -> List a
-# Want infix ++
+# Want infix +
 def concat2([], ys):
   return ys
 def concat2(x :| xs, ys):
@@ -314,7 +295,7 @@ def concat_map(f, xs):
   return concat(map(f, xs))
 
 # List String -> String
-join = foldr((++), "")
+join = foldr(lambda x, y: x + y, "")
 
 # List a -> a -> List a
 def intersperse([], _):
@@ -330,7 +311,7 @@ def iterate(n, f, z):
     return []
   return z :| map(f, iterate(n - 1, f, z))
 
-sum: Callable[[list[int | float]], int | float] = foldr((+), 0)
+sum: Callable[[list[int | float]], int | float] = foldr(lambda x, y: x + y, 0)
 
 def mean(xs: list[int | float]) -> float:
   (s, n) = foldl(lambda (s, n), x: (s + x, n + 1), (0, 0), xs)

@@ -18,7 +18,7 @@ import Data.Map as M
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (wrap)
 import Data.Number (fromString)
-import Data.Number (cos, e, exp, log, pi, pow, sin, sqrt, tan) as N
+import Data.Number (cos, e, exp, log, pi, sin, sqrt, tan) as N
 import Data.Set (Set, empty)
 import Data.Set as Set
 import Data.String (Pattern(..))
@@ -41,13 +41,13 @@ import Graph (Vertex)
 import Graph.WithGraph (class MonadWithGraphAlloc)
 import Lattice (class BoundedJoinSemilattice, Raw, bot)
 import Literal (Literal(..))
-import Primitive (binary, binaryZero, boolean, int, intOrNumber, intOrNumberOrString, number, string, typeMismatch, unary, union, union1, unionStr)
-import Util (type (+), type (×), Endo, definitely, definitely', error, singleton, throw, (×))
+import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
+import Util (type (+), type (×), definitely, definitely', error, singleton, throw, (×))
 import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, intersectionWith, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), matrixGet, matrixPut, val)
+import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), matrixPut, val)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -64,19 +64,6 @@ predefined = M.fromFoldable
         , extern loadJson
         , unary "str_to_float" { i: string, o: number, fwd: definitely' <<< fromString }
         , unary "num_to_str" { i: intOrNumber, o: string, fwd: numToStr } -- rename to 'str' (more Pythonic)
-        , binary "+" { i1: intOrNumber, i2: intOrNumber, o: intOrNumber, fwd: plus }
-        , binary "-" { i1: intOrNumber, i2: intOrNumber, o: intOrNumber, fwd: minus }
-        , binaryZero "*" { i: intOrNumber, o: intOrNumber, fwd: times }
-        , binaryZero "**" { i: intOrNumber, o: intOrNumber, fwd: pow }
-        , binaryZero "/" { i: intOrNumber, o: intOrNumber, fwd: divide }
-        , binary "==" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: equals }
-        , binary "/=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: notEquals }
-        , binary "<" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: lessThan }
-        , binary ">" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: greaterThan }
-        , binary "<=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: lessThanEquals }
-        , binary ">=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: greaterThanEquals }
-        , binary "++" { i1: string, i2: string, o: string, fwd: concat }
-        , extern matrixLookup
         -- TODO: rename the rest of these (apart from dict_map?) to lose the dict_ prefix
         , extern dict_difference
         , extern dict_disjointUnion
@@ -90,10 +77,8 @@ predefined = M.fromFoldable
         , extern find_str
         , extern search
         , extern split
-        , binaryZero "//" { i: int, o: int, fwd: div }
-        , binaryZero "%" { i: int, o: int, fwd: mod }
-        , binaryZero "quot" { i: int, o: int, fwd: quot }
-        , binaryZero "rem" { i: int, o: int, fwd: rem }
+        , extern quot
+        , extern rem
         ]
    , predefinedModule math Nil
         [ "pi" × Val bot Nothing (Lit (Float N.pi))
@@ -212,15 +197,6 @@ dims =
       v2 <- val Nothing (singleton β2) $ Lit (Int j)
       val doc_opt (singleton α) $ Constr cPair (v1 : v2 : Nil)
    op _ _ = throw "Matrix expected"
-
-matrixLookup :: ForeignOp
-matrixLookup =
-   ForeignOp ("!" × ForeignOp' { arity: 2, op })
-   where
-   op :: Op
-   op _ (Val _ _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : Nil) | c == cPair =
-      pure $ matrixGet i j r
-   op _ _ = throw "Matrix and pair of integers expected"
 
 matrixUpdate :: ForeignOp
 matrixUpdate =
@@ -372,56 +348,20 @@ pairsToDict =
       kvs' _ = throw $ "List of (key, value) pairs expected"
    op _ _ = throw "Single argument expected"
 
-plus :: Int + Number -> Endo (Int + Number)
-plus = (+) `union` (+)
+quot :: ForeignOp
+quot = intBinary "quot" I.quot
 
-minus :: Int + Number -> Endo (Int + Number)
-minus = (-) `union` (-)
+rem :: ForeignOp
+rem = intBinary "rem" I.rem
 
-times :: Int + Number -> Endo (Int + Number)
-times = (*) `union` (*)
-
--- PureScript's / and pow aren't defined at Int -> Int -> Number, so roll our own
-pow :: Int + Number -> Endo (Int + Number)
-pow = (\x y -> toNumber x `N.pow` toNumber y) `union` N.pow
-
-divide :: Int + Number -> Endo (Int + Number)
-divide = (\x y -> toNumber x / toNumber y) `union` (/)
-
--- See T-, F- and E-definitions discussed at https://github.com/purescript/purescript-prelude/issues/161
--- and https://github.com/fluid-org/fluid/issues/1450
-div :: Int -> Endo Int
-div = (\x y -> floor (toNumber x / toNumber y))
-
-mod :: Int -> Endo Int
-mod = (\x y -> x - y * div x y)
-
-quot :: Int -> Endo Int
-quot = I.quot
-
-rem :: Int -> Endo Int
-rem = I.rem
-
-equals :: Int + Number + String -> Int + Number + String -> Boolean
-equals = (==) `union` ((==) `unionStr` (==))
-
-notEquals :: Int + Number + String -> Int + Number + String -> Boolean
-notEquals = (/=) `union` ((/=) `unionStr` (/=))
-
-lessThan :: Int + Number + String -> Int + Number + String -> Boolean
-lessThan = (<) `union` ((<) `unionStr` (<))
-
-greaterThan :: Int + Number + String -> Int + Number + String -> Boolean
-greaterThan = (>) `union` ((>) `unionStr` (>))
-
-lessThanEquals :: Int + Number + String -> Int + Number + String -> Boolean
-lessThanEquals = (<=) `union` ((<=) `unionStr` (<=))
-
-greaterThanEquals :: Int + Number + String -> Int + Number + String -> Boolean
-greaterThanEquals = (>=) `union` ((>=) `unionStr` (>=))
-
-concat :: String -> Endo String
-concat = (<>)
+intBinary :: String -> (Int -> Int -> Int) -> ForeignOp
+intBinary id f =
+   ForeignOp (id × ForeignOp' { arity: 2, op })
+   where
+   op :: Op
+   op doc_opt (Val α _ (Lit (Int m)) : Val β _ (Lit (Int n)) : Nil) =
+      val doc_opt (singleton α # Set.insert β) (Lit (Int (f m n)))
+   op _ _ = throw "Two integers expected"
 
 numToStr :: Int + Number -> String
 numToStr = show `union1` show
