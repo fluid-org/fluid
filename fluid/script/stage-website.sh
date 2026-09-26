@@ -2,6 +2,7 @@
 # Copy website/article into fluid/ for npm packaging.
 # Run from fluid/ directory before `npm publish`.
 set -e
+. "$(dirname "$0")/util/paths.sh"
 
 WEBSITE="${1:-article}"
 SRC="../website/$WEBSITE"
@@ -24,9 +25,9 @@ sed -i.bak "s|\"@fluid-org/fluid\": \"workspace:\\*\"|\"@fluid-org/fluid\": \"^$
 rm -f "$DEST/package.json.bak"
 
 # Replace symlinks with copies from the source tree
-# static/lib/fluid → fluid standard library
-rm -f "$DEST/static/lib/fluid"
-cp -r lib/fluid "$DEST/static/lib/fluid"
+# fluid standard library
+rm -f "$DEST/$WEBSITE_LIB_ROOT/fluid"
+cp -r "$LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
 # src/lib/assets/css/styles.css → shared CSS
 rm -f "$DEST/src/lib/assets/css/styles.css"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+. "$(dirname "$0")/util/paths.sh"
 
 WEBSITE="${1:-article}"
 NPM_ROOT="node_modules/@fluid-org/fluid"
@@ -33,8 +34,8 @@ sed -i.bak \
 rm -f "$DEST/package.json.bak"
 
 # Recreate symlinks pointing into node_modules
-rm -rf "$DEST/static/lib/fluid"
-ln -s "../../../../$NPM_ROOT/dist/fluid/lib/fluid" "$DEST/static/lib/fluid"
+rm -rf "$DEST/$WEBSITE_LIB_ROOT/fluid"
+ln -s "../../../../$NPM_ROOT/$DIST_LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
 echo ""
 echo "Installed to $DEST. To run:"
