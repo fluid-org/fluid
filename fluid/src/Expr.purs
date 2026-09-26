@@ -115,16 +115,15 @@ instance FV (Expr a) where
    fv (And e e') = fv e ∪ fv e'
    fv (Or e e') = fv e ∪ fv e'
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
-   fv (ListComp _ e gs) = fvQualifiers gs (fv e)
-   fv (DictComp _ e e' gs) = fvQualifiers gs (fv e ∪ fv e')
+   fv (ListComp _ e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
+   fv (DictComp _ e e' gs) = fvQualifiers gs ∪ ((fv e ∪ fv e') \\ bv gs)
    fv (DocExpr doc e) = fv doc ∪ fv e
 
--- Free variables of qualifiers followed by a body with the given free variables.
-fvQualifiers :: forall a. List (Qualifier a) -> Set Var -> Set Var
-fvQualifiers Nil xs = xs
-fvQualifiers (Guard e : gs) xs = fv e ∪ fvQualifiers gs xs
-fvQualifiers (Generator p e : gs) xs = fv e ∪ (fvQualifiers gs xs \\ bv p)
-fvQualifiers (Decl p e : gs) xs = fv e ∪ (fvQualifiers gs xs \\ bv p)
+fvQualifiers :: forall a. List (Qualifier a) -> Set Var
+fvQualifiers Nil = empty
+fvQualifiers (Guard e : gs) = fv e ∪ fvQualifiers gs
+fvQualifiers (Generator p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
+fvQualifiers (Decl p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
 
 instance FV (Def a) where
    fv (Def xs _ s) = fv s \\ S.fromFoldable (paramVar <$> xs)
@@ -170,6 +169,14 @@ instance BV Pattern where
    bv (PRecord xps) = unions ((bv <<< snd) <$> xps)
    bv (PList ps) = unions (bv <$> ps)
    bv (PAs p x) = bv p ∪ singleton x
+
+instance BV (Qualifier a) where
+   bv (Guard _) = empty
+   bv (Generator p _) = bv p
+   bv (Decl p _) = bv p
+
+instance BV a => BV (List a) where
+   bv xs = unions (bv <$> xs)
 
 instance JoinSemilattice a => JoinSemilattice (Def a) where
    join (Def xs ψ s) (Def xs' ψ' s') = Def (xs ≜ xs') (ψ ≜ ψ') (s ∨ s')

@@ -432,8 +432,8 @@ instance FV (Expr a) where
    fv (Paragraph elems) = Set.unions (fv <$> elems)
    fv (ListEmpty _) = Set.empty
    fv (ListNonEmpty _ e l) = fv e ∪ fv l
-   fv (ListComp _ e gs) = qualifiersFv gs (fv e)
-   fv (DictComp _ k e gs) = qualifiersFv gs (fv k ∪ fv e)
+   fv (ListComp _ e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
+   fv (DictComp _ k e gs) = fvQualifiers gs ∪ ((fv k ∪ fv e) \\ bv gs)
    fv (DocExpr e e') = fv e ∪ fv e'
 
 instance FV (Stmt a) where
@@ -478,10 +478,13 @@ fvRecDefs :: forall a. RecDefs a -> Set.Set Var
 fvRecDefs rs =
    Set.unions (fv <$> (snd <$> rs)) \\ Set.unions (Set.singleton <<< fst <$> rs)
 
--- Free variables of qualifiers followed by a body with the given free variables.
-qualifiersFv :: forall a. List (Qualifier a) -> Set.Set Var -> Set.Set Var
-qualifiersFv Nil xs = xs
-qualifiersFv (g : gs) xs = case g of
-   Guard e -> fv e ∪ qualifiersFv gs xs
-   Generator p e -> fv e ∪ (qualifiersFv gs xs \\ bv p)
-   Decl (VarDef p _ e) -> fv e ∪ (qualifiersFv gs xs \\ bv p)
+fvQualifiers :: forall a. List (Qualifier a) -> Set.Set Var
+fvQualifiers Nil = Set.empty
+fvQualifiers (Guard e : gs) = fv e ∪ fvQualifiers gs
+fvQualifiers (Generator p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
+fvQualifiers (Decl (VarDef p _ e) : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
+
+instance BV (Qualifier a) where
+   bv (Guard _) = Set.empty
+   bv (Generator p _) = bv p
+   bv (Decl (VarDef p _ _)) = bv p

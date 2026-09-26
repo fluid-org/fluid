@@ -204,8 +204,8 @@ capturesE (S.ListNonEmpty _ e l) = capturesE e ∪ capturesEListRest l
    where
    capturesEListRest (S.End _) = Set.empty
    capturesEListRest (S.Next _ e' l') = capturesE e' ∪ capturesEListRest l'
-capturesE (S.ListComp _ e gs) = capturesQualifiers gs ∪ (capturesE e \\ bindsQualifiers gs)
-capturesE (S.DictComp _ k e gs) = capturesQualifiers gs ∪ ((capturesDictKey k ∪ capturesE e) \\ bindsQualifiers gs)
+capturesE (S.ListComp _ e gs) = capturesQualifiers gs ∪ (capturesE e \\ bv gs)
+capturesE (S.DictComp _ k e gs) = capturesQualifiers gs ∪ ((capturesDictKey k ∪ capturesE e) \\ bv gs)
 capturesE (S.DocExpr e e') = capturesE e ∪ capturesE e'
 
 capturesDictKey :: forall a. S.DictEntry a -> Set Var
@@ -217,12 +217,6 @@ capturesQualifiers Nil = Set.empty
 capturesQualifiers (S.Guard e : gs) = capturesE e ∪ capturesQualifiers gs
 capturesQualifiers (S.Generator p e : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
 capturesQualifiers (S.Decl (S.VarDef p _ e) : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
-
-bindsQualifiers :: forall a. List (S.Qualifier a) -> Set Var
-bindsQualifiers Nil = Set.empty
-bindsQualifiers (S.Guard _ : gs) = bindsQualifiers gs
-bindsQualifiers (S.Generator p _ : gs) = bv p ∪ bindsQualifiers gs
-bindsQualifiers (S.Decl (S.VarDef p _ _) : gs) = bv p ∪ bindsQualifiers gs
 
 wellFormed :: forall a. Name -> Cxt -> S.Stmt a -> Either String (WfResult VarCxt × S.Stmt (WfResult VarCxt))
 wellFormed _ _ S.Pass = pure (Assigns Map.empty × S.Pass)
