@@ -32,7 +32,7 @@ libPrelude = NonEmptyList ("lib" :| "prelude" : Nil)
 implicit :: List ModuleName
 implicit = builtins : libBuiltins : libPrelude : Nil
 
-implicitDeps :: ModuleName -> List ModuleName
-implicitDeps q = takeWhile (_ /= q) implicit
+implicitFor :: ModuleName -> List ModuleName
+implicitFor q = takeWhile (_ /= q) implicit
 
 type DependencyGraph = Map ModuleName (List ModuleName)

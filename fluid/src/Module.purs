@@ -29,7 +29,7 @@ import Graph.GraphImpl (GraphImpl)
 import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
 import Lattice (Raw)
 import Literal (Literal(..))
-import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitDeps)
+import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
 import SExpr (desugarModule)
 import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
@@ -203,7 +203,7 @@ parseModules imports = do
             mod × _ <- throwLeft <#> withMsg ("Loading module " <> dottedName path) $ parseModule src
             deps <- case mod of S.Module is _ -> traverse (importDeps path) is
             let edges = deps >>= _.edges
-            let toLoad = implicitDeps path <> (deps >>= _.load)
+            let toLoad = implicitFor path <> (deps >>= _.load)
             pure $ mod × edges × toLoad
          Nothing -> hasDirectory fluidSrcPaths (File (pathName path)) >>= case _ of
             true -> pure (S.Module Nil Nil × Nil × Nil)

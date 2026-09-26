@@ -18,7 +18,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, zipWith, (:))
 import Data.Foldable (lookup) as F
 import DataType (cCons, cNil)
-import ModuleGraph (ModuleName, implicitDeps)
+import ModuleGraph (ModuleName, implicitFor)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
@@ -35,9 +35,7 @@ import Type as T
 import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
--- Member context of a loaded module and its checked body. Predefined modules
--- and the program have no body: the program is checked separately and may
--- return, and is recorded under __main__. The table memoises the load judgement.
+-- Predefined modules and the program (under __main__) have no body.
 type LoadedModule = { cxt :: Cxt, mod :: Maybe (S.Module (WfResult VarCxt)) }
 
 type LoadM = StateT (Map.Map ModuleName LoadedModule) (Either String)
@@ -81,7 +79,7 @@ checkProgram mods predefined imports s =
 
    checkImports :: ModuleName -> List S.Import -> LoadM (Cxt × Cxt)
    checkImports enclosing is = do
-      implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (implicitDeps enclosing)
+      implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (implicitFor enclosing)
       importCxt <- foldM (\acc i -> (acc `extendCxtWith` _) <$> importBindings enclosing i) Map.empty is
       pure (importCxt × (implicitCxt `extendCxtWith` importCxt))
 
