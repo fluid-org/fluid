@@ -1,24 +1,21 @@
 from fluid.stats import find_percentile, cut
 from figure4b_data import ssp126Source, ssp126preds, ssp245Source, ssp245preds
 
-from fluid.view import BarChart, MultiView, Default, Link
+from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Link
 
 def stackedBarHeight(stackedBar):
-  return sum([segment["z"] for segment in stackedBar["segments"]])
+  return sum([segment.z for segment in stackedBar.segments])
 
 def get(x, bar):
-  return from_just(find_with_key("x", x, bar.stackedBars))
+  return from_just(find(lambda stackedBar: stackedBar.x == x, bar.stackedBars))
 
 def mkBarChart(scenName, table):
   return BarChart(
     caption="Scenario " + scenName,
-    size={ width: 275, height: 185 },
-    tickLabels={ x: Default, y: Default },
+    size=Dimensions(275, 185),
+    tickLabels=TickLabels(Default, Default),
     stackedBars=
-      map(lambda record: {
-        x: record["type"],
-        segments: [{ y: "emissions", z: record["emissions"] }]
-      }, table),
+      map(lambda record: StackedBar(record["type"], [Segment("emissions", record["emissions"])]), table),
     legend=True
   )
 
@@ -27,18 +24,15 @@ def mkHistogram(xs, name, nbins):
 
   return BarChart(
     caption="Histogram of distribution of " + name,
-    size={ width: 275, height: 185 },
-    tickLabels={ x: Default, y: Default },
+    size=Dimensions(275, 185),
+    tickLabels=TickLabels(Default, Default),
     stackedBars=
-      map(lambda (data, edge): {
-        x: data,
-        segments: [{ y: "density", z: length(data) / binWidth }]
-      }, cut(xs, nbins)),
+      map(lambda (data, edge): StackedBar(data, [Segment("density", length(data) / binWidth)]), cut(xs, nbins)),
     legend=True
   )
 
 def getHeight(offset, bar):
-  return head(bar["segments"])["z"] + offset
+  return head(bar.segments).z + offset
 
 changed126 = map(lambda r: r["changed"], ssp126preds)
 changed245 = map(lambda r: r["changed"], ssp245preds)

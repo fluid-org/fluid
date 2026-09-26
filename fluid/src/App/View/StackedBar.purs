@@ -3,7 +3,7 @@ module App.View.StackedBar where
 import Prelude
 
 import App.Util (Dimensions, Selectable, classes, contents)
-import App.Util.Selector (ConstrArg, dictVal)
+import App.Util.Selector (ConstrArg)
 import App.View.Segment (Scales, Segment(..), SegmentContext)
 import App.View.Util (class Viewable, Select, createElement, setSelection)
 import App.View.Util.D3 (ElementType(..), create, selectAll)
@@ -13,7 +13,7 @@ import Data.Array.NonEmpty (NonEmptyArray, cons', init, toArray)
 import Data.Foldable (sum)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Newtype (class Newtype)
-import DataType (f_segments)
+import DataType (cStackedBar, f_segments)
 import Effect (Effect)
 import Util ((!))
 
@@ -48,7 +48,7 @@ instance Viewable StackedBar StackedBarContext where
       forWithIndex_ segments' \y_index segment ->
          setSelection arg (segmentContext context stackedBar y_index)
             (segments ! y_index)
-            (select <<< dictVal f_segments)
+            (select <<< arg cStackedBar f_segments)
             segment
 
 segmentContext :: StackedBarContext -> StackedBar -> Int -> SegmentContext

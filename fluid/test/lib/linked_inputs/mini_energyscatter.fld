@@ -1,6 +1,6 @@
 from dataset.energy_data import renewables, nonRenewables
 
-from fluid.view import ScatterPlot
+from fluid.view import AxisLabels, Point, ScatterPlot
 
 def sumNonRenewables(x):
   return ((x["nuclearCap"] + x["petrolCap"]) + x["gasCap"]) + x["coalCap"]
@@ -32,12 +32,9 @@ def energy(year, c_names):
 
 ScatterPlot(
   caption="Clean energy efficiency against proportion of renewable energy cap",
-  points=[{
-    x: country["nonRenewables"] / country["totalCap"],
-    y: country["renCapFactor"]
-  } for country in energy(2018, ["USA"])],
-  labels={
-    x: "Renewables/TotalEnergyCap",
-    y: "Clean Capacity Factor"
-  }
+  points=[Point(
+    country["nonRenewables"] / country["totalCap"],
+    country["renCapFactor"]
+  ) for country in energy(2018, ["USA"])],
+  labels=AxisLabels("Renewables/TotalEnergyCap", "Clean Capacity Factor")
 )

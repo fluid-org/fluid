@@ -3,9 +3,9 @@ module Test.Specs.LinkedOutputs where
 import Prelude
 
 import App.Util (SelectionType(..))
-import App.Util.Selector (barSegment, dictVal, listElement, matrixDims, matrixElement, topα, (>.>), select, select')
+import App.Util.Selector (barSegment, listElement, matrixDims, matrixElement, topα, (>.>), select, select')
 import Data.Maybe (Maybe(..))
-import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
+import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cPoint, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
 import Test.Util (fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
 import Util ((×))
@@ -19,16 +19,16 @@ linkedOutputs_spec1 =
         , linking: true
         , rowFilter: Nothing
         }
-   , δ_out: \arg -> arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment 1 0 select)))
+   , δ_out: \arg -> arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment arg 1 0 select)))
    , out_expect: \arg ->
-        arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment 1 0 select)))
+        arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment arg 1 0 select)))
            >.> arg cMultiView f_views
               ( listElement 1
                    ( arg cLineChart f_plots
-                        ( listElement 0 (arg cLinePlot f_points (listElement 2 (dictVal f_y select)))
-                             >.> listElement 1 (arg cLinePlot f_points (listElement 2 (dictVal f_y select)))
-                             >.> listElement 2 (arg cLinePlot f_points (listElement 2 (dictVal f_y select)))
-                             >.> listElement 3 (arg cLinePlot f_points (listElement 2 (dictVal f_y select)))
+                        ( listElement 0 (arg cLinePlot f_points (listElement 2 (arg cPoint f_y select)))
+                             >.> listElement 1 (arg cLinePlot f_points (listElement 2 (arg cPoint f_y select)))
+                             >.> listElement 2 (arg cLinePlot f_points (listElement 2 (arg cPoint f_y select)))
+                             >.> listElement 3 (arg cLinePlot f_points (listElement 2 (arg cPoint f_y select)))
                         )
                    )
               )
@@ -45,14 +45,14 @@ linkedOutputs_spec2 =
         , linking: true
         , rowFilter: Nothing
         }
-   , δ_out: \arg -> arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment 3 2 select >.> barSegment 4 1 select >.> barSegment 4 3 select)))
+   , δ_out: \arg -> arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment arg 3 2 select >.> barSegment arg 4 1 select >.> barSegment arg 4 3 select)))
    , out_expect: \arg ->
-        arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment 3 2 select >.> barSegment 4 1 select >.> barSegment 4 3 select)))
+        arg cMultiView f_views (listElement 0 (arg cBarChart f_stackedBars (barSegment arg 3 2 select >.> barSegment arg 4 1 select >.> barSegment arg 4 3 select)))
            >.> arg cMultiView f_views
               ( listElement 1
                    ( arg cScatterPlot f_points
-                        ( listElement 4 (dictVal f_y select)
-                             >.> listElement 6 (dictVal f_y select)
+                        ( listElement 4 (arg cPoint f_y select)
+                             >.> listElement 6 (arg cPoint f_y select)
                         )
                    )
               )

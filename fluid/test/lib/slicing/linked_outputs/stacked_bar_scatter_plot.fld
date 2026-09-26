@@ -1,6 +1,6 @@
 from dataset.energy_data import renewables, nonRenewables
 
-from fluid.view import BarChart, MultiView, ScatterPlot, Default
+from fluid.view import AxisLabels, BarChart, Dimensions, MultiView, Point, ScatterPlot, Segment, StackedBar, TickLabels, Default
 
 def totalFor(year, country, rows):
   [row] = [row for row in rows if row["year"] == year if row["country"] == country]
@@ -8,7 +8,7 @@ def totalFor(year, country, rows):
   return ((row["nuclearOut"] + row["gasOut"]) + row["coalOut"]) + row["petrolOut"]
 
 def stack(year):
-  return [{ y: country, z: totalFor(year, country, nonRenewables) } for country in [
+  return [Segment(country, totalFor(year, country, nonRenewables)) for country in [
     "BRA",
     "EGY",
     "IND",
@@ -30,20 +30,20 @@ def plot(year, countries):
     rensCap = sum(map(lambda x: x["capacity"], rens_))
     x = head(filter(isCountry(country), nonRens))
     nonRensCap = ((x["nuclearCap"] + x["petrolCap"]) + x["gasCap"]) + x["coalCap"]
-    return {
-      x: rensCap / (rensCap + nonRensCap),
-      y: (rensOut + x["nuclearOut"]) / (rensCap + x["nuclearCap"])
-    }
+    return Point(
+      rensCap / (rensCap + nonRensCap),
+      (rensOut + x["nuclearOut"]) / (rensCap + x["nuclearCap"])
+    )
 
   return map(plotCountry, countries)
 
 MultiView([
   BarChart(
     caption="Non-renewables by country",
-    size={ width: 275, height: 185 },
-    tickLabels={ x: Default, y: Default },
+    size=Dimensions(275, 185),
+    tickLabels=TickLabels(Default, Default),
     stackedBars=
-      [{ x: num_to_str(year), segments: stack(year) } for year in range(2014, 2019)],
+      [StackedBar(num_to_str(year), stack(year)) for year in range(2014, 2019)],
     legend=True
   ),
   ScatterPlot(
@@ -51,6 +51,6 @@ MultiView([
       "Clean energy efficiency vs proportion of renewable energy capacity",
     points=
       plot(2018, [ "BRA", "CHN", "DEU", "FRA", "EGY", "IND", "JPN", "MEX", "NGA", "USA" ]),
-    labels={ x: "Renewables/TotalEnergyCap", y: "Clean Capacity Factor" }
+    labels=AxisLabels("Renewables/TotalEnergyCap", "Clean Capacity Factor")
   )
 ])
