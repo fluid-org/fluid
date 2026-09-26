@@ -91,12 +91,6 @@ dispatch v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches 
 assign :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Env Vertex × Set Vertex)
 assign v p = runMaybeT (matches v p) >>= orElse ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
 
--- Elements of a list value, each with the vertex of its cons cell.
-elements :: forall m. MonadError Error m => Val Vertex -> m (List (Val Vertex × Vertex))
-elements (Val _ _ (V.Constr c Nil)) | c == cNil = pure Nil
-elements (Val α _ (V.Constr c (v : v' : Nil))) | c == cCons = ((v × α) : _) <$> elements v'
-elements v = throw $ "Found " <> prettyP (unit <$ v) <> ", expected list"
-
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs ρ ds αs =
    Env <$> for ds \d ->
@@ -267,6 +261,12 @@ qualifiers ρ (Generator p e : gs) αs = do
       runMaybeT (matches u p) >>= case _ of
          Nothing -> pure Nil
          Just (ρ' × αs') -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
+   where
+   -- Elements of a list value, each with the vertex of its cons cell.
+   elements :: Val Vertex -> m (List (Val Vertex × Vertex))
+   elements (Val _ _ (V.Constr c Nil)) | c == cNil = pure Nil
+   elements (Val α _ (V.Constr c (v : v' : Nil))) | c == cCons = ((v × α) : _) <$> elements v'
+   elements v = throw $ "Found " <> prettyP (unit <$ v) <> ", expected list"
 qualifiers ρ (Decl p e : gs) αs = do
    ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
    qualifiers (ρ <+> ρ') gs (αs ∪ αs')
