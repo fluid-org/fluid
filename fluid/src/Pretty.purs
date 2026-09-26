@@ -160,7 +160,6 @@ instance Ann a => Pretty (Expr a) where
       collect (Next α' e' rest') inline = highlightIf α' (text ",") <> (if inline then text " " <> pretty e' else indent (line <> pretty e')) <> collect rest' inline
       collect (End α') inline = if inline then highlightIf α' (text "]") else line <> highlightIf α' (text "]")
 
-   pretty (ListEnum s s') = brackets $ expr (pretty s <+> text ".." <+> pretty s')
    pretty (ListComp α s qs) = highlightIf α (brackets (expr (pretty s) <+> pretty qs)) -- Qualifier
    pretty (Paragraph p) = pretty p
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e

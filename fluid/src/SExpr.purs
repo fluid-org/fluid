@@ -29,7 +29,7 @@ import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
 import Expr (class BV, class FV, Binop, Pattern(..), Unop, bv, fv)
-import Expr (Binop(..), Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
 import Type as T
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
@@ -58,7 +58,6 @@ data Expr a
    | Paragraph (Paragraph a)
    | ListEmpty a
    | ListNonEmpty a (Expr a) (ListRest a)
-   | ListEnum (Expr a) (Expr a)
    | ListComp a (Expr a) (List (Qualifier a))
    | DocExpr (Expr a) (Expr a)
 
@@ -237,8 +236,6 @@ expr (ListEmpty α) =
    pure $ enil α
 expr (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
-expr (ListEnum s1 s2) =
-   (\e1 e2 -> E.App (E.Var "range") (e1 : E.BinOp e2 E.Add (E.Lit Returns (Int 1)) : Nil)) <$> desug s1 <*> desug s2
 expr (ListComp α s gs) =
    listComp (α × gs × s)
 expr (DocExpr s s') = do
@@ -460,7 +457,6 @@ instance FV (Expr a) where
    fv (Paragraph elems) = Set.unions (fv <$> elems)
    fv (ListEmpty _) = Set.empty
    fv (ListNonEmpty _ e l) = fv e ∪ fv l
-   fv (ListEnum e1 e2) = fv e1 ∪ fv e2
    fv (ListComp _ e gs) = qualifiersFv gs e
    fv (DocExpr e e') = fv e ∪ fv e'
 

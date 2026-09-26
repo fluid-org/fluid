@@ -47,7 +47,7 @@ def accum_bins(data, l :| r :| es):
 def cut(xs, nbins):
   low = minimum(xs)
   binwidth = (maximum(xs) - low) / nbins
-  edges = [low + x * binwidth for x in [0 .. nbins]]
+  edges = [low + x * binwidth for x in range(0, nbins + 1)]
 
   return accum_bins(xs, edges)
 

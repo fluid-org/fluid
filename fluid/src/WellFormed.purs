@@ -207,7 +207,6 @@ capturesE (S.ListNonEmpty _ e l) = capturesE e ∪ capturesEListRest l
    where
    capturesEListRest (S.End _) = Set.empty
    capturesEListRest (S.Next _ e' l') = capturesE e' ∪ capturesEListRest l'
-capturesE (S.ListEnum e1 e2) = capturesE e1 ∪ capturesE e2
 capturesE (S.ListComp _ e _) = capturesE e
 capturesE (S.DocExpr e e') = capturesE e ∪ capturesE e'
 
@@ -384,7 +383,6 @@ wellFormedExpr cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wellFormedExp
    where
    listRest l'@(S.End _) = pure l'
    listRest (S.Next α' e' l') = S.Next α' <$> wellFormedExpr cxt e' <*> listRest l'
-wellFormedExpr cxt (S.ListEnum e e') = S.ListEnum <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs') <$> qualifiers cxt gs
    where
    qualifiers cxt' Nil = (_ × Nil) <$> wellFormedExpr cxt' e

@@ -20,5 +20,4 @@ desugar_cases =
    , { file: "desugar/list_comp_8.fld", fwd_expect: "5 :| 4 :| 3 :| []" }
    , { file: "desugar/list_comp_9.fld", fwd_expect: "10 :| 19 :| []" }
    , { file: "desugar/list_comp_10.fld", fwd_expect: "[]" }
-   , { file: "desugar/list_enum.fld", fwd_expect: "3 :| 4 :| 5 :| 6 :| 7 :| []" }
    ]

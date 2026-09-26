@@ -12,7 +12,7 @@ countryData = [ { x: c, segments: [{ y: "output", z: totalFor(c, data2015) }] }
 
 def series(type_, country):
   return [ { x: row["year"], y: row["output"] }
-    for year in [2013 .. 2018] for row in renewables
+    for year in range(2013, 2019) for row in renewables
     if row["year"] == year if row["energyType"] == type_ if row["country"] == country
   ]
 

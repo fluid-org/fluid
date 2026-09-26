@@ -464,12 +464,6 @@ expr = context "expr" $ cond <?> "expression"
                        , do
                             close ']'
                             pure $ ListNonEmpty unit e (End unit)
-                       , context "listEnum" do
-                            delim ".."
-                            e' <- cond
-                            close ']'
-                            pure $ ListEnum e e'
-
                        , context "listComp" do
                             qs <- many1 $ choice
                                [ context "listCompGuard" do

@@ -1,7 +1,7 @@
 from fluid.view import LineChart, LinePlot, Default
 
 def series(type, country):
-  return [{ x: row.year, y: row.output } for year in [2013 .. 2018] for row in renewables if row.year == year if row.energyType == type if row.country == country]
+  return [{ x: row.year, y: row.output } for year in range(2013, 2019) for row in renewables if row.year == year if row.energyType == type if row.country == country]
 
 LineChart(
   tickLabels={ x: Default, y: Default },

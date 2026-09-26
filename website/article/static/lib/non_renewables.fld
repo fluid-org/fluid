@@ -19,7 +19,7 @@ MultiView([
     caption="Non-renewables output",
     size={ width: 275, height: 185 },
     tickLabels={ x: Default, y: Default },
-    stackedBars=[{ x: num_to_str(year), segments: stack(year) } for year in [2014 .. 2018]],
+    stackedBars=[{ x: num_to_str(year), segments: stack(year) } for year in range(2014, 2019)],
     legend=True
   ),
   ScatterPlot(
@@ -27,7 +27,7 @@ MultiView([
     points=[{
       x: sum([row["nuclearOut"] for row in yearData(year)]),
       y: sum([row["nuclearCap"] for row in yearData(year)])
-    } for year in [2014 .. 2018]],
+    } for year in range(2014, 2019)],
     labels={ x: "Nuclear capacity", y: "Nuclear output" }
   )
 ])
