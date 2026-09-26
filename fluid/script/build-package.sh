@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and stage the npm package without publishing it. Run from fluid/.
+# Build and stage npm package without publishing. Run from fluid/.
 set -xe
 
 yarn build-prod

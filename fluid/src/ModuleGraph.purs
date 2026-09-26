@@ -25,7 +25,7 @@ dataclasses = pure "dataclasses"
 prelude :: ModuleName
 prelude = NonEmptyList ("fluid" :| "prelude" : Nil)
 
--- Modules in scope without import, each under the members of those before it.
+-- Modules in scope without import, each under members of those before it
 implicit :: List ModuleName
 implicit = builtins : prelude : Nil
 

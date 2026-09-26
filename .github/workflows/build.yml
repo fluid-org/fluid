@@ -38,7 +38,7 @@ jobs:
     - name: test-website
       run: |
         ./script/test-website-all.sh
-    # Validates the npm package only; publishing is manual (fluid/script/build-publish.sh runs the same scripts first).
+    # Validate packaging only; publishing stays manual (fluid/script/build-publish.sh runs these scripts first)
     - name: test-package
       run: |
         cd fluid && ./script/build-package.sh && ./script/test-package.sh

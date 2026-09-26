@@ -129,6 +129,6 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
       { e, gconfig } <- prepConfig fluidSrc
       void $ graphEval gconfig e
 
--- Ill-formed suite with further source roots on the search path.
+-- Ill-formed suite with further source roots on search path
 illFormedSuiteIn :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array Folder -> Array IllFormedSpec -> Array (String × m Unit)
 illFormedSuiteIn roots = illFormedSuite >>> map (second (local (\(FileCxt cxt) -> FileCxt cxt { fluidSrcPaths = cxt.fluidSrcPaths <> roots })))

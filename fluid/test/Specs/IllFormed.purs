@@ -100,7 +100,7 @@ illFormed_cases =
    , { file: "use_before_import.fld", expected_error: "\"ParseError on line 2, column 6:\\nimports must precede statements\"\nLoading module use_before_import_mod" }
    ]
 
--- Run with test/lib/predefined on the search path.
+-- Run with test/lib/predefined on search path
 shadow_cases :: Array IllFormedSpec
 shadow_cases =
    [ { file: "predefined_shadowed.fld", expected_error: "Predefined module cannot have a source file: math" }

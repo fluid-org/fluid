@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy a website and the shared website/src/lib into fluid/ for npm packaging.
+# Copy website and shared website/src/lib into fluid/ for npm packaging.
 # Run from fluid/ directory before `npm publish`.
 set -e
 . "$(dirname "$0")/util/paths.sh"
@@ -30,7 +30,7 @@ rm -f "$DEST/package.json.bak"
 rm -f "$DEST/$WEBSITE_LIB_ROOT/fluid"
 cp -r "$LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
-# website/src/lib → shared components and CSS, reached from the site via its $shared alias
+# website/src/lib → shared components and CSS, reached via site's $shared alias
 rm -rf website/src/lib
 mkdir -p website/src
 cp -r ../website/src/lib website/src/lib

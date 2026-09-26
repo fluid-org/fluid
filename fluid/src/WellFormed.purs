@@ -35,7 +35,7 @@ import Type as T
 import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
--- Predefined modules and the program (under __main__) have no body.
+-- Predefined modules and program (under __main__) have no body
 type LoadedModule = { cxt :: Cxt, mod :: Maybe (S.Module (WfResult VarCxt)) }
 
 type LoadM = StateT (Map.Map ModuleName LoadedModule) (Either String)

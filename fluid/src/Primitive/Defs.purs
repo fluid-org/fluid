@@ -58,7 +58,7 @@ predefined = M.fromFoldable
    [ predefinedModule builtins ("None" : "object" : "bool" : "int" : "float" : "str" : "list" : "dict" : "tuple" : Nil)
         [ extern print_
         , extern len
-        -- Fluid-only members, with no counterpart in the spec
+        -- Fluid-only members, without spec counterpart
         , ":" × Val bot Nothing (Fun (Type cCons))
         , extern dims
         , extern loadJson
