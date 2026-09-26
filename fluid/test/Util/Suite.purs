@@ -9,16 +9,16 @@ import App.View.Util (Fig, Options)
 import Bind (Bind)
 import DataType (class HasClasses)
 import Control.Monad.Error.Class (class MonadError, catchError)
-import Control.Monad.Reader (class MonadReader, local)
+import Control.Monad.Reader (class MonadReader)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
-import Data.Profunctor.Strong (second, (&&&))
+import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (fst, uncurry)
 import Effect.Aff (Error, message)
 import Eval (graphEval)
 import Effect.Aff.Class (class MonadAff)
-import File (class LoadFile, File(..), FileCxt(..), Folder(..), loadFile, (</>))
+import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (botOf)
 import Module (prepConfig)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
@@ -128,7 +128,3 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
    run fluidSrc = do
       { e, gconfig } <- prepConfig fluidSrc
       void $ graphEval gconfig e
-
--- Ill-formed suite with further source roots on search path
-illFormedSuiteIn :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array Folder -> Array IllFormedSpec -> Array (String × m Unit)
-illFormedSuiteIn roots = illFormedSuite >>> map (second (local (\(FileCxt cxt) -> FileCxt cxt { fluidSrcPaths = cxt.fluidSrcPaths <> roots })))

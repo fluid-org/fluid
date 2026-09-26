@@ -3,7 +3,7 @@ module Test.Test where
 import Prelude
 
 import Control.Monad.Error.Class (class MonadError)
-import Control.Monad.Reader (class MonadReader)
+import Control.Monad.Reader (class MonadReader, local)
 import DataType (class HasClasses)
 import Val (class HasModuleStore)
 import Data.Array (concat, filter, elem)
@@ -25,7 +25,7 @@ import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, illFormedSuiteIn, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
@@ -48,7 +48,9 @@ linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => Ha
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
 illFormedTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> illFormedSuiteIn [ Folder "test/lib/predefined" ] shadow_cases
+illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> underRoots [ Folder "test/lib/predefined" ] (illFormedSuite shadow_cases)
+   where
+   underRoots roots = map (second (local (\(FileCxt cxt) -> FileCxt cxt { fluidSrcPaths = cxt.fluidSrcPaths <> roots })))
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)
