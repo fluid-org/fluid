@@ -173,9 +173,10 @@ binop Ne v v'
    | otherwise = first (Lit <<< Bool <<< not) <$> eqOp v v'
 binop In v v' = first (Lit <<< Bool) <$> memOp v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> memOp v' v
-binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) = pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
-binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w n × (if n == 0 then Set.singleton β else Set.fromFoldable [ α, β ]))
-binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w n × (if n == 0 then Set.singleton α else Set.fromFoldable [ α, β ]))
+binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) =
+   pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
+binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w α n β)
+binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w β n α)
 binop op (Val α _ u) (Val β _ u') = do
    x <- operand u
    y <- operand u'
@@ -197,7 +198,7 @@ binop op (Val α _ u) (Val β _ u') = do
    where
    both = Set.fromFoldable [ α, β ]
 
-   -- Zero operand absorbs: result depends on it alone
+   -- Zero operand determines the result, so dependencies of the zero operand alone
    zeroDeps :: Operand -> Operand -> Set a
    zeroDeps x y
       | isZero x = Set.singleton α
@@ -244,8 +245,10 @@ bothNan _ _ = false
 vertices2 :: forall a. Ord a => Val a -> Val a -> Set a
 vertices2 (Val α _ _) (Val β _ _) = Set.fromFoldable [ α, β ]
 
-repeatStr :: forall a. String -> Int -> BaseVal a
-repeatStr w n = Lit (Str (String.joinWith "" (replicate n w)))
+repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
+repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
+   where
+   deps = if n == 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
 unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
 unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
@@ -265,18 +268,33 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
    Constr c vs, Constr d ws
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)
-   Dictionary (DictRep d), Dictionary (DictRep d')
-      | keys d == keys d' -> eqElems (both ∪ keyVertices d ∪ keyVertices d') (snd <$> values d) ((\k -> snd (definitely' (lookup k d'))) <$> Set.toUnfoldable (keys d))
-      | otherwise -> pure (false × (both ∪ keyVertices d ∪ keyVertices d'))
-   Matrix (MatrixRep (vss × MatrixDim (i × γ) × MatrixDim (j × δ))), Matrix (MatrixRep (vss' × MatrixDim (i' × γ') × MatrixDim (j' × δ')))
-      | i == i' && j == j' -> eqElems (both ∪ Set.fromFoldable [ γ, δ, γ', δ' ]) (concat (fromFoldable <$> fromFoldable vss)) (concat (fromFoldable <$> fromFoldable vss'))
-      | otherwise -> pure (false × (both ∪ Set.fromFoldable [ γ, δ, γ', δ' ]))
+   Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
+   Matrix r, Matrix r' -> eqMatrix r r'
    _, _ -> Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
    where
    both = Set.fromFoldable [ α, β ]
 
+   eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> Either String (Boolean × Set a)
+   eqDict d d' =
+      if keys d == keys d' then
+         eqElems αs (snd <$> values d) (snd <<< definitely' <<< flip lookup d' <$> Set.toUnfoldable (keys d))
+      else pure (false × αs)
+      where
+      αs = both ∪ keyVertices d ∪ keyVertices d'
+
    keyVertices :: Dict (a × Val a) -> Set a
    keyVertices = values >>> map fst >>> Set.fromFoldable
+
+   eqMatrix :: MatrixRep a -> MatrixRep a -> Either String (Boolean × Set a)
+   eqMatrix
+      (MatrixRep (vss × MatrixDim (i × γ) × MatrixDim (j × δ)))
+      (MatrixRep (vss' × MatrixDim (i' × γ') × MatrixDim (j' × δ'))) =
+      if i == i' && j == j' then eqElems αs (elems vss) (elems vss') else pure (false × αs)
+      where
+      αs = both ∪ Set.fromFoldable [ γ, δ, γ', δ' ]
+
+   elems :: Array (Array (Val a)) -> List (Val a)
+   elems = fromFoldable >>> map fromFoldable >>> concat
 
    kind :: Literal -> String
    kind (Int _) = "number"
