@@ -1,3 +1,0 @@
-import module.dataclass_lib
-import module.coord_lib2
-module.dataclass_lib.Coord(3, 4).x + module.coord_lib2.Coord(5).z

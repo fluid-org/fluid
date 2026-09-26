@@ -6,14 +6,14 @@ import App.Util (SelectionType(..))
 import App.Util.Selector (barSegment, dictVal, listElement, matrixDims, matrixElement, topα, (>.>), select, select')
 import Data.Maybe (Maybe(..))
 import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
-import File (Folder(..))
+import Test.Util (fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
 import Util ((×))
 
 linkedOutputs_spec1 :: TestLinkedOutputsSpec
 linkedOutputs_spec1 =
    { spec:
-        { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+        { fluidSrcPaths
         , inputs: [ "renewables" ]
         , query: Nothing
         , linking: true
@@ -39,7 +39,7 @@ linkedOutputs_spec1 =
 linkedOutputs_spec2 :: TestLinkedOutputsSpec
 linkedOutputs_spec2 =
    { spec:
-        { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+        { fluidSrcPaths
         , inputs: [ "nonRenewables" ]
         , query: Nothing
         , linking: true
@@ -63,7 +63,7 @@ linkedOutputs_spec2 =
 movingAverages_spec :: TestLinkedOutputsSpec
 movingAverages_spec =
    { spec:
-        { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+        { fluidSrcPaths
         , inputs: [ "methane" ]
         , query: Nothing
         , linking: true
@@ -78,7 +78,7 @@ movingAverages_spec =
 linkedOutputs_cases :: Array TestLinkedOutputsSpec
 linkedOutputs_cases =
    [ { spec:
-          { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+          { fluidSrcPaths
           , inputs: [ "data" ]
           , query: Nothing
           , linking: true
@@ -90,7 +90,7 @@ linkedOutputs_cases =
      , file: "linked_outputs/pairs.fld"
      }
    , { spec:
-          { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+          { fluidSrcPaths
 
           , inputs: [ "data" ]
           , query: Nothing

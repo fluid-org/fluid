@@ -1,9 +1,0 @@
-@dataclass
-class A:
-  b: B
-
-@dataclass
-class B:
-  n: int
-
-return 0

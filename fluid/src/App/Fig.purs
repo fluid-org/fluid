@@ -33,7 +33,6 @@ import Graph.Slice (bwdSlice)
 import Lattice (𝔹, botOf, erase, topOf)
 import Module (prepConfig)
 import Pretty (prettyP)
-import Primitive.Defs (primitives)
 import Test.Util.Debug (tracing)
 import Util (type (×), Endo, absurd, error, spyWhen, (×), (∩))
 import Util.Map (filterKeys, insert, keys, lookup, mapWithKey, restrict)
@@ -197,7 +196,7 @@ lift selState_f f v = first (apply selState_f) (f (v <#> to𝔹))
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking } fluidSrc = do
-   { s, e, gconfig } <- prepConfig primitives fluidSrc
+   { s, e, gconfig } <- prepConfig fluidSrc
    eval@({ inα: EnvStmt ρα _, outα, g: g0 }) <- graphEval gconfig e
    let
       opEval = withOp eval

@@ -1,0 +1,4 @@
+if True:
+  import foo
+
+0

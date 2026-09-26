@@ -1,0 +1,8 @@
+from dataclasses import dataclass
+
+@dataclass
+class Coord:
+  x: int
+  y: int
+
+Coord(1, z=2)

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -xe
+. "$(dirname "$0")/util/paths.sh"
 
 FLUID_EXECUTABLE="dist/fluid/shared/fluid.mjs"
 SHEBANG="#!/usr/bin/env node"
@@ -16,4 +17,4 @@ if [[ $(head -n 1 "$FLUID_EXECUTABLE") != "$SHEBANG" ]]; then
 fi
 
 chmod +x "$FLUID_EXECUTABLE"
-cp -r fluid dist/fluid
+cp -r "$LIB_ROOT" "$(dirname "$DIST_LIB_ROOT")"

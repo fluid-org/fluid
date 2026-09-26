@@ -1,5 +1,0 @@
-from lib.matrix import mat_mul
-from slicing.matrix.left_matrix import leftMatrix
-from slicing.matrix.right_matrix import rightMatrix
-
-(mat_mul(leftMatrix, rightMatrix), mat_mul(rightMatrix, leftMatrix))

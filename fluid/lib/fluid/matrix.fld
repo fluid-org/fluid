@@ -1,0 +1,35 @@
+import fluid.view
+
+def zero(m, n, image):
+  (m_size, n_size) = dims(image)
+  return image ! (m, n) if m >= 0 and m < m_size and n >= 0 and n < n_size else 0
+
+def wrap(m, n, image):
+  (m_size, n_size) = dims(image)
+  return image ! (m % m_size, n % n_size)
+
+def extend(m, n, image):
+  (m_size, n_size) = dims(image)
+  m_ = min(max(m, 0), m_size - 1)
+  n_ = min(max(n, 0), n_size - 1)
+  return image ! (m_, n_)
+
+def matrix_sum(matr):
+  (m, n) = dims(matr)
+  return foldl((+), 0, [matr ! (i, j) for (i, j) in range2d((0, 0), (m, n))])
+
+def convolve(image, kernel, lookup):
+  ((m, n), (i, j)) = (dims(image), dims(kernel))
+  (half_i, half_j) = (i |quot| 2, j |quot| 2)
+  area = i * j
+  def interMatrix(m_, n_):
+    return [| lookup(m_ + i_ - half_i, n_ + j_ - half_j, image) * kernel ! (i_, j_) for (i_, j_) in (i, j) |]
+
+  return [| matrix_sum(interMatrix(m_, n_)) |quot| area for (m_, n_) in (m, n) |]
+
+def mat_mul(a, b):
+  ((m, n), (i, j)) = (dims(a), dims(b))
+
+  assert n == i, "Dimensions don't line up"
+  return @doc(f"""Intermediate matrix""")
+    [| sum([a!(i_, k) * b!(k, j_) for k in range(0, n)]) for (i_, j_) in (m, j) |]

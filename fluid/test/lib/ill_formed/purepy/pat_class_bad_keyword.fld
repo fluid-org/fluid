@@ -1,0 +1,12 @@
+from dataclasses import dataclass
+
+@dataclass
+class Coord:
+  x: int
+  y: int
+
+match Coord(1, 2):
+  case Coord(x, z=v):
+    pass
+
+return 0

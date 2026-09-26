@@ -3,7 +3,7 @@ module Test.Test where
 import Prelude
 
 import Control.Monad.Error.Class (class MonadError)
-import Control.Monad.Reader (class MonadReader)
+import Control.Monad.Reader (class MonadReader, local)
 import DataType (class HasClasses)
 import Val (class HasModuleStore)
 import Data.Array (concat, filter, elem)
@@ -12,10 +12,10 @@ import Data.Profunctor.Strong (second)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import File (class LoadFile, FileCxt(..))
+import File (class LoadFile, FileCxt(..), Folder(..))
 import Module.Web (runWebT)
 import Test.Specs.Bwd (bwd_cases)
-import Test.Specs.IllFormed (illFormed_cases, purepy_cases)
+import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Desugar (desugar_cases)
 import Test.Specs.Graphics (graphics_cases)
@@ -48,7 +48,9 @@ linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => Ha
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
 illFormedTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases)
+illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> underRoots [ Folder "test/lib/predefined" ] (illFormedSuite shadow_cases)
+   where
+   underRoots roots = map (second (local (\(FileCxt cxt) -> FileCxt cxt { fluidSrcPaths = cxt.fluidSrcPaths <> roots })))
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)

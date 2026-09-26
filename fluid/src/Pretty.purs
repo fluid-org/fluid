@@ -240,14 +240,7 @@ instance Pretty (NonEmptyList String) where
    pretty = text <<< dottedName
 
 instance Pretty T.Primitive where
-   pretty T.Object = text "object"
-   pretty T.Never = text "Never"
-   pretty T.None = text "None"
-   pretty T.Bool = text "bool"
-   pretty T.Int = text "int"
-   pretty T.Float = text "float"
-   pretty T.Str = text "str"
-   pretty T.Sized = text "Sized"
+   pretty = text <<< T.primitiveName
 
 instance Pretty Literal where
    pretty (Int n) = number n

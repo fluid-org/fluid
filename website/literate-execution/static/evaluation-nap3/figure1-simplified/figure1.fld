@@ -1,6 +1,7 @@
+from math import ceil
 from nap3_ccra3_data import nap3_actions, ccra3_risks
 
-from lib.view import BarChart, MultiView, Default, Link
+from fluid.view import BarChart, MultiView, Default, Link
 
 eval_scores = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
@@ -17,7 +18,7 @@ def actions_by(key, keys):
       ] } for key_ in keys
   ]
 
-risks_ = dict([ (risk[ "ID#" ], risk) for risk in ccra3_risks ])
+risks_ = pairs_to_dict([ (risk[ "ID#" ], risk) for risk in ccra3_risks ])
 
 def percent(x, y):
   return 0 if y == 0 else x / y * 100
@@ -75,7 +76,7 @@ MultiView([
   Disaggregating by department revealed marked disparities in government response. {
     Link(nat_env_and_infra_depts, "Natural environment and infrastructure sectors")
   } performed relatively well, with {
-    ceiling(
+    ceil(
       percent(
         sum([
           actions_with_score(action_counts, eval_score)

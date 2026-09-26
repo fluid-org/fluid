@@ -1,3 +1,0 @@
-import lib.view
-
-@doc(f"""We can add comments to list comprehensions""") [x + y for x in [5, 4, 3] for y in [9, 7, 5]]

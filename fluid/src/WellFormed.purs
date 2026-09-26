@@ -18,7 +18,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, zipWith, (:))
 import Data.Foldable (lookup) as F
 import DataType (cCons, cNil)
-import ModuleGraph (ModuleName, builtins, predefinedDeps)
+import ModuleGraph (ModuleName, implicitFor)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
@@ -35,9 +35,7 @@ import Type as T
 import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
 
--- Member context of a loaded module and its checked body. The program is
--- recorded too, under __main__, with no body: it is checked separately and
--- may return, so it has no S.Module. The table memoises the load judgement.
+-- Predefined modules and program (under __main__) have no body
 type LoadedModule = { cxt :: Cxt, mod :: Maybe (S.Module (WfResult VarCxt)) }
 
 type LoadM = StateT (Map.Map ModuleName LoadedModule) (Either String)
@@ -46,12 +44,12 @@ type LoadM = StateT (Map.Map ModuleName LoadedModule) (Either String)
 -- cycle guard; it terminates because the dependency graph is acyclic.
 checkProgram
    :: Map.Map ModuleName (Raw S.Module)
-   -> Cxt
+   -> Map.Map ModuleName Cxt
    -> List S.Import
    -> Raw S.Stmt
    -> Either String { cxt :: VarCxt, s :: S.Stmt (WfResult VarCxt), loaded :: Map.Map ModuleName LoadedModule }
-checkProgram mods primitivesCxt imports s =
-   runStateT program Map.empty <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
+checkProgram mods predefined imports s =
+   runStateT program (predefined <#> \cxt -> { cxt, mod: Nothing }) <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
    where
    program :: LoadM (VarCxt × S.Stmt (WfResult VarCxt))
    program = do
@@ -75,20 +73,15 @@ checkProgram mods primitivesCxt imports s =
          when (not Set.isEmpty clash)
             $ throwError
             $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
-         when (q == builtins) do
-            let primitiveClash = Map.keys primitivesCxt ∩ (Map.keys δ ∪ Map.keys subs)
-            when (not (Set.isEmpty primitiveClash))
-               $ throwError
-               $ "builtins' primitives clash with its source members: " <> intercalate ", " (Set.toUnfoldable primitiveClash :: List Var)
-         let cxt = (if q == builtins then primitivesCxt else Map.empty) `Map.union` subs `Map.union` δ
+         let cxt = subs `Map.union` δ
          modify_ (Map.insert q { cxt, mod: Just mod' })
          pure cxt
 
    checkImports :: ModuleName -> List S.Import -> LoadM (Cxt × Cxt)
    checkImports enclosing is = do
-      predefinedCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (predefinedDeps enclosing)
+      implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (implicitFor enclosing)
       importCxt <- foldM (\acc i -> (acc `extendCxtWith` _) <$> importBindings enclosing i) Map.empty is
-      pure (importCxt × (predefinedCxt `extendCxtWith` importCxt))
+      pure (importCxt × (implicitCxt `extendCxtWith` importCxt))
 
    -- Bindings contributed by one import of the enclosing module.
    importBindings :: ModuleName -> S.Import -> LoadM Cxt
@@ -293,6 +286,7 @@ wellFormed _ _ (S.Dataclass c _ _) = throwError $ "Class declaration not at top 
 
 wellFormedTop :: forall a. Name -> Cxt -> S.Stmt a -> Either String (Map.Map Var ClassEntry × WfResult VarCxt × S.Stmt (WfResult VarCxt))
 wellFormedTop q cxt (S.Dataclass c b xψs) = do
+   predefName cxt "dataclass"
    let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
    xτs <- traverse (traverse (resolveType cxt)) xψs
@@ -323,7 +317,15 @@ wellFormedTop q cxt s = do
    pure (Map.empty × r × s')
 
 resolveType :: Cxt -> T.TypeExpr Name -> Either String (T.TypeExpr Name)
-resolveType cxt = traverse (className cxt)
+resolveType cxt ψ@(T.Primitive ν) = ψ <$ predefName cxt (T.primitiveName ν)
+resolveType cxt (T.ClassName q) = T.ClassName <$> className cxt q
+resolveType cxt ψ@(T.Lit _) = ψ <$ predefName cxt "Literal"
+resolveType cxt (T.List ψ) = predefName cxt "list" *> (T.List <$> resolveType cxt ψ)
+resolveType cxt (T.Dict ψ) = predefName cxt "dict" *> predefName cxt "str" *> (T.Dict <$> resolveType cxt ψ)
+resolveType cxt (T.Tuple ψs) = predefName cxt "tuple" *> (T.Tuple <$> traverse (resolveType cxt) ψs)
+resolveType cxt (T.Callable ψs ψ) =
+   predefName cxt "Callable" *> (T.Callable <$> traverse (resolveType cxt) ψs <*> resolveType cxt ψ)
+resolveType cxt (T.Union ψ ψ') = T.Union <$> resolveType cxt ψ <*> resolveType cxt ψ'
 
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
@@ -404,7 +406,13 @@ var cxt x = case Map.lookup x cxt of
    Just (Mod q) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just (ModLoaded q _) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just (Class _) -> throwError $ "class " <> x <> " is not a value"
+   Just PredefName -> throwError $ "predefined name " <> x <> " is not a value"
    Nothing -> throwError $ "Unbound name: " <> x
+
+predefName :: Cxt -> Var -> Either String Unit
+predefName cxt x = case Map.lookup x cxt of
+   Just PredefName -> pure unit
+   _ -> throwError $ "Not bound as a predefined name: " <> x
 
 -- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
 wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String (NEL.NonEmptyList S.Pattern)

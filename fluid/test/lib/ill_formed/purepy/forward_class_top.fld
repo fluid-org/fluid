@@ -1,0 +1,10 @@
+from dataclasses import dataclass
+
+p = Point(1, 2)
+
+@dataclass
+class Point:
+  x: int
+  y: int
+
+p

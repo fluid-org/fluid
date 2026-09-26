@@ -1,7 +1,0 @@
-from module.shape_lib import Base
-
-@dataclass
-class Local(Base):
-   y: int
-
-0

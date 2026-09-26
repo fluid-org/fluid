@@ -1,0 +1,28 @@
+from convolution.test_image import inputImage
+from convolution.emboss import filter
+
+import fluid.view
+
+def lookup(m, n, image):
+  (m_size, n_size) = dims(image)
+  if m >= 0 and m < m_size and n >= 0 and n < n_size:
+    return image!(m, n)
+  else:
+    return 0 # pad with zeros
+
+def matrix_sum(matr):
+  (m, n) = dims(matr)
+  return foldl((+), 0, [matr!(i, j) for (i, j) in range2d((0, 0), (m, n))])
+
+def convolve(image, kernel):
+  (k_i, k_j) = dims(kernel)
+  (half_i, half_j) = (k_i |quot| 2, k_j |quot| 2)
+
+  def inter_matrix(m, n):
+    return @doc(f"""average these to compute element ({m}, {n})""")
+      [| lookup(m + i - half_i, n + j - half_j, image) * kernel!(i, j)
+         for (i, j) in (k_i, k_j) |]
+
+  return [| matrix_sum(inter_matrix(m, n)) |quot| k_i * k_j for (m, n) in dims(image) |]
+
+convolve(inputImage, filter)

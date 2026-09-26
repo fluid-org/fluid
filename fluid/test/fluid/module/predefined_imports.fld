@@ -1,3 +1,0 @@
-import lib.builtins
-import lib.prelude
-lib.builtins.floor(2.7) + lib.prelude.length([1, 2, 3])

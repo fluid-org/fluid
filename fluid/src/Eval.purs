@@ -33,7 +33,7 @@ import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
 import Literal (Literal(..), eqLiteral)
 import Lattice (Raw, 𝔹)
-import ModuleGraph (ModuleName, builtins)
+import ModuleGraph (ModuleName)
 import Pretty (prettyP)
 import Primitive (boolean, intPair, string, unpack)
 import Test.Util.Debug (checking, tracing)
@@ -361,26 +361,6 @@ evalImport enclosing ρ = case _ of
             when (Map.member (NEL.snoc q x) moduleBody) (void (load (NEL.snoc q x)))
             pure (delete x ρ')
 
-loadPredefined
-   :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadWithGraphAlloc m
-   => MonadReader FileCxt m
-   => MonadAff m
-   => LoadFile m
-   => Env Vertex
-   -> Env Vertex
-   -> ModuleName
-   -> m (Env Vertex)
-loadPredefined primitives ρ q = do
-   { moduleBody } <- moduleStore
-   let primitives' = if q == builtins then primitives else empty
-   ρ' <- maybe (pure empty) (\body -> eval_module (ρ <+> primitives') q body empty) (Map.lookup q moduleBody)
-   let members = primitives' <+> ρ'
-   modifyModuleStore (\s -> s { moduleEnv = Map.insert q members s.moduleEnv })
-   pure (ρ <+> members)
-
 load
    :: forall m
     . HasClasses m
@@ -394,7 +374,7 @@ load
 load q = do
    { moduleBody, moduleEnv, ρ0 } <- moduleStore
    case Map.lookup q moduleEnv of
-      Just ρ -> pure ρ
+      Just ρ_q -> pure ρ_q
       Nothing -> do
          ρ_q <- maybe (pure empty) (\body -> eval_module ρ0 q body empty) (Map.lookup q moduleBody)
          modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })

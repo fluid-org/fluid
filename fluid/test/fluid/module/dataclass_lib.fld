@@ -1,4 +1,0 @@
-@dataclass
-class Coord:
-  x: int
-  y: int

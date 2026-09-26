@@ -1,2 +1,0 @@
-from module.dataclass_lib import Coord
-Coord(3, 4)

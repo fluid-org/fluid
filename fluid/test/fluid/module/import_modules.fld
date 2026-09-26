@@ -1,4 +1,0 @@
-from lib.maths import dub
-from module.foo import x
-
-dub(x)

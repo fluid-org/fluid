@@ -1,0 +1,10 @@
+import fnum
+from dtw import computeDTW
+from slicing.dtw.dtw_inputs import seq1, seq2, window
+
+def d(x, y):
+  return (x - y) * (x - y)
+
+(costs, matched) = computeDTW(seq1, seq2, d, window)
+
+matched

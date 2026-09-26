@@ -1,9 +1,0 @@
-@dataclass
-class Coord:
-  x: int
-  y: int
-
-def get_y(Coord(y=v, x=_)):
-  return v
-
-get_y(Coord(3, 4))

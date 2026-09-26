@@ -2,7 +2,7 @@ module Primitive.Defs where
 
 import Prelude hiding (absurd, apply, div, mod, top)
 
-import Bind (Bind)
+import Bind (Bind, Var, dottedName)
 import Control.Monad.Error.Class (class MonadError)
 import Data.Argonaut.Core (Json, caseJson)
 import Data.Argonaut.Decode (parseJson)
@@ -13,10 +13,12 @@ import Data.Int (ceil, floor, toNumber)
 import Data.Int (quot, rem) as I
 import Data.Int as Int
 import Data.List (List(..), (:))
+import Data.Map (Map)
+import Data.Map as M
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (wrap)
 import Data.Number (fromString)
-import Data.Number (log, pow) as N
+import Data.Number (cos, e, exp, log, pi, pow, sin, sqrt, tan) as N
 import Data.Set (Set, empty)
 import Data.Set as Set
 import Data.String (Pattern(..))
@@ -26,6 +28,7 @@ import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst)
 import DataType (cCons, cNil, cNothing, cPair, cJust)
+import DefiniteAssignment (Cxt, Entry(..))
 import Debug (trace)
 import Dict (fromFoldable)
 import Dict (fromFoldable) as D
@@ -38,9 +41,10 @@ import Graph (Vertex)
 import Graph.WithGraph (class MonadWithGraphAlloc)
 import Lattice (class BoundedJoinSemilattice, Raw, bot)
 import Literal (Literal(..))
-import Primitive (binary, binaryZero, boolean, int, intOrNumber, intOrNumberOrString, number, string, unary, union, union1, unionStr)
+import Primitive (binary, binaryZero, boolean, int, intOrNumber, intOrNumberOrString, number, string, typeMismatch, unary, union, union1, unionStr)
 import Util (type (+), type (×), Endo, definitely, definitely', error, singleton, throw, (×))
-import Util.Map (unionWith_never, intersectionWith, lookup, (\\))
+import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
+import Util.Map (constMap, intersectionWith, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
 import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), matrixGet, matrixPut, val)
@@ -49,57 +53,86 @@ extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × φ))))
 
-primitives :: Raw Env
-primitives = wrap $ D.fromFoldable
-   [ ":" × Val bot Nothing (Fun (Type cCons))
-   , unary "ceiling" { i: number, o: int, fwd: ceil }
-   , extern print_
-   , extern dims
-   , extern error_
-   , extern loadJson
-   , unary "float" { i: string, o: number, fwd: definitely' <<< fromString }
-   , unary "floor" { i: number, o: int, fwd: floor }
-   , unary "log" { i: intOrNumber, o: number, fwd: log }
-   , unary "num_to_str" { i: intOrNumber, o: string, fwd: numToStr } -- rename to 'str' (more Pythonic)
-   , binary "+" { i1: intOrNumber, i2: intOrNumber, o: intOrNumber, fwd: plus }
-   , binary "-" { i1: intOrNumber, i2: intOrNumber, o: intOrNumber, fwd: minus }
-   , binaryZero "*" { i: intOrNumber, o: intOrNumber, fwd: times }
-   , binaryZero "**" { i: intOrNumber, o: intOrNumber, fwd: pow }
-   , binaryZero "/" { i: intOrNumber, o: intOrNumber, fwd: divide }
-   , binary "==" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: equals }
-   , binary "/=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: notEquals }
-   , binary "<" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: lessThan }
-   , binary ">" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: greaterThan }
-   , binary "<=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: lessThanEquals }
-   , binary ">=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: greaterThanEquals }
-   , binary "++" { i1: string, i2: string, o: string, fwd: concat }
-   , extern matrixLookup
-   -- TODO: rename the rest of these (apart from dict_map?) to lose the dict_ prefix
-   , extern dict_difference
-   , extern dict_disjointUnion
-   , extern foldl_with_index
-   , extern get
-   , extern insert
-   , extern dict_intersectionWith
-   , extern dict_map
-   , extern dict
-   , extern matrixUpdate
-   , extern find_str
-   , extern search
-   , extern split
-   , binaryZero "//" { i: int, o: int, fwd: div }
-   , binaryZero "%" { i: int, o: int, fwd: mod }
-   , binaryZero "quot" { i: int, o: int, fwd: quot }
-   , binaryZero "rem" { i: int, o: int, fwd: rem }
+predefined :: Map ModuleName (Cxt × Raw Env)
+predefined = M.fromFoldable
+   [ predefinedModule builtins ("None" : "object" : "bool" : "int" : "float" : "str" : "list" : "dict" : "tuple" : Nil)
+        [ extern print_
+        , extern len
+        -- Fluid-only members, without spec counterpart
+        , ":" × Val bot Nothing (Fun (Type cCons))
+        , extern dims
+        , extern loadJson
+        , unary "str_to_float" { i: string, o: number, fwd: definitely' <<< fromString }
+        , unary "num_to_str" { i: intOrNumber, o: string, fwd: numToStr } -- rename to 'str' (more Pythonic)
+        , binary "+" { i1: intOrNumber, i2: intOrNumber, o: intOrNumber, fwd: plus }
+        , binary "-" { i1: intOrNumber, i2: intOrNumber, o: intOrNumber, fwd: minus }
+        , binaryZero "*" { i: intOrNumber, o: intOrNumber, fwd: times }
+        , binaryZero "**" { i: intOrNumber, o: intOrNumber, fwd: pow }
+        , binaryZero "/" { i: intOrNumber, o: intOrNumber, fwd: divide }
+        , binary "==" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: equals }
+        , binary "/=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: notEquals }
+        , binary "<" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: lessThan }
+        , binary ">" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: greaterThan }
+        , binary "<=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: lessThanEquals }
+        , binary ">=" { i1: intOrNumberOrString, i2: intOrNumberOrString, o: boolean, fwd: greaterThanEquals }
+        , binary "++" { i1: string, i2: string, o: string, fwd: concat }
+        , extern matrixLookup
+        -- TODO: rename the rest of these (apart from dict_map?) to lose the dict_ prefix
+        , extern dict_difference
+        , extern dict_disjointUnion
+        , extern foldl_with_index
+        , extern get
+        , extern insert
+        , extern dict_intersectionWith
+        , extern dict_map
+        , extern pairsToDict
+        , extern matrixUpdate
+        , extern find_str
+        , extern search
+        , extern split
+        , binaryZero "//" { i: int, o: int, fwd: div }
+        , binaryZero "%" { i: int, o: int, fwd: mod }
+        , binaryZero "quot" { i: int, o: int, fwd: quot }
+        , binaryZero "rem" { i: int, o: int, fwd: rem }
+        ]
+   , predefinedModule math Nil
+        [ "pi" × Val bot Nothing (Lit (Float N.pi))
+        , "e" × Val bot Nothing (Lit (Float N.e))
+        , unary "sqrt" { i: intOrNumber, o: number, fwd: (toNumber >>> N.sqrt) `union1` N.sqrt }
+        , unary "exp" { i: intOrNumber, o: number, fwd: (toNumber >>> N.exp) `union1` N.exp }
+        , unary "log" { i: intOrNumber, o: number, fwd: (toNumber >>> N.log) `union1` N.log }
+        , unary "sin" { i: intOrNumber, o: number, fwd: (toNumber >>> N.sin) `union1` N.sin }
+        , unary "cos" { i: intOrNumber, o: number, fwd: (toNumber >>> N.cos) `union1` N.cos }
+        , unary "tan" { i: intOrNumber, o: number, fwd: (toNumber >>> N.tan) `union1` N.tan }
+        , unary "floor" { i: intOrNumber, o: int, fwd: identity `union1` floor }
+        , unary "ceil" { i: intOrNumber, o: int, fwd: identity `union1` ceil }
+        ]
+   , predefinedModule typing ("Callable" : "Literal" : "Never" : "Sized" : Nil) []
+   , predefinedModule dataclasses ("dataclass" : Nil) []
    ]
+   where
+   predefinedModule :: ModuleName -> List Var -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
+   predefinedModule q names members = q × (cxt × ρ)
+      where
+      ρ = wrap (D.fromFoldable (Array.cons ("__name__" × Val bot Nothing (Lit (Str (dottedName q)))) members))
+      cxt = M.union (constMap PredefName (Set.fromFoldable names)) (constMap (VarStatus true) (keys ρ))
 
-error_ :: ForeignOp
-error_ =
-   ForeignOp ("error" × ForeignOp' { arity: 1, op })
+len :: ForeignOp
+len =
+   ForeignOp ("len" × ForeignOp' { arity: 1, op })
    where
    op :: Op
-   op _ (Val _ _ (Lit (Str s)) : Nil) = throw s
-   op _ _ = throw "String expected"
+   op doc_opt (v : Nil) = do
+      αs × n <- count v
+      val doc_opt αs (Lit (Int n))
+      where
+      count :: forall m. MonadError Error m => Val Vertex -> m (Set Vertex × Int)
+      count (Val α _ (Constr c Nil)) | c == cNil = pure (singleton α × 0)
+      count (Val α _ (Constr c (_ : v' : Nil))) | c == cCons = count v' <#> \(αs × n) -> Set.insert α αs × (n + 1)
+      count (Val α _ (Dictionary (DictRep d))) = pure (singleton α × Set.size (keys d))
+      count (Val α _ (Lit (Str s))) = pure (singleton α × String.length s)
+      count (Val _ _ u) = throw (typeMismatch u "Sized")
+   op _ _ = throw "Single argument expected"
 
 print_ :: ForeignOp
 print_ =
@@ -229,7 +262,7 @@ search =
 -- When strings implement an abstract sequence type can express in terms of take/drop
 split :: ForeignOp
 split =
-   ForeignOp ("search" × ForeignOp' { arity: 2, op })
+   ForeignOp ("split" × ForeignOp' { arity: 2, op })
    where
    op :: Op
    op doc_opt (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) = do
@@ -321,9 +354,9 @@ dict_map =
       val doc_opt (singleton α) (Dictionary (DictRep d'))
    op _ _ = throw "Function and dictionary expected"
 
-dict :: ForeignOp
-dict =
-   ForeignOp ("dict" × ForeignOp' { arity: 1, op })
+pairsToDict :: ForeignOp
+pairsToDict =
+   ForeignOp ("pairs_to_dict" × ForeignOp' { arity: 1, op })
    where
    op :: Op
    op doc_opt (v : Nil) = do
@@ -392,6 +425,3 @@ concat = (<>)
 
 numToStr :: Int + Number -> String
 numToStr = show `union1` show
-
-log :: Int + Number -> Number
-log = (toNumber >>> N.log) `union1` N.log

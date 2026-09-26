@@ -1,5 +1,0 @@
-from lib.matrix import extend, convolve
-from slicing.convolution.filter.edge_detect import filter
-from slicing.convolution.test_image import inputImage
-
-convolve(inputImage, filter, extend)

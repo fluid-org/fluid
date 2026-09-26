@@ -1,7 +1,7 @@
-from lib.stats import likelihood_map
+from fluid.stats import likelihood_map
 from table1_data import tableData, likelihoods
 
-from lib.view import MultiView
+from fluid.view import MultiView
 
 def newDataTable(offset):
   return map(lambda s: {

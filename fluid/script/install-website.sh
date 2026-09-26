@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+. "$(dirname "$0")/util/paths.sh"
 
 WEBSITE="${1:-article}"
 NPM_ROOT="node_modules/@fluid-org/fluid"
@@ -24,6 +25,9 @@ VERSION=$(node -e "console.log(require('./$NPM_ROOT/package.json').version)")
 echo "Installing $WEBSITE from @fluid-org/fluid@$VERSION..."
 mkdir -p "$(dirname "$DEST")"
 cp -r "$SRC" "$DEST"
+mkdir -p "$(dirname "$WEBSITE_SHARED")"
+rm -rf "$WEBSITE_SHARED"
+cp -r "$NPM_ROOT/$WEBSITE_SHARED" "$WEBSITE_SHARED"
 
 # Rewrite monorepo-relative paths for standalone use
 sed -i.bak \
@@ -33,8 +37,8 @@ sed -i.bak \
 rm -f "$DEST/package.json.bak"
 
 # Recreate symlinks pointing into node_modules
-rm -rf "$DEST/static/fluid/lib"
-ln -s "../../../../$NPM_ROOT/dist/fluid/fluid/lib" "$DEST/static/fluid/lib"
+rm -rf "$DEST/$WEBSITE_LIB_ROOT/fluid"
+ln -s "../../../../$NPM_ROOT/$DIST_LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
 echo ""
 echo "Installed to $DEST. To run:"

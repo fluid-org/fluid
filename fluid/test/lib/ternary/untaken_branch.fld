@@ -1,0 +1,4 @@
+def untaken():
+  assert False, "untaken"
+
+(1 if True else untaken()) + (untaken() if False else 2)

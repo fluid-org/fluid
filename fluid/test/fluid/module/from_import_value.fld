@@ -1,2 +1,0 @@
-from module.two_vals_lib import foo
-foo

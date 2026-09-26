@@ -1,0 +1,4 @@
+from maths import dub
+from foo import x
+
+dub(x)

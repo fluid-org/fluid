@@ -1,0 +1,3 @@
+import pkg.a
+import pkg
+pkg.a.u + pkg.w

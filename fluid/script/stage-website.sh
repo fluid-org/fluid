@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Copy website/article into fluid/ for npm packaging.
-# Run from fluid/ directory before `npm publish`.
+# Copy website and shared components into the package for npm publishing
 set -e
+cd "$(dirname "$0")/.."
+. script/util/paths.sh
 
 WEBSITE="${1:-article}"
 SRC="../website/$WEBSITE"
@@ -13,6 +14,7 @@ if [ ! -d "$SRC" ]; then
 fi
 
 rm -rf "$DEST"
+trap 'rm -rf "$DEST" "$WEBSITE_SHARED"' ERR
 mkdir -p "$DEST"
 
 rsync -a --exclude=node_modules --exclude=.svelte-kit --exclude=build "$SRC/" "$DEST/"
@@ -24,12 +26,12 @@ sed -i.bak "s|\"@fluid-org/fluid\": \"workspace:\\*\"|\"@fluid-org/fluid\": \"^$
 rm -f "$DEST/package.json.bak"
 
 # Replace symlinks with copies from the source tree
-# static/fluid/lib → fluid standard library
-rm -f "$DEST/static/fluid/lib"
-cp -r fluid/lib "$DEST/static/fluid/lib"
+# fluid standard library
+rm -f "$DEST/$WEBSITE_LIB_ROOT/fluid"
+cp -r "$LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
-# src/lib/assets/css/styles.css → shared CSS
-rm -f "$DEST/src/lib/assets/css/styles.css"
-cp ../website/src/lib/assets/css/styles.css "$DEST/src/lib/assets/css/styles.css"
+rm -rf "$WEBSITE_SHARED"
+mkdir -p "$(dirname "$WEBSITE_SHARED")"
+cp -r "../$WEBSITE_SHARED" "$WEBSITE_SHARED"
 
 echo "Staged $WEBSITE for npm packaging."

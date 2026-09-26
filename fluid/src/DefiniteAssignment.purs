@@ -29,6 +29,7 @@ data Entry
    | Class ClassEntry
    | Mod Name
    | ModLoaded Name Cxt
+   | PredefName
 
 type Cxt = Map Var Entry
 

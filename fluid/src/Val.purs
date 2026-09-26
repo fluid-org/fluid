@@ -83,7 +83,7 @@ instance Highlightable a => Highlightable (a × b) where
 instance (Ann a, BoundedLattice b) => Ann (a × b)
 
 type ModuleStore =
-   { ρ0 :: Env Vertex -- the members of the predefined modules (lib.builtins, which owns the primitives, and lib.prelude)
+   { ρ0 :: Env Vertex -- members of the implicit modules
    , moduleBody :: Map ModuleName (Module Vertex)
    , moduleEnv :: Map ModuleName (Env Vertex)
    }

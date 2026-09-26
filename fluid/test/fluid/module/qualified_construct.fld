@@ -1,2 +1,0 @@
-import module.dataclass_lib
-module.dataclass_lib.Coord(3, 4)

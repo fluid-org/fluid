@@ -1,7 +1,0 @@
-@dataclass
-class Coord:
-  x: int
-  y: int
-
-p = Coord(3, 4)
-return p.x + p.y

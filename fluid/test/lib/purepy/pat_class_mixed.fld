@@ -1,0 +1,12 @@
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+  x: int
+  y: int
+  z: int
+
+def get_yz(Point(_, y=b, z=c)):
+  return (b, c)
+
+get_yz(Point(1, 2, 3))

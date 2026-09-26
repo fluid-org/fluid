@@ -4,14 +4,13 @@ import Prelude hiding (join)
 import Prim hiding (Type)
 
 import Bind (Name, dottedName)
-import Data.Foldable (class Foldable, and, elem, foldr)
+import Data.Foldable (and, elem, foldr)
 import Data.Generic.Rep (class Generic)
 import Data.List (List, length, zipWith)
 import Data.Map (lookup)
 import Data.Maybe (maybe)
 import Data.Newtype (class Newtype)
 import Data.Show.Generic (genericShow)
-import Data.Traversable (class Traversable)
 import DataType (ClassTable)
 import DefiniteAssignment (ancestors)
 import Literal (Literal)
@@ -38,6 +37,16 @@ data TypeExpr c
    | Union (TypeExpr c) (TypeExpr c)
 
 newtype Class = Class Name
+
+primitiveName :: Primitive -> String
+primitiveName Object = "object"
+primitiveName Never = "Never"
+primitiveName None = "None"
+primitiveName Bool = "bool"
+primitiveName Int = "int"
+primitiveName Float = "float"
+primitiveName Str = "str"
+primitiveName Sized = "Sized"
 
 type Type = TypeExpr Class
 
@@ -93,8 +102,6 @@ instance Show Primitive where
    show = genericShow
 
 derive instance Functor TypeExpr
-derive instance Foldable TypeExpr
-derive instance Traversable TypeExpr
 derive instance Eq c => Eq (TypeExpr c)
 derive instance Generic (TypeExpr c) _
 instance Show c => Show (TypeExpr c) where

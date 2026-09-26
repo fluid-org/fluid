@@ -1,0 +1,16 @@
+from dataclasses import dataclass
+
+@dataclass
+class Singleton:
+  pass
+
+@dataclass
+class Coord:
+  x: int
+  y: int
+
+@dataclass
+class ColouredCoord(Coord):
+  c: str
+
+return 42

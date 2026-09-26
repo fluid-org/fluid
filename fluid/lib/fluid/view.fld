@@ -1,0 +1,64 @@
+from dataclasses import dataclass
+
+@dataclass
+class Orientation:
+  pass
+
+@dataclass
+class Default(Orientation):
+  pass
+
+@dataclass
+class Rotated(Orientation):
+  pass
+
+@dataclass
+class LinePlot:
+  name: str
+  points: list[dict[str, float]]  # List { x: Float, y: Float }
+
+@dataclass
+class View:
+  pass
+
+@dataclass
+class BarChart(View):
+  caption: str
+  size: dict[str, int]  # { width: Int, height: Int }
+  tickLabels: dict[str, Orientation]  # { x: Orientation, y: Orientation }
+  stackedBars: list[dict[str, object]]  # List { x: Str, segments: List { y: Str, z: Float } }
+  legend: bool
+
+@dataclass
+class LineChart(View):
+  size: dict[str, int]  # { width: Int, height: Int }
+  tickLabels: dict[str, Orientation]  # { x: Orientation, y: Orientation }
+  caption: str
+  plots: list[LinePlot]
+
+@dataclass
+class MultiView(View):
+  views: list[View]
+
+@dataclass
+class Paragraph(View):
+  fragments: list[View]
+
+@dataclass
+class ScatterPlot(View):
+  caption: str
+  points: list[dict[str, float]]  # List { x: Float, y: Float }
+  labels: dict[str, str]  # { x: Str, y: Str }
+
+@dataclass
+class ParaFragment:
+  pass
+
+@dataclass
+class Text(ParaFragment):
+  text: str
+
+@dataclass
+class Link(ParaFragment):
+  value: object
+  label: str

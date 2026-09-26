@@ -1,6 +1,0 @@
-@dataclass
-class Coord:
-  x: int
-  y: int
-
-Coord(y=4, x=3)
