@@ -171,8 +171,8 @@ binop Eq v v'
 binop Ne v v'
    | bothNan v v' = pure (Lit (Bool true) × vertices2 v v')
    | otherwise = first (Lit <<< Bool <<< not) <$> eqOp v v'
-binop In v v' = first (Lit <<< Bool) <$> memOp v' v
-binop NotIn v v' = first (Lit <<< Bool <<< not) <$> memOp v' v
+binop In v v' = first (Lit <<< Bool) <$> contains v' v
+binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
 binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w α n β)
@@ -310,12 +310,12 @@ eqElems αs (v : vs) (v' : vs') = do
    if b then eqElems (αs ∪ βs) vs vs' else pure (false × (αs ∪ βs))
 eqElems αs _ _ = pure (false × αs)
 
-memOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
-memOp (Val α _ u') v@(Val β _ u) = case u', u of
+contains :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
+contains (Val α _ u') v@(Val β _ u) = case u', u of
    Constr c Nil, _ | c == cNil -> pure (false × Set.singleton α)
    Constr c (v' : vs : Nil), _ | c == cCons -> do
       b × βs <- eqOp v v'
-      if b then pure (true × Set.insert α βs) else map (Set.insert α <<< (βs ∪ _)) <$> memOp vs v
+      if b then pure (true × Set.insert α βs) else map (Set.insert α <<< (βs ∪ _)) <$> contains vs v
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
    Dictionary _, _ -> Left (typeMismatch u "str")
    Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])
