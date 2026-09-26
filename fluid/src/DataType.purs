@@ -121,7 +121,6 @@ fieldIndex classes c field = definitely "field declared for class" do
    fs <- fieldsOf classes (dottedName c)
    elemIndex field fs
 
--- Module paths for the builtin/library constructors (hard-coded for now).
 fluidPrelude :: Var -> Name
 fluidPrelude = qual (NE.NonEmptyList ("fluid" :| "prelude" : Nil))
 
