@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy website/article into fluid/ for npm packaging.
+# Copy a website and the shared website/src/lib into fluid/ for npm packaging.
 # Run from fluid/ directory before `npm publish`.
 set -e
 . "$(dirname "$0")/util/paths.sh"
@@ -14,6 +14,7 @@ if [ ! -d "$SRC" ]; then
 fi
 
 rm -rf "$DEST"
+trap 'rm -rf "$DEST" website/src/lib' ERR
 mkdir -p "$DEST"
 
 rsync -a --exclude=node_modules --exclude=.svelte-kit --exclude=build "$SRC/" "$DEST/"
@@ -29,8 +30,9 @@ rm -f "$DEST/package.json.bak"
 rm -f "$DEST/$WEBSITE_LIB_ROOT/fluid"
 cp -r "$LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
-# src/lib/assets/css/styles.css → shared CSS
-rm -f "$DEST/src/lib/assets/css/styles.css"
-cp ../website/src/lib/assets/css/styles.css "$DEST/src/lib/assets/css/styles.css"
+# website/src/lib → shared components and CSS, reached from the site via its $shared alias
+rm -rf website/src/lib
+mkdir -p website/src
+cp -r ../website/src/lib website/src/lib
 
 echo "Staged $WEBSITE for npm packaging."

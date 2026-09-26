@@ -24,7 +24,8 @@
     "script/util",
     "script/webtest-lib.mjs",
     "web/lib",
-    "website/article"
+    "website/article",
+    "website/src/lib"
   ],
   "scripts": {
     "build": "./script/build.sh",

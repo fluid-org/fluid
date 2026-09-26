@@ -38,3 +38,6 @@ jobs:
     - name: test-website
       run: |
         ./script/test-website-all.sh
+    - name: package
+      run: |
+        cd fluid && ./script/build-package.sh
