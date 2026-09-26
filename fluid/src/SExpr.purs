@@ -4,6 +4,7 @@ import Prelude hiding (top)
 
 import Bind (Bind, Name, Var, dottedName, (↦))
 import Data.Set (Set, empty, singleton, unions) as Set
+import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (all, for_, length, null)
@@ -59,6 +60,7 @@ data Expr a
    | ListEmpty a
    | ListNonEmpty a (Expr a) (ListRest a)
    | ListComp a (Expr a) (List (Qualifier a))
+   | DictComp a (DictEntry a) (Expr a) (List (Qualifier a))
    | DocExpr (Expr a) (Expr a)
 
 data DictEntry a = ExprKey (Expr a) | VarKey a Var
@@ -237,7 +239,10 @@ expr (ListEmpty α) =
 expr (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 expr (ListComp α s gs) =
-   listComp (α × gs × s)
+   desug s >>= listComp α gs
+expr (DictComp α k s gs) = do
+   e <- E.Constr α cPair <$> lift2 (\e e' -> e : e' : Nil) (desug k) (desug s)
+   E.App (E.Var "pairs_to_dict") <<< (_ : Nil) <$> listComp α gs e
 expr (DocExpr s s') = do
    e <- expr s
    e' <- expr s'
@@ -255,33 +260,34 @@ stmt (Assert e e_opt) = E.Assert <$> desug e <*> traverse desug e_opt
 stmt (Seq s1 s2) = E.Seq <$> stmt s1 <*> stmt s2
 stmt (Dataclass _ _ _) = pure E.Pass
 
--- List Qualifier × Expr
 listComp
    :: forall m
     . HasClasses m
    => MonadError Error m
-   => (WfResult VarCxt) × List (Qualifier (WfResult VarCxt)) × Expr (WfResult VarCxt)
+   => WfResult VarCxt
+   -> List (Qualifier (WfResult VarCxt))
+   -> E.Expr (WfResult VarCxt)
    -> m (E.Expr (WfResult VarCxt))
-listComp (α × Nil × s) =
-   econs α <$> desug s <@> enil α
-listComp (α × (ListCompGuard s : gs) × s') = do
-   e <- listComp (α × gs × s')
-   E.Cond e <$> desug s <@> enil α
-listComp (α × (ListCompDecl (VarDef p _ s) : gs) × s') = do
-   e <- listComp (α × gs × s')
+listComp α Nil e =
+   pure $ econs α e (enil α)
+listComp α (ListCompGuard s : gs) e = do
+   e' <- listComp α gs e
+   E.Cond e' <$> desug s <@> enil α
+listComp α (ListCompDecl (VarDef p _ s) : gs) e = do
+   e' <- listComp α gs e
    p' <- pattern p
-   E.App (matchFun α (singleton (p' × E.Return e))) <$> ((_ : Nil) <$> desug s)
+   E.App (matchFun α (singleton (p' × E.Return e'))) <$> ((_ : Nil) <$> desug s)
 -- Elements not matching the pattern contribute nothing.
-listComp (α × (ListCompGen p s : gs) × s') = do
-   e <- listComp (α × gs × s')
+listComp α (ListCompGen p s : gs) e = do
+   e' <- listComp α gs e
    p' <- pattern p
    let
       bs = case p' of
-         PVar _ -> singleton (p' × E.Return e)
-         PWild -> singleton (p' × E.Return e)
-         _ -> NonEmptyList ((p' × E.Return e) :| (PWild × E.Return (enil α)) : Nil)
-   e' <- desug s
-   pure $ E.App (E.Var "concat_map") (matchFun α bs : e' : Nil)
+         PVar _ -> singleton (p' × E.Return e')
+         PWild -> singleton (p' × E.Return e')
+         _ -> NonEmptyList ((p' × E.Return e') :| (PWild × E.Return (enil α)) : Nil)
+   e'' <- desug s
+   pure $ E.App (E.Var "concat_map") (matchFun α bs : e'' : Nil)
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw classes c n xbs = do
@@ -457,7 +463,8 @@ instance FV (Expr a) where
    fv (Paragraph elems) = Set.unions (fv <$> elems)
    fv (ListEmpty _) = Set.empty
    fv (ListNonEmpty _ e l) = fv e ∪ fv l
-   fv (ListComp _ e gs) = qualifiersFv gs e
+   fv (ListComp _ e gs) = qualifiersFv gs (fv e)
+   fv (DictComp _ k e gs) = qualifiersFv gs (fv k ∪ fv e)
    fv (DocExpr e e') = fv e ∪ fv e'
 
 instance FV (Stmt a) where
@@ -502,11 +509,11 @@ fvRecDefs :: forall a. RecDefs a -> Set.Set Var
 fvRecDefs rs =
    Set.unions (fv <$> (snd <$> rs)) \\ Set.unions (Set.singleton <<< fst <$> rs)
 
--- List-comprehension qualifiers bind their variables for subsequent qualifiers
--- (and the producing expression). Process right-to-left.
-qualifiersFv :: forall a. List (Qualifier a) -> Expr a -> Set.Set Var
-qualifiersFv Nil e = fv e
-qualifiersFv (g : gs) e = case g of
-   ListCompGuard e' -> fv e' ∪ qualifiersFv gs e
-   ListCompGen p e' -> fv e' ∪ (qualifiersFv gs e \\ bv p)
-   ListCompDecl (VarDef p _ e') -> fv e' ∪ (qualifiersFv gs e \\ bv p)
+-- Free variables of a comprehension whose element has free variables xs; each qualifier binds its
+-- variables for subsequent qualifiers and the element.
+qualifiersFv :: forall a. List (Qualifier a) -> Set.Set Var -> Set.Set Var
+qualifiersFv Nil xs = xs
+qualifiersFv (g : gs) xs = case g of
+   ListCompGuard e -> fv e ∪ qualifiersFv gs xs
+   ListCompGen p e -> fv e ∪ (qualifiersFv gs xs \\ bv p)
+   ListCompDecl (VarDef p _ e) -> fv e ∪ (qualifiersFv gs xs \\ bv p)

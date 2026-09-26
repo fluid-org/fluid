@@ -17,7 +17,7 @@ import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
 import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
-import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
+import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
 import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type as T
@@ -160,7 +160,8 @@ instance Ann a => Pretty (Expr a) where
       collect (Next α' e' rest') inline = highlightIf α' (text ",") <> (if inline then text " " <> pretty e' else indent (line <> pretty e')) <> collect rest' inline
       collect (End α') inline = if inline then highlightIf α' (text "]") else line <> highlightIf α' (text "]")
 
-   pretty (ListComp α s qs) = highlightIf α (brackets (expr (pretty s) <+> pretty qs)) -- Qualifier
+   pretty (ListComp α s qs) = highlightIf α (brackets (expr (pretty s) <+> pretty qs))
+   pretty (DictComp α k s qs) = highlightIf α (braces (pretty k <> text ":" <+> expr (pretty s) <+> pretty qs))
    pretty (Paragraph p) = pretty p
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e
 

@@ -180,10 +180,7 @@ capturesE (S.Var _) = Set.empty
 capturesE (S.Lit _ _) = Set.empty
 capturesE (S.Constr _ _ es xes) = unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
 capturesE (S.Dictionary _ es) =
-   unions ((\(k × v) -> capturesEntry k ∪ capturesE v) <$> es)
-   where
-   capturesEntry (S.ExprKey e) = capturesE e
-   capturesEntry (S.VarKey _ _) = Set.empty
+   unions ((\(k × v) -> capturesDictKey k ∪ capturesE v) <$> es)
 capturesE (S.Matrix _ e (x × y) e') =
    (capturesE e \\ (Set.singleton x ∪ Set.singleton y)) ∪ capturesE e'
 capturesE (S.Lambda (S.LambdaClause (ps × e))) =
@@ -207,8 +204,25 @@ capturesE (S.ListNonEmpty _ e l) = capturesE e ∪ capturesEListRest l
    where
    capturesEListRest (S.End _) = Set.empty
    capturesEListRest (S.Next _ e' l') = capturesE e' ∪ capturesEListRest l'
-capturesE (S.ListComp _ e _) = capturesE e
+capturesE (S.ListComp _ e gs) = capturesQualifiers gs ∪ (capturesE e \\ bindsQualifiers gs)
+capturesE (S.DictComp _ k e gs) = capturesQualifiers gs ∪ ((capturesDictKey k ∪ capturesE e) \\ bindsQualifiers gs)
 capturesE (S.DocExpr e e') = capturesE e ∪ capturesE e'
+
+capturesDictKey :: forall a. S.DictEntry a -> Set Var
+capturesDictKey (S.ExprKey e) = capturesE e
+capturesDictKey (S.VarKey _ _) = Set.empty
+
+capturesQualifiers :: forall a. List (S.Qualifier a) -> Set Var
+capturesQualifiers Nil = Set.empty
+capturesQualifiers (S.ListCompGuard e : gs) = capturesE e ∪ capturesQualifiers gs
+capturesQualifiers (S.ListCompGen p e : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
+capturesQualifiers (S.ListCompDecl (S.VarDef p _ e) : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
+
+bindsQualifiers :: forall a. List (S.Qualifier a) -> Set Var
+bindsQualifiers Nil = Set.empty
+bindsQualifiers (S.ListCompGuard _ : gs) = bindsQualifiers gs
+bindsQualifiers (S.ListCompGen p _ : gs) = bv p ∪ bindsQualifiers gs
+bindsQualifiers (S.ListCompDecl (S.VarDef p _ _) : gs) = bv p ∪ bindsQualifiers gs
 
 wellFormed :: forall a. Name -> Cxt -> S.Stmt a -> Either String (WfResult VarCxt × S.Stmt (WfResult VarCxt))
 wellFormed _ _ S.Pass = pure (Assigns Map.empty × S.Pass)
@@ -370,10 +384,8 @@ wellFormedExpr cxt (S.Lambda (S.LambdaClause (ps × e))) = do
    ps' <- traverse (wellFormedPattern cxt) ps
    e' <- wellFormedExpr (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
    pure (S.Lambda (S.LambdaClause (ps' × e')))
-wellFormedExpr cxt (S.Dictionary α kvs) = S.Dictionary α <$> traverse (\(k × v) -> (×) <$> dictKey k <*> wellFormedExpr cxt v) kvs
-   where
-   dictKey (S.ExprKey e) = S.ExprKey <$> wellFormedExpr cxt e
-   dictKey k@(S.VarKey _ _) = pure k
+wellFormedExpr cxt (S.Dictionary α kvs) =
+   S.Dictionary α <$> traverse (\(k × v) -> (×) <$> wellFormedDictKey cxt k <*> wellFormedExpr cxt v) kvs
 wellFormedExpr cxt (S.Paragraph elems) = S.Paragraph <$> traverse pe elems
    where
    pe (S.Unquote e) = S.Unquote <$> wellFormedExpr cxt e
@@ -383,23 +395,38 @@ wellFormedExpr cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wellFormedExp
    where
    listRest l'@(S.End _) = pure l'
    listRest (S.Next α' e' l') = S.Next α' <$> wellFormedExpr cxt e' <*> listRest l'
-wellFormedExpr cxt (S.ListComp α e gs) = (\(e' × gs') -> S.ListComp α e' gs') <$> qualifiers cxt gs
-   where
-   qualifiers cxt' Nil = (_ × Nil) <$> wellFormedExpr cxt' e
-   qualifiers cxt' (g : gs') = case g of
-      S.ListCompGuard e1 -> do
-         e1' <- wellFormedExpr cxt' e1
-         map (S.ListCompGuard e1' : _) <$> qualifiers cxt' gs'
-      S.ListCompGen p e1 -> do
-         e1' <- wellFormedExpr cxt' e1
-         p' <- wellFormedPattern cxt' p
-         map (S.ListCompGen p' e1' : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
-      S.ListCompDecl (S.VarDef p ψ e1) -> do
-         τ <- traverse (resolveType cxt') ψ
-         e1' <- wellFormedExpr cxt' e1
-         p' <- wellFormedPattern cxt' p
-         map (S.ListCompDecl (S.VarDef p' τ e1') : _) <$> qualifiers (cxt' `extendCxt` constMap true (bv p)) gs'
+wellFormedExpr cxt (S.ListComp α e gs) =
+   (\(e' × gs') -> S.ListComp α e' gs') <$> wellFormedQualifiers cxt gs (\cxt' -> wellFormedExpr cxt' e)
+wellFormedExpr cxt (S.DictComp α k e gs) =
+   (\((k' × e') × gs') -> S.DictComp α k' e' gs') <$> wellFormedQualifiers cxt gs \cxt' ->
+      (×) <$> wellFormedDictKey cxt' k <*> wellFormedExpr cxt' e
 wellFormedExpr cxt (S.DocExpr e e') = S.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+
+wellFormedDictKey :: forall a. Cxt -> S.DictEntry a -> Either String (S.DictEntry a)
+wellFormedDictKey cxt (S.ExprKey e) = S.ExprKey <$> wellFormedExpr cxt e
+wellFormedDictKey _ k@(S.VarKey _ _) = pure k
+
+-- Qualifiers of a comprehension, then its element under the context they extend.
+wellFormedQualifiers
+   :: forall a b
+    . Cxt
+   -> List (S.Qualifier a)
+   -> (Cxt -> Either String b)
+   -> Either String (b × List (S.Qualifier a))
+wellFormedQualifiers cxt Nil element = (_ × Nil) <$> element cxt
+wellFormedQualifiers cxt (g : gs) element = case g of
+   S.ListCompGuard e -> do
+      e' <- wellFormedExpr cxt e
+      map (S.ListCompGuard e' : _) <$> wellFormedQualifiers cxt gs element
+   S.ListCompGen p e -> do
+      e' <- wellFormedExpr cxt e
+      p' <- wellFormedPattern cxt p
+      map (S.ListCompGen p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
+   S.ListCompDecl (S.VarDef p ψ e) -> do
+      τ <- traverse (resolveType cxt) ψ
+      e' <- wellFormedExpr cxt e
+      p' <- wellFormedPattern cxt p
+      map (S.ListCompDecl (S.VarDef p' τ e') : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
 
 var :: Cxt -> Var -> Either String Unit
 var cxt x = case Map.lookup x cxt of
