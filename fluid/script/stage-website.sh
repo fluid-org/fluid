@@ -14,7 +14,7 @@ if [ ! -d "$SRC" ]; then
 fi
 
 rm -rf "$DEST"
-trap 'rm -rf "$DEST" website/src/lib' ERR
+trap 'rm -rf "$DEST" "$WEBSITE_SHARED"' ERR
 mkdir -p "$DEST"
 
 rsync -a --exclude=node_modules --exclude=.svelte-kit --exclude=build "$SRC/" "$DEST/"
