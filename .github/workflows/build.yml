@@ -41,4 +41,4 @@ jobs:
     # Validate packaging only; publishing is manual (build-publish.sh runs these scripts first)
     - name: test-package
       run: |
-        cd fluid && ./script/build-package.sh && ./script/test-package.sh
+        fluid/script/build-package.sh && fluid/script/test-package.sh

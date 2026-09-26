@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Pack npm package, install into scratch project, install bundled website from
-# it, build site. Run from fluid/ after build-package.sh.
+# it, build site. Requires build-package.sh to have run.
 set -xe
+cd "$(dirname "$0")/.."
 
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT

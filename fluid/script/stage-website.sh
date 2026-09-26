@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Copy website and shared website/src/lib into fluid/ for npm packaging.
-# Run from fluid/ directory before `npm publish`.
+# Copy website and shared website/src/lib into the package for npm publishing
 set -e
-. "$(dirname "$0")/util/paths.sh"
+cd "$(dirname "$0")/.."
+. script/util/paths.sh
 
 WEBSITE="${1:-article}"
 SRC="../website/$WEBSITE"
