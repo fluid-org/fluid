@@ -224,18 +224,12 @@ eval doc_opt ρ e0 αs = do
    funName (App e _) = funName e
    funName _ = "unknown"
 
--- List of the values, each cons cell depending on the vertices paired with its head; the nil on βs.
-list
-   :: forall m
-    . MonadWithGraphAlloc m
-   => Maybe (Val Vertex)
-   -> Set Vertex
-   -> List (Val Vertex × Set Vertex)
-   -> m (Val Vertex)
-list doc_opt βs Nil = val doc_opt βs (V.Constr cNil Nil)
-list doc_opt βs ((v × αs) : vs) = do
-   v' <- list Nothing βs vs
-   val doc_opt αs (V.Constr cCons (v : v' : Nil))
+   -- List of the values, each cons cell depending on the vertices paired with its head; the nil on βs.
+   list :: Maybe (Val Vertex) -> Set Vertex -> List (Val Vertex × Set Vertex) -> m (Val Vertex)
+   list doc_opt' βs Nil = val doc_opt' βs (V.Constr cNil Nil)
+   list doc_opt' βs ((v × αs') : vs) = do
+      v' <- list Nothing βs vs
+      val doc_opt' αs' (V.Constr cCons (v : v' : Nil))
 
 -- Environments produced by the qualifiers, each with the vertices inspected in reaching it.
 qualifiers
