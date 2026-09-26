@@ -248,7 +248,6 @@ qualifiers ρ Nil αs = pure (singleton (ρ × αs))
 qualifiers ρ (Guard e : gs) αs = do
    b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
    if b then qualifiers ρ gs (insert α αs) else pure Nil
--- Elements not matching the pattern contribute nothing.
 qualifiers ρ (Generator p e : gs) αs = do
    us <- eval Nothing ρ e αs >>= elements
    concat <$> for us \(u × β) ->
