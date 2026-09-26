@@ -3,6 +3,7 @@ module DataType where
 import Prelude hiding (absurd)
 
 import Bind (Name, Var, dottedName, qual)
+import ModuleGraph (prelude)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except.Trans (ExceptT)
 import Control.Monad.Reader.Trans (ReaderT)
@@ -121,33 +122,30 @@ fieldIndex classes c field = definitely "field declared for class" do
    fs <- fieldsOf classes (dottedName c)
    elemIndex field fs
 
-fluidPrelude :: Var -> Name
-fluidPrelude = qual (NE.NonEmptyList ("fluid" :| "prelude" : Nil))
-
-fluidView :: Var -> Name
-fluidView = qual (NE.NonEmptyList ("fluid" :| "view" : Nil))
+view :: Name
+view = NE.NonEmptyList ("fluid" :| "view" : Nil)
 
 -- Last (simple) segment of a possibly-qualified constructor name.
 simpleName :: Ctr -> String
 simpleName c = fromMaybe c (A.last (split (Pattern ".") c))
 
 -- Used internally by primitives, desugaring or rendering layer.
-cDefault = fluidView "Default" :: Name -- Orientation
-cRotated = fluidView "Rotated" :: Name
-cBarChart = fluidView "BarChart" :: Name -- View
-cLineChart = fluidView "LineChart" :: Name
-cLinePlot = fluidView "LinePlot" :: Name
-cMultiView = fluidView "MultiView" :: Name
-cScatterPlot = fluidView "ScatterPlot" :: Name
-cParagraph = fluidView "Paragraph" :: Name
-cNil = fluidPrelude "Nil" :: Name -- List
-cCons = fluidPrelude "Cons" :: Name
-cPair = fluidPrelude "Pair" :: Name -- Pair
-cNothing = fluidPrelude "Nothing" :: Name -- Maybe
-cJust = fluidPrelude "Just" :: Name
-cNonEmpty = fluidPrelude "NonEmpty" :: Name -- Tree
-cText = fluidView "Text" :: Name
-cLink = fluidView "Link" :: Name
+cDefault = qual view "Default" :: Name -- Orientation
+cRotated = qual view "Rotated" :: Name
+cBarChart = qual view "BarChart" :: Name -- View
+cLineChart = qual view "LineChart" :: Name
+cLinePlot = qual view "LinePlot" :: Name
+cMultiView = qual view "MultiView" :: Name
+cScatterPlot = qual view "ScatterPlot" :: Name
+cParagraph = qual view "Paragraph" :: Name
+cNil = qual prelude "Nil" :: Name -- List
+cCons = qual prelude "Cons" :: Name
+cPair = qual prelude "Pair" :: Name -- Pair
+cNothing = qual prelude "Nothing" :: Name -- Maybe
+cJust = qual prelude "Just" :: Name
+cNonEmpty = qual prelude "NonEmpty" :: Name -- Tree
+cText = qual view "Text" :: Name
+cLink = qual view "Link" :: Name
 -- Field names used internally by rendering layer.
 f_caption = "caption" :: FieldName
 f_fragments = "fragments" :: FieldName
