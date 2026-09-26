@@ -163,7 +163,6 @@ union1 :: forall a1 b. (a1 -> b) -> (Number -> b) -> a1 + Number -> b
 union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
--- Meaning of a binary operator: result, with the vertices it depends on
 binop :: forall a. Ord a => Binop -> Val a -> Val a -> Either String (BaseVal a × Set a)
 binop Eq v v' = first (Lit <<< Bool) <$> eqOp v v'
 binop Ne v v' = first (Lit <<< Bool <<< not) <$> eqOp v v'
@@ -191,7 +190,7 @@ binop op (Val α _ u) (Val β _ u') = do
    where
    both = Set.fromFoldable [ α, β ]
 
-   -- If either operand is zero, the result depends on that operand alone
+   -- Zero operand absorbs: result depends on it alone
    zeroDeps :: Operand -> Operand -> Set a
    zeroDeps x y
       | isZero x = Set.singleton α
@@ -231,7 +230,6 @@ binop op (Val α _ u) (Val β _ u') = do
 
 type Operand = Int + Number + String
 
--- Meaning of a unary operator
 unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
 unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
 unop Not (Val _ _ u) = Left (typeMismatch u "bool")
@@ -241,7 +239,6 @@ unop Pos (Val α _ u@(Lit (Int _))) = pure (u × Set.singleton α)
 unop Pos (Val α _ u@(Lit (Float _))) = pure (u × Set.singleton α)
 unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
 
--- Structural equality, with the vertices examined
 eqOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
 eqOp (Val α _ u) (Val β _ u') = case u, u' of
    Lit ℓ, Lit ℓ' | kind ℓ == kind ℓ' -> pure (eqLiteral ℓ ℓ' × both)
@@ -270,7 +267,6 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
    kind (Bool _) = "bool"
    kind None = "None"
 
--- Elementwise equality, stopping at the first difference
 eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> Either String (Boolean × Set a)
 eqElems αs Nil Nil = pure (true × αs)
 eqElems αs (v : vs) (v' : vs') = do
@@ -278,7 +274,6 @@ eqElems αs (v : vs) (v' : vs') = do
    if b then eqElems (αs ∪ βs) vs vs' else pure (false × (αs ∪ βs))
 eqElems αs _ _ = pure (false × αs)
 
--- Membership of v in v': of a list by structural equality, of a dictionary as a key, of a string as a substring
 memOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
 memOp (Val α _ u') v@(Val β _ u) = case u', u of
    Constr c Nil, _ | c == cNil -> pure (false × Set.singleton α)
