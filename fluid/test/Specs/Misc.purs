@@ -89,6 +89,12 @@ misc_cases =
    , { file: "purepy/assert_msg_lazy.fld", fwd_expect: "5" }
    , { file: "purepy/math_members.fld", fwd_expect: "3 :| 3 :| 4 :| 2 :| []" }
    , { file: "purepy/len.fld", fwd_expect: "3 :| 2 :| 4 :| 0 :| []" }
+   , { file: "purepy/operators.fld"
+     , fwd_expect:
+          "3 :| -4 :| 1 :| 2 :| 3.0 :| 1024 :| 0.5 :| 4.0 :| 3.5 :| -3 :| 3 :| -4 :| 2 :| True :| True :| True :| \"ab\" :| \
+          \True :| True :| True :| True :| True :| False :| False :| True :| True :| True :| True :| True :| True :| \
+          \False :| False :| True :| False :| True :| []"
+     }
    , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/branch_local.fld", fwd_expect: "6" }
    , { file: "purepy/closure_capture.fld", fwd_expect: "6" }
