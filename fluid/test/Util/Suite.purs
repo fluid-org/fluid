@@ -22,7 +22,7 @@ import File (class LoadFile, File(..), FileCxt(..), Folder(..), loadFile, (</>))
 import Lattice (botOf)
 import Module (prepConfig)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
-import Test.Util (checkEq, test)
+import Test.Util (checkEq, fluidSrcPaths, test)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
 import Val (class HasModuleStore, Val, Env)
@@ -115,7 +115,7 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
 
    asTest :: IllFormedSpec -> m Unit
    asTest { file, expected_error } = do
-      fluidSrc <- loadFile [ Folder "lib", Folder "test/lib" ] (folder </> File file)
+      fluidSrc <- loadFile fluidSrcPaths (folder </> File file)
       result <- catchError (run fluidSrc *> pure (Left unit)) (pure <<< Right)
       case result of
          Right err ->
