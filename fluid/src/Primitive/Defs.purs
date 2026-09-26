@@ -30,7 +30,6 @@ import Data.Tuple (fst)
 import DataType (cCons, cNil, cNothing, cPair, cJust)
 import DefiniteAssignment (Cxt, Entry(..))
 import Debug (trace)
-import Dict (fromFoldable)
 import Dict (fromFoldable) as D
 import Effect.Class (class MonadEffect)
 import Effect.Exception (Error)
@@ -72,7 +71,6 @@ predefined = M.fromFoldable
         , extern insert
         , extern dict_intersectionWith
         , extern dict_map
-        , extern pairsToDict
         , extern matrixUpdate
         , extern find_str
         , extern search
@@ -329,24 +327,6 @@ dict_map =
       d' <- traverse (\(β × u) -> (β × _) <$> G.apply Nothing v (u : Nil)) d
       val doc_opt (singleton α) (Dictionary (DictRep d'))
    op _ _ = throw "Function and dictionary expected"
-
-pairsToDict :: ForeignOp
-pairsToDict =
-   ForeignOp ("pairs_to_dict" × ForeignOp' { arity: 1, op })
-   where
-   op :: Op
-   op doc_opt (v : Nil) = do
-      αs × kvs <- kvs' v
-      val doc_opt αs (Dictionary (DictRep $ fromFoldable kvs))
-      where
-      kvs' :: forall m. MonadError Error m => Val Vertex -> m (Set Vertex × List (String × (Vertex × Val Vertex)))
-      kvs' (Val α _ (Constr c Nil)) | c == cNil = pure $ singleton α × Nil
-      kvs' (Val α _ (Constr c (Val β' _ (Constr c' (Val β _ (Lit (Str k)) : u : Nil)) : v' : Nil)))
-         | c == cCons && c' == cPair = do
-              αs' × kvs <- kvs' v'
-              pure $ Set.insert α (Set.insert β' αs') × ((k × (β × u)) : kvs)
-      kvs' _ = throw $ "List of (key, value) pairs expected"
-   op _ _ = throw "Single argument expected"
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

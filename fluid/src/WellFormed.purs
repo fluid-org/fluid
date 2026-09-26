@@ -214,15 +214,15 @@ capturesDictKey (S.VarKey _ _) = Set.empty
 
 capturesQualifiers :: forall a. List (S.Qualifier a) -> Set Var
 capturesQualifiers Nil = Set.empty
-capturesQualifiers (S.ListCompGuard e : gs) = capturesE e ∪ capturesQualifiers gs
-capturesQualifiers (S.ListCompGen p e : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
-capturesQualifiers (S.ListCompDecl (S.VarDef p _ e) : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
+capturesQualifiers (S.Guard e : gs) = capturesE e ∪ capturesQualifiers gs
+capturesQualifiers (S.Generator p e : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
+capturesQualifiers (S.Decl (S.VarDef p _ e) : gs) = capturesE e ∪ (capturesQualifiers gs \\ bv p)
 
 bindsQualifiers :: forall a. List (S.Qualifier a) -> Set Var
 bindsQualifiers Nil = Set.empty
-bindsQualifiers (S.ListCompGuard _ : gs) = bindsQualifiers gs
-bindsQualifiers (S.ListCompGen p _ : gs) = bv p ∪ bindsQualifiers gs
-bindsQualifiers (S.ListCompDecl (S.VarDef p _ _) : gs) = bv p ∪ bindsQualifiers gs
+bindsQualifiers (S.Guard _ : gs) = bindsQualifiers gs
+bindsQualifiers (S.Generator p _ : gs) = bv p ∪ bindsQualifiers gs
+bindsQualifiers (S.Decl (S.VarDef p _ _) : gs) = bv p ∪ bindsQualifiers gs
 
 wellFormed :: forall a. Name -> Cxt -> S.Stmt a -> Either String (WfResult VarCxt × S.Stmt (WfResult VarCxt))
 wellFormed _ _ S.Pass = pure (Assigns Map.empty × S.Pass)
@@ -415,18 +415,18 @@ wellFormedQualifiers
    -> Either String (b × List (S.Qualifier a))
 wellFormedQualifiers cxt Nil element = (_ × Nil) <$> element cxt
 wellFormedQualifiers cxt (g : gs) element = case g of
-   S.ListCompGuard e -> do
+   S.Guard e -> do
       e' <- wellFormedExpr cxt e
-      map (S.ListCompGuard e' : _) <$> wellFormedQualifiers cxt gs element
-   S.ListCompGen p e -> do
+      map (S.Guard e' : _) <$> wellFormedQualifiers cxt gs element
+   S.Generator p e -> do
       e' <- wellFormedExpr cxt e
       p' <- wellFormedPattern cxt p
-      map (S.ListCompGen p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
-   S.ListCompDecl (S.VarDef p ψ e) -> do
+      map (S.Generator p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
+   S.Decl (S.VarDef p ψ e) -> do
       τ <- traverse (resolveType cxt) ψ
       e' <- wellFormedExpr cxt e
       p' <- wellFormedPattern cxt p
-      map (S.ListCompDecl (S.VarDef p' τ e') : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
+      map (S.Decl (S.VarDef p' τ e') : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
 
 var :: Cxt -> Var -> Either String Unit
 var cxt x = case Map.lookup x cxt of

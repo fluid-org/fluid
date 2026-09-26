@@ -504,21 +504,21 @@ expr = context "expr" $ cond <?> "expression"
             guard = context "guard" do
                reserved "if"
                e <- opTree
-               pure $ ListCompGuard e
+               pure $ Guard e
 
             decl = context "decl" do
                reserved "def"
                p <- pattern
                delim ':'
                e <- opTree
-               pure $ ListCompDecl (VarDef p Nothing e)
+               pure $ Decl (VarDef p Nothing e)
 
             generator = context "generator" do
                reserved "for"
                p <- pattern
                reserved "in"
                e <- opTree
-               pure $ ListCompGen p e
+               pure $ Generator p e
 
          parensExpr :: Parser (Raw Expr)
          parensExpr = context "parens" do

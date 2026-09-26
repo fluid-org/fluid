@@ -4,7 +4,6 @@ import Prelude hiding (top)
 
 import Bind (Bind, Name, Var, dottedName, (↦))
 import Data.Set (Set, empty, singleton, unions) as Set
-import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (all, for_, length, null)
@@ -17,7 +16,6 @@ import Data.Semigroup.Foldable (foldr1)
 import Data.List.NonEmpty (zipWith) as NonEmptyList
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, unwrap)
-import Data.NonEmpty ((:|))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
@@ -30,7 +28,7 @@ import Desugarable (class Desugarable, desug)
 import Dict as D
 import Effect.Exception (Error)
 import Expr (class BV, class FV, Binop, Pattern(..), Unop, bv, fv)
-import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Param(..), RecDefs(..), Stmt(..)) as E
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
 import Type as T
 import Util.Set ((\\), (∪))
 import Partial.Unsafe (unsafePartial)
@@ -107,9 +105,9 @@ data VarDef a = VarDef Pattern (Maybe (T.TypeExpr Name)) (Expr a)
 type VarDefs a = NonEmptyList (VarDef a)
 
 data Qualifier a
-   = ListCompGuard (Expr a)
-   | ListCompGen Pattern (Expr a)
-   | ListCompDecl (VarDef a) -- could allow VarDefs instead
+   = Guard (Expr a)
+   | Generator Pattern (Expr a)
+   | Decl (VarDef a)
 
 data Module a = Module (List Import) (List (Stmt a))
 
@@ -143,10 +141,6 @@ econs α e e' = E.Constr α cCons (e : e' : Nil)
 -- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
 param :: Int -> Var
 param i = "$" <> show i
-
--- Unary function matching its argument against the cases.
-matchFun :: forall a. a -> NonEmptyList (E.Case a) -> E.Expr a
-matchFun α bs = E.Lambda α (E.Def (E.Param (param 1) Nothing : Nil) Nothing (E.Match (E.Var (param 1)) bs))
 
 desugarModule :: forall m. HasClasses m => MonadError Error m => Module (WfResult VarCxt) -> m (E.Module (WfResult VarCxt))
 desugarModule (Module is ss) = E.Module (is <#> \(Import q f) -> E.Import q f) <$> traverse stmt ss
@@ -239,10 +233,9 @@ expr (ListEmpty α) =
 expr (ListNonEmpty α s l) =
    econs α <$> desug s <*> desug l
 expr (ListComp α s gs) =
-   desug s >>= listComp α gs
-expr (DictComp α k s gs) = do
-   e <- E.Constr α cPair <$> lift2 (\e e' -> e : e' : Nil) (desug k) (desug s)
-   E.App (E.Var "pairs_to_dict") <<< (_ : Nil) <$> listComp α gs e
+   E.ListComp α <$> desug s <*> traverse qualifier gs
+expr (DictComp α k s gs) =
+   E.DictComp α <$> desug k <*> desug s <*> traverse qualifier gs
 expr (DocExpr s s') = do
    e <- expr s
    e' <- expr s'
@@ -260,34 +253,10 @@ stmt (Assert e e_opt) = E.Assert <$> desug e <*> traverse desug e_opt
 stmt (Seq s1 s2) = E.Seq <$> stmt s1 <*> stmt s2
 stmt (Dataclass _ _ _) = pure E.Pass
 
-listComp
-   :: forall m
-    . HasClasses m
-   => MonadError Error m
-   => WfResult VarCxt
-   -> List (Qualifier (WfResult VarCxt))
-   -> E.Expr (WfResult VarCxt)
-   -> m (E.Expr (WfResult VarCxt))
-listComp α Nil e =
-   pure $ econs α e (enil α)
-listComp α (ListCompGuard s : gs) e = do
-   e' <- listComp α gs e
-   E.Cond e' <$> desug s <@> enil α
-listComp α (ListCompDecl (VarDef p _ s) : gs) e = do
-   e' <- listComp α gs e
-   p' <- pattern p
-   E.App (matchFun α (singleton (p' × E.Return e'))) <$> ((_ : Nil) <$> desug s)
--- Elements not matching the pattern contribute nothing.
-listComp α (ListCompGen p s : gs) e = do
-   e' <- listComp α gs e
-   p' <- pattern p
-   let
-      bs = case p' of
-         PVar _ -> singleton (p' × E.Return e')
-         PWild -> singleton (p' × E.Return e')
-         _ -> NonEmptyList ((p' × E.Return e') :| (PWild × E.Return (enil α)) : Nil)
-   e'' <- desug s
-   pure $ E.App (E.Var "concat_map") (matchFun α bs : e'' : Nil)
+qualifier :: forall m. HasClasses m => MonadError Error m => Qualifier (WfResult VarCxt) -> m (E.Qualifier (WfResult VarCxt))
+qualifier (Guard s) = E.Guard <$> desug s
+qualifier (Generator p s) = E.Generator <$> pattern p <*> desug s
+qualifier (Decl (VarDef p _ s)) = E.Decl <$> pattern p <*> desug s
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw classes c n xbs = do
@@ -514,6 +483,6 @@ fvRecDefs rs =
 qualifiersFv :: forall a. List (Qualifier a) -> Set.Set Var -> Set.Set Var
 qualifiersFv Nil xs = xs
 qualifiersFv (g : gs) xs = case g of
-   ListCompGuard e -> fv e ∪ qualifiersFv gs xs
-   ListCompGen p e -> fv e ∪ (qualifiersFv gs xs \\ bv p)
-   ListCompDecl (VarDef p _ e) -> fv e ∪ (qualifiersFv gs xs \\ bv p)
+   Guard e -> fv e ∪ qualifiersFv gs xs
+   Generator p e -> fv e ∪ (qualifiersFv gs xs \\ bv p)
+   Decl (VarDef p _ e) -> fv e ∪ (qualifiersFv gs xs \\ bv p)

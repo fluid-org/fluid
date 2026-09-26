@@ -166,10 +166,10 @@ instance Ann a => Pretty (Expr a) where
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e
 
 instance Ann a => Pretty (List (Qualifier a)) where
-   pretty (Cons (ListCompDecl (VarDef v _ s)) Nil) =
+   pretty (Cons (Decl (VarDef v _ s)) Nil) =
       text "def" <+> pretty v <> text ":" <+> pretty s
-   pretty (Cons (ListCompGuard s) Nil) = text "if" <+> pretty s
-   pretty (Cons (ListCompGen p s) Nil) = text "for" <+> pretty p <+> text "in" <+> pretty s
+   pretty (Cons (Guard s) Nil) = text "if" <+> pretty s
+   pretty (Cons (Generator p s) Nil) = text "for" <+> pretty p <+> text "in" <+> pretty s
    pretty (Cons q qs) = pretty (singleton q) <+> pretty qs
    pretty Nil = empty
 
@@ -342,7 +342,14 @@ instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.And e e') = expr $ pretty e <+> text "and" <+> pretty e'
    pretty (E.Or e e') = expr $ pretty e <+> text "or" <+> pretty e'
    pretty (E.Cond e1 e e2) = expr $ pretty e1 <+> text "if" <+> pretty e <+> text "else" <+> pretty e2
+   pretty (E.ListComp a e gs) = highlightIf a (brackets (expr (pretty e) <+> hsep (pretty <$> gs)))
+   pretty (E.DictComp a e e' gs) = highlightIf a (braces (pretty e <> text ":" <+> expr (pretty e') <+> hsep (pretty <$> gs)))
    pretty (E.DocExpr p e) = text "@doc" <> parens (pretty p) <+> pretty e
+
+instance Highlightable a => Pretty (E.Qualifier a) where
+   pretty (E.Guard e) = text "if" <+> pretty e
+   pretty (E.Generator p e) = text "for" <+> pretty p <+> text "in" <+> pretty e
+   pretty (E.Decl p e) = text "def" <+> pretty p <> text ":" <+> pretty e
 
 instance Highlightable a => Pretty (E.Stmt a) where
    pretty (E.Return e) = text "return" <+> pretty e

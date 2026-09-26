@@ -10,7 +10,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.Foldable (oneOfMap)
-import Data.List (List(..), drop, find, foldM, foldl, length, take, unzip, zip, (:))
+import Data.List (List(..), concat, drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
@@ -20,12 +20,12 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, cPair, checkArity, ctrSig, fieldsOf)
+import DataType (class HasClasses, ClassTable, askClasses, cCons, cNil, cPair, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), RecDefs(..), Stmt(..), fv, paramVar)
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -86,6 +86,16 @@ matchesMany _ _ = error absurd
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
 dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
 dispatch v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches v p
+
+-- Bindings of a pattern which must match.
+assign :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Env Vertex × Set Vertex)
+assign v p = runMaybeT (matches v p) >>= orElse ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
+
+-- Elements of a list value, each with the vertex of its cons cell.
+elements :: forall m. MonadError Error m => Val Vertex -> m (List (Val Vertex × Vertex))
+elements (Val _ _ (V.Constr c Nil)) | c == cNil = pure Nil
+elements (Val α _ (V.Constr c (v : v' : Nil))) | c == cCons = ((v × α) : _) <$> elements v'
+elements v = throw $ "Found " <> prettyP (unit <$ v) <> ", expected list"
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs ρ ds αs =
@@ -205,6 +215,10 @@ eval doc_opt ρ e0 αs = do
          Cond e1 e e2 -> do
             b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
             eval doc_opt ρ (if b then e1 else e2) (insert α αs)
+         ListComp α e gs -> do
+            ρs <- qualifiers ρ gs αs
+            vs <- for ρs \(ρ' × αs') -> (_ × insert α αs') <$> eval Nothing ρ' e αs'
+            list doc_opt (insert α αs) vs
          DocExpr e e' -> do
             v <- eval Nothing ρ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"
@@ -215,6 +229,47 @@ eval doc_opt ρ e0 αs = do
    funName (Var x) = x
    funName (App e _) = funName e
    funName _ = "unknown"
+
+-- List of the values, each cons cell depending on the vertices paired with its head; the nil on βs.
+list
+   :: forall m
+    . MonadWithGraphAlloc m
+   => Maybe (Val Vertex)
+   -> Set Vertex
+   -> List (Val Vertex × Set Vertex)
+   -> m (Val Vertex)
+list doc_opt βs Nil = val doc_opt βs (V.Constr cNil Nil)
+list doc_opt βs ((v × αs) : vs) = do
+   v' <- list Nothing βs vs
+   val doc_opt αs (V.Constr cCons (v : v' : Nil))
+
+-- Environments produced by the qualifiers, each with the vertices inspected in reaching it.
+qualifiers
+   :: forall m
+    . HasClasses m
+   => HasModuleStore m
+   => MonadWithGraphAlloc m
+   => MonadReader FileCxt m
+   => MonadAff m
+   => LoadFile m
+   => Env Vertex
+   -> List (Qualifier Vertex)
+   -> Set Vertex
+   -> m (List (Env Vertex × Set Vertex))
+qualifiers ρ Nil αs = pure (singleton (ρ × αs))
+qualifiers ρ (Guard e : gs) αs = do
+   b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
+   if b then qualifiers ρ gs (insert α αs) else pure Nil
+-- Elements not matching the pattern contribute nothing.
+qualifiers ρ (Generator p e : gs) αs = do
+   us <- eval Nothing ρ e αs >>= elements
+   concat <$> for us \(u × β) ->
+      runMaybeT (matches u p) >>= case _ of
+         Nothing -> pure Nil
+         Just (ρ' × αs') -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
+qualifiers ρ (Decl p e : gs) αs = do
+   ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
+   qualifiers (ρ <+> ρ') gs (αs ∪ αs')
 
 evalStmt
    :: forall m
@@ -247,10 +302,8 @@ evalStmt doc_opt ρ s αs = case s of
                Returns _ -> pure r
                Assigns ρ'' αs'' -> pure (Assigns (ρ' <+> ρ'') αs'')
    Assign p _ e -> do
-      v <- eval Nothing ρ e αs
-      runMaybeT (matches v p) >>= case _ of
-         Nothing -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
-         Just (ρ' × αs') -> pure (Assigns ρ' αs')
+      ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
+      pure (Assigns ρ' αs')
    DefRec (RecDefs α ds) -> do
       ρ' <- closeDefs ρ ds (insert α αs)
       pure (Assigns ρ' (insert α αs))
@@ -294,6 +347,14 @@ evalVal ρ (Dictionary α ees) αs = do
    vs × us <- traverse (traverse (flip (eval Nothing ρ) αs)) ees <#> P.unzip
    ss × βs <- traverse (unpack string >>> orThrow) vs <#> unzip
    pure $ Just (α × V.Dictionary (DictRep (D.fromFoldable (zip ss (zip βs us)))))
+-- Later entries overwrite earlier ones, per update in the spec.
+evalVal ρ (DictComp α e e' gs) αs = do
+   ρs <- qualifiers ρ gs αs
+   entries <- for ρs \(ρ' × αs') -> do
+      s × β <- eval Nothing ρ' e αs' >>= unpack string >>> orThrow
+      u <- eval Nothing ρ' e' αs'
+      pure (s × (β × u))
+   pure $ Just (α × V.Dictionary (DictRep (D.fromFoldable entries)))
 evalVal ρ (Constr α c es) αs = do
    askClasses >>= \classes -> checkArity classes "construct" (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
