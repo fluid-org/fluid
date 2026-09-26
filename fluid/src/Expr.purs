@@ -25,7 +25,6 @@ import Util.Map (keys)
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
--- Deviate from POPL paper by having closures depend on originating lambda or letrec
 data Binop = Eq | Ne | Lt | Le | Gt | Ge | In | NotIn | Add | Sub | Mul | Div | FloorDiv | Mod | Pow
 
 data Unop = Not | Pos | Neg
