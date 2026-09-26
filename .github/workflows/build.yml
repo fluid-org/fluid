@@ -40,4 +40,4 @@ jobs:
         ./script/test-website-all.sh
     - name: package
       run: |
-        cd fluid && ./script/build-package.sh
+        cd fluid && ./script/build-package.sh && ./script/test-package.sh
