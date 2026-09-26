@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pack npm package, install into scratch project, install bundled website from
-# it, build site. Requires build-package.sh to have run.
+# it, and build site. Requires build-package.sh to have run.
 set -xe
 cd "$(dirname "$0")/.."
 
