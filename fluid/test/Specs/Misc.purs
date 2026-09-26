@@ -93,7 +93,7 @@ misc_cases =
      , fwd_expect:
           "3 :| -4 :| 1 :| 2 :| 3.0 :| 1024 :| 0.5 :| 4.0 :| 3.5 :| -3 :| 3 :| -4 :| 2 :| True :| True :| True :| \"ab\" :| \
           \True :| True :| True :| True :| True :| False :| False :| True :| True :| True :| True :| True :| True :| \
-          \False :| False :| True :| False :| True :| []"
+          \False :| False :| True :| False :| True :| \"ababab\" :| \"xx\" :| \"\" :| False :| True :| []"
      }
    , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
    , { file: "purepy/branch_local.fld", fwd_expect: "6" }

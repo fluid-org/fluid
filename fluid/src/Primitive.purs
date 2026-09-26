@@ -6,6 +6,7 @@ import Bind (Bind)
 import Data.Either (Either(..), either)
 import Data.Int (toNumber)
 import Data.Int as Int
+import Data.Array (replicate)
 import Data.List (List(..), concat, fromFoldable, (:))
 import Data.Maybe (Maybe(..))
 import Data.Number as N
@@ -164,11 +165,17 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 binop :: forall a. Ord a => Binop -> Val a -> Val a -> Either String (BaseVal a × Set a)
-binop Eq v v' = first (Lit <<< Bool) <$> eqOp v v'
-binop Ne v v' = first (Lit <<< Bool <<< not) <$> eqOp v v'
+binop Eq v v'
+   | bothNan v v' = pure (Lit (Bool false) × vertices2 v v')
+   | otherwise = first (Lit <<< Bool) <$> eqOp v v'
+binop Ne v v'
+   | bothNan v v' = pure (Lit (Bool true) × vertices2 v v')
+   | otherwise = first (Lit <<< Bool <<< not) <$> eqOp v v'
 binop In v v' = first (Lit <<< Bool) <$> memOp v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> memOp v' v
 binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) = pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
+binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w n × (if n == 0 then Set.singleton β else Set.fromFoldable [ α, β ]))
+binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w n × (if n == 0 then Set.singleton α else Set.fromFoldable [ α, β ]))
 binop op (Val α _ u) (Val β _ u') = do
    x <- operand u
    y <- operand u'
@@ -230,6 +237,16 @@ binop op (Val α _ u) (Val β _ u') = do
 
 type Operand = Int + Number + String
 
+bothNan :: forall a. Val a -> Val a -> Boolean
+bothNan (Val _ _ (Lit (Float r))) (Val _ _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
+bothNan _ _ = false
+
+vertices2 :: forall a. Ord a => Val a -> Val a -> Set a
+vertices2 (Val α _ _) (Val β _ _) = Set.fromFoldable [ α, β ]
+
+repeatStr :: forall a. String -> Int -> BaseVal a
+repeatStr w n = Lit (Str (String.joinWith "" (replicate n w)))
+
 unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
 unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
 unop Not (Val _ _ u) = Left (typeMismatch u "bool")
@@ -241,6 +258,7 @@ unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
 eqOp (Val α _ u) (Val β _ u') = case u, u' of
+   Lit (Float r), Lit (Float r') | N.isNaN r || N.isNaN r' -> Left "Cannot compare nan"
    Lit ℓ, Lit ℓ' | kind ℓ == kind ℓ' -> pure (eqLiteral ℓ ℓ' × both)
    Lit None, _ -> pure (false × both)
    _, Lit None -> pure (false × both)
