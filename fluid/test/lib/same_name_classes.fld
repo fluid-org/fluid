@@ -1,0 +1,3 @@
+import dataclass_lib
+import coord_lib2
+dataclass_lib.Coord(3, 4).x + coord_lib2.Coord(5).z

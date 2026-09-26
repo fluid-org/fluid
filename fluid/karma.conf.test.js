@@ -43,7 +43,8 @@ module.exports = function (config) {
       proxies: {
          "/lib/": "/base/lib/",
          "/dataset/": "/base/test/dataset/",
-         "/test/fluid/": "/base/test/fluid/"
+         "/test/lib/": "/base/test/lib/",
+         "/test/predefined/": "/base/test/predefined/"
       },
       reporters: ["mocha"],
       singleRun: true

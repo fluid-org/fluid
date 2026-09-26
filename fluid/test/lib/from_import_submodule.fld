@@ -1,0 +1,2 @@
+from pkg import a
+a.u

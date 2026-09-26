@@ -187,7 +187,7 @@ parseModules imports = do
          | Set.member mod visited -> collectModules visited depGraph mods rest
          | Map.member mod predefined -> do
               shadowed <- isModule mod
-              when shadowed $ throw $ "Predefined module has a source file: " <> dottedName mod
+              when shadowed $ throw $ "Predefined module cannot have a source file: " <> dottedName mod
               collectModules (Set.insert mod visited) depGraph mods rest
          | otherwise -> do
               mod' × edges × toLoad <- parseAndCollect mod

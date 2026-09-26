@@ -1,0 +1,5 @@
+def f():
+  import foo
+  return 0
+
+f()

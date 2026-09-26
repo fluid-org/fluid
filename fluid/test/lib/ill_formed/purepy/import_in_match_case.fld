@@ -1,0 +1,5 @@
+match 0:
+  case _:
+    import foo
+
+0

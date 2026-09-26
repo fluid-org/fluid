@@ -1,2 +1,0 @@
-from module.assert_pkg.sub import k
-k

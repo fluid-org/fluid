@@ -1,2 +1,0 @@
-from module.bad_pkg.sub import c
-c

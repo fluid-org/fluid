@@ -13,7 +13,7 @@ import Util ((×))
 linkedOutputs_spec1 :: TestLinkedOutputsSpec
 linkedOutputs_spec1 =
    { spec:
-        { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
+        { fluidSrcPaths: [ Folder "lib", Folder "test/lib" ]
         , inputs: [ "renewables" ]
         , query: Nothing
         , linking: true
@@ -39,7 +39,7 @@ linkedOutputs_spec1 =
 linkedOutputs_spec2 :: TestLinkedOutputsSpec
 linkedOutputs_spec2 =
    { spec:
-        { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
+        { fluidSrcPaths: [ Folder "lib", Folder "test/lib" ]
         , inputs: [ "nonRenewables" ]
         , query: Nothing
         , linking: true
@@ -63,7 +63,7 @@ linkedOutputs_spec2 =
 movingAverages_spec :: TestLinkedOutputsSpec
 movingAverages_spec =
    { spec:
-        { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
+        { fluidSrcPaths: [ Folder "lib", Folder "test/lib" ]
         , inputs: [ "methane" ]
         , query: Nothing
         , linking: true
@@ -78,7 +78,7 @@ movingAverages_spec =
 linkedOutputs_cases :: Array TestLinkedOutputsSpec
 linkedOutputs_cases =
    [ { spec:
-          { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
+          { fluidSrcPaths: [ Folder "lib", Folder "test/lib" ]
           , inputs: [ "data" ]
           , query: Nothing
           , linking: true
@@ -90,7 +90,7 @@ linkedOutputs_cases =
      , file: "linked_outputs/pairs.fld"
      }
    , { spec:
-          { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
+          { fluidSrcPaths: [ Folder "lib", Folder "test/lib" ]
 
           , inputs: [ "data" ]
           , query: Nothing

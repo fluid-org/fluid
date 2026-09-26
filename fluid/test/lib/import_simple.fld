@@ -1,0 +1,3 @@
+from maths import dub
+
+dub(42)

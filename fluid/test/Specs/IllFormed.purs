@@ -32,7 +32,7 @@ purepy_cases =
    , { file: "purepy/duplicate_def_in_region.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/forward_class_in_def.fld", expected_error: "Unknown dataclass: Point" }
    , { file: "purepy/forward_class_top.fld", expected_error: "Unknown dataclass: Point" }
-   , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module module.two_vals_lib" }
+   , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module two_vals_lib" }
    , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected bool" }
    , { file: "purepy/nested_class.fld", expected_error: "Class declaration not at top level: C" }
    , { file: "purepy/dataclass_not_imported.fld", expected_error: "Not bound as a predefined name: dataclass" }
@@ -78,30 +78,30 @@ illFormed_cases =
    , { file: "dict_attr.fld", expected_error: "Found { a: 1 }, expected object" }
    , { file: "extend_imported_class.fld", expected_error: "Cannot extend imported class: Base" }
    , { file: "from_import_arity.fld", expected_error: "Derived expects 2 argument(s); got 1" }
-   , { file: "from_import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }
+   , { file: "from_import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module bad_pkg" }
    , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError" }
    , { file: "from_import_selective.fld", expected_error: "Unbound name: bar" }
    , { file: "from_import_unassigned.fld", expected_error: "Not definitely assigned: x" }
-   , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module module.bad_pkg" }
-   , { file: "import_cycle.fld", expected_error: "import cycle: module.cyc_a -> module.cyc_b -> module.cyc_a" }
+   , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module bad_pkg" }
+   , { file: "import_cycle.fld", expected_error: "import cycle: cyc_a -> cyc_b -> cyc_a" }
    , { file: "match_exhaustive_assign.fld", expected_error: "Not definitely assigned: result" }
    , { file: "match_non_leaf.fld", expected_error: "Cannot match non-leaf class: Base" }
    , { file: "match_partial_def.fld", expected_error: "Not definitely assigned: result" }
-   , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module module.return_mod" }
+   , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module return_mod" }
    , { file: "non_contiguous_def.fld", expected_error: "Non-contiguous clauses for: f" }
-   , { file: "own_descendant_import.fld", expected_error: "Module module.od_pkg cannot import its own descendant module.od_pkg.sub\nChecking module module.od_pkg" }
-   , { file: "qualified_class_unknown.fld", expected_error: "Unknown dataclass: module.shape_lib.Missing" }
-   , { file: "reexport_from_import.fld", expected_error: "Cannot import name foo from module module.reexport_mid" }
-   , { file: "reexport_import_alias.fld", expected_error: "Cannot import name attr_lib from module module.alias_mid" }
-   , { file: "self_import.fld", expected_error: "import cycle: module.selfy -> module.selfy" }
-   , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module module.clash_pkg: sub\nChecking module module.clash_pkg" }
-   , { file: "submodule_self_import.fld", expected_error: "import cycle: module.ssi.b -> module.ssi.b" }
+   , { file: "own_descendant_import.fld", expected_error: "Module od_pkg cannot import its own descendant od_pkg.sub\nChecking module od_pkg" }
+   , { file: "qualified_class_unknown.fld", expected_error: "Unknown dataclass: shape_lib.Missing" }
+   , { file: "reexport_from_import.fld", expected_error: "Cannot import name foo from module reexport_mid" }
+   , { file: "reexport_import_alias.fld", expected_error: "Cannot import name attr_lib from module alias_mid" }
+   , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }
+   , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module clash_pkg: sub\nChecking module clash_pkg" }
+   , { file: "submodule_self_import.fld", expected_error: "import cycle: ssi.b -> ssi.b" }
    , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict" }
    , { file: "use_before_import.fld", expected_error: "\"ParseError on line 2, column 6:\\nimports must precede statements\"\nLoading module use_before_import_mod" }
    ]
 
--- Run with test/fluid/shadow on the search path.
+-- Run with test/predefined on the search path.
 shadow_cases :: Array IllFormedSpec
 shadow_cases =
-   [ { file: "predefined_shadowed.fld", expected_error: "Predefined module has a source file: math" }
+   [ { file: "predefined_shadowed.fld", expected_error: "Predefined module cannot have a source file: math" }
    ]

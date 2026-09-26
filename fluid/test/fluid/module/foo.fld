@@ -1,3 +1,0 @@
-from module.bar import y
-
-x = y

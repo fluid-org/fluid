@@ -48,7 +48,7 @@ linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => Ha
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
 illFormedTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> illFormedSuiteIn [ Folder "test/fluid/shadow" ] shadow_cases
+illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> illFormedSuiteIn [ Folder "test/predefined" ] shadow_cases
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)

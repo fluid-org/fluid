@@ -45,35 +45,35 @@ misc_cases =
    , { file: "match_wildcard.fld", fwd_expect: "2 :| -1 :| 0 :| []" }
    , { file: "def_literal_pattern.fld", fwd_expect: "2" }
    , { file: "partial_application.fld", fwd_expect: "6 :| 7 :| 3 :| 3 :| 3 :| 7 :| 7 :| []" }
-   , { file: "module/attr_access.fld", fwd_expect: "42" }
-   , { file: "module/child_after_parent.fld", fwd_expect: "5" }
-   , { file: "module/dotted_attr_access.fld", fwd_expect: "1" }
-   , { file: "module/from_import_dataclass.fld", fwd_expect: "Coord(3, 4)" }
-   , { file: "module/from_import_multi.fld", fwd_expect: "3" }
-   , { file: "module/from_import_subclass.fld", fwd_expect: "6" }
-   , { file: "module/from_import_submodule.fld", fwd_expect: "1" }
-   , { file: "module/from_import_value.fld", fwd_expect: "1" }
-   , { file: "module/from_import_view.fld", fwd_expect: "MultiView(1 :| 2 :| [])" }
-   , { file: "module/import_absolute_shadow.fld", fwd_expect: "2" }
-   , { file: "module/import_dataclass.fld", fwd_expect: "Coord(3, 4)" }
-   , { file: "module/import_modules.fld", fwd_expect: "84" }
-   , { file: "module/import_simple.fld", fwd_expect: "84" }
-   , { file: "module/import_simple_unused.fld", fwd_expect: "84" }
-   , { file: "module/import_twice.fld", fwd_expect: "1" }
-   , { file: "module/name_member.fld", fwd_expect: "\"attr_lib\"" }
-   , { file: "module/name_var.fld", fwd_expect: "\"__main__\"" }
-   , { file: "module/namespace_deep.fld", fwd_expect: "3" }
-   , { file: "module/namespace_from_import.fld", fwd_expect: "1" }
-   , { file: "module/namespace_import.fld", fwd_expect: "1" }
-   , { file: "module/parent_after_child.fld", fwd_expect: "5" }
-   , { file: "module/parent_uses_child.fld", fwd_expect: "6" }
-   , { file: "module/predefined_imports.fld", fwd_expect: "5" }
-   , { file: "module/qualified_construct.fld", fwd_expect: "Coord(3, 4)" }
-   , { file: "module/qualified_pattern.fld", fwd_expect: "7" }
-   , { file: "module/same_name_classes.fld", fwd_expect: "8" }
-   , { file: "module/sibling_submodules.fld", fwd_expect: "3" }
-   , { file: "module/sibling_submodules_swapped.fld", fwd_expect: "3" }
-   , { file: "module/submodule_attr.fld", fwd_expect: "5" }
+   , { file: "attr_access.fld", fwd_expect: "42" }
+   , { file: "child_after_parent.fld", fwd_expect: "5" }
+   , { file: "dotted_attr_access.fld", fwd_expect: "1" }
+   , { file: "from_import_dataclass.fld", fwd_expect: "Coord(3, 4)" }
+   , { file: "from_import_multi.fld", fwd_expect: "3" }
+   , { file: "from_import_subclass.fld", fwd_expect: "6" }
+   , { file: "from_import_submodule.fld", fwd_expect: "1" }
+   , { file: "from_import_value.fld", fwd_expect: "1" }
+   , { file: "from_import_view.fld", fwd_expect: "MultiView(1 :| 2 :| [])" }
+   , { file: "import_absolute_shadow.fld", fwd_expect: "2" }
+   , { file: "import_dataclass.fld", fwd_expect: "Coord(3, 4)" }
+   , { file: "import_modules.fld", fwd_expect: "84" }
+   , { file: "import_simple.fld", fwd_expect: "84" }
+   , { file: "import_simple_unused.fld", fwd_expect: "84" }
+   , { file: "import_twice.fld", fwd_expect: "1" }
+   , { file: "name_member.fld", fwd_expect: "\"attr_lib\"" }
+   , { file: "name_var.fld", fwd_expect: "\"__main__\"" }
+   , { file: "namespace_deep.fld", fwd_expect: "3" }
+   , { file: "namespace_from_import.fld", fwd_expect: "1" }
+   , { file: "namespace_import.fld", fwd_expect: "1" }
+   , { file: "parent_after_child.fld", fwd_expect: "5" }
+   , { file: "parent_uses_child.fld", fwd_expect: "6" }
+   , { file: "predefined_imports.fld", fwd_expect: "5" }
+   , { file: "qualified_construct.fld", fwd_expect: "Coord(3, 4)" }
+   , { file: "qualified_pattern.fld", fwd_expect: "7" }
+   , { file: "same_name_classes.fld", fwd_expect: "8" }
+   , { file: "sibling_submodules.fld", fwd_expect: "3" }
+   , { file: "sibling_submodules_swapped.fld", fwd_expect: "3" }
+   , { file: "submodule_attr.fld", fwd_expect: "5" }
    , { file: "normalise.fld", fwd_expect: "(33, 66)" }
    , { file: "not_parens_op.fld", fwd_expect: """@doc("hello") -42""" }
    , { file: "nub.fld", fwd_expect: "1 :| 2 :| 3 :| 4 :| []" }
