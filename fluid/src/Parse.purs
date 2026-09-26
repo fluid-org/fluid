@@ -5,7 +5,7 @@ import Prelude
 import Control.Alt ((<|>))
 import Control.Lazy (defer)
 import Control.Monad.State (StateT)
-import Data.Array (some)
+import Data.Array (reverse, some)
 import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
 import Bind (Bind, Name, varAnon, (↦))
@@ -23,18 +23,18 @@ import DataType (cCons, cPair)
 import Lattice (Raw)
 import Literal (Literal(..))
 import Parse.Number (float, integer)
-import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
+import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, many, many1, option, optionMaybe, sepBy1, try, (<?>))
 import Parsing.Expr (Assoc(..), Operator(..)) as P
-import Parsing.Expr (Assoc(..), OperatorTable, buildExprParser)
+import Parsing.Expr (OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
-import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
-import Expr (Pattern(..))
+import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
+import Expr (Binop(..), Pattern(..))
 import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type (Primitive(..), TypeExpr(..)) as T
-import Util (type (+), type (×), error, nonEmpty, singleton, (×))
+import Util (type (+), type (×), nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
 pattern = defer \_ -> do
@@ -285,27 +285,24 @@ expr = context "expr" $ cond <?> "expression"
       where
 
       opTable :: OperatorTable (StateT Position Identity) String (Raw Expr)
-      opTable =
-         opDefs # map (map toOperator)
+      opTable = reverse levels <#> map toOperator -- tightest first
          where
-         toOperator :: OpDef -> P.Operator (StateT Position Identity) String (Raw Expr)
-         toOperator (OpDef id fix opType) = case opType of
-            Symbol -> op fix (reservedOperator id $> id)
-            Ident -> op fix (reserved id $> id)
-            CustomOp -> op (Infix AssocLeft) (try (delim '|' *> variable) <* delim '|')
-            ConsOp -> P.Infix consOp AssocRight
-            ProjectOp -> error "not implemented!"
+         toOperator :: Operator -> P.Operator (StateT Position Identity) String (Raw Expr)
+         toOperator op@(Binary b) = P.Infix (symbol b $> \e e' -> BinOp e b e') (assoc op)
+         toOperator (Unary u) = P.Prefix (word (unopSymbol u) $> UnOp u)
+         toOperator op@AndOp = P.Infix (reserved "and" $> And) (assoc op)
+         toOperator op@OrOp = P.Infix (reserved "or" $> Or) (assoc op)
+         toOperator op@InfixOp = P.Infix (try (delim '|' *> variable) <* delim '|' <#> \f e e' -> InfixApp e f e') (assoc op)
+         toOperator op@ConsOp = P.Infix (reservedOperator ":|" $> \e e' -> Constr unit (singleton (last cCons)) (e : e' : Nil) Nil) (assoc op)
 
-         op :: Fixity -> Parser String -> P.Operator (StateT Position Identity) String (Raw Expr)
-         op fix p = case fix of
-            Infix assoc -> P.Infix (p <#> \id e e' -> BinaryApp e id e') assoc
-            Prefix -> P.Prefix (p <#> \id e -> UnaryPrefixApp id e)
-            Postfix -> error "not implemented!"
+         symbol :: Binop -> Parser Unit
+         symbol In = reserved "in"
+         symbol NotIn = try (reserved "not" *> reserved "in")
+         symbol b = reservedOperator (binopSymbol b)
 
-         consOp :: Parser (Raw Expr -> Raw Expr -> Raw Expr)
-         consOp = do
-            reservedOperator ":|"
-            pure \e e' -> Constr unit (singleton (last cCons)) (e : e' : Nil) Nil
+         word :: String -> Parser Unit
+         word "not" = reserved "not"
+         word sym = reservedOperator sym
 
       simpleChain :: Parser (Raw Expr)
       simpleChain = withPos (simple >>= chain)
@@ -325,8 +322,9 @@ expr = context "expr" $ cond <?> "expression"
             dproject = do
                delim '['
                k <- cond
+               k' <- optionMaybe (delim ',' *> cond)
                close ']'
-               chain (Subscript e k)
+               chain (Subscript e (maybe k (\k2 -> Constr unit (singleton (last cPair)) (k : k2 : Nil) Nil) k'))
 
             app :: Parser (Raw Expr)
             app = do
@@ -501,24 +499,17 @@ expr = context "expr" $ cond <?> "expression"
          parensExpr :: Parser (Raw Expr)
          parensExpr = context "parens" do
             delim '('
+            e <- cond
             choice
                [ do
-                    op <- try (operator <* close ')')
-                    pure $ Op op
+                    close ')'
+                    pure e
                , do
-                    e <- cond
-                    choice
-                       [ do
-                            close ')'
-                            pure e
-                       , do
-                            delim ','
-                            e' <- cond
-                            close ')'
-                            pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
-                       , fail "Expected `)` or `,` after `(expr`"
-                       ]
-               , fail "Expected `op` or `expr` after `(`"
+                    delim ','
+                    e' <- cond
+                    close ')'
+                    pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
+               , fail "Expected `)` or `,` after `(expr`"
                ]
 
          docExpr :: Parser (Raw Expr)

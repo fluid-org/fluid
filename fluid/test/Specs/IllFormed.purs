@@ -96,7 +96,7 @@ illFormed_cases =
    , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }
    , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module clash_pkg: sub\nChecking module clash_pkg" }
    , { file: "submodule_self_import.fld", expected_error: "import cycle: ssi.b -> ssi.b" }
-   , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict" }
+   , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict or matrix" }
    , { file: "use_before_import.fld", expected_error: "\"ParseError on line 2, column 6:\\nimports must precede statements\"\nLoading module use_before_import_mod" }
    ]
 

@@ -1,2 +1,2 @@
-incr = (+)(1)
+incr = lambda x: 1 + x
 compose(incr, incr, 3)

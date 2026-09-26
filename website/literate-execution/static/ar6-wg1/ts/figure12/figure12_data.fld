@@ -1,5 +1,5 @@
 path = "../../dataset/TS/inputdata_TS_12/v20230301/WaterCyclePanels/"
-hydroData = load_json(path ++ "Hydro_vars_change_20210201_derived_extra_raw.json")
+hydroData = load_json(path + "Hydro_vars_change_20210201_derived_extra_raw.json")
 
 # extract from data set instead?
 models = [

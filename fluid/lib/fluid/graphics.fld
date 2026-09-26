@@ -174,7 +174,7 @@ def height(g):
 
 # Float -> Float -> List GraphicsElement -> List GraphicsElement
 def space_right(z, sep, gs):
-  return zip_with(set_x, iterate(length(gs), (+)(sep), z), gs)
+  return zip_with(set_x, iterate(length(gs), lambda x: sep + x, z), gs)
 
 # Bake colour decisions into the library for the time being. Provide two palettes, so we can have two
 # different sets of categorical values (e.g. countries and energy types). Palettes from colorbrewer2.org
@@ -268,7 +268,7 @@ def axis(orient, x, start, end):
   first_tick = ceil_to_nearest(start, tick_sp)
   last_tick = ceil_to_nearest(end, tick_sp)
   n = floor((end - first_tick) / tick_sp) + 1
-  ys = iterate(n, (+)(tick_sp), first_tick)
+  ys = iterate(n, lambda x: tick_sp + x, first_tick)
   ys = start :| ys if first_tick > start else ys
   ys = concat2(ys, [last_tick]) if last_tick > end else ys
   ps = map(mk_point(orient, x), ys)
@@ -282,7 +282,7 @@ def axis(orient, x, start, end):
 # x is position of this axis on the other axis.
 # Orient -> Float -> List Cat -> GraphicsElement
 def cat_axis(orient, x, cat_values):
-  ys = iterate(length(cat_values) + 1, (+)(1), 0)
+  ys = iterate(length(cat_values) + 1, lambda x: 1 + x, 0)
   ps = map(mk_point(orient, x), ys)
 
   return Group([
@@ -312,7 +312,7 @@ def line_chart(with_axes, colours, x_start, data):
     ])
 
   # List GraphicsElement
-  lines = zip_with(curry(plot), iterate(n_cat, (+)(1), 0), colours)
+  lines = zip_with(curry(plot), iterate(n_cat, lambda x: 1 + x, 0), colours)
   x_finish = last(xs)
   y_finish = maximum(flip(map, data, lambda (_, kvs): maximum(map(snd, kvs))))
 
@@ -344,7 +344,7 @@ def rects(colours, ns):
 # Colours -> List (a, Num) -> GraphicsElement
 def stacked_bar(colours, ns):
   heights = map(snd, ns)
-  subtotals = scanl1((+), 0, heights)
+  subtotals = scanl1(lambda x, y: x + y, 0, heights)
   dims = zip(0 :| subtotals, heights)
   rects = map(lambda ((y, height), colour): Rect(x=0, y=y, width=1, height=height, fill=colour), zip(dims, colours))
 

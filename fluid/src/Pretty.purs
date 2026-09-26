@@ -10,7 +10,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype)
 import Data.NonEmpty ((:|))
 import Data.Traversable (class Foldable)
-import DataType (Ctr, cCons)
+import DataType (Ctr, cCons, cPair)
 import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
@@ -18,10 +18,10 @@ import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricD
 import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
-import Primitive.Parse (getPrec)
+import Operator (Operator(..), binopSymbol, prec, unopSymbol)
 import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type as T
-import Util (type (×), error, isEmpty, (×))
+import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
 import Val (BaseVal(..), Fun(..)) as V
@@ -41,20 +41,23 @@ instance Pretty String where
    pretty = text
 
 class RootOp (e :: Type) where
-   rootOp :: e -> Maybe String
+   rootOp :: e -> Maybe Operator
 
 instance RootOp Pattern where
-   rootOp (PConstr c _ _) | last c == last cCons = Just ":"
+   rootOp (PConstr c _ _) | last c == last cCons = Just ConsOp
    rootOp _ = Nothing
 
 instance Ann a => RootOp (Expr a) where
-   rootOp (Constr _ c _ _) | last c == last cCons = Just ":"
-   rootOp (BinaryApp _ op _) = Just op
-   rootOp (UnaryPrefixApp op _) = Just op
+   rootOp (Constr _ c _ _) | last c == last cCons = Just ConsOp
+   rootOp (BinOp _ op _) = Just (Binary op)
+   rootOp (UnOp op _) = Just (Unary op)
+   rootOp (And _ _) = Just AndOp
+   rootOp (Or _ _) = Just OrOp
+   rootOp (InfixApp _ _ _) = Just InfixOp
    rootOp _ = Nothing
 
 instance Highlightable a => RootOp (E.Expr a) where
-   rootOp (E.Constr _ c _) | c == cCons = Just ":"
+   rootOp (E.Constr _ c _) | c == cCons = Just ConsOp
    rootOp _ = Nothing
 
 instance Highlightable a => RootOp (Val a) where
@@ -62,15 +65,18 @@ instance Highlightable a => RootOp (Val a) where
    rootOp (Val _ (Just _) _) = Nothing
 
 instance Highlightable a => RootOp (BaseVal a) where
-   rootOp (V.Constr c _) | c == cCons = Just ":"
+   rootOp (V.Constr c _) | c == cCons = Just ConsOp
    rootOp _ = Nothing
 
 class IsSimple (e :: Type) where
    isSimple :: e -> Boolean
 
 instance Ann a => IsSimple (Expr a) where
-   isSimple (BinaryApp _ _ _) = false
-   isSimple (UnaryPrefixApp _ _) = false
+   isSimple (BinOp _ _ _) = false
+   isSimple (UnOp _ _) = false
+   isSimple (And _ _) = false
+   isSimple (Or _ _) = false
+   isSimple (InfixApp _ _ _) = false
    isSimple (Constr _ c _ _) | last c == last cCons = false
    isSimple (Lambda _) = false
    isSimple (Cond _ _ _) = false
@@ -100,29 +106,26 @@ prettyP :: forall a. Pretty a => a -> String
 prettyP x = render (pretty x)
 
 operatorApp :: forall a. Ann a => Int -> Expr a -> Doc
-operatorApp n (BinaryApp s op s') =
-   case getPrec op of
-      -1 -> operatorApp customPrec s <+> text "|" <> text op <> text "|" <+> operatorApp customPrec s'
-         where
-         customPrec = getPrec "|x|"
-      n' ->
-         if n' <= n then
-            parens (operatorApp n' s <+> text op <+> operatorApp n' s')
-         else
-            operatorApp n' s <+> text op <+> operatorApp n' s'
-operatorApp n (UnaryPrefixApp op s) =
-   case getPrec op of
-      -1 -> error "not implemented!"
-      n' ->
-         if n' <= n then
-            parens (text op <+> operatorApp n' s)
-         else
-            text op <+> operatorApp n' s
+operatorApp n (BinOp s op s') = infixApp n (Binary op) s (text (binopSymbol op)) s'
+operatorApp n (And s s') = infixApp n AndOp s (text "and") s'
+operatorApp n (Or s s') = infixApp n OrOp s (text "or") s'
+operatorApp n (InfixApp s f s') = infixApp n InfixOp s (text "|" <> text f <> text "|") s'
+operatorApp n (UnOp op s) =
+   if n' <= n then parens (text (unopSymbol op) <+> operatorApp n' s)
+   else text (unopSymbol op) <+> operatorApp n' s
+   where
+   n' = prec (Unary op)
 operatorApp _ e = prettySimple e
+
+infixApp :: forall a. Ann a => Int -> Operator -> Expr a -> Doc -> Expr a -> Doc
+infixApp n op s sym s' =
+   if n' <= n then parens (operatorApp n' s <+> sym <+> operatorApp n' s')
+   else operatorApp n' s <+> sym <+> operatorApp n' s'
+   where
+   n' = prec op
 
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
-   pretty (Op o) = parens $ text o
    pretty (Lit α ℓ) = highlightIf α (pretty ℓ)
    pretty (Constr α c Nil Nil) = highlightIf α (text (dottedName c))
    pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
@@ -135,10 +138,14 @@ instance Ann a => Pretty (Expr a) where
    pretty (Lambda c) = pretty c
    pretty (Attribute s x) = expr $ prettySimple s <> text "." <> text x
    pretty (ModMember q x) = expr $ text (dottedName q) <> text "." <> text x
+   pretty (Subscript e (Constr _ c (k : k' : Nil) Nil)) | last c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
    pretty (Subscript e k) = expr $ prettySimple e <> brackets (expr $ pretty k)
    pretty (App s ss) = expr $ prettySimple s <> parens (prettyList ss)
-   pretty (BinaryApp s op s') = expr $ operatorApp 0 (BinaryApp s op s')
-   pretty (UnaryPrefixApp op s) = expr $ operatorApp 0 (UnaryPrefixApp op s)
+   pretty e@(BinOp _ _ _) = expr $ operatorApp 0 e
+   pretty e@(UnOp _ _) = expr $ operatorApp 0 e
+   pretty e@(And _ _) = expr $ operatorApp 0 e
+   pretty e@(Or _ _) = expr $ operatorApp 0 e
+   pretty e@(InfixApp _ _ _) = expr $ operatorApp 0 e
    pretty (Cond e1 e e2) =
       expr $ pretty e1 <+> text "if" <+> pretty e <+> text "else" <+> pretty e2
 
@@ -300,7 +307,7 @@ prettyConstr c ps = text c <> parens (prettyList ps)
 prettyConsArg :: forall a. RootOp a => IsSimple a => Pretty a => a -> Boolean -> Doc
 prettyConsArg e lhs = case rootOp e of
    Nothing -> prettySimple e
-   Just op -> if (if lhs then (<=) else (<)) (getPrec op) (getPrec ":") then parens (pretty e) else pretty e
+   Just op -> if (if lhs then (<=) else (<)) (prec op) (prec ConsOp) then parens (pretty e) else pretty e
 
 commas :: List Doc -> Doc
 commas Nil = empty
@@ -320,7 +327,6 @@ instance Highlightable a => Pretty (Pair (E.Expr a)) where
 
 instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Var x) = text x
-   pretty (E.Op op) = parens (text op)
    pretty (E.Lit a ℓ) = highlightIf a (pretty ℓ)
    pretty (E.Dictionary a ees) = highlightIf a $ record (pretty <$> ees)
    pretty (E.Constr a c es) = highlightIf a (prettyConstr (last c) es)
@@ -331,6 +337,10 @@ instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Subscript e x) = pretty e <> brackets (pretty x)
    pretty (E.ModMember q x) = text (dottedName q) <> text "." <> text x
    pretty (E.App e es) = pretty e <> parens (prettyList es)
+   pretty (E.BinOp e op e') = expr $ pretty e <+> text (binopSymbol op) <+> pretty e'
+   pretty (E.UnOp op e) = expr $ text (unopSymbol op) <+> pretty e
+   pretty (E.And e e') = expr $ pretty e <+> text "and" <+> pretty e'
+   pretty (E.Or e e') = expr $ pretty e <+> text "or" <+> pretty e'
    pretty (E.Cond e1 e e2) = expr $ pretty e1 <+> text "if" <+> pretty e <+> text "else" <+> pretty e2
    pretty (E.DocExpr p e) = text "@doc" <> parens (pretty p) <+> pretty e
 

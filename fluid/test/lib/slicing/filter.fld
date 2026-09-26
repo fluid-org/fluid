@@ -8,4 +8,4 @@ def filter(p, x :| xs):
     return x :| ys
   return ys
 
-filter((<)(n), xs)
+filter(lambda x: n < x, xs)

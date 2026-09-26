@@ -20,7 +20,7 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, checkArity, ctrSig, fieldsOf)
+import DataType (class HasClasses, ClassTable, askClasses, cPair, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -35,14 +35,15 @@ import Literal (Literal(..), eqLiteral)
 import Lattice (Raw, 𝔹)
 import ModuleGraph (ModuleName)
 import Pretty (prettyP)
-import Primitive (boolean, intPair, string, unpack)
+import Operator (binopSymbol, unopSymbol)
+import Primitive (binop, boolean, intPair, string, unop, unpack)
 import Test.Util.Debug (checking, tracing)
 import Util (type (×), Endo, absurd, check, definitely, definitely', error, orElse, orThrow, singleton, spyFunWhen, throw, traceWhen, withMsg, (×), (⊆))
 import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, matrixGet, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -155,9 +156,6 @@ eval doc_opt ρ e0 αs = do
          Var x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (variable " <> x <> ")"
             pure (definitely' (lookup x ρ))
-         Op op -> do
-            traceWhen (isJust doc_opt) $ "Discarding doc (operator " <> op <> ")"
-            pure (definitely' (lookup op ρ))
          Attribute e x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (attribute access)"
             v <- eval Nothing ρ e αs
@@ -174,7 +172,10 @@ eval doc_opt ρ e0 αs = do
                Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (Str s)) ->
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
                Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected str"
-               _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected dict"
+               Val _ _ (V.Matrix r), Val _ _ (V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil)) | c == cPair ->
+                  pure (matrixGet i j r)
+               Val _ _ (V.Matrix _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected pair of int"
+               _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected dict or matrix"
          ModMember q x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (module member " <> x <> ")"
             { moduleEnv } <- moduleStore
@@ -184,6 +185,23 @@ eval doc_opt ρ e0 αs = do
             v <- eval Nothing ρ e αs
             vs <- traverse (\e' -> eval Nothing ρ e' αs) es
             withMsg ("In " <> funName e) $ apply doc_opt v vs
+         BinOp e op e' -> do
+            v <- eval Nothing ρ e αs
+            v' <- eval Nothing ρ e' αs
+            u × βs <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v v')
+            val doc_opt βs u
+         UnOp op e -> do
+            v <- eval Nothing ρ e αs
+            u × βs <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v)
+            val doc_opt βs u
+         And e e' -> do
+            Val α _ u <- eval Nothing ρ e αs
+            b <- orThrow (boolean.unpack u)
+            if b then eval doc_opt ρ e' (insert α αs) else val doc_opt (singleton α) u
+         Or e e' -> do
+            Val α _ u <- eval Nothing ρ e αs
+            b <- orThrow (boolean.unpack u)
+            if b then val doc_opt (singleton α) u else eval doc_opt ρ e' (insert α αs)
          Cond e1 e e2 -> do
             b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
             eval doc_opt ρ (if b then e1 else e2) (insert α αs)
@@ -195,7 +213,6 @@ eval doc_opt ρ e0 αs = do
    where
    funName :: forall a. Expr a -> String
    funName (Var x) = x
-   funName (Op op) = op
    funName (App e _) = funName e
    funName _ = "unknown"
 

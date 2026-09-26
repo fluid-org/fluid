@@ -9,14 +9,14 @@ ordinalMap = [
 def ordinal(n):
   assert n > 0, "n <= 0 not supported"
   if n < 4:
-    return num_to_str(n) ++ find_with_key_("lastDigit", n, ordinalMap)["suffix"]
+    return num_to_str(n) + find_with_key_("lastDigit", n, ordinalMap)["suffix"]
   if n >= 4 and n <= 20:
-    return num_to_str(n) ++ "th"
+    return num_to_str(n) + "th"
   assert False, "n > 20 not supported"
 
 def rankLabel(word, n):
-  prefix = "" if n == 1 else ordinal(n) ++ "-"
-  return prefix ++ word
+  prefix = "" if n == 1 else ordinal(n) + "-"
+  return prefix + word
 
 def trendWord(n1, n2, compareWord):
   return compareWord(compare(n1, n2))
