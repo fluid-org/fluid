@@ -1,4 +1,4 @@
-from lib.stats import mergesort, qcut
+from fluid.stats import mergesort, qcut
 from dataset.ssp126 import ssp126
 
 data = mergesort([x["changed"] for x in ssp126])

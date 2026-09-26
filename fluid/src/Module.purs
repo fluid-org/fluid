@@ -36,7 +36,7 @@ import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
 import Primitive.Defs (predefined)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
-import Util (type (×), check, orThrow, throwLeft, whenever, withMsg, (×))
+import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
 import Util.Set ((∪))
 import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env)
@@ -183,16 +183,19 @@ parseModules imports = do
       -> m (DependencyGraph × Map ModuleName (Raw S.Module))
    collectModules visited depGraph mods pending = case pending of
       Nil -> pure $ (depGraph × mods)
-      mod : rest ->
-         if Set.member mod visited || Map.member mod predefined then
-            collectModules visited depGraph mods rest
-         else do
-            mod' × edges × toLoad <- parseAndCollect mod
-            collectModules
-               (Set.insert mod visited)
-               (Map.insert mod edges depGraph)
-               (Map.insert mod mod' mods)
-               (toLoad <> rest)
+      mod : rest
+         | Set.member mod visited -> collectModules visited depGraph mods rest
+         | Map.member mod predefined -> do
+              shadowed <- isModule mod
+              when shadowed $ throw $ "Predefined module has a source file: " <> dottedName mod
+              collectModules (Set.insert mod visited) depGraph mods rest
+         | otherwise -> do
+              mod' × edges × toLoad <- parseAndCollect mod
+              collectModules
+                 (Set.insert mod visited)
+                 (Map.insert mod edges depGraph)
+                 (Map.insert mod mod' mods)
+                 (toLoad <> rest)
 
    parseAndCollect :: ModuleName -> m (Raw S.Module × List ModuleName × List ModuleName)
    parseAndCollect path = do

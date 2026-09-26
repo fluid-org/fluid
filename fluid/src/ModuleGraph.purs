@@ -22,15 +22,12 @@ typing = pure "typing"
 dataclasses :: ModuleName
 dataclasses = pure "dataclasses"
 
-libBuiltins :: ModuleName
-libBuiltins = NonEmptyList ("lib" :| "builtins" : Nil)
-
-libPrelude :: ModuleName
-libPrelude = NonEmptyList ("lib" :| "prelude" : Nil)
+prelude :: ModuleName
+prelude = NonEmptyList ("fluid" :| "prelude" : Nil)
 
 -- Modules in scope without import, each under the members of those before it.
 implicit :: List ModuleName
-implicit = builtins : libBuiltins : libPrelude : Nil
+implicit = builtins : prelude : Nil
 
 implicitFor :: ModuleName -> List ModuleName
 implicitFor q = takeWhile (_ /= q) implicit

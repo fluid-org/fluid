@@ -18,7 +18,7 @@
   "homepage": "https://f.luid.org",
   "files": [
     "dist/fluid/shared",
-    "dist/fluid/fluid/lib",
+    "dist/fluid/fluid/fluid",
     "output-es",
     "script/test-website.sh",
     "script/util",

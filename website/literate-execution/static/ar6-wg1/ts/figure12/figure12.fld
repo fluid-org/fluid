@@ -1,7 +1,7 @@
-import lib.stats
+import fluid.stats
 from figure12_data import hydroData_agg
 
-from lib.view import LineChart, LinePlot, Default
+from fluid.view import LineChart, LinePlot, Default
 
 temps = [ "1.5", "1.75", "2.0", "2.25", "2.5", "2.75", "3.0", "3.25",
     "3.5", "3.75", "4.0", "4.25", "4.5", "4.75", "5.0" ]

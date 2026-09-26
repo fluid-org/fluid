@@ -1,4 +1,4 @@
-from lib.graphics import colours1, line_chart, caption
+from fluid.graphics import colours1, line_chart, caption
 from dataset.renewables_restricted import data
 
 year1 = head(data)

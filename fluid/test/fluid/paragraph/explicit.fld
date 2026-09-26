@@ -1,4 +1,4 @@
-from lib.view import Paragraph, Text
+from fluid.view import Paragraph, Text
 
 name = "Alice"
 

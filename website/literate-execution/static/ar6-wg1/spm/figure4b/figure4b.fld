@@ -1,7 +1,7 @@
-from lib.stats import find_percentile, cut
+from fluid.stats import find_percentile, cut
 from figure4b_data import ssp126Source, ssp126preds, ssp245Source, ssp245preds
 
-from lib.view import BarChart, MultiView, Default, Link
+from fluid.view import BarChart, MultiView, Default, Link
 
 def stackedBarHeight(stackedBar):
   return sum([segment["z"] for segment in stackedBar["segments"]])

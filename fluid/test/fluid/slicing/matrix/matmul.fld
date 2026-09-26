@@ -1,4 +1,4 @@
-from lib.matrix import mat_mul
+from fluid.matrix import mat_mul
 from slicing.matrix.left_matrix import leftMatrix
 from slicing.matrix.right_matrix import rightMatrix
 

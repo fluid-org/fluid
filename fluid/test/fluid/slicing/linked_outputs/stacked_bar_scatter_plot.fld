@@ -1,6 +1,6 @@
 from dataset.energy_data import renewables, nonRenewables
 
-from lib.view import BarChart, MultiView, ScatterPlot, Default
+from fluid.view import BarChart, MultiView, ScatterPlot, Default
 
 def totalFor(year, country, rows):
   [row] = [row for row in rows if row["year"] == year if row["country"] == country]

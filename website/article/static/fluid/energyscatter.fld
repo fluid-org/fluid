@@ -1,6 +1,6 @@
 from energy_data import nonRenewables, renewables
 
-from lib.view import ScatterPlot
+from fluid.view import ScatterPlot
 
 def isCountry(name, x):
   return name == x["country"]

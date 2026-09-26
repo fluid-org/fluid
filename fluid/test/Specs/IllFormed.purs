@@ -99,3 +99,9 @@ illFormed_cases =
    , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict" }
    , { file: "use_before_import.fld", expected_error: "\"ParseError on line 2, column 6:\\nimports must precede statements\"\nLoading module use_before_import_mod" }
    ]
+
+-- Run with test/fluid/shadow on the search path.
+shadow_cases :: Array IllFormedSpec
+shadow_cases =
+   [ { file: "predefined_shadowed.fld", expected_error: "Predefined module has a source file: math" }
+   ]

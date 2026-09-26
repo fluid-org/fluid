@@ -10,8 +10,8 @@
 		linking: false
 	};
 
-	const src = `from lib.matrix import mat_mul
-from lib.view import MultiView
+	const src = `from fluid.matrix import mat_mul
+from fluid.view import MultiView
 from matrixMultiply.matrices import a, b, c
 
 MultiView([

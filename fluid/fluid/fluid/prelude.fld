@@ -1,5 +1,78 @@
+from dataclasses import dataclass
 from math import ceil, log
 from typing import Callable
+
+@dataclass
+class List:
+  pass
+
+@dataclass
+class Nil(List):
+  pass
+
+@dataclass
+class Cons(List):
+  head: object
+  tail: List
+
+@dataclass
+class Maybe:
+  pass
+
+@dataclass
+class Nothing(Maybe):
+  pass
+
+@dataclass
+class Just(Maybe):
+  value: object
+
+@dataclass
+class Pair:
+  fst: object
+  snd: object
+
+@dataclass
+class Tree:
+  pass
+
+@dataclass
+class Empty(Tree):
+  pass
+
+@dataclass
+class NonEmpty(Tree):
+  left: Tree
+  value: object
+  right: Tree
+
+@dataclass
+class Ordering:
+  pass
+
+@dataclass
+class LT(Ordering):
+  pass
+
+@dataclass
+class EQ(Ordering):
+  pass
+
+@dataclass
+class GT(Ordering):
+  pass
+
+@dataclass
+class InfNum:
+  pass
+
+@dataclass
+class FNum(InfNum):
+  value: float
+
+@dataclass
+class Infty(InfNum):
+  pass
 
 # To resolve in new semantics: expected dependencies don't arise for and/or unless they  make a fresh value.
 def and(False: bool, y: bool) -> bool:

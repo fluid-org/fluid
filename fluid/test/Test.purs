@@ -12,10 +12,10 @@ import Data.Profunctor.Strong (second)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import File (class LoadFile, FileCxt(..))
+import File (class LoadFile, FileCxt(..), Folder(..))
 import Module.Web (runWebT)
 import Test.Specs.Bwd (bwd_cases)
-import Test.Specs.IllFormed (illFormed_cases, purepy_cases)
+import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Desugar (desugar_cases)
 import Test.Specs.Graphics (graphics_cases)
@@ -25,7 +25,7 @@ import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, illFormedSuiteIn, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
@@ -48,7 +48,7 @@ linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => Ha
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
 illFormedTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases)
+illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> illFormedSuiteIn [ Folder "test/fluid/shadow" ] shadow_cases
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)

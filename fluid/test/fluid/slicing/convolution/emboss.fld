@@ -1,4 +1,4 @@
-from lib.matrix import zero, convolve
+from fluid.matrix import zero, convolve
 from slicing.convolution.filter.emboss import filter
 from slicing.convolution.test_image import inputImage
 

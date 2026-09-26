@@ -1,6 +1,6 @@
 from methane_data import methane
 
-from lib.view import LineChart, LinePlot, Default, Rotated
+from fluid.view import LineChart, LinePlot, Default, Rotated
 
 def nthPad(n, xs):
   nth(min(max(n, 0), length(xs) - 1), xs)

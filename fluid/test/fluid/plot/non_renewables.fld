@@ -1,4 +1,4 @@
-from lib.view import BarChart, MultiView, ScatterPlot, Default
+from fluid.view import BarChart, MultiView, ScatterPlot, Default
 
 countries = ["BRA", "EGY", "IND", "JPN"]
 

@@ -1,4 +1,4 @@
-from lib.matrix import zero, wrap, convolve
+from fluid.matrix import zero, wrap, convolve
 from linked_outputs.convolution_data import data
 
 filter1_ = [

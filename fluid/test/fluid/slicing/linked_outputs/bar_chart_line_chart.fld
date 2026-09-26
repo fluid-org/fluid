@@ -1,6 +1,6 @@
 from dataset.renewables import renewables
 
-from lib.view import BarChart, LineChart, MultiView, LinePlot, Default
+from fluid.view import BarChart, LineChart, MultiView, LinePlot, Default
 
 def totalFor(c, rows):
   return sum([row["output"] for row in rows if row["country"] == c])

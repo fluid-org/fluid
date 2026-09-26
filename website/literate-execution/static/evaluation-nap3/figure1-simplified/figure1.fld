@@ -1,7 +1,7 @@
 from math import ceil
 from nap3_ccra3_data import nap3_actions, ccra3_risks
 
-from lib.view import BarChart, MultiView, Default, Link
+from fluid.view import BarChart, MultiView, Default, Link
 
 eval_scores = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]

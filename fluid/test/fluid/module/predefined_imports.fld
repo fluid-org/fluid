@@ -1,3 +1,3 @@
 import math
-import lib.prelude
-math.floor(2.7) + lib.prelude.length([1, 2, 3])
+import fluid.prelude
+math.floor(2.7) + fluid.prelude.length([1, 2, 3])

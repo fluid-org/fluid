@@ -1,6 +1,6 @@
 from dataset.methane_emissions import methane
 
-from lib.view import LineChart, LinePlot, Default, Rotated
+from fluid.view import LineChart, LinePlot, Default, Rotated
 
 def nthPad(n, xs):
   return nth(min(max(n, 0), length(xs) - 1), xs)

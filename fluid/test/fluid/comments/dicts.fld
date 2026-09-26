@@ -1,4 +1,4 @@
-import lib.view
+import fluid.view
 
 d = {}
 e = { ["a"]: 5, ["a" ++ "b"]: 6 }

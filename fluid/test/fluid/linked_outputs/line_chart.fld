@@ -1,4 +1,4 @@
-from lib.view import LineChart, LinePlot, Default
+from fluid.view import LineChart, LinePlot, Default
 
 def series(type, country):
   return [{ x: row.year, y: row.output } for year in [2013 .. 2018] for row in renewables if row.year == year if row.energyType == type if row.country == country]

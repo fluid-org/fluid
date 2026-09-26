@@ -1,6 +1,6 @@
 from dataset.energy_data import renewables, nonRenewables
 
-from lib.view import ScatterPlot
+from fluid.view import ScatterPlot
 
 def sumNonRenewables(x):
   return ((x["nuclearCap"] + x["petrolCap"]) + x["gasCap"]) + x["coalCap"]

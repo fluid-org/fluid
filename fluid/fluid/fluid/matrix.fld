@@ -1,4 +1,4 @@
-import lib.view
+import fluid.view
 
 def zero(m, n, image):
   (m_size, n_size) = dims(image)

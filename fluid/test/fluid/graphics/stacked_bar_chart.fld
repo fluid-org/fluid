@@ -1,4 +1,4 @@
-from lib.graphics import colours1, stacked_bar_chart, caption
+from fluid.graphics import colours1, stacked_bar_chart, caption
 from dataset.renewables_restricted import data
 
 year = 2015

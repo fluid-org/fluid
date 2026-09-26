@@ -2,7 +2,7 @@ from scigen import rankLabel, trendWord, growShrink, smallerHigher, improve, imp
 from util import insertionSort, findIndex, find_with_key_, model
 from dataset.scigen._1805_02474v1_10 import tableData
 
-import lib.view
+import fluid.view
 
 model_BiLSTM = model("BiLSTM", tableData)
 model_LSTM = model("LSTM", tableData)

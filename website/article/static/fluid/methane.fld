@@ -1,6 +1,6 @@
 from methane_data import methane
 
-from lib.view import LineChart, LinePlot, Default, Rotated
+from fluid.view import LineChart, LinePlot, Default, Rotated
 
 def series(type):
   return [{ x: row["year"], y: row["emissions"] } for row in methane if row["type"] == type]

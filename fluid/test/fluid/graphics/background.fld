@@ -1,4 +1,4 @@
-from lib.graphics import Group, Rect, Viewport, Scale, Translate, width, height
+from fluid.graphics import Group, Rect, Viewport, Scale, Translate, width, height
 import dataset.renewables_restricted
 
 rect = Rect(x=0, y=0, width=1, height=3, fill="red")

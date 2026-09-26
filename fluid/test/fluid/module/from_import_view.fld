@@ -1,2 +1,2 @@
-from lib.view import MultiView
+from fluid.view import MultiView
 MultiView([1, 2])
