@@ -119,8 +119,8 @@ instance FV (Expr a) where
    fv (DictComp _ e e' gs) = fvQualifiers gs (fv e ∪ fv e')
    fv (DocExpr doc e) = fv doc ∪ fv e
 
--- Free variables of a comprehension whose element has free variables xs; each qualifier binds its
--- variables for subsequent qualifiers and the element.
+-- Free variables of a comprehension whose body has free variables xs; each qualifier binds its
+-- variables for subsequent qualifiers and the body.
 fvQualifiers :: forall a. List (Qualifier a) -> Set Var -> Set Var
 fvQualifiers Nil xs = xs
 fvQualifiers (Guard e : gs) xs = fv e ∪ fvQualifiers gs xs

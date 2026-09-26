@@ -478,8 +478,8 @@ fvRecDefs :: forall a. RecDefs a -> Set.Set Var
 fvRecDefs rs =
    Set.unions (fv <$> (snd <$> rs)) \\ Set.unions (Set.singleton <<< fst <$> rs)
 
--- Free variables of a comprehension whose element has free variables xs; each qualifier binds its
--- variables for subsequent qualifiers and the element.
+-- Free variables of a comprehension whose body has free variables xs; each qualifier binds its
+-- variables for subsequent qualifiers and the body.
 qualifiersFv :: forall a. List (Qualifier a) -> Set.Set Var -> Set.Set Var
 qualifiersFv Nil xs = xs
 qualifiersFv (g : gs) xs = case g of

@@ -406,27 +406,27 @@ wellFormedDictKey :: forall a. Cxt -> S.DictEntry a -> Either String (S.DictEntr
 wellFormedDictKey cxt (S.ExprKey e) = S.ExprKey <$> wellFormedExpr cxt e
 wellFormedDictKey _ k@(S.VarKey _ _) = pure k
 
--- Qualifiers of a comprehension, then its element under the context they extend.
+-- Qualifiers of a comprehension, then its body under the context they extend.
 wellFormedQualifiers
    :: forall a b
     . Cxt
    -> List (S.Qualifier a)
    -> (Cxt -> Either String b)
    -> Either String (b × List (S.Qualifier a))
-wellFormedQualifiers cxt Nil element = (_ × Nil) <$> element cxt
-wellFormedQualifiers cxt (g : gs) element = case g of
+wellFormedQualifiers cxt Nil body = (_ × Nil) <$> body cxt
+wellFormedQualifiers cxt (g : gs) body = case g of
    S.Guard e -> do
       e' <- wellFormedExpr cxt e
-      map (S.Guard e' : _) <$> wellFormedQualifiers cxt gs element
+      map (S.Guard e' : _) <$> wellFormedQualifiers cxt gs body
    S.Generator p e -> do
       e' <- wellFormedExpr cxt e
       p' <- wellFormedPattern cxt p
-      map (S.Generator p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
+      map (S.Generator p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs body
    S.Decl (S.VarDef p ψ e) -> do
       τ <- traverse (resolveType cxt) ψ
       e' <- wellFormedExpr cxt e
       p' <- wellFormedPattern cxt p
-      map (S.Decl (S.VarDef p' τ e') : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs element
+      map (S.Decl (S.VarDef p' τ e') : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs body
 
 var :: Cxt -> Var -> Either String Unit
 var cxt x = case Map.lookup x cxt of
