@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy website and shared website/src/lib into the package for npm publishing
+# Copy website and shared components into the package for npm publishing
 set -e
 cd "$(dirname "$0")/.."
 . script/util/paths.sh
@@ -30,9 +30,8 @@ rm -f "$DEST/package.json.bak"
 rm -f "$DEST/$WEBSITE_LIB_ROOT/fluid"
 cp -r "$LIB_PACKAGE" "$DEST/$WEBSITE_LIB_ROOT/fluid"
 
-# website/src/lib → shared components and CSS, reached via site's $shared alias
-rm -rf website/src/lib
-mkdir -p website/src
-cp -r ../website/src/lib website/src/lib
+rm -rf "$WEBSITE_SHARED"
+mkdir -p "$(dirname "$WEBSITE_SHARED")"
+cp -r "../$WEBSITE_SHARED" "$WEBSITE_SHARED"
 
 echo "Staged $WEBSITE for npm packaging."

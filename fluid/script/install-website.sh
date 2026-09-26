@@ -25,10 +25,9 @@ VERSION=$(node -e "console.log(require('./$NPM_ROOT/package.json').version)")
 echo "Installing $WEBSITE from @fluid-org/fluid@$VERSION..."
 mkdir -p "$(dirname "$DEST")"
 cp -r "$SRC" "$DEST"
-# Shared components and CSS, reached via site's $shared alias
-mkdir -p website/src
-rm -rf website/src/lib
-cp -r "$NPM_ROOT/website/src/lib" website/src/lib
+mkdir -p "$(dirname "$WEBSITE_SHARED")"
+rm -rf "$WEBSITE_SHARED"
+cp -r "$NPM_ROOT/$WEBSITE_SHARED" "$WEBSITE_SHARED"
 
 # Rewrite monorepo-relative paths for standalone use
 sed -i.bak \
