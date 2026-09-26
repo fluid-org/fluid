@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['.', '../../../fluid'],
+		fluidSrcPath: ['.', '../../../lib'],
 		inputs: ['hydroData_agg'],
 		query: false,
 		linking: true

@@ -23,19 +23,19 @@
 
 		<div class="code-examples">
 			<h4>Variable definitions</h4>
-			<CodeMirror name="variable-definitions" src="fluid/variable_definitions.fld" details={false} />
+			<CodeMirror name="variable-definitions" src="lib/variable_definitions.fld" details={false} />
 
 			<h4>Pattern matching and destructuring</h4>
-			<CodeMirror name="pattern-matching" src="fluid/pattern_matching.fld" details={false} />
+			<CodeMirror name="pattern-matching" src="lib/pattern_matching.fld" details={false} />
 
 			<h4>List comprehensions and lambdas</h4>
-			<CodeMirror name="list-comprehensions" src="fluid/list_comprehensions.fld" details={false} />
+			<CodeMirror name="list-comprehensions" src="lib/list_comprehensions.fld" details={false} />
 
 			<h4>Partial application</h4>
-			<CodeMirror name="partial-application" src="fluid/partial_application.fld" details={false} />
+			<CodeMirror name="partial-application" src="lib/partial_application.fld" details={false} />
 
 			<h4>Match expressions</h4>
-			<CodeMirror name="match-expressions" src="fluid/match_expressions.fld" details={false} />
+			<CodeMirror name="match-expressions" src="lib/match_expressions.fld" details={false} />
 		</div>
 	</div>
 	<div></div>

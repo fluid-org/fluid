@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['../fluid'],
+		fluidSrcPath: ['../lib'],
 		inputs: ['inputImage', 'filter'],
 		query: true,
 		linking: false
@@ -31,10 +31,10 @@
 
 	<div class="flex-left-align">
 		<div class="flex-top-align">
-			<Figure {spec} fld="../fluid/convolution.fld" />
+			<Figure {spec} fld="../lib/convolution.fld" />
 			<div></div>
 		</div>
-		<CodeMirror name="convolution" src="../fluid/convolution.fld" />
+		<CodeMirror name="convolution" src="../lib/convolution.fld" />
 	</div>
 </Grid>
 

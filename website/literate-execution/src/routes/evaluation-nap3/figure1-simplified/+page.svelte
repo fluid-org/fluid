@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['..', '../../../fluid'],
+		fluidSrcPath: ['..', '../../../lib'],
 		inputs: ['nap3_actions'],
 		query: true,
 		linking: false,

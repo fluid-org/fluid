@@ -24,9 +24,9 @@ sed -i.bak "s|\"@fluid-org/fluid\": \"workspace:\\*\"|\"@fluid-org/fluid\": \"^$
 rm -f "$DEST/package.json.bak"
 
 # Replace symlinks with copies from the source tree
-# static/fluid/fluid → fluid standard library
-rm -f "$DEST/static/fluid/fluid"
-cp -r lib/fluid "$DEST/static/fluid/fluid"
+# static/lib/fluid → fluid standard library
+rm -f "$DEST/static/lib/fluid"
+cp -r lib/fluid "$DEST/static/lib/fluid"
 
 # src/lib/assets/css/styles.css → shared CSS
 rm -f "$DEST/src/lib/assets/css/styles.css"

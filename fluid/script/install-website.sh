@@ -33,8 +33,8 @@ sed -i.bak \
 rm -f "$DEST/package.json.bak"
 
 # Recreate symlinks pointing into node_modules
-rm -rf "$DEST/static/fluid/fluid"
-ln -s "../../../../$NPM_ROOT/dist/fluid/lib/fluid" "$DEST/static/fluid/fluid"
+rm -rf "$DEST/static/lib/fluid"
+ln -s "../../../../$NPM_ROOT/dist/fluid/lib/fluid" "$DEST/static/lib/fluid"
 
 echo ""
 echo "Installed to $DEST. To run:"
