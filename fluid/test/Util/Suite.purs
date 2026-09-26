@@ -115,7 +115,7 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
 
    asTest :: IllFormedSpec -> m Unit
    asTest { file, expected_error } = do
-      fluidSrc <- loadFile [ Folder "fluid", Folder "test/fluid" ] (folder </> File file)
+      fluidSrc <- loadFile [ Folder "lib", Folder "test/fluid" ] (folder </> File file)
       result <- catchError (run fluidSrc *> pure (Left unit)) (pure <<< Right)
       case result of
          Right err ->

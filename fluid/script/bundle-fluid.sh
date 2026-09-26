@@ -16,4 +16,4 @@ if [[ $(head -n 1 "$FLUID_EXECUTABLE") != "$SHEBANG" ]]; then
 fi
 
 chmod +x "$FLUID_EXECUTABLE"
-cp -r fluid dist/fluid
+cp -r lib dist/fluid

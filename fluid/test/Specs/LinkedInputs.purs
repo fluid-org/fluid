@@ -9,7 +9,7 @@ import Test.Util.Suite (TestLinkedInputsSpec)
 linkedInputs_spec3 :: TestLinkedInputsSpec
 linkedInputs_spec3 =
    { spec:
-        { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+        { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
         , inputs: [ "renewables", "nonRenewables" ]
         , query: Nothing
         , linking: true
@@ -30,7 +30,7 @@ linkedInputs_spec3 =
 linkedInputs_spec4 :: TestLinkedInputsSpec
 linkedInputs_spec4 =
    { spec:
-        { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+        { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
         , inputs: [ "renewables", "nonRenewables" ]
         , query: Nothing
         , linking: true
@@ -59,7 +59,7 @@ linkedInputs_spec4 =
 linkedInputs_spec5 :: TestLinkedInputsSpec
 linkedInputs_spec5 =
    { spec:
-        { fluidSrcPaths: [ Folder "fluid", Folder "test/fluid" ]
+        { fluidSrcPaths: [ Folder "lib", Folder "test/fluid" ]
 
         , inputs: [ "nonRenewables", "renewables" ]
         , query: Nothing

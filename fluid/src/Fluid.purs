@@ -95,7 +95,7 @@ fluidLibraryPath = "node_modules/@fluid-org/fluid"
 
 evaluate :: EvalArgs -> Aff (Val Unit)
 evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
-   let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/fluid") ] else []
+   let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/lib") ] else []
    runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       { e, gconfig } <- prepConfig fluidSrc
@@ -104,7 +104,7 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
 
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPath }) = do
-   let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/fluid") ] else []
+   let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/lib") ] else []
    runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       case (parseProgram fluidSrc) of

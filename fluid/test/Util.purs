@@ -42,7 +42,7 @@ type SelectionSpec =
    }
 
 fluidSrcPaths :: Array Folder
-fluidSrcPaths = [ Folder "fluid", Folder "test/fluid" ]
+fluidSrcPaths = [ Folder "lib", Folder "test/fluid" ]
 
 test ∷ forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> SelectionSpec -> Int × Boolean -> AffError m BenchRow
 test file spec (n × _) = do
