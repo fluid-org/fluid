@@ -1,7 +1,7 @@
 from fnum import minimal, eq
 
 def nextIndices(n, m, window):
-  return [(i, j) for i in [0 .. n - 1] for j in [max(0, i - window) .. min(m - 1, i + window)]]
+  return [(i, j) for i in range(0, n) for j in range(max(0, i - window), min(m, i + window + 1))]
 
 def costMatrixInit(rows, cols, window):
   def initV(n, m):

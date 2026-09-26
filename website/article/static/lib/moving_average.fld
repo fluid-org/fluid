@@ -5,7 +5,7 @@ from fluid.view import LineChart, LinePlot, Default, Rotated
 def nthPad(n, xs):
   nth(min(max(n, 0), length(xs) - 1), xs)
 def movingAvg(ys, window):
-  [sum([nthPad(n, ys) for n in [i - window .. i + window]]) / (1 + 2 * window) for i in [0 .. length(ys) - 1]]
+  [sum([nthPad(n, ys) for n in range(i - window, i + window + 1)]) / (1 + 2 * window) for i in range(0, length(ys))]
 def movingAvg_(rs, window):
   zip_with(lambda x, y: { x: x, y: y }, map(lambda r: r["x"], rs), movingAvg(map(lambda r: r["y"], rs), window))
 

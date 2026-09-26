@@ -1,5 +1,5 @@
 def range1((m, n)):
-  return [m .. n]
+  return range(m, n + 1)
 def range2(((m1, n1), (m2, n2))):
   return [(i1, i2) for i1 in range1((m1, m2)) for i2 in range1((n1, n2))]
 
