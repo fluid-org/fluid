@@ -262,7 +262,7 @@ unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
 eqOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
 eqOp (Val α _ u) (Val β _ u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r || N.isNaN r' -> Left "Cannot compare nan"
-   Lit ℓ, Lit ℓ' | kind ℓ == kind ℓ' -> pure (eqLiteral ℓ ℓ' × both)
+   Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
    Lit None, _ -> pure (false × both)
    _, Lit None -> pure (false × both)
    Constr c vs, Constr d ws
@@ -296,12 +296,16 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
    elems :: Array (Array (Val a)) -> List (Val a)
    elems = fromFoldable >>> map fromFoldable >>> concat
 
-   kind :: Literal -> String
-   kind (Int _) = "number"
-   kind (Float _) = "number"
-   kind (Str _) = "str"
-   kind (Bool _) = "bool"
-   kind None = "None"
+   sameKind :: Literal -> Literal -> Boolean
+   sameKind ℓ ℓ' = case ℓ, ℓ' of
+      Int _, Int _ -> true
+      Int _, Float _ -> true
+      Float _, Int _ -> true
+      Float _, Float _ -> true
+      Str _, Str _ -> true
+      Bool _, Bool _ -> true
+      None, None -> true
+      _, _ -> false
 
 eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> Either String (Boolean × Set a)
 eqElems αs Nil Nil = pure (true × αs)
