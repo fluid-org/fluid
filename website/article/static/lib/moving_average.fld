@@ -3,7 +3,7 @@ from methane_data import methane
 from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Rotated
 
 def nthPad(n, xs):
-  nth(min(max(n, 0), len(xs) - 1), xs)
+  xs[min(max(n, 0), len(xs) - 1)]
 def movingAvg(ys, window):
   [sum([nthPad(n, ys) for n in range(i - window, i + window + 1)]) / (1 + 2 * window) for i in range(0, len(ys))]
 def movingAvg_(rs, window):

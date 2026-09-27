@@ -19,10 +19,9 @@ import App.View.Util.Axes (Orientation, orientation)
 import App.View.Util.Point (Point(..))
 import Data.Array as A
 import Data.Array.NonEmpty (NonEmptyArray, cons')
-import Data.List (List(..), (:))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (snd)
-import DataType (FieldIndex, cAxisLabels, cBarChart, cCons, cDimensions, cLineChart, cLinePlot, cLink, cMultiView, cNil, cParagraph, cPoint, cScatterPlot, cSegment, cStackedBar, cText, cTickLabels, f_caption, f_fragments, f_height, f_label, f_labels, f_legend, f_name, f_plots, f_points, f_segments, f_size, f_stackedBars, f_text, f_tickLabels, f_value, f_views, f_width, f_x, f_y, f_z)
+import DataType (FieldIndex, cAxisLabels, cBarChart, cDimensions, cLineChart, cLinePlot, cLink, cMultiView, cParagraph, cPoint, cScatterPlot, cSegment, cStackedBar, cText, cTickLabels, f_caption, f_fragments, f_height, f_label, f_labels, f_legend, f_name, f_plots, f_points, f_segments, f_size, f_stackedBars, f_text, f_tickLabels, f_value, f_views, f_width, f_x, f_y, f_z)
 import Dict (Dict)
 import Link (Link(..))
 import Literal (Literal(..))
@@ -53,22 +52,21 @@ view options title v@(Val α _ u') = case u' of
       | c == cBarChart -> pack (reflect options v :: BarChart)
       | c == cScatterPlot -> pack (reflect options v :: ScatterPlot)
       | c == cLineChart -> pack (reflect options v :: LineChart)
-      | c == cNil || c == cCons ->
-           if tableView then
-              let
-                 rowFilter = fromMaybe Interactive options.rowFilter
-                 records = dict identity <$> vs
-                 colNames = headers records
-                 rows = arrayDictToArray2 colNames records <#> map snd
-              in
-                 pack (TableView { title, rowFilter, colNames, rows })
-           else pack (MultiView $ view options "" <$> vs)
-           where
-           tableView = case A.uncons vs of
-              Just { head: Val _ _ (Dictionary _) } -> true
-              Just { head: Val _ _ _ } -> false
-              Nothing -> true
-           vs = reflect options v :: Array (Val (SelStates 𝕊))
+   List vs ->
+      if tableView then
+         let
+            rowFilter = fromMaybe Interactive options.rowFilter
+            records = dict identity <$> vs
+            colNames = headers records
+            rows = arrayDictToArray2 colNames records <#> map snd
+         in
+            pack (TableView { title, rowFilter, colNames, rows })
+      else pack (MultiView $ view options "" <$> vs)
+      where
+      tableView = case A.uncons vs of
+         Just { head: Val _ _ (Dictionary _) } -> true
+         Just { head: Val _ _ _ } -> false
+         Nothing -> true
    Matrix r ->
       pack (MatrixView { title, matrix: matrixRep r })
    Dictionary (DictRep d) ->
@@ -85,8 +83,7 @@ instance Reflect (Val (SelStates 𝕊)) where
    reflect _ = identity
 
 instance Reflect b => Reflect (Array b) where
-   reflect _ (Val _ _ (Constr c Nil)) | c == cNil = []
-   reflect options (Val _ _ (Constr c (u1 : u2 : Nil))) | c == cCons = reflect options u1 A.: reflect options u2
+   reflect options (Val _ _ (List vs)) = reflect options <$> vs
    reflect _ (Val _ _ u) = typeError u "list"
 
 instance Reflect b => Reflect (NonEmptyArray b) where

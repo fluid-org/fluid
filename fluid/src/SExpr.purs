@@ -11,7 +11,7 @@ import Data.Function (on)
 import Data.Generic.Rep (class Generic)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), drop, find, mapMaybe, sort, transpose, unzip, zipWith, (:))
-import Data.List.NonEmpty (NonEmptyList(..), foldr, groupBy, head, last, tail, toList)
+import Data.List.NonEmpty (NonEmptyList(..), groupBy, head, last, tail, toList)
 import Data.Semigroup.Foldable (foldr1)
 import Data.List.NonEmpty (zipWith) as NonEmptyList
 import Data.Maybe (Maybe(..), maybe)
@@ -19,7 +19,7 @@ import Data.Newtype (class Newtype, unwrap)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cCons, cPair, cParagraph, cNil)
+import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cPair, cParagraph)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
@@ -55,17 +55,12 @@ data Expr a
    | InfixApp (Expr a) Var (Expr a) -- e |f| e', sugar for f(e, e')
    | Cond (Expr a) (Expr a) (Expr a) -- e1 if e else e2
    | Paragraph (Paragraph a)
-   | ListEmpty a
-   | ListNonEmpty a (Expr a) (ListRest a)
+   | List a (List (Expr a))
    | ListComp a (Expr a) (List (Qualifier a))
    | DictComp a (DictEntry a) (Expr a) (List (Qualifier a))
    | DocExpr (Expr a) (Expr a)
 
 data DictEntry a = ExprKey (Expr a) | VarKey a Var
-
-data ListRest a
-   = End a
-   | Next a (Expr a) (ListRest a)
 
 data ParagraphElem a = Token String | Unquote (Expr a)
 type Paragraph a = List (ParagraphElem a)
@@ -121,22 +116,11 @@ instance Desugarable Expr E.Expr where
 instance Desugarable Stmt E.Stmt where
    desug = stmt
 
-instance Desugarable ListRest E.Expr where
-   desug (End α) = pure (enil α)
-   desug (Next α s l) = econs α <$> desug s <*> desug l
-
 instance Desugarable Clauses E.Def where
    desug (Clauses μ) = clauses (μ <#> \(Clause _ clause) -> clause)
 
 instance Desugarable LambdaClause E.Def where
    desug (LambdaClause (ps × e)) = clauses (singleton ((ps <#> \p -> Param p Nothing) × Nothing × Return e))
-
--- helpers
-enil :: forall a. a -> E.Expr a
-enil α = E.Constr α cNil Nil
-
-econs :: forall a. a -> E.Expr a -> E.Expr a -> E.Expr a
-econs α e e' = E.Constr α cCons (e : e' : Nil)
 
 -- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
 param :: Int -> Var
@@ -164,23 +148,11 @@ recDef xcs = (fst (head (unwrap xcs)) ↦ _) <$> desug (Clauses (close <<< snd <
 paragraph
    :: forall m. HasClasses m => MonadError Error m => List (ParagraphElem (WfResult VarCxt)) -> m (E.Expr (WfResult VarCxt))
 paragraph elems = do
-   es <- paragraphElems elems
-   pure (E.Constr (Assigns Map.empty) cParagraph (es : Nil))
-
-paragraphElems
-   :: forall m
-    . HasClasses m
-   => MonadError Error m
-   => List (ParagraphElem (WfResult VarCxt))
-   -> m (E.Expr (WfResult VarCxt))
-paragraphElems Nil = pure (enil (Assigns Map.empty))
-paragraphElems (Token s : elems) = do
-   e' <- paragraphElems elems
-   pure (econs (Assigns Map.empty) (E.Lit (Assigns Map.empty) (Str s)) e')
-paragraphElems (Unquote s : elems) = do
-   e <- desug s
-   e' <- paragraphElems elems
-   pure (econs (Assigns Map.empty) e e')
+   es <- traverse paragraphElem elems
+   pure (E.Constr (Assigns Map.empty) cParagraph (E.List (Assigns Map.empty) es : Nil))
+   where
+   paragraphElem (Token s) = pure (E.Lit (Assigns Map.empty) (Str s))
+   paragraphElem (Unquote s) = desug s
 
 -- Expr
 expr :: forall m. HasClasses m => MonadError Error m => Expr (WfResult VarCxt) -> m (E.Expr (WfResult VarCxt))
@@ -228,10 +200,8 @@ expr (Cond e1 e e2) =
    E.Cond <$> desug e1 <*> desug e <*> desug e2
 expr (Paragraph elems) =
    paragraph elems
-expr (ListEmpty α) =
-   pure $ enil α
-expr (ListNonEmpty α s l) =
-   econs α <$> desug s <*> desug l
+expr (List α ss) =
+   E.List α <$> traverse desug ss
 expr (ListComp α s gs) =
    E.ListComp α <$> desug s <*> traverse qualifier gs
 expr (DictComp α k s gs) =
@@ -280,7 +250,7 @@ pattern (PConstr c ps xps) = do
    _ <- ctrSig classes "match" (dottedName c)
    PConstr c <$> traverse pattern (ps <> reordered) <@> Nil
 pattern (PRecord xps) = PRecord <$> traverse (traverse pattern) xps
-pattern (PList ps) = foldr (\p ps' -> PConstr cCons (p : ps' : Nil) Nil) (PConstr cNil Nil Nil) <$> traverse pattern ps
+pattern (PList ps) = PList <$> traverse pattern ps
 pattern (PAs p x) = PAs <$> pattern p <@> x
 pattern p = pure p
 
@@ -336,7 +306,6 @@ derive instance Functor Clause
 derive instance Functor Clauses
 derive instance Functor LambdaClause
 derive instance Functor DictEntry
-derive instance Functor ListRest
 derive instance Functor VarDef
 derive instance Functor Qualifier
 derive instance Functor ParagraphElem
@@ -356,11 +325,6 @@ instance Show a => Show (DictEntry a) where
 derive instance Eq a => Eq (Expr a)
 derive instance Generic (Expr a) _
 instance Show a => Show (Expr a) where
-   show c = genericShow c
-
-derive instance Eq a => Eq (ListRest a)
-derive instance Generic (ListRest a) _
-instance Show a => Show (ListRest a) where
    show c = genericShow c
 
 derive instance Eq a => Eq (Stmt a)
@@ -430,8 +394,7 @@ instance FV (Expr a) where
    fv (InfixApp e f e') = fv e ∪ Set.singleton f ∪ fv e'
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
    fv (Paragraph elems) = Set.unions (fv <$> elems)
-   fv (ListEmpty _) = Set.empty
-   fv (ListNonEmpty _ e l) = fv e ∪ fv l
+   fv (List _ es) = Set.unions (fv <$> es)
    fv (ListComp _ e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
    fv (DictComp _ k e gs) = fvQualifiers gs ∪ ((fv k ∪ fv e) \\ bv gs)
    fv (DocExpr e e') = fv e ∪ fv e'
@@ -465,10 +428,6 @@ instance BV Param where
 instance FV (DictEntry a) where
    fv (ExprKey e) = fv e
    fv (VarKey _ _) = Set.empty
-
-instance FV (ListRest a) where
-   fv (End _) = Set.empty
-   fv (Next _ e l) = fv e ∪ fv l
 
 instance FV (ParagraphElem a) where
    fv (Token _) = Set.empty

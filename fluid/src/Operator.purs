@@ -8,11 +8,11 @@ import Expr (Binop(..), Unop(..))
 import Parsing.Expr (Assoc(..))
 import Util (definitely')
 
-data Operator = Binary Binop | Unary Unop | AndOp | OrOp | InfixOp | ConsOp
+data Operator = Binary Binop | Unary Unop | AndOp | OrOp | InfixOp
 
 derive instance Eq Operator
 
--- Precedence levels, loosest first, per the spec; e |f| e' and :| are Fluid's
+-- Precedence levels, loosest first, per the spec; e |f| e' is Fluid's
 levels :: Array (Array Operator)
 levels =
    [ [ OrOp ]
@@ -20,7 +20,6 @@ levels =
    , [ Unary Not ]
    , [ Binary Eq, Binary Ne, Binary Lt, Binary Le, Binary Gt, Binary Ge, Binary In, Binary NotIn ]
    , [ InfixOp ]
-   , [ ConsOp ]
    , [ Binary Add, Binary Sub ]
    , [ Binary Mul, Binary Div, Binary FloorDiv, Binary Mod ]
    , [ Unary Pos, Unary Neg ]
@@ -29,7 +28,6 @@ levels =
 
 assoc :: Operator -> Assoc
 assoc (Binary Pow) = AssocRight
-assoc ConsOp = AssocRight
 assoc _ = AssocLeft
 
 -- Higher binds tighter

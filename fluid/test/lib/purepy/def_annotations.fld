@@ -10,8 +10,8 @@ def first(xs: list[int]) -> int | None:
   match xs:
     case []:
       return None
-    case x :| _:
-      return x
+    case _:
+      return xs[0]
 
 def swap((x, y): tuple[int, str]) -> tuple[str, int]:
   return (y, x)

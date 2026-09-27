@@ -1,19 +1,16 @@
-def split([]):
-  return ([], [])
-def split(x :| xs):
-  (ys, zs) = split(xs)
-  return (x :| zs, ys)
+def split(xs):
+  return ([xs[i] for i in range(0, len(xs)) if i % 2 == 0], [xs[i] for i in range(0, len(xs)) if i % 2 == 1])
 
 def merge(xs, ys):
-  match (xs, ys):
-    case ([], _):
-      return ys
-    case (x :| xs_, []):
-      return xs
-    case (x :| xs_, y :| ys_):
-      if x < y:
-        return x :| merge(xs_, ys)
-      return y :| merge(xs, ys_)
+  def go(i, j):
+    if i == len(xs):
+      return drop(j, ys)
+    if j == len(ys):
+      return drop(i, xs)
+    if xs[i] < ys[j]:
+      return [xs[i]] + go(i + 1, j)
+    return [ys[j]] + go(i, j + 1)
+  return go(0, 0)
 
 def mergesort(xs):
   if len(xs) < 2:

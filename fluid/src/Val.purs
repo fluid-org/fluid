@@ -56,6 +56,7 @@ asAssigns (Returns _) = error "Assigns expected"
 data BaseVal a
    = Lit Literal
    | Constr Name (List (Val a)) -- always saturated
+   | List (Array (Val a))
    | Dictionary (DictRep a)
    | Matrix (MatrixRep a)
    | Fun (Fun a)
@@ -244,6 +245,7 @@ instance Apply Val where
 instance Apply BaseVal where
    apply (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    apply (Constr c fes) (Constr c' es) = Constr (c ≜ c') (zipWith (<*>) fes es)
+   apply (List fvs) (List vs) = List (A.zipWith (<*>) fvs vs)
    apply (Dictionary fxvs) (Dictionary xvs) = Dictionary (fxvs <*> xvs)
    apply (Matrix fm) (Matrix m) = Matrix (fm <*> m)
    apply (Fun ff) (Fun f) = Fun (ff <*> f)
@@ -314,6 +316,7 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
    join (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    join (Dictionary d) (Dictionary d') = Dictionary (d ∨ d')
    join (Constr c vs) (Constr c' us) = Constr (c ≜ c') (vs ∨ us)
+   join (List vs) (List us) = List (vs ∨ us)
    join (Matrix m) (Matrix m') = Matrix (m ∨ m')
    join (Fun φ) (Fun φ') = Fun (φ ∨ φ')
    join x y = (∨) <$> x <*> y
@@ -352,6 +355,7 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    expand (Dictionary d) (Dictionary d') = Dictionary (expand d d')
    expand (Constr c vs) (Constr c' us) = Constr (c ≜ c') (expand vs us)
+   expand (List vs) (List us) = List (expand vs us)
    expand (Matrix m) (Matrix m') = Matrix (expand m m')
    expand (Fun φ) (Fun φ') = Fun (expand φ φ')
    expand _ _ = shapeMismatch unit
@@ -393,6 +397,7 @@ instance Vertices (Val Vertex) where
 instance Vertices (BaseVal Vertex) where
    vertices (Lit _) = empty
    vertices (Constr _ vs) = unions (vertices <$> vs)
+   vertices (List vs) = unions (vertices <$> vs)
    vertices (Dictionary d) = vertices d
    vertices (Matrix m) = vertices m
    vertices (Fun f) = vertices f

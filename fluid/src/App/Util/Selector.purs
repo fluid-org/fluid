@@ -4,12 +4,11 @@ import Prelude hiding (absurd)
 
 import App.Util (SelState(..), SelStates(..), Selection, SelectionType(..), SetSel, getPersistent, selStates)
 import Bind (Name, Var)
-import Data.List (List(..), (:))
 import Data.List.NonEmpty (last)
 import Data.Newtype (over)
 import Data.Profunctor.Strong (first, second)
 import Data.Tuple (fst) as T
-import DataType (FieldIndex, FieldName, cCons, cJust, cNil, cSegment, cStackedBar, f_segments, f_z)
+import DataType (FieldIndex, FieldName, cJust, cSegment, cStackedBar, f_segments, f_z)
 import Lattice (class Neg, 𝔹, neg)
 import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, error, unsafeUpdateAt, (!), (×))
@@ -65,10 +64,7 @@ matrixElement _ _ _ _ = error absurd
 
 listElement :: Int -> SelSetter Val Val
 listElement n δv = unsafePartial $ case _ of
-   Val α doc (Constr c (v : u : Nil)) | n == 0 && c == cCons ->
-      first (\v' -> Val α doc (Constr c (v' : u : Nil))) (δv v)
-   Val α doc (Constr c (v : u : Nil)) | c == cCons ->
-      first (\u' -> Val α doc (Constr c (v : u' : Nil))) (listElement (n - 1) δv u)
+   Val α doc (List vs) -> first (\v' -> Val α doc (List (unsafeUpdateAt n v' vs))) (δv (vs ! n))
 
 constrArg :: FieldIndex -> ConstrArg
 constrArg fieldIndex c f δv = unsafePartial $ case _ of
@@ -119,13 +115,9 @@ envVal :: Var -> Setter (Env (SelStates 𝔹)) (Val (SelStates 𝔹))
 envVal x δv ρ =
    assert (x ∈ ρ) $ first (\v' -> update (const v') x ρ) (δv (get x ρ))
 
-listCell :: Int -> Setter (Val (SelStates 𝔹)) 𝔹
-listCell n δα = unsafePartial $ case _ of
-   Val α doc (Constr c Nil) | n == 0 && c == cNil ->
-      first (\α' -> Val α' doc (Constr c Nil)) (persist δα α)
-   Val α doc (Constr c (v : u : Nil)) | c == cCons ->
-      if n == 0 then first (\α' -> Val α' doc (Constr c (v : u : Nil))) (persist δα α)
-      else first (\u' -> Val α doc (Constr c (v : u' : Nil))) (listCell (n - 1) δα u)
+list :: Setter (Val (SelStates 𝔹)) 𝔹
+list δα = unsafePartial $ case _ of
+   Val α doc (List vs) -> first (\α' -> Val α' doc (List vs)) (persist δα α)
 
 composeSetSel :: forall a. SetSel a -> SetSel a -> SetSel a
 composeSetSel f g = \x -> let x' × _ = f x in g x'

@@ -1,10 +1,6 @@
 from slicing.zip_with_inputs import xs, ys
 
-def zip_with(op, [], ys):
-  return []
-def zip_with(op, x :| xs, []):
-  return []
-def zip_with(op, x :| xs, y :| ys):
-  return op(x, y) :| zip_with(op, xs, ys)
+def zip_with(op, xs, ys):
+  return [op(xs[i], ys[i]) for i in range(0, min(len(xs), len(ys)))]
 
 zip_with(lambda x, y: x ** 2 + y ** 2, xs, ys)

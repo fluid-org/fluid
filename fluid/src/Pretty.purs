@@ -10,7 +10,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype)
 import Data.NonEmpty ((:|))
 import Data.Traversable (class Foldable)
-import DataType (Ctr, cCons, cPair)
+import DataType (Ctr, cPair)
 import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
@@ -19,7 +19,7 @@ import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
-import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type as T
 import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
@@ -44,11 +44,9 @@ class RootOp (e :: Type) where
    rootOp :: e -> Maybe Operator
 
 instance RootOp Pattern where
-   rootOp (PConstr c _ _) | last c == last cCons = Just ConsOp
    rootOp _ = Nothing
 
 instance Ann a => RootOp (Expr a) where
-   rootOp (Constr _ c _ _) | last c == last cCons = Just ConsOp
    rootOp (BinOp _ op _) = Just (Binary op)
    rootOp (UnOp op _) = Just (Unary op)
    rootOp (And _ _) = Just AndOp
@@ -57,7 +55,6 @@ instance Ann a => RootOp (Expr a) where
    rootOp _ = Nothing
 
 instance Highlightable a => RootOp (E.Expr a) where
-   rootOp (E.Constr _ c _) | c == cCons = Just ConsOp
    rootOp _ = Nothing
 
 instance Highlightable a => RootOp (Val a) where
@@ -65,7 +62,6 @@ instance Highlightable a => RootOp (Val a) where
    rootOp (Val _ (Just _) _) = Nothing
 
 instance Highlightable a => RootOp (BaseVal a) where
-   rootOp (V.Constr c _) | c == cCons = Just ConsOp
    rootOp _ = Nothing
 
 class IsSimple (e :: Type) where
@@ -77,13 +73,11 @@ instance Ann a => IsSimple (Expr a) where
    isSimple (And _ _) = false
    isSimple (Or _ _) = false
    isSimple (InfixApp _ _ _) = false
-   isSimple (Constr _ c _ _) | last c == last cCons = false
    isSimple (Lambda _) = false
    isSimple (Cond _ _ _) = false
    isSimple _ = true
 
 instance Highlightable a => IsSimple (E.Expr a) where
-   isSimple (E.Constr _ c _) | c == cCons = false
    isSimple (E.Lambda _ _) = false
    isSimple _ = true
 
@@ -117,6 +111,12 @@ operatorApp n (UnOp op s) =
    n' = prec (Unary op)
 operatorApp _ e = prettySimple e
 
+-- Conditional or lambda in a qualifier needs parentheses
+prettyQualifierExpr :: forall a. Ann a => Expr a -> Doc
+prettyQualifierExpr s@(Cond _ _ _) = parens (pretty s)
+prettyQualifierExpr s@(Lambda _) = parens (pretty s)
+prettyQualifierExpr s = pretty s
+
 infixApp :: forall a. Ann a => Int -> Operator -> Expr a -> Doc -> Expr a -> Doc
 infixApp n op s sym s' =
    if n' <= n then parens (operatorApp n' s <+> sym <+> operatorApp n' s')
@@ -149,16 +149,11 @@ instance Ann a => Pretty (Expr a) where
    pretty (Cond e1 e e2) =
       expr $ pretty e1 <+> text "if" <+> pretty e <+> text "else" <+> pretty e2
 
-   pretty (ListEmpty α) = highlightIf α (text "[]")
-   pretty (ListNonEmpty α e rest) =
-      highlightIf α (text "[")
-         <> inlOrMul
-            (pretty e <> collect rest true)
-            (indent (line <> pretty e) <> collect rest false)
+   pretty (List α Nil) = highlightIf α (text "[]")
+   pretty (List α es) =
+      highlightIf α (text "[" <> inlOrMul (commas ds) (indent (line <> vcommas ds) <> line) <> text "]")
       where
-      collect :: ListRest a -> Boolean -> Doc
-      collect (Next α' e' rest') inline = highlightIf α' (text ",") <> (if inline then text " " <> pretty e' else indent (line <> pretty e')) <> collect rest' inline
-      collect (End α') inline = if inline then highlightIf α' (text "]") else line <> highlightIf α' (text "]")
+      ds = pretty <$> es
 
    pretty (ListComp α s qs) = highlightIf α (brackets (expr (pretty s) <+> pretty qs))
    pretty (DictComp α k s qs) = highlightIf α (braces (pretty k <> text ":" <+> expr (pretty s) <+> pretty qs))
@@ -168,8 +163,8 @@ instance Ann a => Pretty (Expr a) where
 instance Ann a => Pretty (List (Qualifier a)) where
    pretty (Cons (Decl (VarDef v _ s)) Nil) =
       text "def" <+> pretty v <> text ":" <+> pretty s
-   pretty (Cons (Guard s) Nil) = text "if" <+> pretty s
-   pretty (Cons (Generator p s) Nil) = text "for" <+> pretty p <+> text "in" <+> pretty s
+   pretty (Cons (Guard s) Nil) = text "if" <+> prettyQualifierExpr s
+   pretty (Cons (Generator p s) Nil) = text "for" <+> pretty p <+> text "in" <+> prettyQualifierExpr s
    pretty (Cons q qs) = pretty (singleton q) <+> pretty qs
    pretty Nil = empty
 
@@ -298,16 +293,9 @@ instance Ann a => Pretty (ParagraphElem a) where
    pretty (Unquote e) = text "{" <> pretty e <> text "}"
 
 prettyConstr :: forall a. RootOp a => IsSimple a => Pretty a => Ctr -> List a -> Doc
-prettyConstr "Nil" Nil = text "[]"
 prettyConstr "Pair" (x : y : Nil) = pair pretty x y
-prettyConstr "Cons" (x : y : Nil) = prettyConsArg x true <+> text ":|" <+> prettyConsArg y false
 prettyConstr c Nil = text c
 prettyConstr c ps = text c <> parens (prettyList ps)
-
-prettyConsArg :: forall a. RootOp a => IsSimple a => Pretty a => a -> Boolean -> Doc
-prettyConsArg e lhs = case rootOp e of
-   Nothing -> prettySimple e
-   Just op -> if (if lhs then (<=) else (<)) (prec op) (prec ConsOp) then parens (pretty e) else pretty e
 
 commas :: List Doc -> Doc
 commas Nil = empty
@@ -330,6 +318,7 @@ instance Highlightable a => Pretty (E.Expr a) where
    pretty (E.Lit a ℓ) = highlightIf a (pretty ℓ)
    pretty (E.Dictionary a ees) = highlightIf a $ record (pretty <$> ees)
    pretty (E.Constr a c es) = highlightIf a (prettyConstr (last c) es)
+   pretty (E.List a es) = highlightIf a (brackets (prettyList es))
    pretty (E.Matrix a e1 (i × j) e2) =
       highlightIf a $ matrix (pretty e1 <+> text "for" <+> pair text i j <+> text "in" <+> pretty e2)
    pretty (E.Lambda a o) = highlightIf a (text "lambda") <+> pretty o -- really?
@@ -410,6 +399,7 @@ instance Highlightable a => Pretty (BaseVal a) where
       | isEmpty svs = text "{}"
       | otherwise = record (pretty <$> (toUnfoldable svs))
    pretty (V.Constr c vs) = prettyConstr (last c) vs
+   pretty (V.List vs) = brackets (prettyList vs)
    pretty (V.Matrix (MatrixRep (vss × _ × _))) = vcommas $ fromFoldable (prettyList <$> vss) -- ???
    pretty (V.Fun phi) = pretty phi
 

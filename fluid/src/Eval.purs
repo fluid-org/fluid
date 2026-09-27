@@ -9,8 +9,10 @@ import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
+import Data.Array as A
 import Data.Foldable (oneOfMap)
 import Data.List (List(..), concat, drop, find, foldM, foldl, length, take, unzip, zip, (:))
+import Data.List as L
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
@@ -20,7 +22,7 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, cCons, cNil, cPair, checkArity, ctrSig, fieldsOf)
+import DataType (class HasClasses, ClassTable, askClasses, cPair, checkArity, ctrSig, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -74,7 +76,9 @@ matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
    vps <- MaybeT $ pure $ traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
    second (insert α) <$> matchesMany (fst <$> vps) (snd <$> vps)
 matches _ (PRecord _) = Plus.empty
-matches _ (PList _) = error absurd
+matches (Val α _ (V.List vs)) (PList ps)
+   | A.length vs == length ps = second (insert α) <$> matchesMany (L.fromFoldable vs) ps
+matches _ (PList _) = Plus.empty
 
 matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
 matchesMany Nil Nil = pure (empty × empty)
@@ -176,10 +180,13 @@ eval doc_opt ρ e0 αs = do
                Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (Str s)) ->
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
                Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected str"
+               Val _ _ (V.List vs), Val _ _ (V.Lit (Int i)) ->
+                  vs A.!! (if i < 0 then A.length vs + i else i) # orElse ("List index " <> show i <> " out of range")
+               Val _ _ (V.List _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected int"
                Val _ _ (V.Matrix r), Val _ _ (V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil)) | c == cPair ->
                   pure (matrixGet i j r)
                Val _ _ (V.Matrix _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected pair of int"
-               _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected dict or matrix"
+               _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected list, dict or matrix"
          ModMember q x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (module member " <> x <> ")"
             { moduleEnv } <- moduleStore
@@ -211,8 +218,8 @@ eval doc_opt ρ e0 αs = do
             eval doc_opt ρ (if b then e1 else e2) (insert α αs)
          ListComp α e gs -> do
             ρs <- qualifiers ρ gs αs
-            vs <- for ρs \(ρ' × αs') -> (_ × insert α αs') <$> eval Nothing ρ' e αs'
-            list doc_opt (insert α αs) vs
+            vs <- for ρs \(ρ' × αs') -> eval Nothing ρ' e αs'
+            val doc_opt (insert α (αs ∪ Set.unions (snd <$> ρs))) (V.List (A.fromFoldable vs))
          DocExpr e e' -> do
             v <- eval Nothing ρ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"
@@ -223,13 +230,6 @@ eval doc_opt ρ e0 αs = do
    funName (Var x) = x
    funName (App e _) = funName e
    funName _ = "unknown"
-
-   -- List of the values, each cons cell depending on the vertices paired with its head; the nil on βs.
-   list :: Maybe (Val Vertex) -> Set Vertex -> List (Val Vertex × Set Vertex) -> m (Val Vertex)
-   list doc_opt' βs Nil = val doc_opt' βs (V.Constr cNil Nil)
-   list doc_opt' βs ((v × αs') : vs) = do
-      v' <- list Nothing βs vs
-      val doc_opt' αs' (V.Constr cCons (v : v' : Nil))
 
 -- Environments produced by the qualifiers, each with the vertices inspected in reaching it.
 qualifiers
@@ -249,17 +249,14 @@ qualifiers ρ (Guard e : gs) αs = do
    b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
    if b then qualifiers ρ gs (insert α αs) else pure Nil
 qualifiers ρ (Generator p e : gs) αs = do
-   us <- eval Nothing ρ e αs >>= elements
-   concat <$> for us \(u × β) ->
-      runMaybeT (matches u p) >>= case _ of
+   Val β _ u <- eval Nothing ρ e αs
+   vs <- case u of
+      V.List vs -> pure vs
+      _ -> throw $ "Found " <> prettyP (unit <$ u) <> ", expected list"
+   concat <$> for (L.fromFoldable vs) \v ->
+      runMaybeT (matches v p) >>= case _ of
          Nothing -> pure Nil
          Just (ρ' × αs') -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
-   where
-   -- Elements of a list value, each with the vertex of its cons cell.
-   elements :: Val Vertex -> m (List (Val Vertex × Vertex))
-   elements (Val _ _ (V.Constr c Nil)) | c == cNil = pure Nil
-   elements (Val α _ (V.Constr c (v : v' : Nil))) | c == cCons = ((v × α) : _) <$> elements v'
-   elements v = throw $ "Found " <> prettyP (unit <$ v) <> ", expected list"
 qualifiers ρ (Decl p e : gs) αs = do
    ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
    qualifiers (ρ <+> ρ') gs (αs ∪ αs')
@@ -348,6 +345,9 @@ evalVal ρ (DictComp α e e' gs) αs = do
       u <- eval Nothing ρ' e' αs'
       pure (s × (β × u))
    pure $ Just (α × V.Dictionary (DictRep (D.fromFoldable entries)))
+evalVal ρ (List α es) αs = do
+   vs <- traverse (flip (eval Nothing ρ) αs) es
+   pure $ Just (α × V.List (A.fromFoldable vs))
 evalVal ρ (Constr α c es) αs = do
    askClasses >>= \classes -> checkArity classes "construct" (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
