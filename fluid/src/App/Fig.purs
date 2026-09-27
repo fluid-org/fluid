@@ -159,7 +159,7 @@ intermediates { spec, in_roots, inerts } αs =
       $ runQuery query (αs.persistent ∪ αs.transient)
 
 drawFig :: HTMLId -> Fig -> Effect Unit
-drawFig divId fig@{ spec: options } = do
+drawFig divId fig = do
    drawView arg { divId, suffix: str.output, view: out_view } (selectOutput >>> redraw)
 
    sequence_ $ flip mapWithKey in_views \x view ->
@@ -167,14 +167,14 @@ drawFig divId fig@{ spec: options } = do
 
    for_ unused \α -> rootSelect ("#" <> prefix <> "-" <> α) >>= remove
    sequence_ $ flip mapWithKey (unwrap ι) \α v ->
-      drawView arg { divId: prefix, suffix: α, view: view' viewOptions str.intermediate (map to𝕊 <$> v) }
+      drawView arg { divId: prefix, suffix: α, view: view' options str.intermediate (map to𝕊 <$> v) }
          (selectIntermediate (Vertex α) >>> redraw)
    where
    arg = constrArg fig.fieldIndex
-   viewOptions = { fieldIndex: fig.fieldIndex, rowFilter: options.rowFilter }
+   options = { fieldIndex: fig.fieldIndex, rowFilter: fig.spec.rowFilter }
    { v, ρ, ι } = selectionResult fig
-   out_view = view' viewOptions str.output v
-   in_views = ρ # \(Env ρ) -> mapWithKey (view' viewOptions) ρ
+   out_view = view' options str.output v
+   in_views = ρ # \(Env ρ) -> mapWithKey (view' options) ρ
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
    unused = keys fig.ι \\ keys ι
    prefix = divId <> "-" <> str.intermediate
