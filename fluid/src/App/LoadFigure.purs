@@ -3,7 +3,6 @@ module App.LoadFigure where
 import Prelude hiding (absurd)
 
 import App.Fig (drawFig, drawFile, loadFig)
-import App.Util (runAffs_)
 import App.View.Util (Filter, Options)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson)
@@ -12,10 +11,11 @@ import Data.Array (head, last)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.String (split, Pattern(..))
-import Data.Tuple (uncurry)
 import Effect (Effect)
-import Effect.Aff (launchAff_)
+import Effect.Aff (launchAff_, runAff_)
 import Effect.Class (liftEffect)
+import Effect.Class.Console (log)
+import Effect.Exception (message)
 import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Graph (DVertex'(..))
 import Module.Web (runWebT)
@@ -50,15 +50,22 @@ loadFigure jsonSpec divId srcFile = launchAff_ do
    fluidSrc <- loadFileFromPath (File srcFile)
    liftEffect $ loadFigureSrc jsonSpec divId (definitely' fluidSrc)
 
--- TODO: runAffs_ overkill as always a singleton
 loadFigureSrc :: Json -> String -> String -> Effect Unit
-loadFigureSrc options divId fluidSrc = runAffs_ (uncurry drawFig)
-   [ case decodeJson options :: Either JsonDecodeError JsonOptions of
-        Left err -> error ("JSON decoding failed with " <> show err)
-        Right spec -> do
-           let figSpec@{ fluidSrcPaths } = optionsFromJson spec
-           (divId × _) <$> runWebT emptyFileCxt (withRoots fluidSrcPaths (loadFig figSpec fluidSrc))
-   ]
+loadFigureSrc options divId fluidSrc = flip runAff_ load case _ of
+   Left err -> log (show err) *> figureFailed divId (message err)
+   Right fig -> drawFig divId fig *> figureLoaded divId
+   where
+   load = case decodeJson options :: Either JsonDecodeError JsonOptions of
+      Left err -> error ("JSON decoding failed with " <> show err)
+      Right spec -> do
+         let figSpec@{ fluidSrcPaths } = optionsFromJson spec
+         runWebT emptyFileCxt (withRoots fluidSrcPaths (loadFig figSpec fluidSrc))
+
+-- Remove the placeholder shown until the figure loads; its absence tells the web tests the page has settled
+foreign import figureLoaded :: String -> Effect Unit
+
+-- Replace the placeholder by the error
+foreign import figureFailed :: String -> String -> Effect Unit
 
 loadCode :: String -> Effect Unit
 loadCode file = launchAff_ do
