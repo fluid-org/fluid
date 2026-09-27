@@ -167,13 +167,14 @@ drawFig divId fig@{ spec: options } = do
 
    for_ unused \α -> rootSelect ("#" <> prefix <> "-" <> α) >>= remove
    sequence_ $ flip mapWithKey (unwrap ι) \α v ->
-      drawView arg { divId: prefix, suffix: α, view: view' fig.fieldIndex options str.intermediate (map to𝕊 <$> v) }
+      drawView arg { divId: prefix, suffix: α, view: view' cxt str.intermediate (map to𝕊 <$> v) }
          (selectIntermediate (Vertex α) >>> redraw)
    where
    arg = constrArg fig.fieldIndex
+   cxt = { fieldIndex: fig.fieldIndex, options }
    { v, ρ, ι } = selectionResult fig
-   out_view = view' fig.fieldIndex options str.output v
-   in_views = ρ # \(Env ρ) -> mapWithKey (view' fig.fieldIndex options) ρ
+   out_view = view' cxt str.output v
+   in_views = ρ # \(Env ρ) -> mapWithKey (view' cxt) ρ
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
    unused = keys fig.ι \\ keys ι
    prefix = divId <> "-" <> str.intermediate
