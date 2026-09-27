@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print or set board Status: issue-status.sh <issue> [Status]. Avoids listing the board, which trips the GraphQL rate limit.
+# Print or set board Status: issue-status.sh <issue> [Status]. Query the issue, not the board listing, which trips the GraphQL rate limit.
 set -e
 
 ISSUE="$1"
