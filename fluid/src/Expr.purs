@@ -34,6 +34,7 @@ data Expr a
    | Lit a Literal
    | Dictionary a (List (Pair (Expr a))) -- constructor name Dict borks (import of same name)
    | Constr a Name (List (Expr a))
+   | List a (List (Expr a))
    | Matrix a (Expr a) (Var × Var) (Expr a)
    | Lambda a (Def a)
    | Attribute (Expr a) Var -- attribute x of a dataclass instance
@@ -104,6 +105,7 @@ instance FV (Expr a) where
    fv (Lit _ _) = empty
    fv (Dictionary _ ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ _ es) = unions (fv <$> es)
+   fv (List _ es) = unions (fv <$> es)
    fv (Matrix _ e1 _ e2) = fv e1 ∪ fv e2
    fv (Lambda _ d) = fv d
    fv (Attribute e _) = fv e
@@ -229,6 +231,7 @@ instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join (Lit α ℓ) (Lit α' ℓ') = Lit (α ∨ α') (ℓ ≜ ℓ')
    join (Dictionary α ees) (Dictionary α' ees') = Dictionary (α ∨ α') (ees ∨ ees')
    join (Constr α c es) (Constr α' c' es') = Constr (α ∨ α') (c ≜ c') (es ∨ es')
+   join (List α es) (List α' es') = List (α ∨ α') (es ∨ es')
    join (Matrix α e1 (x × y) e2) (Matrix α' e1' (x' × y') e2') =
       Matrix (α ∨ α') (e1 ∨ e1') ((x ≜ x') × (y ≜ y')) (e2 ∨ e2')
    join (Lambda α d) (Lambda α' d') = Lambda (α ∨ α') (d ∨ d')
@@ -263,6 +266,7 @@ instance BoundedJoinSemilattice a => Expandable (Expr a) (Raw Expr) where
    expand (Lit α ℓ) (Lit _ ℓ') = Lit α (ℓ ≜ ℓ')
    expand (Dictionary α ees) (Dictionary _ ees') = Dictionary α (expand ees ees')
    expand (Constr α c es) (Constr _ c' es') = Constr α (c ≜ c') (expand es es')
+   expand (List α es) (List _ es') = List α (expand es es')
    expand (Matrix α e1 (x × y) e2) (Matrix _ e1' (x' × y') e2') =
       Matrix α (expand e1 e1') ((x ≜ x') × (y ≜ y')) (expand e2 e2')
    expand (Lambda α d) (Lambda _ d') = Lambda α (expand d d')
@@ -290,6 +294,7 @@ instance Vertices (Expr Vertex) where
       where
       go (Pair e e') = vertices e ∪ vertices e'
    vertices e@(Constr α _ es) = singleton (DVertex (α × pack e)) ∪ unions (vertices <$> es)
+   vertices e@(List α es) = singleton (DVertex (α × pack e)) ∪ unions (vertices <$> es)
    vertices e@(Matrix α e1 _ e2) = singleton (DVertex (α × pack e)) ∪ vertices e1 ∪ vertices e2
    vertices e@(Lambda α d) = singleton (DVertex (α × pack e)) ∪ vertices d
    vertices (Attribute e _) = vertices e
@@ -362,6 +367,7 @@ instance Apply Expr where
    apply (Lit fα ℓ) (Lit α ℓ') = Lit (fα α) (ℓ ≜ ℓ')
    apply (Dictionary fα fxes) (Dictionary α xes) = Dictionary (fα α) (zipWith (lift2 (<*>)) fxes xes)
    apply (Constr fα c fes) (Constr α c' es) = Constr (fα α) (c ≜ c') (zipWith (<*>) fes es)
+   apply (List fα fes) (List α es) = List (fα α) (zipWith (<*>) fes es)
    apply (Matrix fα fe1 (x × y) fe2) (Matrix α e1 (x' × y') e2) =
       Matrix (fα α) (fe1 <*> e1) ((x ≜ x') × (y ≜ y')) (fe2 <*> e2)
    apply (Lambda fα fd) (Lambda α d) = Lambda (fα α) (fd <*> d)

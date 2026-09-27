@@ -27,7 +27,7 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst)
-import DataType (cCons, cNil, cNothing, cPair, cJust)
+import DataType (cNothing, cPair, cJust)
 import DefiniteAssignment (Cxt, Entry(..))
 import Debug (trace)
 import Dict (fromFoldable) as D
@@ -58,7 +58,6 @@ predefined = M.fromFoldable
         [ extern print_
         , extern len
         -- Fluid-only members, without spec counterpart
-        , ":" × Val bot Nothing (Fun (Type cCons))
         , extern dims
         , extern loadJson
         , unary "str_to_float" { i: string, o: number, fwd: definitely' <<< fromString }
@@ -110,8 +109,7 @@ len =
       val doc_opt αs (Lit (Int n))
       where
       count :: forall m. MonadError Error m => Val Vertex -> m (Set Vertex × Int)
-      count (Val α _ (Constr c Nil)) | c == cNil = pure (singleton α × 0)
-      count (Val α _ (Constr c (_ : v' : Nil))) | c == cCons = count v' <#> \(αs × n) -> Set.insert α αs × (n + 1)
+      count (Val α _ (List vs)) = pure (singleton α × Array.length vs)
       count (Val α _ (Dictionary (DictRep d))) = pure (singleton α × Set.size (keys d))
       count (Val α _ (Lit (Str s))) = pure (singleton α × String.length s)
       count (Val _ _ u) = throw (typeMismatch u "Sized")
@@ -168,13 +166,7 @@ fromJson doc_opt =
    caseArray :: Array Json -> m (Val Vertex)
    caseArray xs = do
       vs <- traverse (fromJson Nothing) xs
-      toList doc_opt (Array.toUnfoldable vs)
-      where
-      toList :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
-      toList doc_opt' Nil = val doc_opt' empty (Constr cNil Nil)
-      toList doc_opt' (v : vs) = do
-         v' <- toList Nothing vs
-         val doc_opt' empty (Constr cCons (v : v' : Nil))
+      val doc_opt empty (List vs)
 
    caseObject :: FO.Object Json -> m (Val Vertex)
    caseObject obj = do

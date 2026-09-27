@@ -7,16 +7,17 @@ import Data.Either (Either(..), either)
 import Data.Int (toNumber)
 import Data.Int as Int
 import Data.Array (replicate)
+import Data.Array as A
 import Data.List (List(..), concat, fromFoldable, (:))
 import Data.Maybe (Maybe(..))
 import Data.Number as N
-import Data.Profunctor.Strong (first)
+import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.Tuple (fst, snd)
-import DataType (cCons, cNil, cPair)
+import DataType (cPair)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, bot, erase)
@@ -175,8 +176,12 @@ binop In v v' = first (Lit <<< Bool) <$> contains v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
+binop Add (Val α _ (List vs)) (Val β _ (List vs')) =
+   pure (List (vs <> vs') × Set.fromFoldable [ α, β ])
 binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w β n α)
+binop Mul (Val α _ (List vs)) (Val β _ (Lit (Int n))) = pure (repeatList vs α n β)
+binop Mul (Val α _ (Lit (Int n))) (Val β _ (List vs)) = pure (repeatList vs β n α)
 binop op (Val α _ u) (Val β _ u') = do
    x <- operand u
    y <- operand u'
@@ -246,9 +251,13 @@ vertices2 :: forall a. Ord a => Val a -> Val a -> Set a
 vertices2 (Val α _ _) (Val β _ _) = Set.fromFoldable [ α, β ]
 
 repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
-repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
-   where
-   deps = if n == 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × repeatDeps α n β
+
+repeatList :: forall a. Ord a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
+repeatList vs α n β = List (A.concat (replicate n vs)) × repeatDeps α n β
+
+repeatDeps :: forall a. Ord a => a -> Int -> a -> Set a
+repeatDeps α n β = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
 unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
 unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
@@ -268,6 +277,7 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
    Constr c vs, Constr d ws
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)
+   List vs, List ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
    Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
    Matrix r, Matrix r' -> eqMatrix r r'
    _, _ -> Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
@@ -316,12 +326,15 @@ eqElems αs _ _ = pure (false × αs)
 
 contains :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
 contains (Val α _ u') v@(Val β _ u) = case u', u of
-   Constr c Nil, _ | c == cNil -> pure (false × Set.singleton α)
-   Constr c (v' : vs : Nil), _ | c == cCons -> do
-      b × βs <- eqOp v v'
-      if b then pure (true × Set.insert α βs) else map (Set.insert α <<< (βs ∪ _)) <$> contains vs v
+   List vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
    Dictionary _, _ -> Left (typeMismatch u "str")
    Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])
    Lit (Str _), _ -> Left (typeMismatch u "str")
    _, _ -> Left (typeMismatch u' "list, dict or str")
+   where
+   elem :: List (Val a) -> Either String (Boolean × Set a)
+   elem Nil = pure (false × Set.empty)
+   elem (v' : vs) = do
+      b × βs <- eqOp v v'
+      if b then pure (true × βs) else second (βs ∪ _) <$> elem vs

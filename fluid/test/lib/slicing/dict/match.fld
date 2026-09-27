@@ -2,7 +2,7 @@ from slicing.dict.match_inputs import n
 
 def f({ fst: x, snd: [] }):
   return x
-def f({ fst: x, snd: y :| ys }):
-  return y
+def f({ fst: _, snd: ys }):
+  return ys[0]
 
 { a: f({ snd: [], fst: n }) }

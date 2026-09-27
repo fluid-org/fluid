@@ -1,8 +1,6 @@
 from slicing.zeros_inputs import xs
 
-def zeros([]):
-  return []
-def zeros(x :| xs):
-  return 0 :| zeros(xs)
+def zeros(xs):
+  return [0 for _ in xs]
 
 zeros(xs)

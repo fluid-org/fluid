@@ -53,7 +53,7 @@ purepy_cases =
    , { file: "purepy/match_dup_literal.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_as_subsumed.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_dup_list.fld", expected_error: "case 2 is unreachable" }
-   , { file: "purepy/match_list_after_cons.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_list_subsumed.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/pat_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
    , { file: "purepy/pat_as_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
    , { file: "purepy/pat_dup_key.fld", expected_error: "Duplicate key in pattern: a" }
@@ -101,7 +101,7 @@ illFormed_cases =
    , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }
    , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module clash_pkg: sub\nChecking module clash_pkg" }
    , { file: "submodule_self_import.fld", expected_error: "import cycle: ssi.b -> ssi.b" }
-   , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected dict or matrix" }
+   , { file: "subscript_non_dict.fld", expected_error: "Found Point(1, 2), expected list, dict or matrix" }
    , { file: "use_before_import.fld", expected_error: "\"ParseError on line 2, column 6:\\nimports must precede statements\"\nLoading module use_before_import_mod" }
    ]
 

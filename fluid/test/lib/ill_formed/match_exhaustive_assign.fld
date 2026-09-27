@@ -2,7 +2,7 @@ def foo(xs):
    match xs:
       case []:
          result = 0
-      case _ :| _:
+      case [_, _]:
          result = 99
    return result
 

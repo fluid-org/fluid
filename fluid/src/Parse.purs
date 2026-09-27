@@ -19,26 +19,26 @@ import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
 import Data.Traversable (foldr)
-import DataType (cCons, cPair)
+import DataType (cPair)
 import Lattice (Raw)
 import Literal (Literal(..))
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, many, many1, option, optionMaybe, sepBy1, try, (<?>))
-import Parsing.Expr (Assoc(..), Operator(..)) as P
+import Parsing.Expr (Operator(..)) as P
 import Parsing.Expr (OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
 import Expr (Binop(..), Pattern(..))
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type (Primitive(..), TypeExpr(..)) as T
 import Util (type (+), type (×), nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
 pattern = defer \_ -> do
-   p <- buildExprParser [ [ P.Infix pConsOp P.AssocRight ] ] simplePattern
+   p <- simplePattern
    optionMaybe (reserved "as" *> variable) <#> maybe p (PAs p)
 
 simplePattern :: Parser Pattern
@@ -101,11 +101,6 @@ simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPatter
               delim ')'
               pure $ PConstr (singleton (last cPair)) (p : p' : Nil) Nil
          ]
-
-pConsOp :: Parser (Pattern -> Pattern -> Pattern)
-pConsOp = do
-   reservedOperator ":|"
-   pure \e e' -> PConstr (singleton (last cCons)) (e : e' : Nil) Nil
 
 typeExpr :: Parser (T.TypeExpr Name)
 typeExpr = defer \_ -> do
@@ -293,7 +288,6 @@ expr = context "expr" $ cond <?> "expression"
          toOperator op@AndOp = P.Infix (reserved "and" $> And) (assoc op)
          toOperator op@OrOp = P.Infix (reserved "or" $> Or) (assoc op)
          toOperator op@InfixOp = P.Infix (try (delim '|' *> variable) <* delim '|' <#> \f e e' -> InfixApp e f e') (assoc op)
-         toOperator op@ConsOp = P.Infix (reservedOperator ":|" $> \e e' -> Constr unit (singleton (last cCons)) (e : e' : Nil) Nil) (assoc op)
 
          symbol :: Binop -> Parser Unit
          symbol In = reserved "in"
@@ -477,18 +471,18 @@ expr = context "expr" $ cond <?> "expression"
             choice
                [ do
                     close ']'
-                    pure $ ListEmpty unit
+                    pure $ List unit Nil
                , do
                     e <- cond
                     choice
-                       [ context "listNonEmpty" do
+                       [ context "list" do
                             delim ','
                             rest <- trailingCommas cond
                             close ']'
-                            pure $ ListNonEmpty unit e (foldr (Next unit) (End unit) rest)
+                            pure $ List unit (e : rest)
                        , do
                             close ']'
-                            pure $ ListNonEmpty unit e (End unit)
+                            pure $ List unit (e : Nil)
                        , context "listComp" do
                             qs <- qualifiers
                             close ']'

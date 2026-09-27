@@ -1,7 +1,7 @@
 def f({ fst: x, snd: [] }):
   return x
-def f({ fst: x, snd: y :| xs }):
-  return y
+def f({ fst: _, snd: ys }):
+  return ys[0]
 def g({  }):
   return 7
 

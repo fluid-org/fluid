@@ -1,21 +1,16 @@
 from math import floor, ceil
 
-def split([]):
-  return ([], [])
-def split(x :| xs):
-  (ys, zs) = split(xs)
-  return (x :| zs, ys)
+def split(xs):
+  return ([xs[i] for i in range(0, len(xs)) if i % 2 == 0], [xs[i] for i in range(0, len(xs)) if i % 2 == 1])
 
 def merge(xs, ys):
-  match (xs, ys):
-    case ([], _):
-      return ys
-    case (x :| xs_, []):
-      return xs
-    case (x :| xs_, y :| ys_):
-      if x < y:
-        return x :| merge(xs_, ys)
-      return y :| merge(xs, ys_)
+  if len(xs) == 0:
+    return ys
+  if len(ys) == 0:
+    return xs
+  if xs[0] < ys[0]:
+    return [xs[0]] + merge(tail(xs), ys)
+  return [ys[0]] + merge(xs, tail(ys))
 
 def mergesort(xs):
   if len(xs) < 2:
@@ -36,13 +31,11 @@ def find_quantile(q, p, xs):
 
 find_percentile = find_quantile(100)
 
-def accum_bins(data, Nil):
-  return []
-def accum_bins(data, [l]):
-  return []
-def accum_bins(data, l :| r :| es):
-  (ge, le) = split_on(lambda x: x <= r, data)
-  return (le, r - l) :| accum_bins(ge, r :| es)
+def accum_bins(data, edges):
+  if len(edges) < 2:
+    return []
+  (ge, le) = split_on(lambda x: x <= edges[1], data)
+  return [(le, edges[1] - edges[0])] + accum_bins(ge, tail(edges))
 
 def cut(xs, nbins):
   low = minimum(xs)
@@ -53,7 +46,7 @@ def cut(xs, nbins):
 
 def qcut(xs, qs):
   (low, high) = (minimum(xs), maximum(xs))
-  edges = append((low :| [find_percentile(x, xs) for x in qs], [high]))
+  edges = [low] + [find_percentile(x, xs) for x in qs] + [high]
 
   return accum_bins(xs, edges)
 

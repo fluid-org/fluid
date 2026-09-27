@@ -1,6 +1,6 @@
 def flatten(Empty):
   return []
 def flatten(NonEmpty(t1, (key, val), t2)):
-  return concat2(flatten(t1), (key, val) :| flatten(t2))
+  return flatten(t1) + [(key, val)] + flatten(t2)
 
 flatten(NonEmpty(NonEmpty(Empty, (3, "simon"), Empty), (4, "john"), NonEmpty(NonEmpty(Empty, (6, "sarah"), Empty), (7, "claire"), Empty)))

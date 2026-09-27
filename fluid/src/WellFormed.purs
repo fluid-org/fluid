@@ -17,7 +17,6 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, zipWith, (:))
 import Data.Foldable (lookup) as F
-import DataType (cCons, cNil)
 import ModuleGraph (ModuleName, implicitFor)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
@@ -30,7 +29,7 @@ import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Lattice (Raw)
-import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Type as T
 import Util (type (×), checkDistinct, singleton, whenever, (×), (∩))
 import Util.Set ((\\), (∪))
@@ -199,11 +198,7 @@ capturesE (S.Paragraph es) = unions (capturesPe <$> es)
    where
    capturesPe (S.Token _) = Set.empty
    capturesPe (S.Unquote e) = capturesE e
-capturesE (S.ListEmpty _) = Set.empty
-capturesE (S.ListNonEmpty _ e l) = capturesE e ∪ capturesEListRest l
-   where
-   capturesEListRest (S.End _) = Set.empty
-   capturesEListRest (S.Next _ e' l') = capturesE e' ∪ capturesEListRest l'
+capturesE (S.List _ es) = Set.unions (capturesE <$> es)
 capturesE (S.ListComp _ e gs) = capturesQualifiers gs ∪ (capturesE e \\ bv gs)
 capturesE (S.DictComp _ k e gs) = capturesQualifiers gs ∪ ((capturesDictKey k ∪ capturesE e) \\ bv gs)
 capturesE (S.DocExpr e e') = capturesE e ∪ capturesE e'
@@ -384,11 +379,7 @@ wellFormedExpr cxt (S.Paragraph elems) = S.Paragraph <$> traverse pe elems
    where
    pe (S.Unquote e) = S.Unquote <$> wellFormedExpr cxt e
    pe t@(S.Token _) = pure t
-wellFormedExpr _ e@(S.ListEmpty _) = pure e
-wellFormedExpr cxt (S.ListNonEmpty α e l) = S.ListNonEmpty α <$> wellFormedExpr cxt e <*> listRest l
-   where
-   listRest l'@(S.End _) = pure l'
-   listRest (S.Next α' e' l') = S.Next α' <$> wellFormedExpr cxt e' <*> listRest l'
+wellFormedExpr cxt (S.List α es) = S.List α <$> traverse (wellFormedExpr cxt) es
 wellFormedExpr cxt (S.ListComp α e gs) =
    (\(e' × gs') -> S.ListComp α e' gs') <$> wellFormedQualifiers cxt gs (\cxt' -> wellFormedExpr cxt' e)
 wellFormedExpr cxt (S.DictComp α k e gs) =
@@ -476,12 +467,6 @@ subsumed _ (S.PLit ℓ) (S.PLit ℓ') = ℓ == ℓ'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
 subsumed cxt (S.PList ps) (S.PList ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')
-subsumed cxt (S.PList Nil) (S.PConstr c' Nil Nil) = hush (className cxt c') == Just cNil
-subsumed cxt (S.PList (p : ps)) (S.PConstr c' (p' : ps' : Nil) Nil) =
-   hush (className cxt c') == Just cCons && subsumed cxt p p' && subsumed cxt (S.PList ps) ps'
-subsumed cxt (S.PConstr c Nil Nil) (S.PList Nil) = hush (className cxt c) == Just cNil
-subsumed cxt (S.PConstr c (p : ps : Nil) Nil) (S.PList (p' : ps')) =
-   hush (className cxt c) == Just cCons && subsumed cxt p p' && subsumed cxt ps (S.PList ps')
 subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    cls <- hush (classOf cxt c)
    cls' <- hush (classOf cxt c')
