@@ -4,12 +4,11 @@ import Prelude hiding (absurd)
 
 import App.Util (SelState(..), SelStates(..), Selection, SelectionType(..), SetSel, getPersistent, selStates)
 import Bind (Name, Var)
-import Data.List (List(..), (:))
 import Data.List.NonEmpty (last)
 import Data.Newtype (over)
 import Data.Profunctor.Strong (first, second)
 import Data.Tuple (fst) as T
-import DataType (FieldIndex, FieldName, cCons, cJust, cNil, f_segments, f_z)
+import DataType (FieldIndex, FieldName, cJust, cSegment, cStackedBar, f_segments, f_z)
 import Lattice (class Neg, 𝔹, neg)
 import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, error, unsafeUpdateAt, (!), (×))
@@ -20,9 +19,9 @@ import Val (BaseVal(..), DictRep(..), Env, MatrixDim(..), MatrixRep(..), Val(..)
 type SelSetter f g = Setter (f (SelStates 𝔹)) (g (SelStates 𝔹))
 
 sel𝔹 :: forall f a. Functor f => SetSel (f (SelStates 𝔹)) -> f a -> f 𝔹
-sel𝔹 sel template = getPersistent <$> γ'
+sel𝔹 sel template = getPersistent <$> ρ'
    where
-   γ' × _ = sel (const (selStates false false false) <$> template)
+   ρ' × _ = sel (const (selStates false false false) <$> template)
 
 type Setter b a = SetSel a -> SetSel b
 
@@ -51,12 +50,12 @@ just = constr (last cJust)
 
 type ConstrArg = Name -> FieldName -> SelSetter Val Val
 
-barSegment :: Int -> Int -> SelSetter Val Val
-barSegment i j =
-   nthSegment j >>> dictVal f_segments >>> listElement i
+barSegment :: ConstrArg -> Int -> Int -> SelSetter Val Val
+barSegment arg i j =
+   nthSegment arg j >>> arg cStackedBar f_segments >>> listElement i
 
-nthSegment :: Int -> SelSetter Val Val
-nthSegment n = dictVal f_z >>> listElement n
+nthSegment :: ConstrArg -> Int -> SelSetter Val Val
+nthSegment arg n = arg cSegment f_z >>> listElement n
 
 matrixElement :: Int -> Int -> SelSetter Val Val
 matrixElement i j δv (Val α doc (Matrix r)) =
@@ -65,10 +64,7 @@ matrixElement _ _ _ _ = error absurd
 
 listElement :: Int -> SelSetter Val Val
 listElement n δv = unsafePartial $ case _ of
-   Val α doc (Constr c (v : u : Nil)) | n == 0 && c == cCons ->
-      first (\v' -> Val α doc (Constr c (v' : u : Nil))) (δv v)
-   Val α doc (Constr c (v : u : Nil)) | c == cCons ->
-      first (\u' -> Val α doc (Constr c (v : u' : Nil))) (listElement (n - 1) δv u)
+   Val α doc (List vs) -> first (\v' -> Val α doc (List (unsafeUpdateAt n v' vs))) (δv (vs ! n))
 
 constrArg :: FieldIndex -> ConstrArg
 constrArg fieldIndex c f δv = unsafePartial $ case _ of
@@ -116,16 +112,12 @@ dictVal s δv = unsafePartial $ case _ of
       _ × v = get s d
 
 envVal :: Var -> Setter (Env (SelStates 𝔹)) (Val (SelStates 𝔹))
-envVal x δv γ =
-   assert (x ∈ γ) $ first (\v' -> update (const v') x γ) (δv (get x γ))
+envVal x δv ρ =
+   assert (x ∈ ρ) $ first (\v' -> update (const v') x ρ) (δv (get x ρ))
 
-listCell :: Int -> Setter (Val (SelStates 𝔹)) 𝔹
-listCell n δα = unsafePartial $ case _ of
-   Val α doc (Constr c Nil) | n == 0 && c == cNil ->
-      first (\α' -> Val α' doc (Constr c Nil)) (persist δα α)
-   Val α doc (Constr c (v : u : Nil)) | c == cCons ->
-      if n == 0 then first (\α' -> Val α' doc (Constr c (v : u : Nil))) (persist δα α)
-      else first (\u' -> Val α doc (Constr c (v : u' : Nil))) (listCell (n - 1) δα u)
+list :: Setter (Val (SelStates 𝔹)) 𝔹
+list δα = unsafePartial $ case _ of
+   Val α doc (List vs) -> first (\α' -> Val α' doc (List vs)) (persist δα α)
 
 composeSetSel :: forall a. SetSel a -> SetSel a -> SetSel a
 composeSetSel f g = \x -> let x' × _ = f x in g x'

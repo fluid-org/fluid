@@ -1,0 +1,8 @@
+from dataclasses import dataclass
+from shape_lib import Base
+
+@dataclass
+class Local(Base):
+   y: int
+
+0

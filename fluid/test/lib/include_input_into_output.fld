@@ -1,0 +1,3 @@
+from some_constants import x
+
+(x, x)

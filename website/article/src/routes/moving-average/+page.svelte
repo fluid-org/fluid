@@ -5,7 +5,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['../fluid'],
+		fluidSrcPath: ['../lib'],
 		inputs: ['methane'],
 		query: false,
 		linking: false
@@ -46,7 +46,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../fluid/moving_average.fld" />
+		<Figure {spec} fld="../lib/moving_average.fld" />
 	</div>
 </Grid>
 

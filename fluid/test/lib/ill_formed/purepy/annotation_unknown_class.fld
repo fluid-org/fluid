@@ -1,0 +1,4 @@
+def f(x: Shape) -> int:
+  return 1
+
+f(1)

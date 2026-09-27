@@ -1,9 +1,0 @@
-def make():
-  return Point(7, 8)
-
-@dataclass
-class Point:
-  x: Any
-  y: Any
-
-make()

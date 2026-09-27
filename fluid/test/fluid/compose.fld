@@ -1,2 +1,0 @@
-incr = (+)(1)
-compose(incr, incr, 3)

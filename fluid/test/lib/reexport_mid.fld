@@ -1,0 +1,2 @@
+from two_vals_lib import foo
+x0 = foo

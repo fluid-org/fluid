@@ -1,5 +1,0 @@
-@dataclass
-class C:
-  x: Any = None
-
-return 0

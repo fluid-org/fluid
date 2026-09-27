@@ -1,0 +1,3 @@
+city = { name: "Germany" }
+country = { cities: ["Germany"] }
+city["name"] in country["cities"]

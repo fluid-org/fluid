@@ -1,6 +1,0 @@
-from lib.graphics import colours1, stacked_bar_chart, caption
-from dataset.renewables_restricted import data
-
-year = 2015
-
-caption("Total renewables (GW) by country, " ++ num_to_str(year), stacked_bar_chart(True, colours1, 0.2, lookup(year, data)))

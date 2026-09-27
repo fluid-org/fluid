@@ -1,0 +1,4 @@
+def f(x: lst[int]) -> int:
+  return x
+
+f(1)

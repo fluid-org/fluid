@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['..', '../../../fluid'],
+		fluidSrcPath: ['..', '../../../lib'],
 		inputs: ['nap3_actions', 'ccra3_risks'],
 		query: true,
 		linking: true,

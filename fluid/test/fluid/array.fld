@@ -1,2 +1,0 @@
-xs = [| i * j for (i, j) in (3, 3) |]
-(xs ! (0, 0), dims(xs))

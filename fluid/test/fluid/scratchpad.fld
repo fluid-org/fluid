@@ -1,6 +1,0 @@
-def nth2(i, j, xs):
-  nth(i - 1, nth(j - 1, xs))
-
-xs = [[1, 4, 8], [3, 2, 17], [0, 14, 6]]
-ys = [| nth2(i, j, xs) for (i, j) in (3, 3) |]
-ys ! (3, 2)

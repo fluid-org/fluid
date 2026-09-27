@@ -1,44 +1,41 @@
+from math import ceil
 from nap3_ccra3_data import nap3_actions, ccra3_risks
 
-from lib.view import BarChart, MultiView, Default, Link
+from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Link
 
 eval_scores = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
 
 def actions_by(key, keys):
-  return [ { x: key_,
-      segments: [
-        { y: eval_score,
-          z: count_if(
-            lambda action:
-              action[ key ] == key_ and action[ "Evaluation score" ] == eval_score,
-            nap3_actions
-          ) } for eval_score in eval_scores
-      ] } for key_ in keys
+  return [ StackedBar(x=key_,
+      segments=[ Segment(y=eval_score,
+          z=len([ action for action in nap3_actions
+            if action[ key ] == key_ and action[ "Evaluation score" ] == eval_score
+          ])) for eval_score in eval_scores
+      ]) for key_ in keys
   ]
 
-risks_ = dict([ (risk[ "ID#" ], risk) for risk in ccra3_risks ])
+risks_ = { [risk[ "ID#" ]]: risk for risk in ccra3_risks }
 
 def percent(x, y):
   return 0 if y == 0 else x / y * 100
 
 def actions_by_chapter(owner):
-  return [ { x: chapter,
-      segments: [
-        { y: eval_score,
-          z: def segment_risks: [
+  return [ StackedBar(x=chapter,
+      segments=[ Segment(y=eval_score,
+          z=def segment_risks: [
                risks_[ action["Risk ID#"] ]["Risk or Opportunity Descriptor"]
                for action in chapter_actions if action["Evaluation score"] == eval_score
              ]
              percent(
                 @doc(f"""risk descriptors contribute to this segment: { join(intersperse(nub(segment_risks), ", ")) }.""")
-                length(segment_risks),
-                length(chapter_actions)
+                len(segment_risks),
+                len(chapter_actions)
              )
-        } for eval_score in eval_scores  ] }
+        ) for eval_score in eval_scores  ])
     for chapter in ["3", "4", "5", "6", "7"]
     chapter_actions = [ action for action in nap3_actions
-        if risks_[ action["Risk ID#" ] ][ "Chapter" ] == chapter and find_str(owner, action["Action Owner"]) /= -1
+        if risks_[ action["Risk ID#" ] ][ "Chapter" ] == chapter and find_str(owner, action["Action Owner"]) != -1
       ]
   ]
 
@@ -46,27 +43,27 @@ departments = [ "DBT", "DCMS", "Defra", "DESNZ", "DfT", "DHSC", "DLUHC", "DSIT",
 
 nat_env_and_infra_depts = [ "Defra", "DESNZ", "DfT", "DLUHC" ]
 
-# action_counts in the [ { y, z } ] format produced by actions_by
+# action_counts: segments of a bar produced by actions_by
 def total_actions(action_counts):
-  return sum([ r["z"] for r in action_counts ])
+  return sum([ segment.z for segment in action_counts ])
 
 def actions_with_score(action_counts, eval_score):
-  return sum([ r["z"] for r in action_counts if r["y"] == eval_score ])
+  return sum([ segment.z for segment in action_counts if segment.y == eval_score ])
 
 by_nat_env_and_infra = actions_by("Action Owner", nat_env_and_infra_depts)
 
 MultiView([
   f"""
   Climate Change Risk Assessment (CCRA3) identified {
-    length(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
+    len(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
   } risks/opportunities for the UK;
   this report evaluates extent to which NAP3 commitments actually address them.
   """,
 
   BarChart(
     caption="NAP3 actions assigned to DEFRA, by chapter",
-    size={ width: 275, height: 185 },
-    tickLabels={ x: Default, y: Default },
+    size=Dimensions(width=275, height=185),
+    tickLabels=TickLabels(x=Default, y=Default),
     stackedBars=actions_by_chapter("Defra"),
     legend=False
   ),
@@ -75,14 +72,14 @@ MultiView([
   Disaggregating by department revealed marked disparities in government response. {
     Link(nat_env_and_infra_depts, "Natural environment and infrastructure sectors")
   } performed relatively well, with {
-    ceiling(
+    ceil(
       percent(
         sum([
           actions_with_score(action_counts, eval_score)
           for eval_score in [ "Fully addressed", "Minimally addressed" ]
-          for { segments: action_counts } in by_nat_env_and_infra
+          for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra
         ]),
-        sum([ total_actions(action_counts) for { segments: action_counts } in by_nat_env_and_infra])
+        sum([ total_actions(action_counts) for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra])
       )
     )
   }% of actions at least “minimally addressed.”

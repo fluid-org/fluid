@@ -1,0 +1,5 @@
+from slicing.dict.map_inputs import d, e
+
+incHead = lambda xs: xs[0] + 3
+d_ = dict_map(incHead, dict_difference(d, e))
+d_["a"] + d_["b"]

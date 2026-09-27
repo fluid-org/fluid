@@ -1,0 +1,5 @@
+import fluid.view
+
+name = f"""Alice"""
+
+f"""Hello there, {name} !"""

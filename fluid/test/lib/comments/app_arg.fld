@@ -1,0 +1,5 @@
+import fluid.view
+
+para = f"""Comments on arguments don't surface on the outermost application"""
+
+@doc(para) map(lambda x: 1 + x, [4, 6, 12, 14, 3, 2, -4])

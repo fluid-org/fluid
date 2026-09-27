@@ -1,5 +1,0 @@
-@dataclass
-class Sub(Unknown):
-  pass
-
-return 0

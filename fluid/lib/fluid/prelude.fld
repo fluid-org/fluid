@@ -1,0 +1,318 @@
+from dataclasses import dataclass
+from math import ceil, log
+
+@dataclass
+class Maybe:
+  pass
+
+@dataclass
+class Nothing(Maybe):
+  pass
+
+@dataclass
+class Just(Maybe):
+  value: object
+
+@dataclass
+class Pair:
+  fst: object
+  snd: object
+
+@dataclass
+class Tree:
+  pass
+
+@dataclass
+class Empty(Tree):
+  pass
+
+@dataclass
+class NonEmpty(Tree):
+  left: Tree
+  value: object
+  right: Tree
+
+@dataclass
+class Ordering:
+  pass
+
+@dataclass
+class LT(Ordering):
+  pass
+
+@dataclass
+class EQ(Ordering):
+  pass
+
+@dataclass
+class GT(Ordering):
+  pass
+
+@dataclass
+class InfNum:
+  pass
+
+@dataclass
+class FNum(InfNum):
+  value: float
+
+@dataclass
+class Infty(InfNum):
+  pass
+
+# Int -> Int -> Ordering
+def compare(x, y):
+  if x > y:
+    return GT
+  if x < y:
+    return LT
+  return EQ
+
+# (b -> b -> c) -> (a -> b) -> a -> a -> c
+def on(bin_op, prop, x, y):
+  return bin_op(prop(x), prop(y))
+
+# Log of x in base y.
+def log_base(x: float, y: float) -> float:
+  return log(y) / log(x)
+
+def ceil_to_nearest(n: float, m: float) -> float:
+  return ceil(n / m) * m
+
+# (b -> c) -> (a -> b) -> a -> c
+# Want infix <<<
+def compose(f, g, x):
+  return f(g(x))
+
+# ((a, b) -> c) -> a -> b -> c
+def curry(f, x, y):
+  return f((x, y))
+
+# (a -> b -> c) -> (a, b) -> c
+def uncurry(f, (x, y)):
+  return f(x, y)
+
+# a -> b -> a
+def const(x, _):
+  return x
+
+# (a -> b) -> (a, c) -> (b, c)
+def first(f, (a, c)):
+  return (f(a), c)
+
+# (a, b) -> b
+def snd((_, y)):
+  return y
+
+# (a -> b) -> (c, a) -> (c, b)
+def second(f, (c, a)):
+  return (c, f(a))
+
+# (a -> b -> c) -> b -> a -> c
+def flip(f, x, y):
+  return f(y, x)
+
+# (a, b) -> a
+def fst((x, _)):
+  return x
+
+# a -> a
+def identity(x):
+  return x
+
+# (a -> b) -> (a -> c) -> a -> (b, c)
+# Want infix &&&
+def prod(f, g, x):
+  return (f(x), g(x))
+
+# (a, b) -> (b, a)
+def swap((a, b)):
+  return (b, a)
+
+# List a -> List a
+def tail(xs):
+  return [xs[i] for i in range(1, len(xs))]
+
+# (a -> Bool) -> List a -> Option a
+def find(p, xs):
+  def go(i):
+    if i == len(xs):
+      return Nothing
+    if p(xs[i]):
+      return Just(xs[i])
+    return go(i + 1)
+  return go(0)
+
+# String -> String -> List Dict -> Option Dict
+def find_with_key(k, v, rs):
+  return find(lambda y: y[k] == v, rs)
+
+# Option a -> a
+def from_just(Nothing):
+  assert False, "Expected Just!"
+def from_just(Just(x)):
+  return x
+
+# Option a -> a -> a
+def from_maybe(Nothing, y):
+  return y
+def from_maybe(Just(x), _):
+  return x
+
+# (a -> Bool) -> List a -> List a
+def filter(p, xs):
+  return [x for x in xs if p(x)]
+
+# (a -> Option b) -> List a -> List b
+def filter_map(p, xs):
+  return [y for x in xs for Just(y) in [p(x)]]
+
+# Split list into longest initial segment whose elements satisfy a predicate, and the rest.
+# (a -> Bool) -> List a -> { init :: List a, rest :: List a }
+def span(p, xs):
+  def go(i):
+    if i < len(xs) and p(xs[i]):
+      return go(i + 1)
+    return i
+  n = go(0)
+  return { init: take(n, xs), rest: drop(n, xs) }
+
+# Each returned list is non-empty.
+# (a -> a -> Bool) -> List a -> List (List a)
+def group_by(eq, xs):
+  def go(i):
+    if i == len(xs):
+      return []
+    def run(j):
+      if j < len(xs) and eq(xs[i], xs[j]):
+        return run(j + 1)
+      return j
+    j = run(i + 1)
+    return [slice(i, j, xs)] + go(j)
+  return go(0)
+
+# (a -> b -> a) -> a -> List b -> a
+def foldl(op, z, xs):
+  def go(acc, i):
+    if i == len(xs):
+      return acc
+    return go(op(acc, xs[i]), i + 1)
+  return go(z, 0)
+
+# (a -> b -> a) -> List b -> a
+def foldl1(op, xs):
+  return foldl(op, xs[0], tail(xs))
+
+# (a -> b -> b) -> b -> List a -> b
+def foldr(op, z, xs):
+  def go(i):
+    if i == len(xs):
+      return z
+    return op(xs[i], go(i + 1))
+  return go(0)
+
+# (a -> b -> b) -> List a -> b
+def foldr1(op, xs):
+  return foldr(op, xs[-1], take(len(xs) - 1, xs))
+
+# (a -> b -> a) -> a -> List b -> List a
+def scanl1(op, z, xs):
+  def go(x, continue, acc):
+    next = op(acc, x)
+    return [next] + continue(next)
+  return foldr(go, const([]), xs, z)
+
+# (a -> b -> a) -> a -> List b -> List a
+def scanl(op, z, xs):
+  return [z] + scanl1(op, z, xs)
+
+# (a -> b) -> List a -> List b
+def map(f, xs):
+  return [f(x) for x in xs]
+
+# List String -> String
+def join(xs):
+  return foldr(lambda x, y: x + y, "", xs)
+
+# List a -> a -> List a
+def intersperse(xs, sep):
+  return [y for i in range(0, len(xs)) for y in ([xs[i]] if i == 0 else [sep, xs[i]])]
+
+# Int -> (a -> a) -> a -> List a
+def iterate(n, f, z):
+  if n == 0:
+    return []
+  return [z] + iterate(n - 1, f, f(z))
+
+def sum(xs: list[int | float]) -> int | float:
+  return foldr(lambda x, y: x + y, 0, xs)
+
+def mean(xs: list[int | float]) -> float:
+  (s, n) = foldl(lambda (s, n), x: (s + x, n + 1), (0, 0), xs)
+  return s / n
+
+# List a -> List a
+def reversed(xs):
+  return [xs[len(xs) - 1 - i] for i in range(0, len(xs))]
+
+# Int -> List a -> List a
+def take(n, xs):
+  return [xs[i] for i in range(0, min(n, len(xs)))]
+
+# Int -> List a -> List a
+def drop(n, xs):
+  return [xs[i] for i in range(max(n, 0), len(xs))]
+
+# Partial; requires k to be in the map.
+# Int -> List (Int, b) -> b
+def lookup(k, kvs):
+  match find(lambda (k_, _): k == k_, kvs):
+    case Just((_, v)):
+      return v
+    case Nothing:
+      assert False, "Key not found in map"
+
+# Int -> Int -> Int
+def max(n, m):
+  return n if n > m else m
+
+# Int -> Int -> Int
+def min(n, m):
+  return n if n < m else m
+
+# List Int -> Int
+def maximum(xs):
+  return foldr1(max, xs)
+
+# List Int -> Int
+def minimum(xs):
+  return foldr1(min, xs)
+
+# (a -> b -> c) -> List a -> List b -> List c
+def zip_with(op, xs, ys):
+  return [op(xs[i], ys[i]) for i in range(0, min(len(xs), len(ys)))]
+
+# List a -> List b -> List (a, b)
+def zip(xs, ys):
+  return zip_with(curry(identity), xs, ys)
+
+# Int -> Int -> List Int
+def range(n, m):
+  if n < m:
+    return [n] + range(n + 1, m)
+  return []
+
+def abs(x):
+  return -x if x < 0 else x
+
+# Eq a => [a] -> [a]
+def nub(xs):
+  def go(i, ys):
+    if i == len(xs):
+      return ys
+    return go(i + 1, ys if xs[i] in ys else ys + [xs[i]])
+  return go(0, [])
+
+# Int -> Int -> [a] -> [a]
+def slice(begin, end, xs):
+  return take(end - begin, drop(begin, xs))

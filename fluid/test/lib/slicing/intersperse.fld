@@ -1,0 +1,6 @@
+from slicing.intersperse_inputs import xs, sep
+
+def intersperse(xs, sep):
+  return [y for i in range(0, len(xs)) for y in ([xs[i]] if i == 0 else [sep, xs[i]])]
+
+intersperse(xs, sep)

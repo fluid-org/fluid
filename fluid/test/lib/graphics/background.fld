@@ -1,0 +1,13 @@
+from fluid.graphics import Group, Rect, Viewport, Scale, Translate, width, height
+import dataset.renewables_restricted
+
+rect = Rect(x=0, y=0, width=1, height=3, fill="red")
+g = Group([
+    Viewport(x=0, y=0, width=1, height=3, fill="white", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=rect)
+  ])
+w = 1.0
+m = 0.25
+x_scale = max(w - 2 * m, 0) / w
+translate = Translate(m / x_scale, 0)
+
+Viewport(x=0, y=0, width=w, height=3, fill="gray", margin=0, scale=Scale(x_scale, 1), translate=translate, g=g)

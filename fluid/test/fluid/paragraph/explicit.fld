@@ -1,6 +1,0 @@
-from lib.view import Paragraph, Text
-
-name = "Alice"
-
-# Mix of implicit and explicit coercions
-Paragraph([Text("Hi "), name, 5, "+", num_to_str(6), "is", Text(num_to_str(5 + 11))])

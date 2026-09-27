@@ -1,4 +1,0 @@
-# https://github.com/fluid-org/fluid/issues/1455
-import lib.view
-
-(@doc("hello") (-42))

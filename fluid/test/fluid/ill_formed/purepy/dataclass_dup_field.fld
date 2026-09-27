@@ -1,6 +1,0 @@
-@dataclass
-class Point:
-  x: Any
-  x: Any
-
-return 0

@@ -1,2 +1,0 @@
-import module.pkg.a
-module.pkg.a.u + module.pkg.w

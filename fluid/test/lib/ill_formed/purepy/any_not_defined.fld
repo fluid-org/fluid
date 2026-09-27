@@ -1,0 +1,4 @@
+from typing import Any
+
+x: int = 1
+x

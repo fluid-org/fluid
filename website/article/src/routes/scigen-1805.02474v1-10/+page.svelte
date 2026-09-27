@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['../fluid'],
+		fluidSrcPath: ['../lib'],
 		inputs: ['tableData'],
 		query: true,
 		linking: true
@@ -29,7 +29,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../fluid/_1805_02474v1_10.fld" />
+		<Figure {spec} fld="../lib/_1805_02474v1_10.fld" />
 	</div>
 </Grid>
 

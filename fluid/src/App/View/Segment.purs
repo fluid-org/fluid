@@ -46,8 +46,8 @@ instance Viewable Segment SegmentContext where
               ]
 
    setSelection :: ConstrArg -> SegmentContext -> Segment -> Select -> D3.Selection -> Effect Unit
-   setSelection _ { y_index } (Segment { z }) select segment = do
-      segment # setAttrs attrs >>= registerMouseListeners (select <<< uncurry (\_ -> nthSegment y_index) <<< selectionEventData')
+   setSelection arg { y_index } (Segment { z }) select segment = do
+      segment # setAttrs attrs >>= registerMouseListeners (select <<< uncurry (\_ -> nthSegment arg y_index) <<< selectionEventData')
       where
       attrs :: Attrs
       attrs =

@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['.', '../../../fluid'],
+		fluidSrcPath: ['.', '../../../lib'],
 		inputs: ['ssp126Source', 'ssp245Source', 'ssp126preds', 'ssp245preds'],
 		query: false,
 		linking: true

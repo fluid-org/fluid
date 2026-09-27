@@ -1,7 +1,7 @@
-from lib.stats import likelihood_map
+from fluid.stats import likelihood_map
 from table1_data import tableData, likelihoods
 
-from lib.view import MultiView
+from fluid.view import MultiView
 
 def newDataTable(offset):
   return map(lambda s: {
@@ -20,7 +20,7 @@ def getByScenario(data, scenario):
 probAsText = likelihood_map(likelihoods)
 
 def mean(xs):
-  return sum(xs) / length(xs)
+  return sum(xs) / len(xs)
 
 def calcLikelihood((min, max), target):
   if max < target:

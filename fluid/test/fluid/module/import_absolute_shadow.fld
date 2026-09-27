@@ -1,3 +1,0 @@
-from module.shadow import y
-import y.z
-y.z.b

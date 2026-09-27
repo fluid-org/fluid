@@ -1,3 +1,0 @@
-from slicing.dict.get_inputs import d, a
-
-d["a"] * d[a ++ "b"]["snd"]

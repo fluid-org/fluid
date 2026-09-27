@@ -1,0 +1,2 @@
+import dataclass_lib
+dataclass_lib.Coord(3, 4)

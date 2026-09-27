@@ -16,13 +16,13 @@ import Data.Maybe (Maybe(..))
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (fst, uncurry)
 import Effect.Aff (Error, message)
+import Eval (graphEval)
 import Effect.Aff.Class (class MonadAff)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (botOf)
 import Module (prepConfig)
-import Primitive.Defs (primitives)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
-import Test.Util (checkEq, test)
+import Test.Util (checkEq, fluidSrcPaths, test)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
 import Val (class HasModuleStore, Val, Env)
@@ -65,7 +65,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) primitives { δv: \_ -> identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
+      test (File file) { δv: \_ -> identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
 
 bwdSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestBwdSpec -> BenchSuite m
 bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) >>> show) &&& asTest)
@@ -74,7 +74,7 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
 
    asTest :: TestBwdSpec -> m BenchRow
    asTest { file, bwd_expect, δv, fwd_expect, inputs } = do
-      test (folder </> File file) primitives { δv, fwd_expect, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
+      test (folder </> File file) { δv, fwd_expect, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
 
 linkedOutputsTest :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
@@ -95,9 +95,9 @@ linkedInputsTest :: forall m. MonadAff m => MonadError Error m => HasClasses m =
 linkedInputsTest { spec, δ_in, in_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
    fig <- loadFig spec fluidSrc <#> uncurry selectInput δ_in
-   γ <- logTimeWhen timing.selectionResult file \_ ->
-      pure (selectionResult fig).γ
-   checkEq "selected" "expected" (selStates <$> (isInert <$> γ) <*> (isPersistent <$> γ) <*> (isTransient <$> γ)) (fst $ in_expect (botOf <$> γ))
+   ρ <- logTimeWhen timing.selectionResult file \_ ->
+      pure (selectionResult fig).ρ
+   checkEq "selected" "expected" (selStates <$> (isInert <$> ρ) <*> (isPersistent <$> ρ) <*> (isTransient <$> ρ)) (fst $ in_expect (botOf <$> ρ))
    pure fig
 
 linkedInputsSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestLinkedInputsSpec -> Array (String × m Unit)
@@ -115,11 +115,16 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
 
    asTest :: IllFormedSpec -> m Unit
    asTest { file, expected_error } = do
-      fluidSrc <- loadFile [ Folder "fluid", Folder "test/fluid" ] (folder </> File file)
-      result <- catchError (prepConfig primitives fluidSrc *> pure (Left unit)) (pure <<< Right)
+      fluidSrc <- loadFile fluidSrcPaths (folder </> File file)
+      result <- catchError (run fluidSrc *> pure (Left unit)) (pure <<< Right)
       case result of
          Right err ->
             when (message err /= expected_error)
                $ throw
                $ "Expected error: " <> expected_error <> "; got: " <> message err
          Left _ -> throw $ "Expected ill-formed: " <> file
+
+   run :: String -> m Unit
+   run fluidSrc = do
+      { e, gconfig } <- prepConfig fluidSrc
+      void $ graphEval gconfig e

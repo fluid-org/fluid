@@ -1,0 +1,11 @@
+from dataclasses import dataclass
+
+def make():
+  return Point(7, 8)
+
+@dataclass
+class Point:
+  x: int
+  y: int
+
+make()

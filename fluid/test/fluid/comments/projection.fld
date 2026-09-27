@@ -1,5 +1,0 @@
-import lib.view
-
-x = { y: 1 }
-
-@doc(f"""We lose doc comments attached to projections""") x["y"]

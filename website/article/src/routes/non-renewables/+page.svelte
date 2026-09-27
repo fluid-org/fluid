@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['../fluid'],
+		fluidSrcPath: ['../lib'],
 		inputs: ['nonRenewables'],
 		query: false,
 		linking: true
@@ -29,7 +29,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../fluid/non_renewables.fld" />
+		<Figure {spec} fld="../lib/non_renewables.fld" />
 	</div>
 </Grid>
 

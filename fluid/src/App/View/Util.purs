@@ -145,7 +145,7 @@ data Direction = LinkedInputs | LinkedOutputs | Intermediates
 type Fig =
    { spec :: Options
    , s :: Raw S.Stmt
-   , γ :: Env (SelStates 𝔹)
+   , ρ :: Env (SelStates 𝔹)
    , v :: Val (SelStates 𝔹)
    , ι :: Env (SelStates 𝔹)
    , dir :: Selection Direction

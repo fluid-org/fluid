@@ -1,0 +1,2 @@
+from two_vals_lib import foo, bar
+foo + bar

@@ -1,9 +1,0 @@
-@dataclass
-class Base:
-   x: Any
-
-@dataclass
-class Derived(Base):
-   y: Any
-
-Base(1)

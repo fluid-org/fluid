@@ -1,0 +1,12 @@
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+  x: int
+  y: int
+
+match Point(1, 2):
+  case Point():
+    pass
+
+return 0

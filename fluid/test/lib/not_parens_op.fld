@@ -1,0 +1,4 @@
+# https://github.com/fluid-org/fluid/issues/1455
+import fluid.view
+
+(@doc("hello") (-42))

@@ -1,34 +1,29 @@
+from math import ceil
 from nap3_ccra3_data import nap3_actions, ccra3_risks
 
-from lib.view import BarChart, MultiView, Default, Rotated, Link
+from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Rotated, Link
 
 eval_scores = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
 
 def actions_by(key, keys):
-  return [ { x: key_,
-      segments: [
-        { y: eval_score,
-          z: count_if(
-            lambda action:
-              action[ key ] == key_ and action[ "Evaluation score" ] == eval_score,
-            nap3_actions
-          ) } for eval_score in eval_scores
-      ] } for key_ in keys
+  return [ StackedBar(x=key_,
+      segments=[ Segment(y=eval_score,
+          z=len([ action for action in nap3_actions
+            if action[ key ] == key_ and action[ "Evaluation score" ] == eval_score
+          ])) for eval_score in eval_scores
+      ]) for key_ in keys
   ]
 
-risks_ = dict([ (r[ "ID#" ], r) for r in ccra3_risks ])
+risks_ = { [r[ "ID#" ]]: r for r in ccra3_risks }
 
-actions_by_chapter = [ { x: chapter,
-      segments: [
-        { y: eval_score,
-          z: count_if(
-            lambda action:
-              risks_[ action[ "Risk ID#" ] ][ "Chapter" ] == chapter and
-              action[ "Evaluation score" ] == eval_score,
-            nap3_actions
-          ) } for eval_score in eval_scores
-      ] } for chapter in [ "3", "4", "5", "6", "7" ]
+actions_by_chapter = [ StackedBar(x=chapter,
+      segments=[ Segment(y=eval_score,
+          z=len([ action for action in nap3_actions
+            if risks_[ action[ "Risk ID#" ] ][ "Chapter" ] == chapter and
+              action[ "Evaluation score" ] == eval_score
+          ])) for eval_score in eval_scores
+      ]) for chapter in [ "3", "4", "5", "6", "7" ]
   ]
 
 departments = [ "DBT", "DCMS", "Defra", "DESNZ", "DfT", "DHSC", "DLUHC", "DSIT", "FCDO", "HMT", "MoJ" ]
@@ -46,12 +41,12 @@ by_topology = actions_by(
       "Unclear typology noted in text" ]
   )
 
-# action_counts in the [ { y, z } ] format produced by actions_by
+# action_counts: segments of a bar produced by actions_by
 def total_actions(action_counts):
-  return sum([ r["z"] for r in action_counts ])
+  return sum([ segment.z for segment in action_counts ])
 
 def actions_with_score(action_counts, eval_score):
-  return sum([ r["z"] for r in action_counts if r["y"] == eval_score ])
+  return sum([ segment.z for segment in action_counts if segment.y == eval_score ])
 
 def proportion(x, y):
   return 0 if y == 0 else x / y
@@ -59,7 +54,7 @@ def proportion(x, y):
 def max_with_score(actions, eval_score):
   return maximum([
     proportion(actions_with_score(action_counts, eval_score), total_actions(action_counts))
-    for { segments: action_counts } in actions
+    for StackedBar(x=_, segments=action_counts) in actions
   ])
 
 by_nat_env_and_infra = actions_by("Action Owner", nat_env_and_infra_depts)
@@ -67,21 +62,21 @@ by_nat_env_and_infra = actions_by("Action Owner", nat_env_and_infra_depts)
 MultiView([
   f"""
   Climate Change Risk Assessment (CCRA3) identified {
-    length(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
+    len(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
   } risks/opportunities for the UK;
   this report evaluates extent to which NAP3 commitments actually address them.
   """,
   BarChart(
     caption="NAP3 actions by chapter",
-    size={ width: 275, height: 185 },
-    tickLabels={ x: Default, y: Default },
+    size=Dimensions(width=275, height=185),
+    tickLabels=TickLabels(x=Default, y=Default),
     stackedBars=actions_by_chapter,
     legend=False
   ),
   BarChart(
     caption="NAP3 actions by government department",
-    tickLabels={ x: Rotated, y: Default },
-    size={ width: 275, height: 200 },
+    tickLabels=TickLabels(x=Rotated, y=Default),
+    size=Dimensions(width=275, height=200),
     stackedBars=by_action_owner,
     legend=True
   ),
@@ -92,17 +87,17 @@ MultiView([
     sum([
       actions_with_score(action_counts, eval_score)
       for eval_score in [ "Fully addressed", "Minimally addressed" ]
-      for { segments: action_counts } in by_nat_env_and_infra
+      for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra
     ])
   } of {
-    sum([ total_actions(action_counts) for { segments: action_counts } in by_nat_env_and_infra])
+    sum([ total_actions(action_counts) for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra])
   } actions at least “minimally addressed.”
   In contrast, business and industry actions lagged sharply, with nearly half unaddressed or only nominally
   recognized—an institutional lapse in private-sector resilience. Defra (Environment, Food and Rural Affairs)
   dominated, although only a small portion of were fully or significantly addressed. Departments
   with cross-sectoral mandates such as DSIT (Science & Technology) and HMT (Treasury) had smaller action bases
   and weaker scores. No department had more than {
-    ceiling(max_with_score(by_action_owner, "Fully addressed") * 100)
+    ceil(max_with_score(by_action_owner, "Fully addressed") * 100)
   }% of its actions fully addressed, reinforcing the impression of a fragmented governance system where adaptation
   remains siloed and under-resourced.
   """,

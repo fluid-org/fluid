@@ -1,9 +1,0 @@
-@dataclass
-class Base:
-  x: Any
-
-@dataclass
-class Sub(Base):
-  x: Any
-
-return 0

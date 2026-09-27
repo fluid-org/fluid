@@ -51,7 +51,7 @@ val = snd
 
 keys :: forall a. List (Bind a) -> Set Var
 keys Nil = empty
-keys ((x ↦ _) : ρ) = singleton x ∪ keys ρ
+keys ((x ↦ _) : xvs) = singleton x ∪ keys xvs
 
 showBind :: forall a. Show a => Var -> a -> Bind String
 showBind x = show >>> (x ↦ _)

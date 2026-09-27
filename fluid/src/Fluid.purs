@@ -23,7 +23,6 @@ import Options.Applicative (Parser, command, execParser, fullDesc, header, help,
 import Options.Applicative.Builder (info)
 import Parse (parseProgram)
 import Pretty (prettyP)
-import Primitive.Defs (primitives)
 import Util (Endo)
 import Val (Val)
 
@@ -91,21 +90,22 @@ callback = case _ of
    Left err -> logShow err
    Right _ -> pure unit
 
-fluidLibraryPath :: String
-fluidLibraryPath = "node_modules/@fluid-org/fluid"
+-- Source roots: the given one, plus the installed library when running locally.
+srcPaths :: Boolean -> Folder -> Array Folder
+srcPaths local fluidSrcPath = [ fluidSrcPath ] <> if local then [ Folder "node_modules/@fluid-org/fluid/dist/fluid/lib" ] else []
 
 evaluate :: EvalArgs -> Aff (Val Unit)
 evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
-   let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/fluid") ] else []
+   let fluidSrcPaths = srcPaths local fluidSrcPath
    runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
-      { e, gconfig } <- prepConfig primitives fluidSrc
+      { e, gconfig } <- prepConfig fluidSrc
       { outα } <- graphEval gconfig e
       pure (erase outα)
 
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPath }) = do
-   let fluidSrcPaths = [ fluidSrcPath ] <> if local then [ Folder (fluidLibraryPath <> "/dist/fluid/fluid") ] else []
+   let fluidSrcPaths = srcPaths local fluidSrcPath
    runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       case (parseProgram fluidSrc) of

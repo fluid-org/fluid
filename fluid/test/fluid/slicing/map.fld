@@ -1,3 +1,0 @@
-from slicing.map_inputs import xs
-
-map((+)(2), xs)

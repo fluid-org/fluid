@@ -1,0 +1,6 @@
+from slicing.filter_inputs import n, xs
+
+def filter(p, xs):
+  return [x for x in xs if p(x)]
+
+filter(lambda x: n < x, xs)

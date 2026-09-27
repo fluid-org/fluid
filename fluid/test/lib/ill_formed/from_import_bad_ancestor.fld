@@ -1,0 +1,2 @@
+from bad_pkg.sub import c
+c

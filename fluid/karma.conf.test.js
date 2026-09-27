@@ -24,7 +24,7 @@ module.exports = function (config) {
       files: [
          "./dist/test/fluid.js",
          {
-            pattern: "./fluid/**/*.fld",
+            pattern: "./lib/**/*.fld",
             watched: true,
             included: false,
             served: true,
@@ -41,9 +41,9 @@ module.exports = function (config) {
       frameworks: ["mocha"],
       logLevel: config.LOG_ERROR,
       proxies: {
-         "/fluid/": "/base/fluid/",
+         "/lib/": "/base/lib/",
          "/dataset/": "/base/test/dataset/",
-         "/test/fluid/": "/base/test/fluid/"
+         "/test/lib/": "/base/test/lib/"
       },
       reporters: ["mocha"],
       singleRun: true

@@ -1,0 +1,4 @@
+import math
+from math import sqrt, exp, sin, cos, tan, floor, ceil
+
+[floor(math.pi), ceil(math.e), floor(sqrt(16)), floor(exp(0) + sin(0) + cos(0) + tan(0))]

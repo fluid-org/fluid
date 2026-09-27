@@ -1,0 +1,4 @@
+x: int = 3
+ys: list[str] = ["a", "b"]
+(p, q): tuple[int, int] = (x, x + 2)
+p + q + x

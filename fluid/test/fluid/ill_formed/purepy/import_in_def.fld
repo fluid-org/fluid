@@ -1,5 +1,0 @@
-def f():
-  import module.foo
-  return 0
-
-f()

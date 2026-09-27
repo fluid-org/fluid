@@ -1,0 +1,2 @@
+import shape_lib
+shape_lib.Missing(3)

@@ -1,0 +1,6 @@
+def f(0):
+   return 1
+def f(n):
+   return n
+
+f(2)

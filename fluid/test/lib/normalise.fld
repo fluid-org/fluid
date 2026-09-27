@@ -1,0 +1,5 @@
+from math import floor
+
+(x, y) = (6.0, 12.0)
+sum = x + y
+(floor((x * 100.0) / sum), floor((y * 100) / sum))

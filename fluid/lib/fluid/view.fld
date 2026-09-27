@@ -1,0 +1,94 @@
+from dataclasses import dataclass
+
+@dataclass
+class Orientation:
+  pass
+
+@dataclass
+class Default(Orientation):
+  pass
+
+@dataclass
+class Rotated(Orientation):
+  pass
+
+@dataclass
+class Dimensions:
+  width: int
+  height: int
+
+@dataclass
+class Point:
+  x: float
+  y: float
+
+@dataclass
+class AxisLabels:
+  x: str
+  y: str
+
+@dataclass
+class TickLabels:
+  x: Orientation
+  y: Orientation
+
+@dataclass
+class Segment:
+  y: str
+  z: float
+
+@dataclass
+class StackedBar:
+  x: str
+  segments: list[Segment]
+
+@dataclass
+class LinePlot:
+  name: str
+  points: list[Point]
+
+@dataclass
+class View:
+  pass
+
+@dataclass
+class BarChart(View):
+  caption: str
+  size: Dimensions
+  tickLabels: TickLabels
+  stackedBars: list[StackedBar]
+  legend: bool
+
+@dataclass
+class LineChart(View):
+  size: Dimensions
+  tickLabels: TickLabels
+  caption: str
+  plots: list[LinePlot]
+
+@dataclass
+class MultiView(View):
+  views: list[View]
+
+@dataclass
+class Paragraph(View):
+  fragments: list[View]
+
+@dataclass
+class ScatterPlot(View):
+  caption: str
+  points: list[Point]
+  labels: AxisLabels
+
+@dataclass
+class ParaFragment:
+  pass
+
+@dataclass
+class Text(ParaFragment):
+  text: str
+
+@dataclass
+class Link(ParaFragment):
+  value: object
+  label: str

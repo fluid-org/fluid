@@ -5,41 +5,50 @@ import Prelude
 import Control.Alt ((<|>))
 import Control.Lazy (defer)
 import Control.Monad.State (StateT)
-import Data.Array (some)
+import Data.Array (reverse, some)
 import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
-import Bind (Bind, Name, (↦))
+import Bind (Bind, Name, varAnon, (↦))
 import Data.Either (Either(..))
+import Data.Foldable (foldl)
 import Data.Identity (Identity)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList(..), cons, last, toList)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
-import Data.Traversable (foldl, foldr)
-import DataType (cCons, cNoArgs, cNone, cPair)
+import Data.Traversable (foldr)
+import DataType (cPair)
 import Lattice (Raw)
+import Literal (Literal(..))
 import Parse.Number (float, integer)
-import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, operator, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
+import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, many, many1, option, optionMaybe, sepBy1, try, (<?>))
-import Parsing.Expr (Assoc(..), Operator(..)) as P
-import Parsing.Expr (Assoc(..), OperatorTable, buildExprParser)
+import Parsing.Expr (Operator(..)) as P
+import Parsing.Expr (OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
-import Primitive.Parse (OpDef(..), OpType(..), Fixity(..), opDefs)
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), ListRest(..), ListRestPattern(..), Module(..), ParagraphElem(..), Pattern(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
-import Util (type (+), type (×), error, nonEmpty, singleton, (×))
+import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
+import Expr (Binop(..), Pattern(..))
+import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import Type (Primitive(..), TypeExpr(..)) as T
+import Util (type (+), type (×), nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
-pattern = defer \_ -> buildExprParser [ [ P.Infix pConsOp P.AssocRight ] ] simplePattern
+pattern = defer \_ -> do
+   p <- simplePattern
+   optionMaybe (reserved "as" *> variable) <#> maybe p (PAs p)
 
 simplePattern :: Parser Pattern
-simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
+simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    where
    pVar :: Parser Pattern
-   pVar = PVar <$> variable
+   pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
+
+   pLit :: Parser Pattern
+   pLit = literal <#> PLit
 
    pConstr :: Parser Pattern
    pConstr = defer \_ -> try do
@@ -76,9 +85,7 @@ simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    pRecord = defer \_ -> braces (fields variable pattern) <#> PRecord
 
    pList :: Parser Pattern
-   pList = defer \_ -> brackets (trailingCommas pattern) <#> case _ of
-      Nil -> PListEmpty
-      p : ps -> PListNonEmpty p (foldr PListNext PListEnd ps)
+   pList = defer \_ -> brackets (trailingCommas pattern) <#> PList
 
    parensPattern :: Parser Pattern
    parensPattern = do
@@ -95,16 +102,61 @@ simplePattern = pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
               pure $ PConstr (singleton (last cPair)) (p : p' : Nil) Nil
          ]
 
-pConsOp :: Parser (Pattern -> Pattern -> Pattern)
-pConsOp = do
-   reservedOperator ":|"
-   pure \e e' -> PConstr (singleton (last cCons)) (e : e' : Nil) Nil
+typeExpr :: Parser (T.TypeExpr Name)
+typeExpr = defer \_ -> do
+   ψ <- typeAtom
+   ψs <- many (reservedOperator "|" *> typeAtom)
+   pure (foldl T.Union ψ ψs)
+   where
+   typeAtom :: Parser (T.TypeExpr Name)
+   typeAtom = defer \_ -> constrType <|> varType
+
+   constrType :: Parser (T.TypeExpr Name)
+   constrType = do
+      prefix <- many (try (variable <* delim '.'))
+      c <- constructor
+      case prefix, c of
+         Nil, "Never" -> pure (T.Primitive T.Never)
+         Nil, "None" -> pure (T.Primitive T.None)
+         Nil, "Sized" -> pure (T.Primitive T.Sized)
+         Nil, "Callable" -> brackets (T.Callable <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
+         Nil, "Literal" -> T.Lit <$> brackets literal
+         _, _ -> pure (T.ClassName (foldr cons (singleton c) prefix))
+
+   varType :: Parser (T.TypeExpr Name)
+   varType = variable >>= case _ of
+      "object" -> pure (T.Primitive T.Object)
+      "bool" -> pure (T.Primitive T.Bool)
+      "int" -> pure (T.Primitive T.Int)
+      "float" -> pure (T.Primitive T.Float)
+      "str" -> pure (T.Primitive T.Str)
+      "list" -> T.List <$> brackets typeExpr
+      "tuple" -> T.Tuple <$> brackets (commas typeExpr)
+      "dict" -> brackets (reserved "str" *> delim ',' *> (T.Dict <$> typeExpr))
+      x -> fail ("Not a type: " <> x)
+
+literal :: Parser Literal
+literal =
+   try (float <#> Float)
+      <|> (integer <#> Int)
+      <|> (stringLiteral <#> Str)
+      <|> try
+         ( constructor >>= case _ of
+              "True" -> pure (Bool true)
+              "False" -> pure (Bool false)
+              "None" -> pure None
+              c -> fail ("Not a literal: " <> c)
+         )
 
 varDef :: Parser (Raw VarDef)
 varDef = do
-   p <- try (pattern <* reservedOperator "=")
+   p × ψ <- try do
+      p <- pattern
+      ψ <- optionMaybe (delim ':' *> typeExpr)
+      reservedOperator "="
+      pure (p × ψ)
    e <- sameOrIndented *> withPos expr
-   pure $ VarDef p e
+   pure $ VarDef p ψ e
 
 varDefs :: Parser (Raw VarDefs)
 varDefs = many1 varDef
@@ -116,14 +168,14 @@ returnStmt :: Parser (Raw Stmt)
 returnStmt = do
    reserved "return"
    e <- optionMaybe (sameOrIndented *> expr)
-   pure $ Return $ fromMaybe (Constr unit (singleton (last cNone)) Nil Nil) e
+   pure $ Return $ fromMaybe (Lit unit None) e
 
 assertStmt :: Parser (Raw Stmt)
 assertStmt = do
    reserved "assert"
-   cond <- expr
+   e <- expr
    msg <- optionMaybe (delim ',' *> expr)
-   pure $ Assert cond msg
+   pure $ Assert e msg
 
 stmts :: Parser (Raw Stmt)
 stmts = defer \_ -> many1 (align stmt) <#> foldr1Seq
@@ -190,9 +242,8 @@ dataclassStmt = do
       fieldDecl = do
          x <- variable
          delim ':'
-         t <- constructor
-         unless (t == "Any") $ fail $ "Field type must be Any, got: " <> t
-         pure x
+         ψ <- typeExpr
+         pure (x × ψ)
    xs <- block ((reserved "pass" $> Nil) <|> (toList <$> many1 (align fieldDecl)))
    pure $ Dataclass c b xs
 
@@ -201,55 +252,51 @@ recDefs = many1 recDef
    where
    recDef :: Parser (Raw Branch)
    recDef = do
-      p <- try (reserved "def" *> variable <* delim '(')
-      ps0 <- commas pattern
+      f <- try (reserved "def" *> variable <* delim '(')
+      ps <- commas param
       delim ')'
-      b <- blockBody
-      let
-         ps = case ps0 of
-            Nil -> NonEmptyList (PConstr (singleton (last cNoArgs)) Nil Nil :| Nil)
-            x : xs -> NonEmptyList (x :| xs)
-      pure $ p × Clause unit (ps × b)
+      ψ <- optionMaybe (reservedOperator "->" *> typeExpr)
+      s <- blockBody
+      pure $ f × Clause unit (ps × ψ × s)
+
+   param :: Parser Param
+   param = Param <$> pattern <*> optionMaybe (delim ':' *> typeExpr)
 
 expr :: Parser (Raw Expr)
-expr = context "expr" $ ternary <?> "expression"
+expr = context "expr" $ cond <?> "expression"
    where
-   ternary :: Parser (Raw Expr)
-   ternary = defer \_ -> do
+   cond :: Parser (Raw Expr)
+   cond = defer \_ -> do
       e1 <- opTree
       option e1 $ try do
          reserved "if"
-         cond <- opTree
+         e <- opTree
          reserved "else"
          e2 <- expr
-         pure $ Ternary cond e1 e2
+         pure $ Cond e1 e e2
 
    opTree :: Parser (Raw Expr)
    opTree = context "opTree" (buildExprParser opTable simpleChain) <* consume -- otherwise always `consume: false`
       where
 
       opTable :: OperatorTable (StateT Position Identity) String (Raw Expr)
-      opTable =
-         opDefs # map (map toOperator)
+      opTable = reverse levels <#> map toOperator -- tightest first
          where
-         toOperator :: OpDef -> P.Operator (StateT Position Identity) String (Raw Expr)
-         toOperator (OpDef id fix opType) = case opType of
-            Symbol -> op fix (reservedOperator id $> id)
-            Ident -> op fix (reserved id $> id)
-            CustomOp -> op (Infix AssocLeft) (try (delim '|' *> variable) <* delim '|')
-            ConsOp -> P.Infix consOp AssocRight
-            ProjectOp -> error "not implemented!"
+         toOperator :: Operator -> P.Operator (StateT Position Identity) String (Raw Expr)
+         toOperator op@(Binary b) = P.Infix (symbol b $> \e e' -> BinOp e b e') (assoc op)
+         toOperator (Unary u) = P.Prefix (word (unopSymbol u) $> UnOp u)
+         toOperator op@AndOp = P.Infix (reserved "and" $> And) (assoc op)
+         toOperator op@OrOp = P.Infix (reserved "or" $> Or) (assoc op)
+         toOperator op@InfixOp = P.Infix (try (delim '|' *> variable) <* delim '|' <#> \f e e' -> InfixApp e f e') (assoc op)
 
-         op :: Fixity -> Parser String -> P.Operator (StateT Position Identity) String (Raw Expr)
-         op fix p = case fix of
-            Infix assoc -> P.Infix (p <#> \id e e' -> BinaryApp e id e') assoc
-            Prefix -> P.Prefix (p <#> \id e -> UnaryPrefixApp id e)
-            Postfix -> error "not implemented!"
+         symbol :: Binop -> Parser Unit
+         symbol In = reserved "in"
+         symbol NotIn = try (reserved "not" *> reserved "in")
+         symbol b = reservedOperator (binopSymbol b)
 
-         consOp :: Parser (Raw Expr -> Raw Expr -> Raw Expr)
-         consOp = do
-            reservedOperator ":|"
-            pure \e e' -> Constr unit (singleton (last cCons)) (e : e' : Nil) Nil
+         word :: String -> Parser Unit
+         word "not" = reserved "not"
+         word sym = reservedOperator sym
 
       simpleChain :: Parser (Raw Expr)
       simpleChain = withPos (simple >>= chain)
@@ -268,9 +315,10 @@ expr = context "expr" $ ternary <?> "expression"
             dproject :: Parser (Raw Expr)
             dproject = do
                delim '['
-               k <- ternary
+               k <- cond
+               k' <- optionMaybe (delim ',' *> cond)
                close ']'
-               chain (Subscript e k)
+               chain (Subscript e (maybe k (\k2 -> Constr unit (singleton (last cPair)) (k : k2 : Nil) Nil) k'))
 
             app :: Parser (Raw Expr)
             app = do
@@ -280,21 +328,18 @@ expr = context "expr" $ ternary <?> "expression"
                      args <- commas constrArg
                      pure $ Constr a c (es <> takeLefts args) (takeRights args)
                   _ -> do
-                     ps <- commas ternary
-                     pure $ case ps of
-                        Nil -> App e (Constr unit (singleton (last cNoArgs)) Nil Nil)
-                        x : xs -> foldl App e (x : xs)
+                     App e <$> commas cond
                close ')'
                chain e'
                where
                constrArg :: Parser (Raw Expr + Bind (Raw Expr))
-               constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> ternary)
+               constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)
 
                kwArg :: Parser (Bind (Raw Expr))
                kwArg = defer \_ -> do
                   x <- variable
                   delim '='
-                  v <- ternary
+                  v <- cond
                   pure (x ↦ v)
 
                takeLefts :: forall p q. List (p + q) -> List p
@@ -313,12 +358,11 @@ expr = context "expr" $ ternary <?> "expression"
             <|> lambda
             <|> dict
             <|> paragraph
-            <|> str
+            <|> lit
             <|> constr
             <|> var
             <|> parensExpr
             <|> docExpr
-            <|> number
                <?> "simple expression"
          where
 
@@ -327,12 +371,8 @@ expr = context "expr" $ ternary <?> "expression"
             reserved "lambda"
             ps0 <- commas pattern
             delim ':'
-            e <- ternary
-            let
-               ps = case ps0 of
-                  Nil -> NonEmptyList (PConstr (singleton (last cNoArgs)) Nil Nil :| Nil)
-                  x : xs -> NonEmptyList (x :| xs)
-            pure $ Lambda (LambdaClause (ps × e))
+            e <- cond
+            pure $ Lambda (LambdaClause (ps0 × e))
 
          var :: Parser (Raw Expr)
          var = variable <#> Var
@@ -343,11 +383,8 @@ expr = context "expr" $ ternary <?> "expression"
             c <- constructor
             pure (Constr unit (foldr cons (singleton c) prefix) Nil Nil)
 
-         number :: Parser (Raw Expr)
-         number = try (float <#> Float unit) <|> (integer <#> Int unit)
-
-         str :: Parser (Raw Expr)
-         str = stringLiteral <#> Str unit
+         lit :: Parser (Raw Expr)
+         lit = literal <#> Lit unit
 
          paragraph :: Parser (Raw Expr)
          paragraph = do
@@ -377,13 +414,38 @@ expr = context "expr" $ ternary <?> "expression"
          dict :: Parser (Raw Expr)
          dict = context "dict" do
             delim '{'
-            kvs <- fields (exprKey <|> varKey) expr
-            close '}'
-            pure $ Dictionary unit kvs
+            choice
+               [ do
+                    close '}'
+                    pure $ Dictionary unit Nil
+               , do
+                    k <- key
+                    delim ':'
+                    e <- expr
+                    choice
+                       [ context "dictNonEmpty" do
+                            delim ','
+                            rest <- fields key expr
+                            close '}'
+                            pure $ Dictionary unit ((k × e) : rest)
+                       , do
+                            close '}'
+                            pure $ Dictionary unit ((k × e) : Nil)
+                       , context "dictComp" do
+                            qs <- qualifiers
+                            close '}'
+                            pure $ DictComp unit k e qs
+                       , fail "Expected `}`"
+                       ]
+               , fail "Expected `}` or a dictionary entry after `{`"
+               ]
 
             where
+            key :: Parser (Raw DictEntry)
+            key = exprKey <|> varKey
+
             exprKey :: Parser (Raw DictEntry)
-            exprKey = defer \_ -> brackets ternary <#> ExprKey
+            exprKey = defer \_ -> brackets cond <#> ExprKey
 
             varKey :: Parser (Raw DictEntry)
             varKey = variable <#> VarKey unit
@@ -391,7 +453,7 @@ expr = context "expr" $ ternary <?> "expression"
          matrix :: Parser (Raw Expr)
          matrix = context "matrix" do
             delim "[|"
-            e <- ternary
+            e <- cond
             reserved "for"
             delim '('
             x <- variable
@@ -399,7 +461,7 @@ expr = context "expr" $ ternary <?> "expression"
             y <- variable
             delim ')'
             reserved "in"
-            e' <- ternary
+            e' <- cond
             delim "|]"
             pure $ Matrix unit e (x × y) e'
 
@@ -409,71 +471,63 @@ expr = context "expr" $ ternary <?> "expression"
             choice
                [ do
                     close ']'
-                    pure $ ListEmpty unit
+                    pure $ List unit Nil
                , do
-                    e <- ternary
+                    e <- cond
                     choice
-                       [ context "listNonEmpty" do
+                       [ context "list" do
                             delim ','
-                            rest <- trailingCommas ternary
+                            rest <- trailingCommas cond
                             close ']'
-                            pure $ ListNonEmpty unit e (foldr (Next unit) (End unit) rest)
+                            pure $ List unit (e : rest)
                        , do
                             close ']'
-                            pure $ ListNonEmpty unit e (End unit)
-                       , context "listEnum" do
-                            delim ".."
-                            e' <- ternary
-                            close ']'
-                            pure $ ListEnum e e'
-
+                            pure $ List unit (e : Nil)
                        , context "listComp" do
-                            qs <- many1 $ choice
-                               [ context "listCompGuard" do
-                                    reserved "if"
-                                    e' <- opTree
-                                    pure $ ListCompGuard e'
-                               , context "listCompDecl" do
-                                    reserved "def"
-                                    p <- pattern
-                                    delim ':'
-                                    e' <- opTree
-                                    pure $ ListCompDecl (VarDef p e')
-                               , context "listCompGen" do
-                                    reserved "for"
-                                    p <- pattern
-                                    reserved "in"
-                                    e' <- opTree
-                                    pure $ ListCompGen p e'
-                               ]
+                            qs <- qualifiers
                             close ']'
-                            pure $ ListComp unit e (toList qs)
+                            pure $ ListComp unit e qs
                        , fail "Expected `]"
                        ]
                , fail "Expected `]` or a list expression after `[`"
                ]
 
+         qualifiers :: Parser (List (Raw Qualifier))
+         qualifiers = toList <$> many1 (choice [ guard, decl, generator ])
+            where
+            guard = context "guard" do
+               reserved "if"
+               e <- opTree
+               pure $ Guard e
+
+            decl = context "decl" do
+               reserved "def"
+               p <- pattern
+               delim ':'
+               e <- opTree
+               pure $ Decl (VarDef p Nothing e)
+
+            generator = context "generator" do
+               reserved "for"
+               p <- pattern
+               reserved "in"
+               e <- opTree
+               pure $ Generator p e
+
          parensExpr :: Parser (Raw Expr)
          parensExpr = context "parens" do
             delim '('
+            e <- cond
             choice
                [ do
-                    op <- try (operator <* close ')')
-                    pure $ Op op
+                    close ')'
+                    pure e
                , do
-                    e <- ternary
-                    choice
-                       [ do
-                            close ')'
-                            pure e
-                       , do
-                            delim ','
-                            e' <- ternary
-                            close ')'
-                            pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
-                       , fail "Expected `)` or `,` after `(expr`"
-                       ]
-               , fail "Expected `op` or `expr` after `(`"
+                    delim ','
+                    e' <- cond
+                    close ')'
+                    pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
+               , fail "Expected `)` or `,` after `(expr`"
                ]
 
          docExpr :: Parser (Raw Expr)

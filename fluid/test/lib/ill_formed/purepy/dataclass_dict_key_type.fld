@@ -1,0 +1,7 @@
+from dataclasses import dataclass
+
+@dataclass
+class C:
+  d: dict[int, str]
+
+return 0

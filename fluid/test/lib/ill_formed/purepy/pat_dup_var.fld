@@ -1,0 +1,7 @@
+v = (1, 2)
+match v:
+   case (x, x):
+      y = x
+   case _:
+      y = 0
+y

@@ -1,0 +1,3 @@
+import math
+import fluid.prelude
+math.floor(2.7) + fluid.prelude.maximum([1, 2, 3])

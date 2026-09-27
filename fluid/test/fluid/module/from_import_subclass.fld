@@ -1,7 +1,0 @@
-from module.shape_lib import Derived
-d = Derived(1, 2)
-def total(v):
-   match v:
-      case Derived(x0, y0):
-         return x0 + y0
-total(d) + d.x + d.y

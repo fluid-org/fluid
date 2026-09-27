@@ -1,0 +1,6 @@
+def untaken():
+  assert False, "message not evaluated"
+
+x = 5
+assert x == 5, untaken()
+x
