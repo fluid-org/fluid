@@ -4,7 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"manifest": "node ../../fluid/script/manifest.mjs static",
+		"manifest": "yarn fluid manifest static",
 		"dev": "yarn manifest && vite dev",
 		"build": "yarn manifest && vite build",
 		"preview": "vite preview",

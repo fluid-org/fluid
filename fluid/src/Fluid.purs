@@ -3,10 +3,16 @@ module Fluid where
 import Prelude hiding (between)
 
 import Bind (Bind, (↦))
+import Data.Argonaut.Core (stringifyWithIndent)
+import Data.Argonaut.Encode (encodeJson)
 import Data.Array (filter)
+import Data.Array as Array
+import Data.Foldable (for_)
+import Data.List.Types (NonEmptyList)
+import Data.Set as Set
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
-import Data.String (Pattern(..), split, stripPrefix, stripSuffix, trim)
+import Data.Maybe (Maybe(..), maybe)
+import Data.String (Pattern(..), joinWith, split, stripPrefix, stripSuffix, trim)
 import Data.String as String
 import Data.Tuple (fst)
 import Effect (Effect)
@@ -14,11 +20,13 @@ import Effect.Aff (Aff, Error, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log, logShow)
 import Eval (graphEval)
-import File (File(..), Folder(..), emptyFileCxt, loadFile, withRoots)
+import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, withRoots)
 import Lattice (erase)
 import Module (prepConfig)
 import Module.Node (runNodeT)
-import Options.Applicative (Parser, command, execParser, fullDesc, header, help, helper, long, progDesc, short, strOption, subparser, switch, (<**>))
+import Node.Encoding (Encoding(..))
+import Node.FS.Aff (writeTextFile)
+import Options.Applicative (Parser, command, execParser, fullDesc, header, help, helper, long, metavar, progDesc, short, some, strArgument, strOption, subparser, switch, (<**>))
 import Options.Applicative.Builder (info)
 import Parse (parseProgram)
 import Pretty (prettyP)
@@ -31,7 +39,7 @@ data EvalArgs = EvalArgs
    , fluidSrcPath :: Folder
    }
 
-data Command = Evaluate EvalArgs | Parse_ EvalArgs
+data Command = Evaluate EvalArgs | Parse_ EvalArgs | Manifest (NonEmptyList String)
 
 between :: forall a. Pattern -> Pattern -> Endo (String -> Either String a)
 between p1 p2 f s =
@@ -59,16 +67,21 @@ parseEvaluate = ado
    fluidSrcPath <- Folder <$> strOption (long "fluid-src-path" <> short 'p' <> help "The path containing the program files")
    in EvalArgs { local, fileName, fluidSrcPath }
 
-commands :: { evaluate :: Parser Command, parse :: Parser Command }
+parseManifest :: Parser (NonEmptyList String)
+parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write manifests under"))
+
+commands :: { evaluate :: Parser Command, parse :: Parser Command, manifest :: Parser Command }
 commands =
    { evaluate: Evaluate <$> parseEvaluate
    , parse: Parse_ <$> parseEvaluate
+   , manifest: Manifest <$> parseManifest
    }
 
 commandParser :: Parser Command
 commandParser = subparser
    ( command "evaluate" (info commands.evaluate (progDesc "Evaluate a file"))
         <> command "parse" (info commands.parse (progDesc "Parse a file"))
+        <> command "manifest" (info commands.manifest (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
 dispatchCommand ∷ Command → Aff Unit
@@ -78,6 +91,7 @@ dispatchCommand (Evaluate p) = do
 dispatchCommand (Parse_ p) = do
    r <- parse p
    log r
+dispatchCommand (Manifest dirs) = for_ dirs (writeManifests <<< Folder)
 
 main :: Effect Unit
 main = runAff_ callback (dispatchCommand =<< liftEffect (execParser opts))
@@ -101,6 +115,22 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
       { e, gconfig } <- prepConfig fluidSrc
       { outα } <- graphEval gconfig e
       pure (erase outα)
+
+-- Manifest for dir and for each subdirectory with .fld files beneath it
+writeManifests :: Folder -> Aff Unit
+writeManifests root@(Folder dir) = do
+   files <- runNodeT emptyFileCxt (loadManifest root)
+   for_ (Set.insert Nothing (Set.fromFoldable (Set.toUnfoldable files >>= directories))) \sub -> do
+      let
+         strip (File path) = maybe (Just path) (\sub' -> stripPrefix (Pattern (sub' <> "/")) path) sub
+         paths = Array.mapMaybe strip (Set.toUnfoldable files)
+      writeTextFile UTF8 (dir <> maybe "" ("/" <> _) sub <> "/manifest.json") (stringifyWithIndent 2 (encodeJson paths) <> "\n")
+   where
+   -- proper prefixes of a path
+   directories :: File -> Array (Maybe String)
+   directories (File path) = Array.range 1 (Array.length segments - 1) <#> \n -> Just (joinWith "/" (Array.take n segments))
+      where
+      segments = split (Pattern "/") path
 
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPath }) = do
