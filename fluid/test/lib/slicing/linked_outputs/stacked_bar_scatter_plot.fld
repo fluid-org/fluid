@@ -8,7 +8,7 @@ def totalFor(year, country, rows):
   return ((row["nuclearOut"] + row["gasOut"]) + row["coalOut"]) + row["petrolOut"]
 
 def stack(year):
-  return [Segment(country, totalFor(year, country, nonRenewables)) for country in [
+  return [Segment(y=country, z=totalFor(year, country, nonRenewables)) for country in [
     "BRA",
     "EGY",
     "IND",
@@ -31,8 +31,8 @@ def plot(year, countries):
     x = head(filter(isCountry(country), nonRens))
     nonRensCap = ((x["nuclearCap"] + x["petrolCap"]) + x["gasCap"]) + x["coalCap"]
     return Point(
-      rensCap / (rensCap + nonRensCap),
-      (rensOut + x["nuclearOut"]) / (rensCap + x["nuclearCap"])
+      x=rensCap / (rensCap + nonRensCap),
+      y=(rensOut + x["nuclearOut"]) / (rensCap + x["nuclearCap"])
     )
 
   return map(plotCountry, countries)
@@ -40,10 +40,10 @@ def plot(year, countries):
 MultiView([
   BarChart(
     caption="Non-renewables by country",
-    size=Dimensions(275, 185),
-    tickLabels=TickLabels(Default, Default),
+    size=Dimensions(width=275, height=185),
+    tickLabels=TickLabels(x=Default, y=Default),
     stackedBars=
-      [StackedBar(num_to_str(year), stack(year)) for year in range(2014, 2019)],
+      [StackedBar(x=num_to_str(year), segments=stack(year)) for year in range(2014, 2019)],
     legend=True
   ),
   ScatterPlot(
@@ -51,6 +51,6 @@ MultiView([
       "Clean energy efficiency vs proportion of renewable energy capacity",
     points=
       plot(2018, [ "BRA", "CHN", "DEU", "FRA", "EGY", "IND", "JPN", "MEX", "NGA", "USA" ]),
-    labels=AxisLabels("Renewables/TotalEnergyCap", "Clean Capacity Factor")
+    labels=AxisLabels(x="Renewables/TotalEnergyCap", y="Clean Capacity Factor")
   )
 ])

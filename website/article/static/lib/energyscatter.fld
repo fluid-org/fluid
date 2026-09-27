@@ -18,8 +18,8 @@ def plot(year, countries):
     x = head(filter(isCountry(country), nonRens))
     nonRensCap = (x["nuclearCap"] + x["petrolCap"] + x["gasCap"]) + x["coalCap"]
     return Point(
-      rensCap / (rensCap + nonRensCap),
-      (rensOut + x["nuclearOut"]) / (rensCap + x["nuclearCap"])
+      x=rensCap / (rensCap + nonRensCap),
+      y=(rensOut + x["nuclearOut"]) / (rensCap + x["nuclearCap"])
     )
 
   return map(plotCountry, countries)
@@ -27,5 +27,5 @@ def plot(year, countries):
 ScatterPlot(
   caption="Clean energy efficiency vs. proportion of renewable energy capacity",
   points=plot(2018, [ "BRA", "CHN", "DEU", "FRA", "EGY", "IND", "JPN", "MEX", "NGA", "USA" ]),
-  labels=AxisLabels("Renewables/TotalEnergyCap", "Clean Capacity Factor")
+  labels=AxisLabels(x="Renewables/TotalEnergyCap", y="Clean Capacity Factor")
 )

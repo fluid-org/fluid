@@ -7,9 +7,9 @@ eval_scores = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
 
 def actions_by(key, keys):
-  return [ StackedBar(key_,
-      [ Segment(eval_score,
-          count_if(
+  return [ StackedBar(x=key_,
+      segments=[ Segment(y=eval_score,
+          z=count_if(
             lambda action:
               action[ key ] == key_ and action[ "Evaluation score" ] == eval_score,
             nap3_actions
@@ -19,9 +19,9 @@ def actions_by(key, keys):
 
 risks_ = { [r[ "ID#" ]]: r for r in ccra3_risks }
 
-actions_by_chapter = [ StackedBar(chapter,
-      [ Segment(eval_score,
-          count_if(
+actions_by_chapter = [ StackedBar(x=chapter,
+      segments=[ Segment(y=eval_score,
+          z=count_if(
             lambda action:
               risks_[ action[ "Risk ID#" ] ][ "Chapter" ] == chapter and
               action[ "Evaluation score" ] == eval_score,
@@ -58,7 +58,7 @@ def proportion(x, y):
 def max_with_score(actions, eval_score):
   return maximum([
     proportion(actions_with_score(action_counts, eval_score), total_actions(action_counts))
-    for StackedBar(_, action_counts) in actions
+    for StackedBar(x=_, segments=action_counts) in actions
   ])
 
 by_nat_env_and_infra = actions_by("Action Owner", nat_env_and_infra_depts)
@@ -72,15 +72,15 @@ MultiView([
   """,
   BarChart(
     caption="NAP3 actions by chapter",
-    size=Dimensions(275, 185),
-    tickLabels=TickLabels(Default, Default),
+    size=Dimensions(width=275, height=185),
+    tickLabels=TickLabels(x=Default, y=Default),
     stackedBars=actions_by_chapter,
     legend=False
   ),
   BarChart(
     caption="NAP3 actions by government department",
-    tickLabels=TickLabels(Rotated, Default),
-    size=Dimensions(275, 200),
+    tickLabels=TickLabels(x=Rotated, y=Default),
+    size=Dimensions(width=275, height=200),
     stackedBars=by_action_owner,
     legend=True
   ),
@@ -91,10 +91,10 @@ MultiView([
     sum([
       actions_with_score(action_counts, eval_score)
       for eval_score in [ "Fully addressed", "Minimally addressed" ]
-      for StackedBar(_, action_counts) in by_nat_env_and_infra
+      for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra
     ])
   } of {
-    sum([ total_actions(action_counts) for StackedBar(_, action_counts) in by_nat_env_and_infra])
+    sum([ total_actions(action_counts) for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra])
   } actions at least “minimally addressed.”
   In contrast, business and industry actions lagged sharply, with nearly half unaddressed or only nominally
   recognized—an institutional lapse in private-sector resilience. Defra (Environment, Food and Rural Affairs)

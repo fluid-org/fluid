@@ -6,11 +6,11 @@ def totalFor(c, rows):
   return sum([row["output"] for row in rows if row["country"] == c])
 
 data2015 = [row for row in renewables if row["year"] == 2015]
-countryData = [StackedBar(c, [Segment("output", totalFor(c, data2015))]) for c in ["China", "USA", "Germany"]]
+countryData = [StackedBar(x=c, segments=[Segment(y="output", z=totalFor(c, data2015))]) for c in ["China", "USA", "Germany"]]
 
 def series(energyType, country):
   return [
-    Point(row["year"], row["output"])
+    Point(x=row["year"], y=row["output"])
     for year in range(2013, 2019) for row in renewables
     if row["year"] == year if row["energyType"] == energyType if row["country"] == country
   ]
@@ -18,19 +18,19 @@ def series(energyType, country):
 MultiView([
   BarChart(
     caption="Total renewables output by country",
-    size=Dimensions(275, 185),
-    tickLabels=TickLabels(Default, Default),
+    size=Dimensions(width=275, height=185),
+    tickLabels=TickLabels(x=Default, y=Default),
     stackedBars=countryData,
     legend=True
   ),
   LineChart(
-    tickLabels=TickLabels(Default, Default),
-    size=Dimensions(330, 285),
+    tickLabels=TickLabels(x=Default, y=Default),
+    size=Dimensions(width=330, height=285),
     caption="Renewables output of USA relative to China",
     plots=[
      LinePlot(
        name=energyType,
-       points=zip_with(lambda p1, p2: Point(p1.x, p1.y / p2.y), usa, china)
+       points=zip_with(lambda p1, p2: Point(x=p1.x, y=p1.y / p2.y), usa, china)
      )
      for energyType in ["Bio", "Hydro", "Solar", "Wind"]
      for (usa, china) in [(series(energyType, "USA"), series(energyType, "China"))]

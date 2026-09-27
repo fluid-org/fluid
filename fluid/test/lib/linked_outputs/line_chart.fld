@@ -1,11 +1,11 @@
 from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default
 
 def series(type, country):
-  return [Point(row.year, row.output) for year in range(2013, 2019) for row in renewables if row.year == year if row.energyType == type if row.country == country]
+  return [Point(x=row.year, y=row.output) for year in range(2013, 2019) for row in renewables if row.year == year if row.energyType == type if row.country == country]
 
 LineChart(
-  tickLabels=TickLabels(Default, Default),
+  tickLabels=TickLabels(x=Default, y=Default),
   caption="Change in renewable energy output of USA relative to China",
-  size=Dimensions(330, 285),
-  plots=[LinePlot(name=type, points=plot) for type in ["Bio", "Hydro", "Solar", "Wind"] for plot in [zip_with(lambda p1, p2: Point(p1.x, p1.y / p2.y), series(type, "USA"), series(type, "China"))]]
+  size=Dimensions(width=330, height=285),
+  plots=[LinePlot(name=type, points=plot) for type in ["Bio", "Hydro", "Solar", "Wind"] for plot in [zip_with(lambda p1, p2: Point(x=p1.x, y=p1.y / p2.y), series(type, "USA"), series(type, "China"))]]
 )

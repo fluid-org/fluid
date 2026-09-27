@@ -7,9 +7,9 @@ eval_scores = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
 
 def actions_by(key, keys):
-  return [ StackedBar(key_,
-      [ Segment(eval_score,
-          count_if(
+  return [ StackedBar(x=key_,
+      segments=[ Segment(y=eval_score,
+          z=count_if(
             lambda action:
               action[ key ] == key_ and action[ "Evaluation score" ] == eval_score,
             nap3_actions
@@ -23,9 +23,9 @@ def percent(x, y):
   return 0 if y == 0 else x / y * 100
 
 def actions_by_chapter(owner):
-  return [ StackedBar(chapter,
-      [ Segment(eval_score,
-          def segment_risks: [
+  return [ StackedBar(x=chapter,
+      segments=[ Segment(y=eval_score,
+          z=def segment_risks: [
                risks_[ action["Risk ID#"] ]["Risk or Opportunity Descriptor"]
                for action in chapter_actions if action["Evaluation score"] == eval_score
              ]
@@ -64,8 +64,8 @@ MultiView([
 
   BarChart(
     caption="NAP3 actions assigned to DEFRA, by chapter",
-    size=Dimensions(275, 185),
-    tickLabels=TickLabels(Default, Default),
+    size=Dimensions(width=275, height=185),
+    tickLabels=TickLabels(x=Default, y=Default),
     stackedBars=actions_by_chapter("Defra"),
     legend=False
   ),
@@ -79,9 +79,9 @@ MultiView([
         sum([
           actions_with_score(action_counts, eval_score)
           for eval_score in [ "Fully addressed", "Minimally addressed" ]
-          for StackedBar(_, action_counts) in by_nat_env_and_infra
+          for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra
         ]),
-        sum([ total_actions(action_counts) for StackedBar(_, action_counts) in by_nat_env_and_infra])
+        sum([ total_actions(action_counts) for StackedBar(x=_, segments=action_counts) in by_nat_env_and_infra])
       )
     )
   }% of actions at least “minimally addressed.”
