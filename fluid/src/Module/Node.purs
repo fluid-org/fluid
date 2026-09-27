@@ -29,6 +29,7 @@ instance Monad m => LoadFile (NodeT m) where
       pure case stats of
          Right s | isDirectory s -> true
          _ -> false
+   loadManifest _ = pure Nothing
 
 newtype NodeT m a = NodeT (ReaderT FileCxt (StateT ModuleStore m) a)
 

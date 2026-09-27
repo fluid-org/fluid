@@ -17,7 +17,7 @@ import Data.Tuple (uncurry)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
-import File (File(..), FileCxt(..), Folder(..), loadFileFromPath)
+import File (File(..), FileCxt(..), Folder(..), loadFileFromPath, loadManifests)
 import Graph (DVertex'(..))
 import Module.Web (runWebT)
 import Util (definitely, definitely', error, (×))
@@ -58,7 +58,8 @@ loadFigureSrc options divId fluidSrc = runAffs_ (uncurry drawFig)
         Left err -> error ("JSON decoding failed with " <> show err)
         Right spec -> do
            let figSpec@{ fluidSrcPaths } = optionsFromJson spec
-           (divId × _) <$> runWebT (FileCxt { fluidSrcPaths, classes: Map.empty }) (loadFig figSpec fluidSrc)
+           manifests <- loadManifests fluidSrcPaths
+           (divId × _) <$> runWebT (FileCxt { fluidSrcPaths, manifests, classes: Map.empty }) (loadFig figSpec fluidSrc)
    ]
 
 loadCode :: String -> Effect Unit

@@ -97,7 +97,7 @@ srcPaths local fluidSrcPath = [ fluidSrcPath ] <> if local then [ Folder "node_m
 evaluate :: EvalArgs -> Aff (Val Unit)
 evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = srcPaths local fluidSrcPath
-   runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
+   runNodeT (FileCxt { fluidSrcPaths, manifests: Map.empty, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       { e, gconfig } <- prepConfig fluidSrc
       { outα } <- graphEval gconfig e
@@ -106,7 +106,7 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = srcPaths local fluidSrcPath
-   runNodeT (FileCxt { fluidSrcPaths, classes: Map.empty }) $ do
+   runNodeT (FileCxt { fluidSrcPaths, manifests: Map.empty, classes: Map.empty }) $ do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       case (parseProgram fluidSrc) of
          Left err -> pure err

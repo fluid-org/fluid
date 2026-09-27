@@ -60,6 +60,7 @@ misc_cases =
    , { file: "name_var.fld", fwd_expect: "\"__main__\"" }
    , { file: "namespace_deep.fld", fwd_expect: "3" }
    , { file: "namespace_from_import.fld", fwd_expect: "1" }
+   , { file: "namespace_from_import_package.fld", fwd_expect: "1" }
    , { file: "namespace_import.fld", fwd_expect: "1" }
    , { file: "parent_after_child.fld", fwd_expect: "5" }
    , { file: "parent_uses_child.fld", fwd_expect: "6" }
