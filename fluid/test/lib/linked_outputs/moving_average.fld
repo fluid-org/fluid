@@ -7,7 +7,7 @@ def nthPad(n, xs):
 def movingAvg(ys, window):
   return [sum([nthPad(n, ys) for n in range(i - window, i + window + 1)]) / (1 + 2 * window) for i in range(0, length(ys))]
 def movingAvg_(rs, window):
-  return zip_with(lambda x, y: Point(x=x, y=y), map(lambda p: p.x, rs), movingAvg(map(lambda p: p.y, rs), window))
+  return zip_with(lambda x, y: Point(x, y), map(lambda p: p.x, rs), movingAvg(map(lambda p: p.y, rs), window))
 
 points = [Point(x=r["year"], y=r["emissions"]) for r in methane if r["type"] == "Agriculture"]
 
