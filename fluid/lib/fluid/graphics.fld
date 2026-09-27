@@ -273,7 +273,7 @@ def axis(orient, x, start, end):
   ys = concat2(ys, [last_tick]) if last_tick > end else ys
   ps = map(mk_point(orient, x), ys)
   ax = Group([
-      Line(head(ps), last(ps), axis_colour, axis_stroke_width),
+      Line(ps[0], ps[-1], axis_colour, axis_stroke_width),
       Polymarkers(ps, flip(map, ys, compose(labelled_tick(orient, axis_colour, tick_length), num_to_str)))
     ])
 
@@ -286,7 +286,7 @@ def cat_axis(orient, x, cat_values):
   ps = map(mk_point(orient, x), ys)
 
   return Group([
-    Line(head(ps), last(ps), axis_colour, axis_stroke_width),
+    Line(ps[0], ps[-1], axis_colour, axis_stroke_width),
     Polymarkers(tail(ps), map(const(tick(orient, axis_colour, tick_length)), cat_values)),
     Polymarkers(flip(map, tail(ps), lambda Point(x, y): Point(x - 0.5, y)), map(label(orient, -0.5, 0), cat_values))
   ])
@@ -300,11 +300,11 @@ def viewport(x_start, x_finish, y_finish, margin, gs):
 # Bool -> Colours -> Float -> List (Float, List (Cat, Float)) -> GraphicsElement
 def line_chart(with_axes, colours, x_start, data):
   xs = map(fst, data)
-  n_cat = len(snd(head(data)))
+  n_cat = len(snd(data[0]))
 
   # (Int, Colour) -> GraphicsElement
   def plot((n, colour)):
-    ps = map(lambda (x, kvs): Point(x, snd(nth(n, kvs))), data)
+    ps = map(lambda (x, kvs): Point(x, snd(kvs[n])), data)
 
     return Group([
       Polyline(ps, colour, 1),
@@ -313,7 +313,7 @@ def line_chart(with_axes, colours, x_start, data):
 
   # List GraphicsElement
   lines = zip_with(curry(plot), iterate(n_cat, lambda x: 1 + x, 0), colours)
-  x_finish = last(xs)
+  x_finish = xs[-1]
   y_finish = maximum(flip(map, data, lambda (_, kvs): maximum(map(snd, kvs))))
 
   if with_axes:
@@ -348,7 +348,7 @@ def stacked_bar(colours, ns):
   dims = zip([0] + subtotals, heights)
   rects = map(lambda ((y, height), colour): Rect(x=0, y=y, width=1, height=height, fill=colour), zip(dims, colours))
 
-  return Viewport(x=0, y=0, width=1, height=last(subtotals), fill="none", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=Group(rects))
+  return Viewport(x=0, y=0, width=1, height=subtotals[-1], fill="none", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=Group(rects))
 
 # Bool -> Colours -> Float -> List (a, Float) -> GraphicsElement
 bar_chart = categorical_chart(rects)

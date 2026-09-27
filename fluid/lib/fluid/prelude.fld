@@ -129,10 +129,6 @@ def prod(f, g, x):
 def swap((a, b)):
   return (b, a)
 
-# List a -> a
-def head(xs):
-  return xs[0]
-
 # List a -> List a
 def tail(xs):
   return [xs[i] for i in range(1, len(xs))]
@@ -192,10 +188,16 @@ def span(p, xs):
 # Each returned list is non-empty.
 # (a -> a -> Bool) -> List a -> List (List a)
 def group_by(eq, xs):
-  if len(xs) == 0:
-    return []
-  { init: ys, rest: zs } = span(eq(xs[0]), tail(xs))
-  return [[xs[0]] + ys] + group_by(eq, zs)
+  def go(i):
+    if i == len(xs):
+      return []
+    def run(j):
+      if j < len(xs) and eq(xs[i], xs[j]):
+        return run(j + 1)
+      return j
+    j = run(i + 1)
+    return [slice(i, j, xs)] + go(j)
+  return go(0)
 
 # (a -> b -> a) -> a -> List b -> a
 def foldl(op, z, xs):
@@ -260,7 +262,7 @@ def intersperse(xs, sep):
 def iterate(n, f, z):
   if n == 0:
     return []
-  return [z] + map(f, iterate(n - 1, f, z))
+  return [z] + iterate(n - 1, f, f(z))
 
 def sum(xs: list[int | float]) -> int | float:
   return foldr(lambda x, y: x + y, 0, xs)
@@ -268,10 +270,6 @@ def sum(xs: list[int | float]) -> int | float:
 def mean(xs: list[int | float]) -> float:
   (s, n) = foldl(lambda (s, n), x: (s + x, n + 1), (0, 0), xs)
   return s / n
-
-# List a -> a
-def last(xs):
-  return xs[-1]
 
 # List a -> List a
 def reversed(xs):
@@ -288,18 +286,6 @@ def take(n, xs):
 # Int -> List a -> List a
 def drop(n, xs):
   return [xs[i] for i in range(max(n, 0), len(xs))]
-
-# Int -> List a -> List a
-def last_n(n, xs):
-  return foldl(compose(const, drop(1)), xs, drop(n, xs))
-
-# Int -> List a -> a
-def nth(n, xs):
-  return xs[n]
-
-# Int -> Int -> List (List Int) -> Int
-def nth2(i, j, xss):
-  return nth(j, nth(i, xss))
 
 # Partial; requires k to be in the map.
 # Int -> List (Int, b) -> b

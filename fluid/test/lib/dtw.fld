@@ -28,8 +28,8 @@ def extractPath(indmatrix, (n, m), accum):
     return extractPath(indmatrix, indmatrix[n, m], [(n - 1, m - 1)] + accum)
 
 def localMinUpdate(seq1, seq2, cost, (costmatrix, indmatrix), (i, j)):
-  iEntr = nth(i, seq1)
-  jEntr = nth(j, seq2)
+  iEntr = seq1[i]
+  jEntr = seq2[j]
   dist = cost(iEntr, jEntr)
   ip = i + 1
   jp = j + 1

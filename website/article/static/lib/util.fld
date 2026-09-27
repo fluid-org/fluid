@@ -1,9 +1,9 @@
 def insert(lt, x, ys):
-  if len(ys) == 0:
-    return [x]
-  if x |lt| ys[0]:
-    return [x] + ys
-  return [ys[0]] + insert(lt, x, tail(ys))
+  def go(i):
+    if i == len(ys) or x |lt| ys[i]:
+      return take(i, ys) + [x] + drop(i, ys)
+    return go(i + 1)
+  return go(0)
 
 def insertionSort(lt, lst):
   return foldl(lambda sorted, x: insert(lt, x, sorted), [], lst)

@@ -1,7 +1,7 @@
 from fluid.graphics import colours1, line_chart, caption
 from dataset.renewables_restricted import data
 
-year1 = head(data)
+year1 = data[0]
 
 def addTotal(kvs):
   return [("Total", sum(map(snd, kvs)))] + kvs

@@ -15,7 +15,7 @@ def plot(year, countries):
     rens_ = filter(isCountry(country), rens)
     rensOut = sum(map(lambda x: x["output"], rens_))
     rensCap = sum(map(lambda x: x["capacity"], rens_))
-    x = head(filter(isCountry(country), nonRens))
+    x = filter(isCountry(country), nonRens)[0]
     nonRensCap = ((x["nuclearCap"] + x["petrolCap"]) + x["gasCap"]) + x["coalCap"]
 
     return Point(
