@@ -275,10 +275,6 @@ def mean(xs: list[int | float]) -> float:
 def reversed(xs):
   return [xs[len(xs) - 1 - i] for i in range(0, len(xs))]
 
-# Int -> a -> List a
-def repeat(n, x):
-  return [x] * n
-
 # Int -> List a -> List a
 def take(n, xs):
   return [xs[i] for i in range(0, min(n, len(xs)))]
@@ -329,10 +325,6 @@ def range(n, m):
   if n < m:
     return [n] + range(n + 1, m)
   return []
-
-# (Int, Int) -> (Int, Int) -> List (Int, Int)
-def range2d((m1, n1), (m2, n2)):
-  return [(i1, i2) for i1 in range(m1, m2) for i2 in range(n1, n2)]
 
 def abs(x):
   return -x if x < 0 else x

@@ -16,7 +16,7 @@ def extend(m, n, image):
 
 def matrix_sum(matr):
   (m, n) = dims(matr)
-  return foldl(lambda x, y: x + y, 0, [matr[i, j] for (i, j) in range2d((0, 0), (m, n))])
+  return sum([matr[i, j] for i in range(0, m) for j in range(0, n)])
 
 def convolve(image, kernel, lookup):
   ((m, n), (i, j)) = (dims(image), dims(kernel))
