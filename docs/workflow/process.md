@@ -108,6 +108,7 @@ No undo for GitHub Projects v2 field mutations.
 - **Issue bodies**: do not hard-wrap paragraphs; GitHub markdown flows them, hard wraps render as ragged short lines. Code fences: omit language tag rather than guess.
 - **See also footer**: when an issue references other issues or external resources, end with a `## See also` paragraph listing them as bullets. Bare `#N` links render the issue title inline.
 - **New issues**: add to [project board](https://github.com/orgs/fluid-org/projects/1) and populate **Status** (usually `Proposed` for new work) and **Aspect**. Also set Type, labels, and milestone when appropriate.
+- **Board Status**: read with `script/issue-status.sh <issue>`, set with `script/issue-status.sh <issue> <Status>` (adds the issue to the board if absent). Never `gh project item-list`, which fetches the whole board and trips the GraphQL rate limit. Closing an issue does not change its Status: set `Done` or `Rejected` explicitly.
 - **Labels**: use existing labels (`implementation`, `testing`, `setup`, `documentation`).
 - **Milestones**: all issues must belong to milestone.
 - **Issue bodies**: keep checklist items updated.

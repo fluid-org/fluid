@@ -20,7 +20,7 @@ def getByScenario(data, scenario):
 probAsText = likelihood_map(likelihoods)
 
 def mean(xs):
-  return sum(xs) / length(xs)
+  return sum(xs) / len(xs)
 
 def calcLikelihood((min, max), target):
   if max < target:

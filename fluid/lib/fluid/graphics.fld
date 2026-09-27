@@ -174,7 +174,7 @@ def height(g):
 
 # Float -> Float -> List GraphicsElement -> List GraphicsElement
 def space_right(z, sep, gs):
-  return zip_with(set_x, iterate(length(gs), lambda x: sep + x, z), gs)
+  return zip_with(set_x, iterate(len(gs), lambda x: sep + x, z), gs)
 
 # Bake colour decisions into the library for the time being. Provide two palettes, so we can have two
 # different sets of categorical values (e.g. countries and energy types). Palettes from colorbrewer2.org
@@ -217,7 +217,7 @@ def stack_right(sep, gs):
 
 # Float -> List GraphicsElement -> GraphicsElement
 def group_right(sep, gs):
-  return Viewport(x=0, y=0, width=length(gs), height=maximum(map(height, gs)), fill="none", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=Group(stack_right(sep, gs)))
+  return Viewport(x=0, y=0, width=len(gs), height=maximum(map(height, gs)), fill="none", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=Group(stack_right(sep, gs)))
 
 # Heuristic saying how often to place a tick on an axis of length n.
 # Float -> Float
@@ -282,7 +282,7 @@ def axis(orient, x, start, end):
 # x is position of this axis on the other axis.
 # Orient -> Float -> List Cat -> GraphicsElement
 def cat_axis(orient, x, cat_values):
-  ys = iterate(length(cat_values) + 1, lambda x: 1 + x, 0)
+  ys = iterate(len(cat_values) + 1, lambda x: 1 + x, 0)
   ps = map(mk_point(orient, x), ys)
 
   return Group([
@@ -300,7 +300,7 @@ def viewport(x_start, x_finish, y_finish, margin, gs):
 # Bool -> Colours -> Float -> List (Float, List (Cat, Float)) -> GraphicsElement
 def line_chart(with_axes, colours, x_start, data):
   xs = map(fst, data)
-  n_cat = length(snd(head(data)))
+  n_cat = len(snd(head(data)))
 
   # (Int, Colour) -> GraphicsElement
   def plot((n, colour)):
@@ -308,7 +308,7 @@ def line_chart(with_axes, colours, x_start, data):
 
     return Group([
       Polyline(ps, colour, 1),
-      Polymarkers(ps, repeat(length(ps), Circle(x=0, y=0, radius=marker_radius, fill=colour)))
+      Polymarkers(ps, repeat(len(ps), Circle(x=0, y=0, radius=marker_radius, fill=colour)))
     ])
 
   # List GraphicsElement
@@ -326,7 +326,7 @@ def line_chart(with_axes, colours, x_start, data):
 # (Colours -> List a -> GraphicsElement) -> Bool -> Colours -> Float -> List (Cat, a) -> GraphicsElement
 def categorical_chart(plot_value, with_axes, colours, sep, data):
   gs = stack_right(sep, plot_value(colours, map(snd, data)))
-  w = length(gs)
+  w = len(gs)
   h = maximum(map(height, gs))
 
   if with_axes:

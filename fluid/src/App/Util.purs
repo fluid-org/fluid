@@ -2,7 +2,7 @@ module App.Util where
 
 import Prelude hiding (absurd, join)
 
-import Bind (Bind, Var, (↦))
+import Bind (Bind, (↦))
 import Control.Apply (lift2)
 import Data.Array (concat)
 import Data.Either (Either(..))
@@ -29,7 +29,6 @@ import Primitive as P
 import Test.Util.Debug (tracing)
 import Unsafe.Coerce (unsafeCoerce)
 import Util (type (×), Endo, definitely', error, shapeMismatch, spyWhen, (×))
-import Util.Map (get)
 import Val (class Highlightable, Val, highlightIf)
 import Web.Event.Event (Event, EventType(..), target, type_)
 import Web.Event.EventTarget (EventTarget)
@@ -159,8 +158,8 @@ primaryOrSecondary selType x x' = lift2 as𝕊 <$> (getSel selType <$> x) <*> x'
 unselected :: SelStates 𝔹
 unselected = SelStates $ Reactive { persistent: false, transient: false }
 
-get_intOrNumber :: Var -> Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> Selectable Number
-get_intOrNumber x r = first as (unpack' intOrNumber (snd (get x r)))
+unpackIntOrNumber :: Val (SelStates 𝕊) -> Selectable Number
+unpackIntOrNumber v = first as (unpack' intOrNumber v)
 
 -- Assumes fields are all of primitive type.
 dict :: forall a. (Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> a) -> Val (SelStates 𝕊) -> a

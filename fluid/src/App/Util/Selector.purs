@@ -9,7 +9,7 @@ import Data.List.NonEmpty (last)
 import Data.Newtype (over)
 import Data.Profunctor.Strong (first, second)
 import Data.Tuple (fst) as T
-import DataType (FieldIndex, FieldName, cCons, cJust, cNil, f_segments, f_z)
+import DataType (FieldIndex, FieldName, cCons, cJust, cNil, cSegment, cStackedBar, f_segments, f_z)
 import Lattice (class Neg, 𝔹, neg)
 import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, error, unsafeUpdateAt, (!), (×))
@@ -51,12 +51,12 @@ just = constr (last cJust)
 
 type ConstrArg = Name -> FieldName -> SelSetter Val Val
 
-barSegment :: Int -> Int -> SelSetter Val Val
-barSegment i j =
-   nthSegment j >>> dictVal f_segments >>> listElement i
+barSegment :: ConstrArg -> Int -> Int -> SelSetter Val Val
+barSegment arg i j =
+   nthSegment arg j >>> arg cStackedBar f_segments >>> listElement i
 
-nthSegment :: Int -> SelSetter Val Val
-nthSegment n = dictVal f_z >>> listElement n
+nthSegment :: ConstrArg -> Int -> SelSetter Val Val
+nthSegment arg n = arg cSegment f_z >>> listElement n
 
 matrixElement :: Int -> Int -> SelSetter Val Val
 matrixElement i j δv (Val α doc (Matrix r)) =

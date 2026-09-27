@@ -86,9 +86,6 @@ def compare(x, y):
 def on(bin_op, prop, x, y):
   return bin_op(prop(x), prop(y))
 
-def negate(x: int | float) -> int | float:
-  return -x
-
 # Log of x in base y.
 def log_base(x: float, y: float) -> float:
   return log(y) / log(x)
@@ -134,7 +131,7 @@ def fst((x, _)):
   return x
 
 # a -> a
-def id(x):
+def identity(x):
   return x
 
 # (a -> b) -> (a -> c) -> a -> (b, c)
@@ -157,12 +154,6 @@ def tail([]):
   assert False, "Can't take tail of empty list"
 def tail(_ :| xs):
   return xs
-
-# Eq a => a -> List a -> Bool
-def elem(x, []):
-  return False
-def elem(x, y :| xs):
-  return x == y or elem(x, xs)
 
 # (a -> Bool) -> List a -> Option a
 def find(p, []):
@@ -290,10 +281,6 @@ def concat2(x :| xs, ys):
 # List (List a) -> List a
 concat = foldr(concat2, [])
 
-# (a -> List b) -> List a -> List b
-def concat_map(f, xs):
-  return concat(map(f, xs))
-
 # List String -> String
 join = foldr(lambda x, y: x + y, "")
 
@@ -323,20 +310,14 @@ def last([x]):
 def last(x :| y :| ys):
   return last(y :| ys)
 
-# List a -> Int
-def length([]):
-  return 0
-def length(_ :| xs):
-  return 1 + length(xs)
-
 # List a -> List a
-def reverse([]):
+def reversed([]):
   return []
-def reverse(x :| xs):
-  return append((reverse(xs), [x]))
+def reversed(x :| xs):
+  return append((reversed(xs), [x]))
 
 # Int -> a -> List a
-repeat = flip(iterate, id)
+repeat = flip(iterate, identity)
 
 # Int -> List a -> List a
 def take(n, xs):
@@ -412,7 +393,7 @@ def zip_with(op, x :| xs, y :| ys):
   return op(x, y) :| zip_with(op, xs, ys)
 
 # List a -> List b -> List (a, b)
-zip = zip_with(curry(id))
+zip = zip_with(curry(identity))
 
 # Int -> Int -> List Int
 def range(n, m):
@@ -424,16 +405,15 @@ def range(n, m):
 def range2d((m1, n1), (m2, n2)):
   return [(i1, i2) for i1 in range(m1, m2) for i2 in range(n1, n2)]
 
-# Int -> Int -> Int
-def abs(x, y):
-  return negate(x - y) if x - y < 0 else x - y
+def abs(x):
+  return -x if x < 0 else x
 
 # Eq a => [a] -> [a]
 def nub(xs):
   def nub_([], _):
     return []
   def nub_(x :| xs, ys):
-    if x |elem| ys:
+    if x in ys:
       return nub_(xs, ys)
     return x :| nub_(xs, x :| ys)
 
@@ -446,7 +426,7 @@ def slice(begin, end, xs):
 # (a -> Boolean) -> List a -> (List a, List a)
 def split_on(p, data):
   def go(fls, trs, []):
-    return (reverse(fls), reverse(trs))
+    return (reversed(fls), reversed(trs))
   def go(fls, trs, x :| xs):
     if p(x):
       return go(fls, x :| trs, xs)

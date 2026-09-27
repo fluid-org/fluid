@@ -5,7 +5,7 @@ def nextIndices(n, m, window):
 
 def costMatrixInit(rows, cols, window):
   def initV(n, m):
-    if (n == 0 and m == 0) or (abs(n, m) <= window and not(n == 0 or m == 0)):
+    if (n == 0 and m == 0) or (abs(n - m) <= window and not(n == 0 or m == 0)):
       return FNum(0)
     else:
       return Infty
@@ -42,8 +42,8 @@ def localMinUpdate(seq1, seq2, cost, (costmatrix, indmatrix), (i, j)):
   return (matrixUpdate(costmatrix, (ip, jp), newVal), matrixUpdate(indmatrix, (ip, jp), prev))
 
 def computeDTW(seq1, seq2, cost, window):
-  n = length(seq1)
-  m = length(seq2)
+  n = len(seq1)
+  m = len(seq2)
   initD = costMatrixInit(n + 1, m + 1, window)
   initI = [| 0 for (i, j) in (n + 1, m + 1) |]
   indexing = nextIndices(n, m, window)

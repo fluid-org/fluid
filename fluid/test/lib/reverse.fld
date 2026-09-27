@@ -1,1 +1,1 @@
-reverse([1, 2])
+reversed([1, 2])

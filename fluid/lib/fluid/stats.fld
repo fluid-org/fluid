@@ -18,13 +18,13 @@ def merge(xs, ys):
       return y :| merge(xs, ys_)
 
 def mergesort(xs):
-  if length(xs) < 2:
+  if len(xs) < 2:
     return xs
   (ys, zs) = split(xs)
   return merge(mergesort(ys), mergesort(zs))
 
 def find_quantile(q, p, xs):
-  rank = (p / q) * (length(xs) - 1)
+  rank = (p / q) * (len(xs) - 1)
 
   if rank == floor(rank):
     return nth(rank, xs)
@@ -58,10 +58,10 @@ def qcut(xs, qs):
   return accum_bins(xs, edges)
 
 def likelihood_le(xs, target):
-  return length(filter(lambda x: x <= target, xs)) / length(xs)
+  return len(filter(lambda x: x <= target, xs)) / len(xs)
 
 def likelihood_ge(xs, target):
-  return length(filter(lambda x: x >= target, xs)) / length(xs)
+  return len(filter(lambda x: x >= target, xs)) / len(xs)
 
 def likelihood_map(table, prob):
   return from_just(find(lambda x: x["prob"] <= prob, table))["msg"]
