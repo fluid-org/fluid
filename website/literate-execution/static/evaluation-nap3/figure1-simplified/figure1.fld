@@ -31,8 +31,8 @@ def actions_by_chapter(owner):
              ]
              percent(
                 @doc(f"""risk descriptors contribute to this segment: { join(intersperse(nub(segment_risks), ", ")) }.""")
-                length(segment_risks),
-                length(chapter_actions)
+                len(segment_risks),
+                len(chapter_actions)
              )
         ) for eval_score in eval_scores  ])
     for chapter in ["3", "4", "5", "6", "7"]
@@ -57,7 +57,7 @@ by_nat_env_and_infra = actions_by("Action Owner", nat_env_and_infra_depts)
 MultiView([
   f"""
   Climate Change Risk Assessment (CCRA3) identified {
-    length(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
+    len(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
   } risks/opportunities for the UK;
   this report evaluates extent to which NAP3 commitments actually address them.
   """,

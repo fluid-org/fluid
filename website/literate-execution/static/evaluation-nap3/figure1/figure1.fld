@@ -66,7 +66,7 @@ by_nat_env_and_infra = actions_by("Action Owner", nat_env_and_infra_depts)
 MultiView([
   f"""
   Climate Change Risk Assessment (CCRA3) identified {
-    length(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
+    len(nub([ risk[ "Risk or Opportunity Descriptor" ] for risk in ccra3_risks ]))
   } risks/opportunities for the UK;
   this report evaluates extent to which NAP3 commitments actually address them.
   """,

@@ -3,9 +3,9 @@ from dataset.methane_emissions import methane
 from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Rotated
 
 def nthPad(n, xs):
-  return nth(min(max(n, 0), length(xs) - 1), xs)
+  return nth(min(max(n, 0), len(xs) - 1), xs)
 def movingAvg(ys, window):
-  return [sum([nthPad(n, ys) for n in range(i - window, i + window + 1)]) / (1 + 2 * window) for i in range(0, length(ys))]
+  return [sum([nthPad(n, ys) for n in range(i - window, i + window + 1)]) / (1 + 2 * window) for i in range(0, len(ys))]
 def movingAvg_(rs, window):
   return zip_with(lambda x, y: Point(x, y), map(lambda p: p.x, rs), movingAvg(map(lambda p: p.y, rs), window))
 

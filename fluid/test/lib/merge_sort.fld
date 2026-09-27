@@ -16,7 +16,7 @@ def merge(xs, ys):
       return y :| merge(xs, ys_)
 
 def mergesort(xs):
-  if length(xs) < 2:
+  if len(xs) < 2:
     return xs
   (ys, zs) = split(xs)
   return merge(mergesort(ys), mergesort(zs))

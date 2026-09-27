@@ -12,7 +12,7 @@ def stack(year):
   return [Segment(y=country, z=totalFor(year, country)) for country in countries]
 
 def yearData(year):
-  return [row for row in nonRenewables if row["year"] == year if row["country"] |elem| countries]
+  return [row for row in nonRenewables if row["year"] == year if row["country"] in countries]
 
 MultiView([
   BarChart(
