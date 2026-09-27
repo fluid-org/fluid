@@ -71,7 +71,7 @@ export const main = async () => {
    ])
 
    await testURL("moving-average", [
-      async page => await waitFor(page, "svg")
+      async page => await waitFor(page, "#fig .linechart-point")
    ])
 
    await testURL("non-renewables", [

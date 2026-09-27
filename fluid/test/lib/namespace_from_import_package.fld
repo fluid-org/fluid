@@ -1,0 +1,2 @@
+from ns import a
+a.z

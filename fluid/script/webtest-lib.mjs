@@ -134,8 +134,15 @@ export async function checkWidthApprox(page, selector, expected, tolerance = 5) 
    testOutcome(pass, `${selector}: width ≈ ${expected}${pass ? "" : ` (got ${Math.round(box.width)})`}`)
 }
 
+// No figure still loading; loadFigure removes the placeholder after hydration
+const READY = "body:not(:has(.fig-loading))"
+
+export async function waitForReady(page) {
+   await waitFor(page, READY)
+}
+
 export async function clickToggle(page) {
-   await waitFor(page, "body.app-ready")
+   await waitForReady(page)
    await waitFor(page, "#grid.data-pane-hidden")
    const toggle = "button[title='Show data pane']"
    await waitFor(page, toggle)
@@ -157,7 +164,9 @@ async function browserTests(url, browserName, viewport, tests) {
    await page.setViewport(viewport)
    for (const test of tests) {
       await page.goto(url)
+      await waitForReady(page)
       await test(page)
+      await waitForReady(page)
    }
    await page.close()
    if (browserErrors.length) testOutcome(false, `browser error(s): ${browserErrors.join("; ")}`)

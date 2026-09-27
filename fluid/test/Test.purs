@@ -3,16 +3,15 @@ module Test.Test where
 import Prelude
 
 import Control.Monad.Error.Class (class MonadError)
-import Control.Monad.Reader (class MonadReader, local)
+import Control.Monad.Reader (class MonadReader)
 import DataType (class HasClasses)
 import Val (class HasModuleStore)
 import Data.Array (concat, filter, elem)
-import Data.Map as Map
 import Data.Profunctor.Strong (second)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import File (class LoadFile, FileCxt(..), Folder(..))
+import File (class LoadFile, FileCxt, Folder(..), emptyFileCxt, withRoots)
 import Module.Web (runWebT)
 import Test.Specs.Bwd (bwd_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
@@ -29,7 +28,7 @@ import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, link
 import Util ((×))
 
 main :: Effect Unit
-main = run (second (runWebT (FileCxt { fluidSrcPaths, classes: Map.empty })) <$> tests)
+main = run (second (runWebT emptyFileCxt <<< withRoots fluidSrcPaths) <$> tests)
 
 tests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
 tests = allTests
@@ -48,9 +47,7 @@ linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => Ha
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
 illFormedTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> underRoots [ Folder "test/lib/predefined" ] (illFormedSuite shadow_cases)
-   where
-   underRoots roots = map (second (local (\(FileCxt cxt) -> FileCxt cxt { fluidSrcPaths = cxt.fluidSrcPaths <> roots })))
+illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> (second (withRoots [ Folder "test/lib/predefined" ]) <$> illFormedSuite shadow_cases)
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)

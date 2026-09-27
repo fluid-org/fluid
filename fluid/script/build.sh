@@ -6,3 +6,4 @@ rm -rf dist/
 . script/util/clean.sh test
 . script/util/bundle.sh test Test.Test
 ./script/bundle-fluid.sh
+yarn fluid manifest lib test
