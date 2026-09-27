@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Project-board Status of an issue: issue-status.sh <issue> prints it, issue-status.sh <issue> <Status> sets it.
-# Queries the issue's own project items; listing the board costs enough GraphQL points to trip the rate limit.
+# Queries the project items of the issue; listing the board costs enough GraphQL points to trip the rate limit.
 set -e
 
 ISSUE="$1"
