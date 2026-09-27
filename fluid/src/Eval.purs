@@ -181,7 +181,7 @@ eval doc_opt ρ e0 αs = do
                   withMsg "Dict lookup" $ snd <$> lookup s d # orElse ("Key \"" <> s <> "\" not found")
                Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected str"
                Val _ _ (V.List vs), Val _ _ (V.Lit (Int i)) ->
-                  withMsg "List index" $ vs A.!! (if i < 0 then A.length vs + i else i) # orElse ("Index " <> show i <> " out of range")
+                  vs A.!! (if i < 0 then A.length vs + i else i) # orElse ("List index " <> show i <> " out of range")
                Val _ _ (V.List _), _ -> throw $ "Found " <> prettyP (unit <$ v') <> ", expected int"
                Val _ _ (V.Matrix r), Val _ _ (V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil)) | c == cPair ->
                   pure (matrixGet i j r)
