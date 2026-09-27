@@ -111,11 +111,11 @@ operatorApp n (UnOp op s) =
    n' = prec (Unary op)
 operatorApp _ e = prettySimple e
 
--- Generator sources and guards are disjunctions
-prettyDisjunction :: forall a. Ann a => Expr a -> Doc
-prettyDisjunction s@(Cond _ _ _) = parens (pretty s)
-prettyDisjunction s@(Lambda _) = parens (pretty s)
-prettyDisjunction s = pretty s
+-- Conditional or lambda in a qualifier needs parentheses
+prettyQualifierExpr :: forall a. Ann a => Expr a -> Doc
+prettyQualifierExpr s@(Cond _ _ _) = parens (pretty s)
+prettyQualifierExpr s@(Lambda _) = parens (pretty s)
+prettyQualifierExpr s = pretty s
 
 infixApp :: forall a. Ann a => Int -> Operator -> Expr a -> Doc -> Expr a -> Doc
 infixApp n op s sym s' =
@@ -163,8 +163,8 @@ instance Ann a => Pretty (Expr a) where
 instance Ann a => Pretty (List (Qualifier a)) where
    pretty (Cons (Decl (VarDef v _ s)) Nil) =
       text "def" <+> pretty v <> text ":" <+> pretty s
-   pretty (Cons (Guard s) Nil) = text "if" <+> prettyDisjunction s
-   pretty (Cons (Generator p s) Nil) = text "for" <+> pretty p <+> text "in" <+> prettyDisjunction s
+   pretty (Cons (Guard s) Nil) = text "if" <+> prettyQualifierExpr s
+   pretty (Cons (Generator p s) Nil) = text "for" <+> pretty p <+> text "in" <+> prettyQualifierExpr s
    pretty (Cons q qs) = pretty (singleton q) <+> pretty qs
    pretty Nil = empty
 
