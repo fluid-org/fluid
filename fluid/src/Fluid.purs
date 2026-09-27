@@ -5,7 +5,6 @@ import Prelude hiding (between)
 import Bind (Bind, (↦))
 import Data.Array (filter)
 import Data.Either (Either(..))
-import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), split, stripPrefix, stripSuffix, trim)
 import Data.String as String
@@ -15,7 +14,7 @@ import Effect.Aff (Aff, Error, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log, logShow)
 import Eval (graphEval)
-import File (File(..), FileCxt(..), Folder(..), loadFile)
+import File (File(..), Folder(..), emptyFileCxt, loadFile, withRoots)
 import Lattice (erase)
 import Module (prepConfig)
 import Module.Node (runNodeT)
@@ -97,7 +96,7 @@ srcPaths local fluidSrcPath = [ fluidSrcPath ] <> if local then [ Folder "node_m
 evaluate :: EvalArgs -> Aff (Val Unit)
 evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = srcPaths local fluidSrcPath
-   runNodeT (FileCxt { fluidSrcPaths, manifests: Map.empty, classes: Map.empty }) $ do
+   runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       { e, gconfig } <- prepConfig fluidSrc
       { outα } <- graphEval gconfig e
@@ -106,7 +105,7 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = srcPaths local fluidSrcPath
-   runNodeT (FileCxt { fluidSrcPaths, manifests: Map.empty, classes: Map.empty }) $ do
+   runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       case (parseProgram fluidSrc) of
          Left err -> pure err

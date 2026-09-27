@@ -9,5 +9,5 @@ output-es/
 artifact/*.tar.gz
 # Staging output of script/stage-website.sh, which copies ../website/article here for npm packaging.
 website/
-lib/manifest.json
-test/lib/**/manifest.json
+lib/**/manifest.json
+test/**/manifest.json

@@ -31,7 +31,7 @@ module.exports = function (config) {
             nocache: false
          },
          {
-            pattern: "./lib/manifest.json",
+            pattern: "./lib/**/manifest.json",
             watched: true,
             included: false,
             served: true,

@@ -10,14 +10,13 @@ import Data.Argonaut.Decode (decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError)
 import Data.Array (head, last)
 import Data.Either (Either(..))
-import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String (split, Pattern(..))
 import Data.Tuple (uncurry)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
-import File (File(..), FileCxt(..), Folder(..), loadFileFromPath, loadManifests)
+import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Graph (DVertex'(..))
 import Module.Web (runWebT)
 import Util (definitely, definitely', error, (×))
@@ -58,8 +57,7 @@ loadFigureSrc options divId fluidSrc = runAffs_ (uncurry drawFig)
         Left err -> error ("JSON decoding failed with " <> show err)
         Right spec -> do
            let figSpec@{ fluidSrcPaths } = optionsFromJson spec
-           manifests <- loadManifests fluidSrcPaths
-           (divId × _) <$> runWebT (FileCxt { fluidSrcPaths, manifests, classes: Map.empty }) (loadFig figSpec fluidSrc)
+           (divId × _) <$> runWebT emptyFileCxt (withRoots fluidSrcPaths (loadFig figSpec fluidSrc))
    ]
 
 loadCode :: String -> Effect Unit

@@ -4,7 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"manifest": "node ../../fluid/script/manifest.mjs static/lib static/ar6-wg1/spm/figure4b static/ar6-wg1/spm/table1 static/ar6-wg1/ts/figure12 static/evaluation-nap3",
+		"manifest": "node ../../fluid/script/manifest.mjs static",
 		"dev": "yarn manifest && vite dev",
 		"build": "yarn manifest && vite build",
 		"preview": "vite preview",
