@@ -167,14 +167,6 @@ def filter(p, xs):
 def filter_map(p, xs):
   return [y for x in xs for Just(y) in [p(x)]]
 
-# Equivalent to but more efficient than length ∘ filter(p)
-def count_if(p):
-  def f(n, x):
-    if p(x):
-      return n + 1
-    return n
-  return foldl(f, 0)
-
 # Split list into longest initial segment whose elements satisfy a predicate, and the rest.
 # (a -> Bool) -> List a -> { init :: List a, rest :: List a }
 def span(p, xs):
@@ -238,18 +230,6 @@ def scanl(op, z, xs):
 def map(f, xs):
   return [f(x) for x in xs]
 
-# (List a, List a) -> List a
-def append((xs, ys)):
-  return xs + ys
-
-# List a -> List -> List a
-def concat2(xs, ys):
-  return xs + ys
-
-# List (List a) -> List a
-def concat(xss):
-  return [x for xs in xss for x in xs]
-
 # List String -> String
 def join(xs):
   return foldr(lambda x, y: x + y, "", xs)
@@ -308,10 +288,6 @@ def maximum(xs):
 def minimum(xs):
   return foldr1(min, xs)
 
-# List (a, b) -> (List a, List b)
-def unzip(zs):
-  return ([x for (x, _) in zs], [y for (_, y) in zs])
-
 # (a -> b -> c) -> List a -> List b -> List c
 def zip_with(op, xs, ys):
   return [op(xs[i], ys[i]) for i in range(0, min(len(xs), len(ys)))]
@@ -340,7 +316,3 @@ def nub(xs):
 # Int -> Int -> [a] -> [a]
 def slice(begin, end, xs):
   return take(end - begin, drop(begin, xs))
-
-# (a -> Boolean) -> List a -> (List a, List a)
-def split_on(p, data):
-  return ([x for x in data if not p(x)], [x for x in data if p(x)])

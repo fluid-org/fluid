@@ -9,11 +9,9 @@ eval_scores = [ "Significantly addressed", "Recognised but not addressed",
 def actions_by(key, keys):
   return [ StackedBar(x=key_,
       segments=[ Segment(y=eval_score,
-          z=count_if(
-            lambda action:
-              action[ key ] == key_ and action[ "Evaluation score" ] == eval_score,
-            nap3_actions
-          )) for eval_score in eval_scores
+          z=len([ action for action in nap3_actions
+            if action[ key ] == key_ and action[ "Evaluation score" ] == eval_score
+          ])) for eval_score in eval_scores
       ]) for key_ in keys
   ]
 

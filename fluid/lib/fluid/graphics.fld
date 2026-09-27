@@ -270,7 +270,7 @@ def axis(orient, x, start, end):
   n = floor((end - first_tick) / tick_sp) + 1
   ys = iterate(n, lambda x: tick_sp + x, first_tick)
   ys = [start] + ys if first_tick > start else ys
-  ys = concat2(ys, [last_tick]) if last_tick > end else ys
+  ys = ys + [last_tick] if last_tick > end else ys
   ps = map(mk_point(orient, x), ys)
   ax = Group([
       Line(ps[0], ps[-1], axis_colour, axis_stroke_width),
@@ -332,7 +332,7 @@ def categorical_chart(plot_value, with_axes, colours, sep, data):
   if with_axes:
     x_axis = cat_axis(Horiz, 0, map(fst, data))
     (y_axis, h_) = axis(Vert, 0, 0, h)
-    return viewport(0, w, h_, default_margin, concat2(gs, [x_axis, y_axis]))
+    return viewport(0, w, h_, default_margin, gs + [x_axis, y_axis])
   return viewport(0, w, h, 0, gs)
 
 # Colours -> List a -> GraphicsElement
