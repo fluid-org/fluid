@@ -251,13 +251,14 @@ vertices2 :: forall a. Ord a => Val a -> Val a -> Set a
 vertices2 (Val α _ _) (Val β _ _) = Set.fromFoldable [ α, β ]
 
 repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
-repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × repeatDeps α n β
+repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
+   where
+   deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
 repeatList :: forall a. Ord a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
-repeatList vs α n β = List (A.concat (replicate n vs)) × repeatDeps α n β
-
-repeatDeps :: forall a. Ord a => a -> Int -> a -> Set a
-repeatDeps α n β = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+repeatList vs α n β = List (A.concat (replicate n vs)) × deps
+   where
+   deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
 unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
 unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
