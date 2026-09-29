@@ -18,10 +18,10 @@ def findIndex(fName, x, ys):
   return go(0)
 
 def find_with_key_(fName, x, table):
-  return from_just(find_with_key(fName, x, table))
+  return [r for r in table if r[fName] == x][0]
 
 def findWhere(pred, table):
-  return from_just(find(pred, table))
+  return [r for r in table if pred(r)][0]
 
 def model(m, t):
   return find_with_key_("model", m, t)

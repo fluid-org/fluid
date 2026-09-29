@@ -1,5 +1,5 @@
-match Just(1):
-   case Nothing:
+match Pair(1, 2):
+   case Pair:
       pass
-   case Just(x):
+   case Pair(x, _):
       pass

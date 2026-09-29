@@ -15,7 +15,7 @@ def newDataTable(offset):
   }, tableData)
 
 def getByScenario(data, scenario):
-  return from_just(find_with_key("scenario", scenario, data))
+  return [r for r in data if r["scenario"] == scenario][0]
 
 probAsText = likelihood_map(likelihoods)
 
