@@ -127,20 +127,17 @@ infixApp n op s sym s' =
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
    pretty (Lit α ℓ) = highlightIf α (pretty ℓ)
-   pretty (Constr α c Nil Nil) = highlightIf α (text (dottedName c))
-   pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
-   pretty (Constr α c es xes) =
-      highlightIf α (text (dottedName c) <> parens (commas ((pretty <$> es) <> ((\(x ↦ e) -> text x <> text "=" <> pretty e) <$> xes))))
+   pretty (Call α (Var c) (e : e' : Nil) Nil) | c == last cPair = highlightIf α (pair pretty e e')
+   pretty (Call α e es xes) =
+      highlightIf α (expr $ prettySimple e <> parens (commas ((pretty <$> es) <> ((\(x ↦ e') -> text x <> text "=" <> pretty e') <$> xes))))
    pretty (Dictionary α Nil) = highlightIf α (text "{}")
    pretty (Dictionary α es) = highlightIf α (expr $ record $ map pretty es)
    pretty (Matrix α e (x × y) e') =
       highlightIf α (expr $ matrix (pretty e <+> text "for" <+> pair text x y <+> text "in" <+> pretty e'))
    pretty (Lambda c) = pretty c
    pretty (Attribute s x) = expr $ prettySimple s <> text "." <> text x
-   pretty (ModMember q x) = expr $ text (dottedName q) <> text "." <> text x
-   pretty (Subscript e (Constr _ c (k : k' : Nil) Nil)) | last c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
+   pretty (Subscript e (Call _ (Var c) (k : k' : Nil) Nil)) | c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
    pretty (Subscript e k) = expr $ prettySimple e <> brackets (expr $ pretty k)
-   pretty (App s ss) = expr $ prettySimple s <> parens (prettyList ss)
    pretty e@(BinOp _ _ _) = expr $ operatorApp 0 e
    pretty e@(UnOp _ _) = expr $ operatorApp 0 e
    pretty e@(And _ _) = expr $ operatorApp 0 e
@@ -179,7 +176,6 @@ instance Pretty Pattern where
    pretty (PVar x) = text x
    pretty PWild = text "_"
    pretty (PRecord xps) = record $ map pretty xps
-   pretty (PConstr c Nil Nil) = text (dottedName c)
    pretty (PConstr c ps Nil) = prettyConstr (dottedName c) ps
    pretty (PConstr c ps xps) =
       text (dottedName c) <> parens (commas ((pretty <$> ps) <> ((\(x ↦ p) -> text x <> text "=" <> pretty p) <$> xps)))
@@ -253,7 +249,7 @@ instance Pretty Literal where
    pretty None = text "None"
 
 instance Ann a => Pretty (Clause a) where
-   pretty (Clause _ (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
+   pretty (Clause (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
 
 instance Pretty Param where
    pretty (Param p ψ) = pretty p <> annot ψ
@@ -294,7 +290,6 @@ instance Ann a => Pretty (ParagraphElem a) where
 
 prettyConstr :: forall a. RootOp a => IsSimple a => Pretty a => Ctr -> List a -> Doc
 prettyConstr "Pair" (x : y : Nil) = pair pretty x y
-prettyConstr c Nil = text c
 prettyConstr c ps = text c <> parens (prettyList ps)
 
 commas :: List Doc -> Doc

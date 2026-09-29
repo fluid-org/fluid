@@ -1,35 +1,35 @@
-def comp(Infty, Infty):
-  return EQ
-def comp(Infty, FNum(y)):
-  return GT
-def comp(FNum(x), Infty):
-  return LT
+def comp(Infty(), Infty()):
+  return EQ()
+def comp(Infty(), FNum(y)):
+  return GT()
+def comp(FNum(x), Infty()):
+  return LT()
 def comp(FNum(x), FNum(y)):
   return compare(x, y)
 
 def fmin(x, y):
   match comp(x, y):
-    case LT:
+    case LT():
       return x
-    case EQ:
+    case EQ():
       return x
-    case GT:
+    case GT():
       return y
 
 minimal = foldl1(fmin)
 
-def add(Infty, _):
-  return Infty
-def add(FNum(x), Infty):
-  return Infty
+def add(Infty(), _):
+  return Infty()
+def add(FNum(x), Infty()):
+  return Infty()
 def add(FNum(x), FNum(y)):
   return FNum(x + y)
 
-def eq(Infty, Infty):
+def eq(Infty(), Infty()):
   return True
-def eq(Infty, FNum(x)):
+def eq(Infty(), FNum(x)):
   return False
-def eq(FNum(x), Infty):
+def eq(FNum(x), Infty()):
   return False
 def eq(FNum(x), FNum(y)):
   return x == y

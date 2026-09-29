@@ -1,6 +1,6 @@
 module DataType where
 
-import Prelude hiding (absurd)
+import Prelude
 
 import Bind (Name, Var, dottedName, qual)
 import ModuleGraph (prelude)
@@ -10,53 +10,20 @@ import Control.Monad.Reader.Trans (ReaderT)
 import Control.Monad.State.Trans (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer.Trans (WriterT)
-import Data.CodePoint.Unicode (isUpper)
-import Data.Function (on)
 import Data.List (List(..), elemIndex, (:))
 import Data.List as List
 import Data.List.NonEmpty (NonEmptyList(..)) as NE
 import Data.NonEmpty ((:|))
 import Data.Map as Map
 import Data.Array (last) as A
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String (Pattern(..), split)
-import Data.String.CodePoints (codePointFromChar)
-import Data.String.CodeUnits (charAt)
-import DefiniteAssignment (ClassEntry, classFor, fields)
-import Dict (Dict, fromFoldable)
+import DefiniteAssignment (ClassEntry, fields)
 import Effect.Exception (Error)
-import Util (type (×), absurd, definitely, definitely', error, throw, whenever, (×))
-import Util.Map (lookup)
+import Util (definitely, throw)
 
-type TypeName = String
 type FieldName = String
 type Ctr = String -- newtype would require more general Dict keys
-
--- Distinguish constructors from identifiers syntactically, a la Haskell. In particular this is useful
--- for distinguishing pattern variables from nullary constructors when parsing patterns.
-isCtrName ∷ Var → Boolean
-isCtrName str = let c = definitely' $ charAt 0 str in isUpper (codePointFromChar c) || c == '_'
-
-isCtrOp :: String -> Boolean
-isCtrOp str = ':' == (definitely' $ charAt 0 str)
-
-showCtr :: Var -> String
-showCtr c
-   | isCtrName c = c
-   | isCtrOp c = "(" <> c <> ")"
-   | otherwise = error absurd
-
-data DataType = DataType TypeName (Dict CtrSig)
-type CtrSig = Int
-
-typeName :: DataType -> TypeName
-typeName (DataType name _) = name
-
-instance Eq DataType where
-   eq = eq `on` typeName
-
-instance Show DataType where
-   show = typeName
 
 type ClassTable = Map.Map Ctr ClassEntry -- keyed by fully-qualified name
 
@@ -75,45 +42,19 @@ instance (Monad m, HasClasses m) => HasClasses (ExceptT e m) where
 instance (Monad m, HasClasses m, Monoid w) => HasClasses (WriterT w m) where
    askClasses = lift askClasses
 
--- FQN of the base of a class, resolved through its declaring context.
-baseOf :: ClassEntry -> Maybe Ctr
-baseOf cls = (dottedName <<< _.name) <$> (cls.base >>= classFor cls.cxt)
-
--- Root of the hierarchy containing c.
-rootOf :: ClassTable -> Ctr -> Ctr
-rootOf classes c = case Map.lookup c classes >>= baseOf of
-   Just b -> rootOf classes b
-   Nothing -> c
-
-isLeaf :: ClassTable -> Ctr -> Boolean
-isLeaf classes c = List.all (\cls -> baseOf cls /= Just c) (Map.values classes)
-
--- A datatype is a dataclass hierarchy, named by its root; every class belongs to the datatype of its
--- hierarchy. Its constructors are the leaves: non-leaf classes are not constructable/matchable (#1530).
-dataType :: ClassTable -> Ctr -> Maybe DataType
-dataType classes c = Map.lookup c classes $> DataType root (fromFoldable sigs)
-   where
-   root = rootOf classes c
-   sigs = (Map.toUnfoldable classes :: List (Ctr × ClassEntry)) # List.mapMaybe
-      \(c' × cls) -> whenever (rootOf classes c' == root && isLeaf classes c') (c' × List.length (fields cls))
-
 fieldsOf :: ClassTable -> Ctr -> Maybe (List Var)
 fieldsOf classes c = Map.lookup c classes <#> fields
 
-classEntry :: forall m. MonadError Error m => ClassTable -> Ctr -> m ClassEntry
-classEntry classes c = maybe (throw $ "Unknown dataclass: " <> showCtr (simpleName c)) pure (Map.lookup c classes)
+classEntry :: forall m. MonadError Error m => Ctr -> ClassTable -> m ClassEntry
+classEntry c classes = maybe (throw $ "Unknown dataclass: " <> simpleName c) pure (Map.lookup c classes)
 
--- Datatype of c and c's signature within it; a non-leaf class has no signature (#1530).
-ctrSig :: forall m. MonadError Error m => ClassTable -> String -> Ctr -> m (DataType × CtrSig)
-ctrSig classes verb c = do
-   d@(DataType _ sigs) <- classEntry classes c $> definitely' (dataType classes c)
-   n <- maybe (throw $ "Cannot " <> verb <> " non-leaf class: " <> showCtr (simpleName c)) pure (lookup c sigs)
-   pure (d × n)
+arity :: forall m. MonadError Error m => Ctr -> ClassTable -> m Int
+arity c classes = List.length <<< fields <$> classEntry c classes
 
-checkArity :: forall m. MonadError Error m => ClassTable -> String -> Ctr -> Int -> m Unit
-checkArity classes verb c n = do
-   _ × n' <- ctrSig classes verb c
-   when (n' /= n) $ throw $ showCtr (simpleName c) <> " arity " <> show n' <> "; got " <> show n
+checkArity :: forall m. MonadError Error m => Ctr -> Int -> ClassTable -> m Unit
+checkArity c n classes = do
+   n' <- arity c classes
+   when (n' /= n) $ throw $ simpleName c <> " arity " <> show n' <> "; got " <> show n
 
 type FieldIndex = Name -> FieldName -> Int
 

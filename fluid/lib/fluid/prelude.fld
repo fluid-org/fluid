@@ -63,10 +63,10 @@ class Infty(InfNum):
 # Int -> Int -> Ordering
 def compare(x, y):
   if x > y:
-    return GT
+    return GT()
   if x < y:
-    return LT
-  return EQ
+    return LT()
+  return EQ()
 
 # (b -> b -> c) -> (a -> b) -> a -> a -> c
 def on(bin_op, prop, x, y):
@@ -137,7 +137,7 @@ def tail(xs):
 def find(p, xs):
   def go(i):
     if i == len(xs):
-      return Nothing
+      return Nothing()
     if p(xs[i]):
       return Just(xs[i])
     return go(i + 1)
@@ -148,13 +148,13 @@ def find_with_key(k, v, rs):
   return find(lambda y: y[k] == v, rs)
 
 # Option a -> a
-def from_just(Nothing):
+def from_just(Nothing()):
   assert False, "Expected Just!"
 def from_just(Just(x)):
   return x
 
 # Option a -> a -> a
-def from_maybe(Nothing, y):
+def from_maybe(Nothing(), y):
   return y
 def from_maybe(Just(x), _):
   return x
@@ -269,7 +269,7 @@ def lookup(k, kvs):
   match find(lambda (k_, _): k == k_, kvs):
     case Just((_, v)):
       return v
-    case Nothing:
+    case Nothing():
       assert False, "Key not found in map"
 
 # Int -> Int -> Int

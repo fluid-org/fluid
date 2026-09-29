@@ -1,0 +1,5 @@
+match Just(1):
+   case Nothing:
+      pass
+   case Just(x):
+      pass

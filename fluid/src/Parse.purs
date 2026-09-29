@@ -23,7 +23,7 @@ import DataType (cPair)
 import Lattice (Raw)
 import Literal (Literal(..))
 import Parse.Number (float, integer)
-import Parse.Parser (Parser, align, block, braces, brackets, close, commas, constructor, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
+import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, many, many1, option, optionMaybe, sepBy1, try, (<?>))
 import Parsing.Expr (Operator(..)) as P
@@ -44,22 +44,18 @@ pattern = defer \_ -> do
 simplePattern :: Parser Pattern
 simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    where
-   pVar :: Parser Pattern
-   pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
-
    pLit :: Parser Pattern
    pLit = literal <#> PLit
 
+   pVar :: Parser Pattern
+   pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
+
    pConstr :: Parser Pattern
-   pConstr = defer \_ -> try do
-      prefix <- many (try (variable <* delim '.'))
-      c <- constructor
-      args <- option Nil (parens (commas constrArg))
-      let
-         name = foldr cons (singleton c) prefix
-         positionals = takeLefts args
-         kws = takeRights args
-      pure $ PConstr name positionals kws
+   pConstr = defer \_ -> do
+      q <- try (qualifiedName <* delim '(')
+      args <- commas constrArg
+      delim ')'
+      pure $ PConstr q (takeLefts args) (takeRights args)
       where
       constrArg :: Parser (Pattern + Bind Pattern)
       constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> simplePattern)
@@ -109,22 +105,14 @@ typeExpr = defer \_ -> do
    pure (foldl T.Union ψ ψs)
    where
    typeAtom :: Parser (T.TypeExpr Name)
-   typeAtom = defer \_ -> constrType <|> varType
+   typeAtom = defer \_ -> (reserved "None" $> T.Primitive T.None) <|> (qualifiedName >>= namedType)
 
-   constrType :: Parser (T.TypeExpr Name)
-   constrType = do
-      prefix <- many (try (variable <* delim '.'))
-      c <- constructor
-      case prefix, c of
-         Nil, "Never" -> pure (T.Primitive T.Never)
-         Nil, "None" -> pure (T.Primitive T.None)
-         Nil, "Sized" -> pure (T.Primitive T.Sized)
-         Nil, "Callable" -> brackets (T.Callable <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
-         Nil, "Literal" -> T.Lit <$> brackets literal
-         _, _ -> pure (T.ClassName (foldr cons (singleton c) prefix))
-
-   varType :: Parser (T.TypeExpr Name)
-   varType = variable >>= case _ of
+   namedType :: Name -> Parser (T.TypeExpr Name)
+   namedType (NonEmptyList (x :| Nil)) = case x of
+      "Never" -> pure (T.Primitive T.Never)
+      "Sized" -> pure (T.Primitive T.Sized)
+      "Callable" -> brackets (T.Callable <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
+      "Literal" -> T.Lit <$> brackets literal
       "object" -> pure (T.Primitive T.Object)
       "bool" -> pure (T.Primitive T.Bool)
       "int" -> pure (T.Primitive T.Int)
@@ -133,20 +121,17 @@ typeExpr = defer \_ -> do
       "list" -> T.List <$> brackets typeExpr
       "tuple" -> T.Tuple <$> brackets (commas typeExpr)
       "dict" -> brackets (reserved "str" *> delim ',' *> (T.Dict <$> typeExpr))
-      x -> fail ("Not a type: " <> x)
+      _ -> pure (T.ClassName (singleton x))
+   namedType q = pure (T.ClassName q)
 
 literal :: Parser Literal
 literal =
    try (float <#> Float)
       <|> (integer <#> Int)
       <|> (stringLiteral <#> Str)
-      <|> try
-         ( constructor >>= case _ of
-              "True" -> pure (Bool true)
-              "False" -> pure (Bool false)
-              "None" -> pure None
-              c -> fail ("Not a literal: " <> c)
-         )
+      <|> (reserved "True" $> Bool true)
+      <|> (reserved "False" $> Bool false)
+      <|> (reserved "None" $> None)
 
 varDef :: Parser (Raw VarDef)
 varDef = do
@@ -236,8 +221,8 @@ dataclassStmt :: Parser (Raw Stmt)
 dataclassStmt = do
    decorator "dataclass"
    reserved "class"
-   c <- constructor
-   b <- optionMaybe (parens constructor)
+   c <- variable
+   b <- optionMaybe (parens variable)
    let
       fieldDecl = do
          x <- variable
@@ -257,7 +242,7 @@ recDefs = many1 recDef
       delim ')'
       ψ <- optionMaybe (reservedOperator "->" *> typeExpr)
       s <- blockBody
-      pure $ f × Clause unit (ps × ψ × s)
+      pure $ f × Clause (ps × ψ × s)
 
    param :: Parser Param
    param = Param <$> pattern <*> optionMaybe (delim ':' *> typeExpr)
@@ -318,22 +303,17 @@ expr = context "expr" $ cond <?> "expression"
                k <- cond
                k' <- optionMaybe (delim ',' *> cond)
                close ']'
-               chain (Subscript e (maybe k (\k2 -> Constr unit (singleton (last cPair)) (k : k2 : Nil) Nil) k'))
+               chain (Subscript e (maybe k (\k2 -> pair k k2) k'))
 
             app :: Parser (Raw Expr)
             app = do
                delim '('
-               e' <- case e of
-                  Constr a c es Nil -> do
-                     args <- commas constrArg
-                     pure $ Constr a c (es <> takeLefts args) (takeRights args)
-                  _ -> do
-                     App e <$> commas cond
+               args <- commas arg
                close ')'
-               chain e'
+               chain (Call unit e (takeLefts args) (takeRights args))
                where
-               constrArg :: Parser (Raw Expr + Bind (Raw Expr))
-               constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)
+               arg :: Parser (Raw Expr + Bind (Raw Expr))
+               arg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)
 
                kwArg :: Parser (Bind (Raw Expr))
                kwArg = defer \_ -> do
@@ -359,7 +339,6 @@ expr = context "expr" $ cond <?> "expression"
             <|> dict
             <|> paragraph
             <|> lit
-            <|> constr
             <|> var
             <|> parensExpr
             <|> docExpr
@@ -376,12 +355,6 @@ expr = context "expr" $ cond <?> "expression"
 
          var :: Parser (Raw Expr)
          var = variable <#> Var
-
-         constr :: Parser (Raw Expr)
-         constr = try do
-            prefix <- many (try (variable <* delim '.'))
-            c <- constructor
-            pure (Constr unit (foldr cons (singleton c) prefix) Nil Nil)
 
          lit :: Parser (Raw Expr)
          lit = literal <#> Lit unit
@@ -526,7 +499,7 @@ expr = context "expr" $ cond <?> "expression"
                     delim ','
                     e' <- cond
                     close ')'
-                    pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
+                    pure $ pair e e'
                , fail "Expected `)` or `,` after `(expr`"
                ]
 
@@ -554,11 +527,20 @@ import_ = importAll <|> fromImport
       reserved "from"
       q <- modPath
       reserved "import"
-      xs <- sepBy1 (variable <|> constructor) (delim ',')
+      xs <- sepBy1 variable (delim ',')
       pure $ Import q (Just (toList xs))
 
 modPath :: Parser Name
 modPath = sepBy1 variable (delim '.')
+
+pair :: Raw Expr -> Raw Expr -> Raw Expr
+pair e e' = Call unit (Var (last cPair)) (e : e' : Nil) Nil
+
+qualifiedName :: Parser Name
+qualifiedName = do
+   prefix <- many (try (variable <* delim '.'))
+   x <- variable
+   pure (foldr cons (singleton x) prefix)
 
 importName :: Import -> Name
 importName (Import q _) = q

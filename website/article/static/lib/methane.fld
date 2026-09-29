@@ -7,7 +7,7 @@ def series(type):
 
 LineChart(
   size=Dimensions(width=450, height=285),
-  tickLabels=TickLabels(x=Rotated, y=Default),
+  tickLabels=TickLabels(x=Rotated(), y=Default()),
   caption=
     "Sources of methane emissions for Africa and the Middle East (IPCC AR6)",
   plots=

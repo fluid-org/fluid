@@ -19,7 +19,7 @@ import Parsing.Combinators (between, sepBy, sepBy1, sepEndBy, skipMany, try, (<?
 import Parsing.Combinators.Array (many)
 import Parsing.Indent (IndentParser, checkIndent, sameOrIndented, withPos)
 import Parsing.String (char, satisfy, string)
-import Parsing.String.Basic (alphaNum, letter, lower, upper)
+import Parsing.String.Basic (alphaNum, letter)
 import Parsing.Token (oneOf)
 import Util (type (×), (×))
 
@@ -58,7 +58,7 @@ instance Parseable Char where
    parse = char
 
 keywords :: Array String
-keywords = [ "and", "as", "assert", "case", "class", "def", "else", "for", "from", "if", "import", "in", "lambda", "match", "not", "or", "pass", "return" ]
+keywords = [ "False", "None", "True", "and", "as", "assert", "case", "class", "def", "else", "for", "from", "if", "import", "in", "lambda", "match", "not", "or", "pass", "return" ]
 
 context :: forall a. String -> Parser a -> Parser a
 context s p = do
@@ -100,10 +100,7 @@ unreserved p = do
    else pure name
 
 variable :: Parser String
-variable = unreserved $ identifier (lower <|> char '_') (alphaNum <|> char '_')
-
-constructor :: Parser String
-constructor = unreserved $ identifier upper (alphaNum <|> char '_')
+variable = unreserved $ identifier (letter <|> char '_') (alphaNum <|> char '_')
 
 reserved :: String -> Parser Unit
 reserved expected = try do

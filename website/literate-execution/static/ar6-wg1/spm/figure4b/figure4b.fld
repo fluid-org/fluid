@@ -13,7 +13,7 @@ def mkBarChart(scenName, table):
   return BarChart(
     caption="Scenario " + scenName,
     size=Dimensions(width=275, height=185),
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     stackedBars=
       map(lambda record: StackedBar(x=record["type"], segments=[Segment(y="emissions", z=record["emissions"])]), table),
     legend=True
@@ -25,7 +25,7 @@ def mkHistogram(xs, name, nbins):
   return BarChart(
     caption="Histogram of distribution of " + name,
     size=Dimensions(width=275, height=185),
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     stackedBars=
       map(lambda (data, edge): StackedBar(x=data, segments=[Segment(y="density", z=len(data) / binWidth)]), cut(xs, nbins)),
     legend=True

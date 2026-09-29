@@ -17,7 +17,6 @@ import Data.Set as Set
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import DataType (class HasClasses, ClassTable)
-import Desugarable (desug)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (GraphConfig, evalImport, load)
@@ -31,8 +30,7 @@ import Lattice (Raw)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
-import SExpr (desugarModule)
-import DefiniteAssignment (Cxt, Entry(..), WfResult(..), erase)
+import DefiniteAssignment (Cxt, Entry(..), erase)
 import Primitive.Defs (predefined)
 import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
@@ -140,19 +138,16 @@ prepConfig
 prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
    mods <- parseModules imports
-   { cxt: cxt_wf, s: s_wf, loaded } <- orThrow (checkProgram mods (fst <$> predefined) imports s)
+   { cxt: cxt_wf, s: e, loaded } <- orThrow (checkProgram mods (fst <$> predefined) imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
-      desugaredMods <- traverse (\m -> (unit <$ _) <$> desugarModule (Returns <$ m)) (Map.mapMaybe _.mod loaded)
-      n × ρ <- allocTopLevel desugaredMods imports
+      n × ρ <- allocTopLevel (Map.mapMaybe _.mod loaded) imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
       { moduleEnv } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
          when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q ->
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": members match its environment")
-      e_wf <- desug s_wf
-      let e = (unit <$ e_wf) :: Raw Stmt
       let gconfig = { n, ρ: restrict (fv e) ρ, classes }
       pure { s, e, gconfig }
 

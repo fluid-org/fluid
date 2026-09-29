@@ -41,7 +41,7 @@ MultiView([
   BarChart(
     caption="Non-renewables by country",
     size=Dimensions(width=275, height=185),
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     stackedBars=
       [StackedBar(x=num_to_str(year), segments=stack(year)) for year in range(2014, 2019)],
     legend=True

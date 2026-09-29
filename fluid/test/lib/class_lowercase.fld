@@ -1,0 +1,18 @@
+from dataclasses import dataclass
+
+@dataclass
+class point:
+   x: int
+   y: int
+
+@dataclass
+class origin:
+   pass
+
+def norm(p):
+   match p:
+      case point(x, y):
+         return x + y
+
+mk = lambda x: point(x, x)
+[norm(point(1, 2)), norm(mk(3)), norm(point(y=4, x=5)), origin()]

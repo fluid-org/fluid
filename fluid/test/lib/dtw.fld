@@ -8,7 +8,7 @@ def costMatrixInit(rows, cols, window):
     if (n == 0 and m == 0) or (abs(n - m) <= window and not(n == 0 or m == 0)):
       return FNum(0)
     else:
-      return Infty
+      return Infty()
   return [| initV(n, m) for (n, m) in (rows, cols) |]
 
 def minAndPrev((i, j), im1, jm1, ijm1):

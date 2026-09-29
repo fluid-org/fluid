@@ -237,15 +237,15 @@ tick_length = 4
 
 # Helpers for axis functions.
 # Orient -> Colour -> Float -> GraphicsElement
-def tick(Horiz, colour, len):
+def tick(Horiz(), colour, len):
   return Line(Point(0, 0), Point(0, 0 - len), colour, axis_stroke_width)
-def tick(Vert, colour, len):
+def tick(Vert(), colour, len):
   return Line(Point(0, 0), Point(0 - len, 0), colour, axis_stroke_width)
 
 # Orient -> Float -> Float -> Str -> GraphicsElement
-def label(Horiz, x, distance, str):
+def label(Horiz(), x, distance, str):
   return String(x, (0 - distance) - 4, str, "middle", "hanging")
-def label(Vert, x, distance, str):
+def label(Vert(), x, distance, str):
   return String(0 - distance, x, str, "end", "central")
 
 # Orient -> Colour -> Float -> Str -> GraphicsElement
@@ -256,9 +256,9 @@ def labelled_tick(orient, colour, len, str):
   ])
 
 # Orient -> Float -> Float -> Point
-def mk_point(Horiz, x, y):
+def mk_point(Horiz(), x, y):
   return Point(y, x)
-def mk_point(Vert, x, y):
+def mk_point(Vert(), x, y):
   return Point(x, y)
 
 # x is position of this axis on the other axis. Returns axis and position of last tick.
@@ -317,8 +317,8 @@ def line_chart(with_axes, colours, x_start, data):
   y_finish = maximum(flip(map, data, lambda (_, kvs): maximum(map(snd, kvs))))
 
   if with_axes:
-    (x_axis, x_finish) = axis(Horiz, 0, x_start, x_finish)
-    (y_axis, y_finish_) = axis(Vert, x_start, 0, y_finish)
+    (x_axis, x_finish) = axis(Horiz(), 0, x_start, x_finish)
+    (y_axis, y_finish_) = axis(Vert(), x_start, 0, y_finish)
     return viewport(x_start, x_finish, y_finish_, default_margin, [x_axis, y_axis] + lines)
   return viewport(x_start, x_finish, y_finish, 0, lines)
 
@@ -330,8 +330,8 @@ def categorical_chart(plot_value, with_axes, colours, sep, data):
   h = maximum(map(height, gs))
 
   if with_axes:
-    x_axis = cat_axis(Horiz, 0, map(fst, data))
-    (y_axis, h_) = axis(Vert, 0, 0, h)
+    x_axis = cat_axis(Horiz(), 0, map(fst, data))
+    (y_axis, h_) = axis(Vert(), 0, 0, h)
     return viewport(0, w, h_, default_margin, gs + [x_axis, y_axis])
   return viewport(0, w, h, 0, gs)
 
