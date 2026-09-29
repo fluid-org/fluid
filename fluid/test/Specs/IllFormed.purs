@@ -52,6 +52,7 @@ purepy_cases =
    , { file: "purepy/match_var_leak.fld", expected_error: "Not definitely assigned: x" }
    , { file: "purepy/match_dup_literal.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_as_subsumed.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_class_subsumed.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_dup_list.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_list_subsumed.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/pat_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
@@ -79,7 +80,6 @@ illFormed_cases =
    [ { file: "bare_module.fld", expected_error: "module qual_lib is not a value" }
    , { file: "capture_redefined_class.fld", expected_error: "Duplicate class declaration: C" }
    , { file: "constr_dup_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"x\" : \"y\" : Nil), got (\"x\" : \"x\" : \"y\" : Nil)" }
-   , { file: "construct_non_leaf.fld", expected_error: "Cannot construct non-leaf class: Base" }
    , { file: "dict_attr.fld", expected_error: "Found { a: 1 }, expected object" }
    , { file: "extend_imported_class.fld", expected_error: "Cannot extend imported class: Base" }
    , { file: "from_import_arity.fld", expected_error: "Derived expects 2 argument(s); got 1" }
@@ -90,7 +90,6 @@ illFormed_cases =
    , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module bad_pkg" }
    , { file: "import_cycle.fld", expected_error: "import cycle: cyc_a -> cyc_b -> cyc_a" }
    , { file: "match_exhaustive_assign.fld", expected_error: "Not definitely assigned: result" }
-   , { file: "match_non_leaf.fld", expected_error: "Cannot match non-leaf class: Base" }
    , { file: "match_partial_def.fld", expected_error: "Not definitely assigned: result" }
    , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module return_mod" }
    , { file: "non_contiguous_def.fld", expected_error: "Non-contiguous clauses for: f" }

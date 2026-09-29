@@ -11,24 +11,20 @@ import Control.Monad.State.Trans (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer.Trans (WriterT)
 import Data.CodePoint.Unicode (isUpper)
-import Data.Function (on)
 import Data.List (List(..), elemIndex, (:))
 import Data.List as List
 import Data.List.NonEmpty (NonEmptyList(..)) as NE
 import Data.NonEmpty ((:|))
 import Data.Map as Map
 import Data.Array (last) as A
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String (Pattern(..), split)
 import Data.String.CodePoints (codePointFromChar)
 import Data.String.CodeUnits (charAt)
-import DefiniteAssignment (ClassEntry, classFor, fields)
-import Dict (Dict, fromFoldable)
+import DefiniteAssignment (ClassEntry, fields)
 import Effect.Exception (Error)
-import Util (type (×), absurd, definitely, definitely', error, throw, whenever, (×))
-import Util.Map (lookup)
+import Util (absurd, definitely, definitely', error, throw)
 
-type TypeName = String
 type FieldName = String
 type Ctr = String -- newtype would require more general Dict keys
 
@@ -45,18 +41,6 @@ showCtr c
    | isCtrName c = c
    | isCtrOp c = "(" <> c <> ")"
    | otherwise = error absurd
-
-data DataType = DataType TypeName (Dict CtrSig)
-type CtrSig = Int
-
-typeName :: DataType -> TypeName
-typeName (DataType name _) = name
-
-instance Eq DataType where
-   eq = eq `on` typeName
-
-instance Show DataType where
-   show = typeName
 
 type ClassTable = Map.Map Ctr ClassEntry -- keyed by fully-qualified name
 
@@ -75,44 +59,18 @@ instance (Monad m, HasClasses m) => HasClasses (ExceptT e m) where
 instance (Monad m, HasClasses m, Monoid w) => HasClasses (WriterT w m) where
    askClasses = lift askClasses
 
--- FQN of the base of a class, resolved through its declaring context.
-baseOf :: ClassEntry -> Maybe Ctr
-baseOf cls = (dottedName <<< _.name) <$> (cls.base >>= classFor cls.cxt)
-
--- Root of the hierarchy containing c.
-rootOf :: ClassTable -> Ctr -> Ctr
-rootOf classes c = case Map.lookup c classes >>= baseOf of
-   Just b -> rootOf classes b
-   Nothing -> c
-
-isLeaf :: ClassTable -> Ctr -> Boolean
-isLeaf classes c = List.all (\cls -> baseOf cls /= Just c) (Map.values classes)
-
--- A datatype is a dataclass hierarchy, named by its root; every class belongs to the datatype of its
--- hierarchy. Its constructors are the leaves: non-leaf classes are not constructable/matchable (#1530).
-dataType :: ClassTable -> Ctr -> Maybe DataType
-dataType classes c = Map.lookup c classes $> DataType root (fromFoldable sigs)
-   where
-   root = rootOf classes c
-   sigs = (Map.toUnfoldable classes :: List (Ctr × ClassEntry)) # List.mapMaybe
-      \(c' × cls) -> whenever (rootOf classes c' == root && isLeaf classes c') (c' × List.length (fields cls))
-
 fieldsOf :: ClassTable -> Ctr -> Maybe (List Var)
 fieldsOf classes c = Map.lookup c classes <#> fields
 
 classEntry :: forall m. MonadError Error m => ClassTable -> Ctr -> m ClassEntry
 classEntry classes c = maybe (throw $ "Unknown dataclass: " <> showCtr (simpleName c)) pure (Map.lookup c classes)
 
--- Datatype of c and c's signature within it; a non-leaf class has no signature (#1530).
-ctrSig :: forall m. MonadError Error m => ClassTable -> String -> Ctr -> m (DataType × CtrSig)
-ctrSig classes verb c = do
-   d@(DataType _ sigs) <- classEntry classes c $> definitely' (dataType classes c)
-   n <- maybe (throw $ "Cannot " <> verb <> " non-leaf class: " <> showCtr (simpleName c)) pure (lookup c sigs)
-   pure (d × n)
+arity :: forall m. MonadError Error m => ClassTable -> Ctr -> m Int
+arity classes c = List.length <<< fields <$> classEntry classes c
 
-checkArity :: forall m. MonadError Error m => ClassTable -> String -> Ctr -> Int -> m Unit
-checkArity classes verb c n = do
-   _ × n' <- ctrSig classes verb c
+checkArity :: forall m. MonadError Error m => ClassTable -> Ctr -> Int -> m Unit
+checkArity classes c n = do
+   n' <- arity classes c
    when (n' /= n) $ throw $ showCtr (simpleName c) <> " arity " <> show n' <> "; got " <> show n
 
 type FieldIndex = Name -> FieldName -> Int

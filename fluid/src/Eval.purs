@@ -5,12 +5,12 @@ import Prelude hiding (absurd, apply)
 import Bind (dottedName, prefixOf, varAnon)
 import Control.Alternative (guard)
 import Control.Plus (empty) as Plus
-import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
+import Control.Monad.Maybe.Trans (MaybeT(..), lift, runMaybeT)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.Array as A
-import Data.Foldable (oneOfMap)
+import Data.Foldable (elem, oneOfMap)
 import Data.List (List(..), concat, drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
@@ -22,7 +22,8 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, cPair, checkArity, ctrSig, fieldsOf)
+import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, classEntry, fieldsOf)
+import DefiniteAssignment (ancestors)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -58,7 +59,7 @@ patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the vertices of the value that matching inspected.
-matches :: forall m. MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matches :: forall m. HasClasses m => MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
 matches (Val α _ u) (PLit ℓ) = guard eq $> (empty × Set.singleton α)
    where
    eq = case u of
@@ -69,8 +70,11 @@ matches v (PVar x)
    | otherwise = pure (maplet x v × empty)
 matches _ PWild = pure (empty × empty)
 matches v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches v p
-matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil)
-   | c == c' = second (insert α) <$> matchesMany vs ps
+-- Pattern class may be an ancestor of the object's class; its fields are a prefix of the object's fields.
+matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
+   cls' <- lift (askClasses >>= \classes -> classEntry classes (dottedName c'))
+   guard (c `elem` ancestors cls')
+   second (insert α) <$> matchesMany (take (length ps) vs) ps
 matches _ (PConstr _ _ _) = Plus.empty
 matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
    vps <- MaybeT $ pure $ traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
@@ -80,7 +84,7 @@ matches (Val α _ (V.List vs)) (PList ps)
    | A.length vs == length ps = second (insert α) <$> matchesMany (L.fromFoldable vs) ps
 matches _ (PList _) = Plus.empty
 
-matchesMany :: forall m. MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matchesMany :: forall m. HasClasses m => MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
 matchesMany Nil Nil = pure (empty × empty)
 matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
    where
@@ -88,11 +92,11 @@ matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
 matchesMany _ _ = error absurd
 
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
-dispatch :: forall m. MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
+dispatch :: forall m. HasClasses m => MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
 dispatch v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches v p
 
 -- Bindings of a pattern which must match.
-assign :: forall m. MonadError Error m => Val Vertex -> Pattern -> m (Env Vertex × Set Vertex)
+assign :: forall m. HasClasses m => MonadError Error m => Val Vertex -> Pattern -> m (Env Vertex × Set Vertex)
 assign v p = runMaybeT (matches v p) >>= orElse ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
@@ -128,7 +132,7 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
    arity' = case φ of
       V.Closure _ _ (Def xs _ _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-      V.Type c -> askClasses >>= \classes -> ctrSig classes "construct" (dottedName c) <#> snd
+      V.Type c -> askClasses >>= \classes -> arity classes (dottedName c)
       V.Partial _ _ -> error absurd
 
    call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
@@ -349,7 +353,7 @@ evalVal ρ (List α es) αs = do
    vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.List (A.fromFoldable vs))
 evalVal ρ (Constr α c es) αs = do
-   askClasses >>= \classes -> checkArity classes "construct" (dottedName c) (length es)
+   askClasses >>= \classes -> checkArity classes (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.Constr c vs)
 evalVal ρ (Matrix α e (x × y) e') αs = do

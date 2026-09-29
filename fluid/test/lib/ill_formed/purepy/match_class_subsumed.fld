@@ -9,5 +9,7 @@ class Derived(Base):
    y: int
 
 match Derived(1, 2):
-    case Base(x):
-        x
+   case Base(_):
+      pass
+   case Derived(_, _):
+      pass

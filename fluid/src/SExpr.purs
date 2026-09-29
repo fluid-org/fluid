@@ -19,7 +19,7 @@ import Data.Newtype (class Newtype, unwrap)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (class HasClasses, ClassTable, askClasses, classEntry, ctrSig, cPair, cParagraph)
+import DataType (class HasClasses, ClassTable, askClasses, classEntry, cPair, cParagraph)
 import Data.Map as Map
 import DefiniteAssignment (VarCxt, WfResult(..), fields)
 import Lattice (class JoinSemilattice)
@@ -160,13 +160,10 @@ expr (Var x) =
    pure $ E.Var x
 expr (Lit α ℓ) =
    pure $ E.Lit α ℓ
-expr (Constr α c es Nil) = do
-   classes <- askClasses
-   _ <- ctrSig classes "construct" (dottedName c)
+expr (Constr α c es Nil) =
    E.Constr α c <$> traverse desug es
 expr (Constr α c es xes) = do
    classes <- askClasses
-   _ <- ctrSig classes "construct" (dottedName c)
    reordered <- positionaliseKw classes c (length es) xes
    E.Constr α c <$> traverse desug (es <> reordered)
 expr (Dictionary α sss) = do
@@ -247,7 +244,6 @@ pattern :: forall m. HasClasses m => MonadError Error m => Pattern -> m Pattern
 pattern (PConstr c ps xps) = do
    classes <- askClasses
    reordered <- if null xps then pure Nil else positionaliseKw classes c (length ps) xps
-   _ <- ctrSig classes "match" (dottedName c)
    PConstr c <$> traverse pattern (ps <> reordered) <@> Nil
 pattern (PRecord xps) = PRecord <$> traverse (traverse pattern) xps
 pattern (PList ps) = PList <$> traverse pattern ps

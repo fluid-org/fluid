@@ -34,7 +34,7 @@ tests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModule
 tests = allTests
 
 scratchpad :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-scratchpad = second void <$> suite paragraph_cases (1 × false)
+scratchpad = illFormedSuite (filter (\c -> c.file `elem` [ "purepy/match_class_subsumed.fld", "purepy/match_as_subsumed.fld" ]) purepy_cases)
 
 filterSuite :: forall m r. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =
