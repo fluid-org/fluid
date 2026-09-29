@@ -54,7 +54,7 @@ simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPatter
    pConstr = defer \_ -> do
       q <- try (qualifiedName <* delim '(')
       args <- commas constrArg
-      close ')'
+      delim ')'
       pure $ PConstr q (takeLefts args) (takeRights args)
       where
       constrArg :: Parser (Pattern + Bind Pattern)
