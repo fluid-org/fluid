@@ -73,7 +73,6 @@ newtype LambdaClause a = LambdaClause (List Pattern × Expr a)
 
 type RecDefs a = NonEmptyList (Branch a)
 
--- The pattern/expr relationship is different to the one in branch (the expr is the "argument", not the "body").
 data VarDef a = VarDef Pattern (Maybe (T.TypeExpr Name)) (Expr a)
 type VarDefs a = NonEmptyList (VarDef a)
 
