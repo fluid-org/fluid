@@ -8,7 +8,7 @@ import Control.Monad.State (StateT)
 import Data.Array (reverse, some)
 import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
-import Bind (Bind, Name, dottedName, varAnon, (↦))
+import Bind (Bind, Name, varAnon, (↦))
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
 import Data.Identity (Identity)
@@ -42,20 +42,20 @@ pattern = defer \_ -> do
    optionMaybe (reserved "as" *> variable) <#> maybe p (PAs p)
 
 simplePattern :: Parser Pattern
-simplePattern = pLit <|> pName <|> pRecord <|> pList <|> parensPattern
+simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    where
    pLit :: Parser Pattern
    pLit = literal <#> PLit
 
-   -- Variable or wildcard if simple and unapplied; class pattern otherwise.
-   pName :: Parser Pattern
-   pName = defer \_ -> do
-      q <- qualifiedName
-      args <- optionMaybe (parens (commas constrArg))
-      case args, q of
-         Just as, _ -> pure $ PConstr q (takeLefts as) (takeRights as)
-         Nothing, NonEmptyList (x :| Nil) -> pure $ if x == varAnon then PWild else PVar x
-         Nothing, _ -> fail ("Not a pattern: " <> dottedName q)
+   pVar :: Parser Pattern
+   pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
+
+   pConstr :: Parser Pattern
+   pConstr = defer \_ -> do
+      q <- try (qualifiedName <* delim '(')
+      args <- commas constrArg
+      close ')'
+      pure $ PConstr q (takeLefts args) (takeRights args)
       where
       constrArg :: Parser (Pattern + Bind Pattern)
       constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> simplePattern)
