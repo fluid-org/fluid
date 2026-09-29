@@ -1,0 +1,27 @@
+name: Check project integrity
+description: Check the issues and project board of a repository with script/check-project-integrity.sh
+inputs:
+  org:
+    description: Organisation owning the repository and the project
+    required: true
+  repo:
+    description: Repository name
+    required: true
+  project:
+    description: Project number within the organisation
+    required: true
+  active-statuses:
+    description: Comma-separated Status names whose issues must have a milestone
+    required: true
+  token:
+    description: Token with read access to the repository and the project
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: >
+        "${{ github.action_path }}/../../../script/check-project-integrity.sh"
+        "${{ inputs.org }}" "${{ inputs.repo }}" "${{ inputs.project }}" "${{ inputs.active-statuses }}"

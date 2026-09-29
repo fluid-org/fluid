@@ -10,8 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Check project integrity
-      env:
-        GH_TOKEN: ${{ secrets.PROJECT_PAT }}
-      run: |
-        ./script/check-project-integrity.sh fluid
+    - uses: ./.github/actions/check-project-integrity
+      with:
+        org: fluid-org
+        repo: fluid
+        project: 1
+        active-statuses: In Progress,Paused,Awaiting Decision
+        token: ${{ secrets.PROJECT_PAT }}
