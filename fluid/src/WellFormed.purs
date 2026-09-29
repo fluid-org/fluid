@@ -147,7 +147,6 @@ checkStatements q cxt_imp (S.Module imports ss) =
    unSeq (E.Seq s1 s2) = s1 : unSeq s2
    unSeq s = s : Nil
 
--- Entry program's module (spec entry point E; its __name__ is "__main__").
 mainModule :: Name
 mainModule = pure "__main__"
 
