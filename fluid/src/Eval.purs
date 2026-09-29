@@ -70,7 +70,6 @@ matches v (PVar x)
    | otherwise = pure (maplet x v × empty)
 matches _ PWild = pure (empty × empty)
 matches v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches v p
--- Pattern class may be an ancestor of the object's class; its fields are a prefix of the object's fields.
 matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
    cls' <- lift (askClasses >>= \classes -> classEntry classes (dottedName c'))
    guard (c `elem` ancestors cls')
