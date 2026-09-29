@@ -227,7 +227,7 @@ qualifier (Decl (VarDef p _ s)) = E.Decl <$> pattern p <*> desug s
 
 positionaliseKw :: forall m b. MonadError Error m => ClassTable -> Name -> Int -> List (Bind b) -> m (List b)
 positionaliseKw classes c n xbs = do
-   fs <- fields <$> classEntry classes (dottedName c)
+   fs <- fields <$> classEntry (dottedName c) classes
    let remaining = drop n fs
    let provided = xbs <#> fst
    when (sort provided /= sort remaining) $ throw $

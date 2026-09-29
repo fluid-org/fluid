@@ -71,7 +71,7 @@ matches v (PVar x)
 matches _ PWild = pure (empty × empty)
 matches v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches v p
 matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
-   cls' <- lift (askClasses >>= \classes -> classEntry classes (dottedName c'))
+   cls' <- lift (askClasses >>= classEntry (dottedName c'))
    guard (c `elem` ancestors cls')
    second (insert α) <$> matchesMany (take (length ps) vs) ps
 matches _ (PConstr _ _ _) = Plus.empty
@@ -131,7 +131,7 @@ apply doc_opt (Val α _ (V.Fun φ)) vs = do
    arity' = case φ of
       V.Closure _ _ (Def xs _ _) -> pure (length xs)
       V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-      V.Type c -> askClasses >>= \classes -> arity classes (dottedName c)
+      V.Type c -> askClasses >>= arity (dottedName c)
       V.Partial _ _ -> error absurd
 
    call :: Maybe (Val Vertex) -> List (Val Vertex) -> m (Val Vertex)
@@ -352,7 +352,7 @@ evalVal ρ (List α es) αs = do
    vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.List (A.fromFoldable vs))
 evalVal ρ (Constr α c es) αs = do
-   askClasses >>= \classes -> checkArity classes (dottedName c) (length es)
+   askClasses >>= checkArity (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
    pure $ Just (α × V.Constr c vs)
 evalVal ρ (Matrix α e (x × y) e') αs = do

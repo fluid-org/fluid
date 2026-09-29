@@ -45,15 +45,15 @@ instance (Monad m, HasClasses m, Monoid w) => HasClasses (WriterT w m) where
 fieldsOf :: ClassTable -> Ctr -> Maybe (List Var)
 fieldsOf classes c = Map.lookup c classes <#> fields
 
-classEntry :: forall m. MonadError Error m => ClassTable -> Ctr -> m ClassEntry
-classEntry classes c = maybe (throw $ "Unknown dataclass: " <> simpleName c) pure (Map.lookup c classes)
+classEntry :: forall m. MonadError Error m => Ctr -> ClassTable -> m ClassEntry
+classEntry c classes = maybe (throw $ "Unknown dataclass: " <> simpleName c) pure (Map.lookup c classes)
 
-arity :: forall m. MonadError Error m => ClassTable -> Ctr -> m Int
-arity classes c = List.length <<< fields <$> classEntry classes c
+arity :: forall m. MonadError Error m => Ctr -> ClassTable -> m Int
+arity c classes = List.length <<< fields <$> classEntry c classes
 
-checkArity :: forall m. MonadError Error m => ClassTable -> Ctr -> Int -> m Unit
-checkArity classes c n = do
-   n' <- arity classes c
+checkArity :: forall m. MonadError Error m => Ctr -> Int -> ClassTable -> m Unit
+checkArity c n classes = do
+   n' <- arity c classes
    when (n' /= n) $ throw $ simpleName c <> " arity " <> show n' <> "; got " <> show n
 
 type FieldIndex = Name -> FieldName -> Int
