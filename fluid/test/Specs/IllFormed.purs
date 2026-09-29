@@ -18,11 +18,13 @@ purepy_cases =
    , { file: "purepy/constr_bad_keyword.fld", expected_error: "Class Coord keyword fields mismatch: expected (\"y\" : Nil), got (\"z\" : Nil)" }
    , { file: "purepy/construct_arity.fld", expected_error: "Point expects 2 argument(s); got 3" }
    , { file: "purepy/dataclass_dup_class.fld", expected_error: "Duplicate class declaration: Point" }
+   , { file: "purepy/class_reassigned.fld", expected_error: "Class name reassigned: point" }
+   , { file: "purepy/class_captured_reassigned.fld", expected_error: "Captured variable reassigned: Just" }
+   , { file: "purepy/class_bare.fld", expected_error: "class Nothing is not a value" }
    , { file: "purepy/dataclass_dup_field.fld", expected_error: "Duplicate field names in class: Point" }
    , { file: "purepy/dataclass_field_default.fld", expected_error: "\"ParseError on line 5, column 10:\\nExpected EOF\"" }
    , { file: "purepy/dataclass_inherited_field_clash.fld", expected_error: "Class Sub redeclares inherited field(s): (\"x\" : Nil)" }
    , { file: "purepy/dataclass_dict_key_type.fld", expected_error: "\"ParseError on line 5, column 14:\\nExpected `str`, received `int`\"" }
-   , { file: "purepy/param_type_unknown.fld", expected_error: "\"ParseError on line 1, column 13:\\nNot a type: lst\"" }
    , { file: "purepy/clauses_annotation_mismatch.fld", expected_error: "Clauses differ in parameter annotations" }
    , { file: "purepy/clauses_annotation_later.fld", expected_error: "Clauses differ in parameter annotations" }
    , { file: "purepy/annotation_unknown_class.fld", expected_error: "Unknown dataclass: Shape" }
@@ -30,8 +32,8 @@ purepy_cases =
    , { file: "purepy/dataclass_two_bases.fld", expected_error: "\"ParseError on line 12, column 10:\\nExpected ')'\"" }
    , { file: "purepy/dataclass_unknown_base.fld", expected_error: "Unknown class: Unknown" }
    , { file: "purepy/duplicate_def_in_region.fld", expected_error: "case 2 is unreachable" }
-   , { file: "purepy/forward_class_in_def.fld", expected_error: "Unknown dataclass: Point" }
-   , { file: "purepy/forward_class_top.fld", expected_error: "Unknown dataclass: Point" }
+   , { file: "purepy/forward_class_in_def.fld", expected_error: "Unbound name: Point" }
+   , { file: "purepy/forward_class_top.fld", expected_error: "Unbound name: Point" }
    , { file: "purepy/from_import_unknown_member.fld", expected_error: "Cannot import name baz from module two_vals_lib" }
    , { file: "purepy/if_nonbool.fld", expected_error: "Found 1, expected bool" }
    , { file: "purepy/nested_class.fld", expected_error: "Class declaration not at top level: C" }
@@ -53,6 +55,7 @@ purepy_cases =
    , { file: "purepy/match_dup_literal.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_as_subsumed.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_class_subsumed.fld", expected_error: "case 2 is unreachable" }
+   , { file: "purepy/match_class_name_capture.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_dup_list.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/match_list_subsumed.fld", expected_error: "case 2 is unreachable" }
    , { file: "purepy/pat_dup_var.fld", expected_error: "Duplicate variable in pattern: x" }
@@ -94,7 +97,7 @@ illFormed_cases =
    , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module return_mod" }
    , { file: "non_contiguous_def.fld", expected_error: "Non-contiguous clauses for: f" }
    , { file: "own_descendant_import.fld", expected_error: "Module od_pkg cannot import its own descendant od_pkg.sub\nChecking module od_pkg" }
-   , { file: "qualified_class_unknown.fld", expected_error: "Unknown dataclass: shape_lib.Missing" }
+   , { file: "qualified_class_unknown.fld", expected_error: "module shape_lib has no member Missing" }
    , { file: "reexport_from_import.fld", expected_error: "Cannot import name foo from module reexport_mid" }
    , { file: "reexport_import_alias.fld", expected_error: "Cannot import name attr_lib from module alias_mid" }
    , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }

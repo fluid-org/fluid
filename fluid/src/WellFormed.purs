@@ -9,7 +9,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
 import Data.Either (Either, hush)
 import Control.MonadPlus (guard)
-import Data.Foldable (all, and, elem, foldM, foldr, for_, intercalate)
+import Data.Foldable (all, and, elem, foldM, foldl, foldr, for_, intercalate)
 import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.TraversableWithIndex (forWithIndex)
@@ -155,6 +155,11 @@ assigns (S.Match _ ps) = unions (assigns <$> (snd <$> ps))
 assigns (S.DefRec ds) = unions (Set.singleton <<< fst <$> ds)
 assigns (S.Seq s1 s2) = assigns s1 ∪ assigns s2
 assigns (S.Dataclass c _ _) = Set.singleton c
+
+classDecls :: forall a. S.Stmt a -> Set Var
+classDecls (S.Dataclass c _ _) = Set.singleton c
+classDecls (S.Seq s1 s2) = classDecls s1 ∪ classDecls s2
+classDecls _ = Set.empty
 
 captures :: forall a. S.Stmt a -> Set Var
 captures S.Pass = Set.empty
@@ -313,7 +318,7 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
          for_ (Set.toUnfoldable (captures t1 `Set.intersection` assigns t2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
          for_ (Set.toUnfoldable (Map.keys decls1 `Set.intersection` assigns t2) :: Array Var) \c ->
-            throwError $ "Duplicate class declaration: " <> c
+            throwError $ (if c `Set.member` classDecls t2 then "Duplicate class declaration: " else "Class name reassigned: ") <> c
          decls2 × r2 × t2' <- wellFormedTop q (Map.union (Class <$> decls1) (cxt `extendCxt` δ)) t2
          pure (Map.union decls2 decls1 × overrideRes r1 r2 × S.Seq t1' t2')
 wellFormedTop q cxt s = do
@@ -334,16 +339,16 @@ resolveType cxt (T.Union ψ ψ') = T.Union <$> resolveType cxt ψ <*> resolveTyp
 wellFormedExpr :: forall a. Cxt -> S.Expr a -> Either String (S.Expr a)
 wellFormedExpr cxt e@(S.Var x) = e <$ var cxt x
 wellFormedExpr _ e@(S.Lit _ _) = pure e
-wellFormedExpr cxt (S.Constr α c es Nil) = do
-   cls <- classOf cxt c
-   let fs = fields cls
-   when (length es /= length fs)
-      $ throwError
-      $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
-   (\es' -> S.Constr α cls.name es' Nil) <$> traverse (wellFormedExpr cxt) es
-wellFormedExpr cxt (S.Constr α c es xes) = do
-   cls <- classOf cxt c
-   S.Constr α cls.name <$> traverse (wellFormedExpr cxt) es <*> traverse (\(x × e) -> (x × _) <$> wellFormedExpr cxt e) xes
+wellFormedExpr cxt (S.Constr α c es xes) = case resolveName cxt c of
+   Just (Class cls) -> do
+      let fs = fields cls
+      when (null xes && length es /= length fs)
+         $ throwError
+         $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
+      S.Constr α cls.name <$> traverse (wellFormedExpr cxt) es <*> traverse (\(x × e) -> (x × _) <$> wellFormedExpr cxt e) xes
+   _ -> do
+      when (not (null xes)) $ throwError $ "Keyword arguments in call of " <> dottedName c
+      wellFormedExpr cxt (S.App (foldl S.Attribute (S.Var (NEL.head c)) (NEL.tail c)) es)
 wellFormedExpr cxt (S.App e es) = S.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
 wellFormedExpr cxt (S.BinOp e op e') = S.BinOp <$> wellFormedExpr cxt e <@> op <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.UnOp op e) = S.UnOp op <$> wellFormedExpr cxt e

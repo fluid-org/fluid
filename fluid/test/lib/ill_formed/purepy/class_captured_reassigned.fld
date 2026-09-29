@@ -1,0 +1,3 @@
+mk = lambda x: Just(x)
+Just = 3
+mk(1)

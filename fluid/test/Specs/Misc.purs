@@ -41,6 +41,7 @@ misc_cases =
    , { file: "match_wildcard.fld", fwd_expect: "[2, -1, 0]" }
    , { file: "match_non_leaf.fld", fwd_expect: "[[1, 2, 4], [-1, 3, 5], Derived(7, 8)]" }
    , { file: "construct_non_leaf.fld", fwd_expect: "Base(1)" }
+   , { file: "class_lowercase.fld", fwd_expect: "[3, 6, 9, origin()]" }
    , { file: "def_literal_pattern.fld", fwd_expect: "2" }
    , { file: "partial_application.fld", fwd_expect: "[6, 7, 3, 3, 3, 7, 7]" }
    , { file: "attr_access.fld", fwd_expect: "42" }

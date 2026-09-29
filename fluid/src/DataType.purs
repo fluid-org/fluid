@@ -1,6 +1,6 @@
 module DataType where
 
-import Prelude hiding (absurd)
+import Prelude
 
 import Bind (Name, Var, dottedName, qual)
 import ModuleGraph (prelude)
@@ -10,7 +10,6 @@ import Control.Monad.Reader.Trans (ReaderT)
 import Control.Monad.State.Trans (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer.Trans (WriterT)
-import Data.CodePoint.Unicode (isUpper)
 import Data.List (List(..), elemIndex, (:))
 import Data.List as List
 import Data.List.NonEmpty (NonEmptyList(..)) as NE
@@ -19,28 +18,12 @@ import Data.Map as Map
 import Data.Array (last) as A
 import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String (Pattern(..), split)
-import Data.String.CodePoints (codePointFromChar)
-import Data.String.CodeUnits (charAt)
 import DefiniteAssignment (ClassEntry, fields)
 import Effect.Exception (Error)
-import Util (absurd, definitely, definitely', error, throw)
+import Util (definitely, throw)
 
 type FieldName = String
 type Ctr = String -- newtype would require more general Dict keys
-
--- Distinguish constructors from identifiers syntactically, a la Haskell. In particular this is useful
--- for distinguishing pattern variables from nullary constructors when parsing patterns.
-isCtrName ∷ Var → Boolean
-isCtrName str = let c = definitely' $ charAt 0 str in isUpper (codePointFromChar c) || c == '_'
-
-isCtrOp :: String -> Boolean
-isCtrOp str = ':' == (definitely' $ charAt 0 str)
-
-showCtr :: Var -> String
-showCtr c
-   | isCtrName c = c
-   | isCtrOp c = "(" <> c <> ")"
-   | otherwise = error absurd
 
 type ClassTable = Map.Map Ctr ClassEntry -- keyed by fully-qualified name
 
@@ -63,7 +46,7 @@ fieldsOf :: ClassTable -> Ctr -> Maybe (List Var)
 fieldsOf classes c = Map.lookup c classes <#> fields
 
 classEntry :: forall m. MonadError Error m => ClassTable -> Ctr -> m ClassEntry
-classEntry classes c = maybe (throw $ "Unknown dataclass: " <> showCtr (simpleName c)) pure (Map.lookup c classes)
+classEntry classes c = maybe (throw $ "Unknown dataclass: " <> simpleName c) pure (Map.lookup c classes)
 
 arity :: forall m. MonadError Error m => ClassTable -> Ctr -> m Int
 arity classes c = List.length <<< fields <$> classEntry classes c
@@ -71,7 +54,7 @@ arity classes c = List.length <<< fields <$> classEntry classes c
 checkArity :: forall m. MonadError Error m => ClassTable -> Ctr -> Int -> m Unit
 checkArity classes c n = do
    n' <- arity classes c
-   when (n' /= n) $ throw $ showCtr (simpleName c) <> " arity " <> show n' <> "; got " <> show n
+   when (n' /= n) $ throw $ simpleName c <> " arity " <> show n' <> "; got " <> show n
 
 type FieldIndex = Name -> FieldName -> Int
 
