@@ -11,7 +11,7 @@ mkdir -p "$state"
 ( (
   trap '' HUP TERM
   cd "$dir" 2>/dev/null || exit 0
-  OUT=$(./script/check-project-integrity.sh fluid 2>&1)
+  OUT=$(./script/check-project-integrity.sh fluid-org fluid 1 "In Progress,Paused,Awaiting Decision" 2>&1)
   RC=$?
   if [ "$RC" -eq 0 ]; then
     : > "$file"
