@@ -127,7 +127,6 @@ infixApp n op s sym s' =
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
    pretty (Lit α ℓ) = highlightIf α (pretty ℓ)
-   pretty (Constr α c Nil Nil) = highlightIf α (text (dottedName c))
    pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
    pretty (Constr α c es xes) =
       highlightIf α (text (dottedName c) <> parens (commas ((pretty <$> es) <> ((\(x ↦ e) -> text x <> text "=" <> pretty e) <$> xes))))
@@ -179,7 +178,6 @@ instance Pretty Pattern where
    pretty (PVar x) = text x
    pretty PWild = text "_"
    pretty (PRecord xps) = record $ map pretty xps
-   pretty (PConstr c Nil Nil) = text (dottedName c)
    pretty (PConstr c ps Nil) = prettyConstr (dottedName c) ps
    pretty (PConstr c ps xps) =
       text (dottedName c) <> parens (commas ((pretty <$> ps) <> ((\(x ↦ p) -> text x <> text "=" <> pretty p) <$> xps)))
@@ -294,7 +292,6 @@ instance Ann a => Pretty (ParagraphElem a) where
 
 prettyConstr :: forall a. RootOp a => IsSimple a => Pretty a => Ctr -> List a -> Doc
 prettyConstr "Pair" (x : y : Nil) = pair pretty x y
-prettyConstr c Nil = text c
 prettyConstr c ps = text c <> parens (prettyList ps)
 
 commas :: List Doc -> Doc

@@ -69,13 +69,13 @@ MultiView([
   BarChart(
     caption="NAP3 actions by chapter",
     size=Dimensions(width=275, height=185),
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     stackedBars=actions_by_chapter,
     legend=False
   ),
   BarChart(
     caption="NAP3 actions by government department",
-    tickLabels=TickLabels(x=Rotated, y=Default),
+    tickLabels=TickLabels(x=Rotated(), y=Default()),
     size=Dimensions(width=275, height=200),
     stackedBars=by_action_owner,
     legend=True

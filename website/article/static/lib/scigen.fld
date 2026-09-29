@@ -21,51 +21,51 @@ def rankLabel(word, n):
 def trendWord(n1, n2, compareWord):
   return compareWord(compare(n1, n2))
 
-def growShrink(EQ):
+def growShrink(EQ()):
   return "unchanging"
-def growShrink(LT):
+def growShrink(LT()):
   return "shrinking"
-def growShrink(GT):
+def growShrink(GT()):
   return "growing"
 
-def smallerHigher(EQ):
+def smallerHigher(EQ()):
   return "equal"
-def smallerHigher(LT):
+def smallerHigher(LT()):
   return "smaller"
-def smallerHigher(GT):
+def smallerHigher(GT()):
   return "larger"
 
-def improve(EQ):
+def improve(EQ()):
   return "does not further improve"
-def improve(LT):
+def improve(LT()):
   return "does not further improve"
-def improve(GT):
+def improve(GT()):
   return "further improves"
 
-def improvements(EQ):
+def improvements(EQ()):
   return "no further improvements"
-def improvements(LT):
+def improvements(LT()):
   return "no further improvements"
-def improvements(GT):
+def improvements(GT()):
   return "further improvements"
 
-def shorterLonger(EQ):
+def shorterLonger(EQ()):
   return "equal"
-def shorterLonger(LT):
+def shorterLonger(LT()):
   return "shorter"
-def shorterLonger(GT):
+def shorterLonger(GT()):
   return "longer"
 
-def betterWorse(EQ):
+def betterWorse(EQ()):
   return "equal"
-def betterWorse(LT):
+def betterWorse(LT()):
   return "worse"
-def betterWorse(GT):
+def betterWorse(GT()):
   return "better"
 
-def underOverPerforming(EQ):
+def underOverPerforming(EQ()):
   return "performing the same as"
-def underOverPerforming(LT):
+def underOverPerforming(LT()):
   return "performing worse than"
-def underOverPerforming(GT):
+def underOverPerforming(GT()):
   return "outperforming"

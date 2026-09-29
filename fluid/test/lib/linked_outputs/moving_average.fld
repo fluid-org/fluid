@@ -12,7 +12,7 @@ def movingAvg_(rs, window):
 points = [Point(x=r["year"], y=r["emissions"]) for r in methane if r["type"] == "Agriculture"]
 
 LineChart(
-  tickLabels=TickLabels(x=Rotated, y=Default),
+  tickLabels=TickLabels(x=Rotated(), y=Default()),
   size=Dimensions(width=330, height=285),
   caption="SSP5-8.5 projected methane emissions (Agriculture)",
   plots=[

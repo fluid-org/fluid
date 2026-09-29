@@ -19,12 +19,12 @@ MultiView([
   BarChart(
     caption="Total renewables output by country",
     size=Dimensions(width=275, height=185),
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     stackedBars=countryData,
     legend=True
   ),
   LineChart(
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     size=Dimensions(width=330, height=285),
     caption="Renewables output of USA relative to China",
     plots=[

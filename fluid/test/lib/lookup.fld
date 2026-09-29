@@ -1,12 +1,12 @@
-def lookup(k, Empty):
-  return Nothing
+def lookup(k, Empty()):
+  return Nothing()
 def lookup(k, NonEmpty(t1, (key, val), t2)):
   match compare(k, key):
-    case LT:
+    case LT():
       return lookup(k, t1)
-    case EQ:
+    case EQ():
       return Just(val)
-    case GT:
+    case GT():
       return lookup(k, t2)
 
-lookup(6, NonEmpty(NonEmpty(Empty, (3, "simon"), Empty), (4, "john"), NonEmpty(NonEmpty(Empty, (6, "sarah"), Empty), (7, "claire"), Empty)))
+lookup(6, NonEmpty(NonEmpty(Empty(), (3, "simon"), Empty()), (4, "john"), NonEmpty(NonEmpty(Empty(), (6, "sarah"), Empty()), (7, "claire"), Empty())))

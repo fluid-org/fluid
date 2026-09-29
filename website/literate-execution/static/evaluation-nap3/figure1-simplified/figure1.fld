@@ -63,7 +63,7 @@ MultiView([
   BarChart(
     caption="NAP3 actions assigned to DEFRA, by chapter",
     size=Dimensions(width=275, height=185),
-    tickLabels=TickLabels(x=Default, y=Default),
+    tickLabels=TickLabels(x=Default(), y=Default()),
     stackedBars=actions_by_chapter("Defra"),
     legend=False
   ),
