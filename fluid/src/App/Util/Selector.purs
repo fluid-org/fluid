@@ -8,7 +8,7 @@ import Data.List.NonEmpty (last)
 import Data.Newtype (over)
 import Data.Profunctor.Strong (first, second)
 import Data.Tuple (fst) as T
-import DataType (FieldIndex, FieldName, cJust, cSegment, cStackedBar, f_segments, f_z)
+import DataType (FieldIndex, FieldName, cSegment, cStackedBar, f_segments, f_z)
 import Lattice (class Neg, 𝔹, neg)
 import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, error, unsafeUpdateAt, (!), (×))
@@ -44,9 +44,6 @@ persist δα = \v -> (over SelStates ((<$>) mapδ) v) × Persistent
    where
    mapδ :: Endo (Selection a)
    mapδ s = s { persistent = (T.fst <<< δα) s.persistent }
-
-just :: Setter (Val (SelStates 𝔹)) 𝔹
-just = constr (last cJust)
 
 type ConstrArg = Name -> FieldName -> SelSetter Val Val
 

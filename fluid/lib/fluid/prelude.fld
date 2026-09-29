@@ -2,18 +2,6 @@ from dataclasses import dataclass
 from math import ceil, log
 
 @dataclass
-class Maybe:
-  pass
-
-@dataclass
-class Nothing(Maybe):
-  pass
-
-@dataclass
-class Just(Maybe):
-  value: object
-
-@dataclass
 class Pair:
   fst: object
   snd: object
@@ -133,39 +121,19 @@ def swap((a, b)):
 def tail(xs):
   return [xs[i] for i in range(1, len(xs))]
 
-# (a -> Bool) -> List a -> Option a
+# (a -> Bool) -> List a -> a | None
 def find(p, xs):
   def go(i):
     if i == len(xs):
-      return Nothing()
+      return None
     if p(xs[i]):
-      return Just(xs[i])
+      return xs[i]
     return go(i + 1)
   return go(0)
-
-# String -> String -> List Dict -> Option Dict
-def find_with_key(k, v, rs):
-  return find(lambda y: y[k] == v, rs)
-
-# Option a -> a
-def from_just(Nothing()):
-  assert False, "Expected Just!"
-def from_just(Just(x)):
-  return x
-
-# Option a -> a -> a
-def from_maybe(Nothing(), y):
-  return y
-def from_maybe(Just(x), _):
-  return x
 
 # (a -> Bool) -> List a -> List a
 def filter(p, xs):
   return [x for x in xs if p(x)]
-
-# (a -> Option b) -> List a -> List b
-def filter_map(p, xs):
-  return [y for x in xs for Just(y) in [p(x)]]
 
 # Split list into longest initial segment whose elements satisfy a predicate, and the rest.
 # (a -> Bool) -> List a -> { init :: List a, rest :: List a }
@@ -267,10 +235,10 @@ def drop(n, xs):
 # Int -> List (Int, b) -> b
 def lookup(k, kvs):
   match find(lambda (k_, _): k == k_, kvs):
-    case Just((_, v)):
-      return v
-    case Nothing():
+    case None:
       assert False, "Key not found in map"
+    case (_, v):
+      return v
 
 # Int -> Int -> Int
 def max(n, m):

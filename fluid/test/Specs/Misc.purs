@@ -31,7 +31,8 @@ misc_cases =
      }
    , { file: "length.fld", fwd_expect: "2" }
    , { file: "lexical_scoping.fld", fwd_expect: "\"6\"" } -- avoid triple-quotes here as VSCode gets confused
-   , { file: "lookup.fld", fwd_expect: """Just("sarah")""" }
+   , { file: "lookup.fld", fwd_expect: "\"sarah\"" }
+   , { file: "find_none.fld", fwd_expect: """[3, "none", None]""" }
    , { file: "map.fld", fwd_expect: "[5, 7, 13, 15, 4, 3, -3]" }
    , { file: "merge_sort.fld", fwd_expect: "[1, 2, 3]" }
    , { file: "match_bindings.fld", fwd_expect: "3" }

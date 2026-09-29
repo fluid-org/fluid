@@ -7,7 +7,7 @@ def stackedBarHeight(stackedBar):
   return sum([segment.z for segment in stackedBar.segments])
 
 def get(x, bar):
-  return from_just(find(lambda stackedBar: stackedBar.x == x, bar.stackedBars))
+  return [stackedBar for stackedBar in bar.stackedBars if stackedBar.x == x][0]
 
 def mkBarChart(scenName, table):
   return BarChart(

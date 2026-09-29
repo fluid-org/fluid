@@ -19,8 +19,8 @@ purepy_cases =
    , { file: "purepy/construct_arity.fld", expected_error: "Point expects 2 argument(s); got 3" }
    , { file: "purepy/dataclass_dup_class.fld", expected_error: "Duplicate class declaration: Point" }
    , { file: "purepy/class_reassigned.fld", expected_error: "Class name reassigned: point" }
-   , { file: "purepy/class_captured_reassigned.fld", expected_error: "Captured variable reassigned: Just" }
-   , { file: "purepy/class_bare.fld", expected_error: "class Nothing is not a value" }
+   , { file: "purepy/class_captured_reassigned.fld", expected_error: "Captured variable reassigned: Pair" }
+   , { file: "purepy/class_bare.fld", expected_error: "class Pair is not a value" }
    , { file: "purepy/dataclass_dup_field.fld", expected_error: "Duplicate field names in class: Point" }
    , { file: "purepy/dataclass_field_default.fld", expected_error: "\"ParseError on line 5, column 10:\\nExpected EOF\"" }
    , { file: "purepy/dataclass_inherited_field_clash.fld", expected_error: "Class Sub redeclares inherited field(s): (\"x\" : Nil)" }

@@ -27,7 +27,7 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst)
-import DataType (cNothing, cPair, cJust)
+import DataType (cPair)
 import DefiniteAssignment (Cxt, Entry(..))
 import Debug (trace)
 import Dict (fromFoldable) as D
@@ -219,10 +219,8 @@ search =
          Right regex' -> do
             let αs = singleton α # Set.insert β
             case Regex.search regex' str of
-               Nothing -> val doc_opt αs (Constr cNothing Nil)
-               Just n -> do
-                  v <- val Nothing αs (Lit (Int n))
-                  val doc_opt αs (Constr cJust (v : Nil))
+               Nothing -> val doc_opt αs (Lit None)
+               Just n -> val doc_opt αs (Lit (Int n))
    op _ _ = throw "Two strings expected"
 
 -- When strings implement an abstract sequence type can express in terms of take/drop
@@ -282,8 +280,8 @@ get =
    op :: Op
    op doc_opt (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
       case lookup s d of
-         Nothing -> val doc_opt (singleton α) (Constr cNothing Nil)
-         Just (β × v) -> val doc_opt (Set.insert β (singleton α)) (Constr cJust (v : Nil))
+         Nothing -> val doc_opt (singleton α) (Lit None)
+         Just (_ × v) -> pure v
    op _ _ = throw "String and dictionary expected"
 
 insert :: ForeignOp

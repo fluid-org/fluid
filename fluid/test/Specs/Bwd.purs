@@ -3,7 +3,7 @@ module Test.Specs.Bwd where
 import Prelude
 
 import App.Util (SelectionType(..))
-import App.Util.Selector (barSegment, constr, dict, dictKey, dictVal, envVal, list, listElement, matrix, matrixElement, select, select', just, topα, (>.>))
+import App.Util.Selector (barSegment, dict, dictKey, dictVal, envVal, list, listElement, matrix, matrixElement, select, select', topα, (>.>))
 import DataType (cBarChart, cMultiView, cNonEmpty, cPair, f_fst, f_left, f_right, f_snd, f_stackedBars, f_value, f_views)
 import Test.Util.Suite (TestBwdSpec)
 import Util ((×))
@@ -274,17 +274,10 @@ bwd_cases =
    , { file: "lookup.fld"
      , bwd_expect:
           \arg -> envVal "tree"
-             ( arg cNonEmpty f_right
-                  ( arg cNonEmpty f_left
-                       ( constr "NonEmpty" select'
-                            >.> arg cNonEmpty f_value
-                               (constr "Pair" select')
-                       )
-                  )
-             )
-     , δv: \_ -> just select'
+             (arg cNonEmpty f_right (arg cNonEmpty f_left (arg cNonEmpty f_value (arg cPair f_snd select'))))
+     , δv: \_ -> select'
      , inputs: []
-     , fwd_expect: "⸨Just(\"Germany\")⸩"
+     , fwd_expect: "⸨\"Germany\"⸩"
      }
    , { file: "linked_outputs/bar_chart_line_chart.fld"
      , bwd_expect:

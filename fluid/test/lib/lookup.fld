@@ -1,11 +1,11 @@
 def lookup(k, Empty()):
-  return Nothing()
+  return None
 def lookup(k, NonEmpty(t1, (key, val), t2)):
   match compare(k, key):
     case LT():
       return lookup(k, t1)
     case EQ():
-      return Just(val)
+      return val
     case GT():
       return lookup(k, t2)
 
