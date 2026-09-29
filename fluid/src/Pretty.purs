@@ -127,18 +127,17 @@ infixApp n op s sym s' =
 instance Ann a => Pretty (Expr a) where
    pretty (Var x) = text x
    pretty (Lit α ℓ) = highlightIf α (pretty ℓ)
-   pretty (Constr α c as Nil) = highlightIf α (expr $ prettyConstr (dottedName c) as)
-   pretty (Constr α c es xes) =
-      highlightIf α (text (dottedName c) <> parens (commas ((pretty <$> es) <> ((\(x ↦ e) -> text x <> text "=" <> pretty e) <$> xes))))
+   pretty (Call α (Var c) (e : e' : Nil) Nil) | c == last cPair = highlightIf α (pair pretty e e')
+   pretty (Call α e es xes) =
+      highlightIf α (expr $ prettySimple e <> parens (commas ((pretty <$> es) <> ((\(x ↦ e') -> text x <> text "=" <> pretty e') <$> xes))))
    pretty (Dictionary α Nil) = highlightIf α (text "{}")
    pretty (Dictionary α es) = highlightIf α (expr $ record $ map pretty es)
    pretty (Matrix α e (x × y) e') =
       highlightIf α (expr $ matrix (pretty e <+> text "for" <+> pair text x y <+> text "in" <+> pretty e'))
    pretty (Lambda c) = pretty c
    pretty (Attribute s x) = expr $ prettySimple s <> text "." <> text x
-   pretty (Subscript e (Constr _ c (k : k' : Nil) Nil)) | last c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
+   pretty (Subscript e (Call _ (Var c) (k : k' : Nil) Nil)) | c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
    pretty (Subscript e k) = expr $ prettySimple e <> brackets (expr $ pretty k)
-   pretty (App s ss) = expr $ prettySimple s <> parens (prettyList ss)
    pretty e@(BinOp _ _ _) = expr $ operatorApp 0 e
    pretty e@(UnOp _ _) = expr $ operatorApp 0 e
    pretty e@(And _ _) = expr $ operatorApp 0 e

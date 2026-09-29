@@ -9,7 +9,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
 import Data.Either (Either, hush)
 import Control.MonadPlus (guard)
-import Data.Foldable (all, and, elem, find, foldM, foldl, foldr, for_, intercalate)
+import Data.Foldable (all, and, elem, find, foldM, foldr, for_, intercalate)
 import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -189,7 +189,7 @@ captures (S.Dataclass _ _ _) = Set.empty
 capturesE :: forall a. S.Expr a -> Set Var
 capturesE (S.Var _) = Set.empty
 capturesE (S.Lit _ _) = Set.empty
-capturesE (S.Constr _ _ es xes) = unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
+capturesE (S.Call _ e es xes) = capturesE e ∪ unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
 capturesE (S.Dictionary _ es) =
    unions ((\(k × v) -> capturesDictKey k ∪ capturesE v) <$> es)
 capturesE (S.Matrix _ e (x × y) e') =
@@ -198,7 +198,6 @@ capturesE (S.Lambda (S.LambdaClause (ps × e))) =
    fv e \\ unions (bv <$> ps)
 capturesE (S.Attribute e _) = capturesE e
 capturesE (S.Subscript e e') = capturesE e ∪ capturesE e'
-capturesE (S.App e es) = capturesE e ∪ unions (capturesE <$> es)
 capturesE (S.BinOp e _ e') = capturesE e ∪ capturesE e'
 capturesE (S.UnOp _ e) = capturesE e
 capturesE (S.And e e') = capturesE e ∪ capturesE e'
@@ -338,8 +337,8 @@ resolveType cxt (T.Union ψ ψ') = T.Union <$> resolveType cxt ψ <*> resolveTyp
 wellFormedExpr :: Cxt -> Raw S.Expr -> Either String (Raw E.Expr)
 wellFormedExpr cxt (S.Var x) = E.Var x <$ var cxt x
 wellFormedExpr _ (S.Lit α ℓ) = pure (E.Lit α ℓ)
-wellFormedExpr cxt (S.Constr α c es xes) = case resolveName cxt c of
-   Just (Class cls) -> do
+wellFormedExpr cxt (S.Call α e es xes) = case asName e >>= \c -> (c × _) <$> resolveName cxt c of
+   Just (c × Class cls) -> do
       let fs = fields cls
       when (null xes && length es /= length fs)
          $ throwError
@@ -347,9 +346,8 @@ wellFormedExpr cxt (S.Constr α c es xes) = case resolveName cxt c of
       xes' <- if null xes then pure Nil else positionaliseKw cls c (length es) xes
       E.Constr α cls.name <$> traverse (wellFormedExpr cxt) (es <> xes')
    _ -> do
-      when (not (null xes)) $ throwError $ "Keyword arguments in call of " <> dottedName c
-      wellFormedExpr cxt (S.App (foldl S.Attribute (S.Var (NEL.head c)) (NEL.tail c)) es)
-wellFormedExpr cxt (S.App e es) = E.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
+      when (not (null xes)) $ throwError "Keyword arguments in function call"
+      E.App <$> wellFormedExpr cxt e <*> traverse (wellFormedExpr cxt) es
 wellFormedExpr cxt (S.BinOp e op e') = E.BinOp <$> wellFormedExpr cxt e <@> op <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.UnOp op e) = E.UnOp op <$> wellFormedExpr cxt e
 wellFormedExpr cxt (S.And e e') = E.And <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
@@ -365,11 +363,6 @@ wellFormedExpr cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
          $ "module " <> dottedName q <> " has no member " <> y
       pure (E.ModMember q y)
    _ -> flip E.Attribute y <$> wellFormedExpr cxt e
-   where
-   asName :: Raw S.Expr -> Maybe Name
-   asName (S.Var x) = Just (singleton x)
-   asName (S.Attribute e' y') = asName e' <#> (_ <> singleton y')
-   asName _ = Nothing
 wellFormedExpr cxt (S.Subscript e e') = E.Subscript <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 wellFormedExpr cxt (S.Matrix α e1 (x × y) e2) =
    (\e2' e1' -> E.Matrix α e1' (x × y) e2') <$> wellFormedExpr cxt e2 <*> wellFormedExpr
@@ -393,6 +386,11 @@ wellFormedExpr cxt (S.DictComp α k e gs) =
    (\((k' × e') × gs') -> E.DictComp α k' e' gs') <$> wellFormedQualifiers cxt gs \cxt' ->
       (×) <$> wellFormedDictKey cxt' k <*> wellFormedExpr cxt' e
 wellFormedExpr cxt (S.DocExpr e e') = E.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+
+asName :: Raw S.Expr -> Maybe Name
+asName (S.Var x) = Just (singleton x)
+asName (S.Attribute e y) = asName e <#> (_ <> singleton y)
+asName _ = Nothing
 
 wellFormedDictKey :: Cxt -> Raw S.DictEntry -> Either String (Raw E.Expr)
 wellFormedDictKey cxt (S.ExprKey e) = wellFormedExpr cxt e

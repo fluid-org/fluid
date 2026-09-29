@@ -303,27 +303,17 @@ expr = context "expr" $ cond <?> "expression"
                k <- cond
                k' <- optionMaybe (delim ',' *> cond)
                close ']'
-               chain (Subscript e (maybe k (\k2 -> Constr unit (singleton (last cPair)) (k : k2 : Nil) Nil) k'))
+               chain (Subscript e (maybe k (\k2 -> pair k k2) k'))
 
-            -- Name applied to arguments parses as Constr; WellFormed turns non-class heads into App.
             app :: Parser (Raw Expr)
             app = do
                delim '('
-               e' <- case asName e of
-                  Just q -> do
-                     args <- commas constrArg
-                     pure $ Constr unit q (takeLefts args) (takeRights args)
-                  Nothing -> App e <$> commas cond
+               args <- commas arg
                close ')'
-               chain e'
+               chain (Call unit e (takeLefts args) (takeRights args))
                where
-               asName :: Raw Expr -> Maybe Name
-               asName (Var x) = Just (singleton x)
-               asName (Attribute e' y) = asName e' <#> (_ <> singleton y)
-               asName _ = Nothing
-
-               constrArg :: Parser (Raw Expr + Bind (Raw Expr))
-               constrArg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)
+               arg :: Parser (Raw Expr + Bind (Raw Expr))
+               arg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)
 
                kwArg :: Parser (Bind (Raw Expr))
                kwArg = defer \_ -> do
@@ -509,7 +499,7 @@ expr = context "expr" $ cond <?> "expression"
                     delim ','
                     e' <- cond
                     close ')'
-                    pure $ Constr unit (singleton (last cPair)) (e : e' : Nil) Nil
+                    pure $ pair e e'
                , fail "Expected `)` or `,` after `(expr`"
                ]
 
@@ -542,6 +532,9 @@ import_ = importAll <|> fromImport
 
 modPath :: Parser Name
 modPath = sepBy1 variable (delim '.')
+
+pair :: Raw Expr -> Raw Expr -> Raw Expr
+pair e e' = Call unit (Var (last cPair)) (e : e' : Nil) Nil
 
 qualifiedName :: Parser Name
 qualifiedName = do

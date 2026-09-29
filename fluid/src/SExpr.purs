@@ -6,7 +6,7 @@ import Bind (Bind, Name, Var)
 import Data.Set (Set, empty, singleton, unions) as Set
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
-import Data.List.NonEmpty (NonEmptyList, head)
+import Data.List.NonEmpty (NonEmptyList)
 import Data.Maybe (Maybe, maybe)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (fst, snd)
@@ -22,13 +22,12 @@ import Util (type (×), error, unimplemented, (×))
 data Expr a
    = Var Var
    | Lit a Literal
-   | Constr a Name (List (Expr a)) (List (Bind (Expr a)))
+   | Call a (Expr a) (List (Expr a)) (List (Bind (Expr a))) -- constructor call when head names a class
    | Dictionary a (List (DictEntry a × Expr a))
    | Matrix a (Expr a) (Var × Var) (Expr a)
    | Lambda (LambdaClause a)
    | Attribute (Expr a) Var
    | Subscript (Expr a) (Expr a)
-   | App (Expr a) (List (Expr a))
    | BinOp (Expr a) Binop (Expr a)
    | UnOp Unop (Expr a)
    | And (Expr a) (Expr a)
@@ -160,13 +159,12 @@ instance Show a => Show (ParagraphElem a) where
 instance FV (Expr a) where
    fv (Var x) = Set.singleton x
    fv (Lit _ _) = Set.empty
-   fv (Constr _ c es xes) = Set.singleton (head c) ∪ Set.unions (fv <$> es) ∪ Set.unions ((fv <<< snd) <$> xes)
+   fv (Call _ e es xes) = fv e ∪ Set.unions (fv <$> es) ∪ Set.unions ((fv <<< snd) <$> xes)
    fv (Dictionary _ entries) = Set.unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
    fv (Matrix _ body (x × y) source) = (fv body \\ (Set.singleton x ∪ Set.singleton y)) ∪ fv source
    fv (Lambda clause) = fv clause
    fv (Attribute e _) = fv e
    fv (Subscript e e') = fv e ∪ fv e'
-   fv (App e es) = fv e ∪ Set.unions (fv <$> es)
    fv (BinOp e _ e') = fv e ∪ fv e'
    fv (UnOp _ e) = fv e
    fv (And e e') = fv e ∪ fv e'
