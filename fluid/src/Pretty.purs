@@ -136,7 +136,6 @@ instance Ann a => Pretty (Expr a) where
       highlightIf α (expr $ matrix (pretty e <+> text "for" <+> pair text x y <+> text "in" <+> pretty e'))
    pretty (Lambda c) = pretty c
    pretty (Attribute s x) = expr $ prettySimple s <> text "." <> text x
-   pretty (ModMember q x) = expr $ text (dottedName q) <> text "." <> text x
    pretty (Subscript e (Constr _ c (k : k' : Nil) Nil)) | last c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
    pretty (Subscript e k) = expr $ prettySimple e <> brackets (expr $ pretty k)
    pretty (App s ss) = expr $ prettySimple s <> parens (prettyList ss)
@@ -251,7 +250,7 @@ instance Pretty Literal where
    pretty None = text "None"
 
 instance Ann a => Pretty (Clause a) where
-   pretty (Clause _ (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
+   pretty (Clause (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
 
 instance Pretty Param where
    pretty (Param p ψ) = pretty p <> annot ψ

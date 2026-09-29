@@ -242,7 +242,7 @@ recDefs = many1 recDef
       delim ')'
       ψ <- optionMaybe (reservedOperator "->" *> typeExpr)
       s <- blockBody
-      pure $ f × Clause unit (ps × ψ × s)
+      pure $ f × Clause (ps × ψ × s)
 
    param :: Parser Param
    param = Param <$> pattern <*> optionMaybe (delim ':' *> typeExpr)
