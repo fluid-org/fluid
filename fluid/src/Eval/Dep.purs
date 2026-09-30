@@ -43,7 +43,7 @@ import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), 
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 
--- Value in the graph: with the in-edges of the vertex it forms, or would form, when used.
+-- Value with the in-edges of a vertex made from it.
 type GVal s = { v :: Raw Val, inEdges :: InEdges s }
 
 type Ctrl s = List (Vertex × Rel (Val s) s)
