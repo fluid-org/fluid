@@ -15,9 +15,8 @@ import Data.Array (concat, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault, length)
-import Data.List (List(..), concatMap, (:), zipWith)
-import Data.List as L
+import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault)
+import Data.List (List(..), (:), zipWith)
 import Data.Tuple (snd)
 import Data.Either (Either, either)
 import Data.Maybe (Maybe(..))
@@ -34,6 +33,7 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
+import Graph.Dep (class Positions, traversePositions)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
@@ -69,41 +69,42 @@ val doc_opt = new (flip Val doc_opt)
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
 
-class Positions f where
-   positions :: forall a. f a -> List a
-
-width :: forall f a. Positions f => f a -> Int
-width = positions >>> length
-
 rootOf :: forall a. Val a -> a
 rootOf (Val α _ _) = α
 
 instance Positions Val where
-   positions (Val α _ u) = α : positions u
+   traversePositions f g (Val α doc u) = Val <$> f α <*> pure (map g <$> doc) <*> traversePositions f g u
 
 instance Positions BaseVal where
-   positions (Lit _) = Nil
-   positions (Constr _ vs) = concatMap positions vs
-   positions (List vs) = concatMap positions (L.fromFoldable vs)
-   positions (Dictionary d) = positions d
-   positions (Matrix m) = positions m
-   positions (Fun φ) = positions φ
+   traversePositions f g = case _ of
+      Lit ℓ -> pure (Lit ℓ)
+      Constr c vs -> Constr c <$> traverse (traversePositions f g) vs
+      List vs -> List <$> traverse (traversePositions f g) vs
+      Dictionary d -> Dictionary <$> traversePositions f g d
+      Matrix m -> Matrix <$> traversePositions f g m
+      Fun φ -> Fun <$> traversePositions f g φ
 
 instance Positions Fun where
-   positions (Closure ρ _ _) = positions ρ
-   positions (Prim _) = Nil
-   positions (Type _) = Nil
-   positions (Partial φ vs) = positions φ <> concatMap positions vs
+   traversePositions f g = case _ of
+      Closure ρ ds d -> Closure <$> traversePositions f g ρ <*> pure (map g <$> ds) <*> pure (map g d)
+      Prim op -> pure (Prim op)
+      Type c -> pure (Type c)
+      Partial φ vs -> Partial <$> traversePositions f g φ <*> traverse (traversePositions f g) vs
 
 instance Positions DictRep where
-   positions (DictRep d) = concatMap (\(_ × (α × v)) -> α : positions v) (toUnfoldable d)
+   traversePositions f g (DictRep d) =
+      DictRep <<< D.fromFoldable <$> traverse (\(k × (α × v)) -> (\β v' -> k × (β × v')) <$> f α <*> traversePositions f g v) (toUnfoldable d :: List _)
 
 instance Positions MatrixRep where
-   positions (MatrixRep (vss × MatrixDim (_ × α) × MatrixDim (_ × β))) =
-      α : β : concatMap positions (L.fromFoldable (A.concat vss))
+   traversePositions f g (MatrixRep (vss × MatrixDim (i × α) × MatrixDim (j × β))) =
+      (\α' β' vss' -> MatrixRep (vss' × MatrixDim (i × α') × MatrixDim (j × β')))
+         <$> f α
+         <*> f β
+         <*> traverse (traverse (traversePositions f g)) vss
 
 instance Positions Env where
-   positions (Env ρ) = concatMap (snd >>> positions) (toUnfoldable ρ)
+   traversePositions f g (Env ρ) =
+      Env <<< D.fromFoldable <$> traverse (\(k × v) -> (k × _) <$> traversePositions f g v) (toUnfoldable ρ :: List _)
 
 firstOrder :: forall a. Val a -> Boolean
 firstOrder (Val _ _ u) = case u of

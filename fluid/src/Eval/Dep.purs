@@ -28,7 +28,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig, assign, dispatch, matches)
 import Expr (Branch(..), Def(..), Expr(..), Pattern, Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, edge, emptyGraph, relabel, vertex)
+import Graph.Dep (DepGraph, Rel, Vertex, edge, emptyGraph, positions, relabel, vertex)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..))
 import Operator (binopSymbol, unopSymbol)
@@ -39,7 +39,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), forDefs, matrixGet, matrixPut, moduleStore, positions, rootOf)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), forDefs, matrixGet, matrixPut, moduleStore, rootOf)
 
 type Sources s = List (Vertex × Rel (Val s) (Val s))
 
@@ -282,7 +282,7 @@ eval inputs = case _ of
          (i' × j' >= 1 × 1)
          ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
       let
-         index k n = { v: Val unit Nothing (V.Lit (Int n)), srcs: project (\p -> Val (k p) Nothing (V.Lit (Int n))) dims }
+         index k n = { v: Val unit Nothing (V.Lit (Int n)), srcs: project (\p -> Val (ctrlWeight * k p) Nothing (V.Lit (Int n))) dims }
       oss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
          let ρ' = maplet x (index height i) `unionWith_never` maplet y (index width j)
          operand <$> eval (inputs { env = inputs.env <+> ρ' }) e
