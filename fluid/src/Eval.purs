@@ -68,8 +68,8 @@ matches classes (Val α _ u) p = second (insert α) case u, p of
       | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
            matchesMany classes (take (length ps) vs) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p') xps of
-         Just vps -> matchesMany classes (fst <$> vps) (snd <$> vps)
+      case traverse (\(x × p') -> lookup x (unwrap xvs) <#> \(β × v) -> β × (v × p')) xps of
+         Just entries -> second (_ ∪ Set.fromFoldable (fst <$> entries)) (matchesMany classes (fst <<< snd <$> entries) (snd <<< snd <$> entries))
          Nothing -> Nothing × empty
    V.List vs, PList ps | A.length vs == length ps -> matchesMany classes (L.fromFoldable vs) ps
    _, _ -> Nothing × empty
