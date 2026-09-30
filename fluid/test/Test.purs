@@ -17,6 +17,7 @@ import Test.Specs.Bwd (bwd_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Comprehension (comprehension_cases)
+import Test.Specs.Dependence (dep_cases)
 import Test.Specs.Graphics (graphics_cases)
 import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
@@ -24,7 +25,7 @@ import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, depSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
@@ -41,7 +42,7 @@ filterSuite files cases makeSuite =
    second void <$> makeSuite (filter (\c -> c.file `elem` files) cases) (1 × false)
 
 allTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-allTests = concat (benchmarks <#> asTestSuite) <> linkingTests <> illFormedTests
+allTests = concat (benchmarks <#> asTestSuite) <> depSuite dep_cases <> linkingTests <> illFormedTests
 
 linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases

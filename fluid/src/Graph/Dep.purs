@@ -116,3 +116,10 @@ materialise g visible = sparseRel <$> (foldl step (Map.empty × Map.empty) (Map.
       entries :: f (Lineage (Vertex × Pos) s) -> List ((Vertex × Vertex) × Map Pos (Map Pos s))
       entries x = mapWithIndex (\j (Lineage (_ × m)) -> j × m) (positions x) >>= \(j × m) ->
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> (q × p) × Map.singleton j (Map.singleton i w)
+
+-- Weights at the positions of a source vertex related to the selected positions of a target vertex.
+lineage :: forall f s. Positions f => Semiring s => Map (Vertex × Vertex) (SparseRel s) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
+lineage edges target selected source v = mapPositions (\i _ -> weight i) (const zero) v
+   where
+   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup (source × target) edges)
+   weight i = foldl add zero ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))

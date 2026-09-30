@@ -1,0 +1,8 @@
+from dataclasses import dataclass
+
+@dataclass
+class P:
+   x: int
+   y: int
+
+p = P(1, 2)

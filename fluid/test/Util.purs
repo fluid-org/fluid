@@ -10,6 +10,7 @@ import Data.Foldable (and, for_, sum)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Set as Set
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
@@ -17,17 +18,17 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
-import Data.Maybe (Maybe(..), maybe)
-import Data.String (null, trim)
+import Data.Maybe (Maybe(..))
+import Data.String (joinWith, null, trim)
 import Data.Tuple (fst, snd)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Pos, SparseRel(..), Vertex, mapPositions, materialise, positions)
+import Graph.Dep (Pos, SparseRel, Vertex, lineage, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain, Lineage, Raw, botOf, erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain(..), Lineage, Raw, botOf, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -37,7 +38,7 @@ import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, rec
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
 import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, class Ann, Env, EnvStmt(..), Val, stripDocs)
+import Val (class HasModuleStore, class Ann, Env(..), EnvStmt(..), Val, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -116,18 +117,11 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
    -- Lineage of the output selection includes the α-graph's backward slice, input by input.
-   edges <- graphBenchmark benchNames.materialise \_ ->
-      pure (materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton dep.root))
-   let selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out0) # L.filter snd <#> fst)
-   for_ (toUnfoldable dep.inputs :: List (String × Vertex)) \(x × q) -> do
-      let
-         v_x = definitely "input labelled" (Map.lookup q dep.g.vals)
-         lineage = case Map.lookup (q × dep.root) edges of
-            Nothing -> Set.empty
-            Just (SparseRel { in_ }) -> Set.unions ((Set.toUnfoldable selected :: List Pos) <#> \j -> maybe Set.empty Map.keys (Map.lookup j in_))
-         sel_new = mapPositions (\i _ -> Set.member i lineage) (const false) v_x :: Val 𝔹
-         sel_old = get x in_ρ
-      unless (and (L.zipWith (\b b' -> not b || b') (positions sel_old) (positions sel_new))) $
+   edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep)
+   let Env ρ_dep = inputLineage dep edges out0
+   for_ (toUnfoldable ρ_dep :: List (String × Val Chain)) \(x × sel_new) -> do
+      let sel_old = get x in_ρ
+      unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
          throw ("lineage of " <> x <> " misses α-graph slice:\nlineage\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (EnvStmt (restrict inputs' in_ρ) (botOf s_raw)))
@@ -140,10 +134,39 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
             throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
    unless (null fwd_expect) do
       let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
-      withMsg "fwd_expect" $ checkPretty fwd_expect (report out1)
+      withMsg "fwd_expect" $ checkPretty fwd_expect (prettyP (report out1))
 
    recordGraphSize g
    recordDepGraphSize dep.g
+
+type DepSpec =
+   { file :: String
+   , δv :: ConstrArg -> Selector Val
+   , expect :: String -- input environment with lineage of the output selection, data ⸨ ⸩ and control ⟪ ⟫
+   }
+
+-- Materialised relations from the inputs to the root, with every intermediate hidden.
+materialiseEnds :: DepEval (Lineage (Vertex × Pos) Chain) -> Map (Vertex × Vertex) (SparseRel Chain)
+materialiseEnds dep = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton dep.root)
+
+inputLineage :: DepEval (Lineage (Vertex × Pos) Chain) -> Map (Vertex × Vertex) (SparseRel Chain) -> Val 𝔹 -> Env Chain
+inputLineage dep edges out = Env $ dep.inputs <#> \q ->
+   lineage edges dep.root selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
+   where
+   selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
+
+testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> DepSpec -> AffError m Unit
+testDep file { δv, expect } = do
+   fluidSrc <- loadFile fluidSrcPaths file
+   { e, gconfig } <- prepConfig fluidSrc
+   dep <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) Chain))
+   let
+      out = definitely "root labelled" (Map.lookup dep.root dep.g.vals)
+      arg = constrArg (fieldIndex gconfig.classes)
+      out0 = fst (δv arg (const unselected <$> (map (const top) out :: Val 𝔹))) <#> getPersistent
+   let Env ρ = inputLineage dep (materialiseEnds dep) out0
+   withMsg "expect" $ checkPretty expect $ joinWith "\n" $
+      (toUnfoldable ρ :: Array (String × Val Chain)) <#> \(x × v) -> x <> ": " <> prettyP v
 
 checkEq
    :: forall m a
@@ -171,10 +194,10 @@ testPretty s = do
    unless (eq (erase s) (erase s')) $
       throw ("parse/prettyP round trip:\nOriginal\n" <> prettyP (erase s) <> "\nNew\n" <> prettyP (erase s'))
 
-checkPretty :: forall a m. Pretty a => String -> a -> EffectError m Unit
-checkPretty expect x = do
-   unless (trim expect `eq` prettyP x) $
-      throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> prettyP x)
+checkPretty :: forall m. String -> String -> EffectError m Unit
+checkPretty expect actual = do
+   unless (trim expect `eq` actual) $
+      throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> actual)
 
 testOutcome :: Boolean -> Endo String
 testOutcome b s = "\x1b[" <> (if b then "32" else "31") <> "m " <> (if b then "✔" else "✖") <> "\x1b[0m " <> s

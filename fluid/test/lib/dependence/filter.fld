@@ -1,0 +1,3 @@
+from dependence.filter_inputs import n, xs
+
+[x for x in xs if x > n]

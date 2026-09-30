@@ -1,0 +1,3 @@
+from dependence.attribute_inputs import p
+
+p.x

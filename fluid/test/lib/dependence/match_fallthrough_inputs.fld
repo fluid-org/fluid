@@ -1,0 +1,12 @@
+from dataclasses import dataclass
+
+@dataclass
+class Foo:
+   pass
+
+@dataclass
+class Bar:
+   pass
+
+v = Bar()
+w = 5

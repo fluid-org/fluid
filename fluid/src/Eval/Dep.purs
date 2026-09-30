@@ -264,20 +264,20 @@ eval inputs = case _ of
          pure (s × operand k × operand u)
       dictionary inputs.ctrl entries
    DictComp _ e e' gs -> do
-      cs <- qualifiers inputs gs
+      cs × ctrl <- qualifiers inputs gs
       entries <- for cs \inputs' -> do
          k <- eval inputs' e
          s <- orThrow (unpack string (snd k)) <#> fst
          u <- eval inputs' e'
          pure (s × operand k × operand u)
-      dictionary (concat (inputs.ctrl : (_.ctrl <$> cs))) entries
+      dictionary ctrl entries
    List _ es -> do
       os <- traverse (eval inputs >>> map operand) es
       constructWith inputs.ctrl (A.fromFoldable >>> V.List) os
    ListComp _ e gs -> do
-      cs <- qualifiers inputs gs
+      cs × ctrl <- qualifiers inputs gs
       os <- for cs \inputs' -> operand <$> eval inputs' e
-      constructWith (concat (inputs.ctrl : (_.ctrl <$> cs))) (A.fromFoldable >>> V.List) os
+      constructWith ctrl (A.fromFoldable >>> V.List) os
    Constr _ c es -> do
       askClasses >>= checkArity (dottedName c) (length es)
       os <- traverse (eval inputs >>> map operand) es
@@ -395,7 +395,8 @@ eval inputs = case _ of
    funName (App e _) = funName e
    funName _ = "unknown"
 
--- Inputs for each pass through the qualifiers.
+-- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
+-- short by a failed guard or an element that does not match.
 qualifiers
    :: forall m s
     . HasClasses m
@@ -408,30 +409,27 @@ qualifiers
    => DepSemiring s
    => Inputs s
    -> List (Raw Qualifier)
-   -> m (List (Inputs s))
-qualifiers inputs Nil = pure (singleton inputs)
+   -> m (List (Inputs s) × Ctrl s)
+qualifiers inputs Nil = pure (singleton inputs × inputs.ctrl)
 qualifiers inputs (Guard e : gs) = do
    o <- eval inputs e
    b <- bool (snd o)
-   if b then qualifiers (inputs { ctrl = consume inputs.ctrl (singleton (fst o × rootOf)) }) gs else pure Nil
+   let ctrl = consume inputs.ctrl (singleton (fst o × rootOf))
+   if b then qualifiers (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
 qualifiers inputs (Generator p e : gs) = do
    o <- operand <$> eval inputs e
    vs <- case o.v of
       Val _ _ (V.List vs) -> pure vs
       _ -> throw $ "Found " <> prettyP o.v <> ", expected list"
    classes <- askClasses
-   concat <$> for (mapWithIndex const (L.fromFoldable vs)) \i -> do
-      let el = { v: element i o.v, srcs: project (element i) o }
+   passes <- for (mapWithIndex const (L.fromFoldable vs)) \i -> do
+      let
+         el = { v: element i o.v, srcs: project (element i) o }
+         ctrl = consume inputs.ctrl (projectCtrl (\x -> rootOf x + inspected classes p (element i x)) o)
       case fst (matches classes el.v p) of
-         Nothing -> pure Nil
-         Just _ ->
-            qualifiers
-               ( inputs
-                    { env = inputs.env <+> bindings classes p el
-                    , ctrl = consume inputs.ctrl (projectCtrl (\x -> rootOf x + inspected classes p (element i x)) o)
-                    }
-               )
-               gs
+         Nothing -> pure (Nil × ctrl)
+         Just _ -> qualifiers (inputs { env = inputs.env <+> bindings classes p el, ctrl = ctrl }) gs
+   pure (concat (fst <$> passes) × concat (snd <$> passes))
 qualifiers inputs (Decl p e : gs) = do
    o <- operand <$> eval inputs e
    classes <- askClasses

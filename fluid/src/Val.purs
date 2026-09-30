@@ -35,7 +35,7 @@ import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
 import Graph.Dep (class Positions, traversePositions)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, Chain(..), class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
@@ -287,6 +287,11 @@ instance Highlightable Unit where
 instance Highlightable Boolean where
    highlightIf false = identity
    highlightIf true = \doc -> text "⸨" <> doc <> text "⸩"
+
+instance Highlightable Chain where
+   highlightIf Zero = identity
+   highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
+   highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
 
 instance Highlightable Vertex where
    highlightIf (Vertex α) = \doc -> doc <> text "_" <> text ("⟨" <> α <> "⟩")

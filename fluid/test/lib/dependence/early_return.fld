@@ -1,0 +1,8 @@
+from dependence.early_return_inputs import a, b, c
+
+def f(c, a, b):
+   if c:
+      return a
+   return b
+
+f(c, a, b)
