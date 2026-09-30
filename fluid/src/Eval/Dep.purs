@@ -551,11 +551,11 @@ apply inputs f os = case f.v of
       fun _ = error absurd
    _ -> throw $ "Found " <> prettyP f.v <> ", expected function"
    where
+   -- Applying a function consumes its root.
    call :: V.Fun Unit -> List (Operand s) -> m (Vertex × Raw Val)
    call φ os' = case φ of
       V.Closure (Env ρ1) ds (Def xs _ s) -> do
          let
-            ctrl = consume inputs.ctrl (projectCtrl rootOf f)
             ρ1' = mapWithKey (\y v -> { v, srcs: project (captured y) f }) ρ1
             ρ2 = closeDefs { ctrl, env: ρ1' } ds
             ρ3 = foldl (\ρ (x × o) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x o) empty (zip (paramVar <$> xs) os')
@@ -564,33 +564,35 @@ apply inputs f os = case f.v of
          Just (PrimRelAt relAt) -> do
             PrimRel g <- relAt (_.v <$> os')
             let zs = zeros <<< _.v <$> os'
-            deliver inputs.ctrl
+            deliver ctrl
                { v: g (_.v <$> os')
                , srcs: concat (mapWithIndex (\i o -> project (\x -> g (definitely' (updateAt i x zs))) o) os')
                }
-         Nothing -> higherOrder id os'
-      V.Type c -> constructWith inputs.ctrl (V.Constr c) os'
+         Nothing -> higherOrder (inputs { ctrl = ctrl }) id os'
+      V.Type c -> constructWith ctrl (V.Constr c) os'
       V.Partial _ _ -> error absurd
+      where
+      ctrl = consume inputs.ctrl (projectCtrl rootOf f)
 
-   higherOrder :: String -> List (Operand s) -> m (Vertex × Raw Val)
-   higherOrder "dict_map" (f' : d : Nil) = do
+   higherOrder :: Inputs s -> String -> List (Operand s) -> m (Vertex × Raw Val)
+   higherOrder inputs' "dict_map" (f' : d : Nil) = do
       results <- for (toUnfoldable (entries d.v)) \(k × _) -> do
-         r <- apply inputs f' (singleton (entryOperand k d))
+         r <- apply inputs' f' (singleton (entryOperand k d))
          pure (k × operand r)
-      construct inputs.ctrl (dictFrom (singleton d) results)
-   higherOrder "dict_intersectionWith" (f' : d1 : d2 : Nil) = do
+      construct inputs'.ctrl (dictFrom (singleton d) results)
+   higherOrder inputs' "dict_intersectionWith" (f' : d1 : d2 : Nil) = do
       results <- for (L.filter (\(k × _) -> lookup k (entries d2.v) /= Nothing) (toUnfoldable (entries d1.v))) \(k × _) -> do
-         r <- apply inputs f' (entryOperand k d1 : entryOperand k d2 : Nil)
+         r <- apply inputs' f' (entryOperand k d1 : entryOperand k d2 : Nil)
          pure (k × operand r)
-      construct inputs.ctrl (dictFrom (d1 : d2 : Nil) results)
-   higherOrder "foldl_with_index" (f' : u : d : Nil) =
-      deliver inputs.ctrl u >>= \r -> foldM step r (toUnfoldable (entries d.v) :: List (String × (Unit × Raw Val)))
+      construct inputs'.ctrl (dictFrom (d1 : d2 : Nil) results)
+   higherOrder inputs' "foldl_with_index" (f' : u : d : Nil) =
+      deliver inputs'.ctrl u >>= \r -> foldM step r (toUnfoldable (entries d.v) :: List (String × (Unit × Raw Val)))
       where
       step acc (k × _) =
-         apply inputs f' (key : operand acc : entryOperand k d : Nil)
+         apply inputs' f' (key : operand acc : entryOperand k d : Nil)
          where
          key = { v: Val unit Nothing (V.Lit (Str k)), srcs: project (\x -> Val (fst (entry k x)) Nothing (V.Lit (Str k))) d }
-   higherOrder id _ = throw ("No dependence relation for " <> id)
+   higherOrder _ id _ = throw ("No dependence relation for " <> id)
 
    entries :: forall a. Val a -> Dict (a × Val a)
    entries (Val _ _ (V.Dictionary (DictRep d))) = d

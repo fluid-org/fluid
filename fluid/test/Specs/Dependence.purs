@@ -15,7 +15,7 @@ dep_cases =
    , { file: "filter.fld", δv: \_ -> select, expect: "n: ⟪5⟫\nxs: ⟪[⸨8⸩, ⟪4⟫, ⸨7⸩, ⟪3⟫]⟫" }
    , { file: "closure.fld", δv: \_ -> select, expect: "a: ⸨1⸩\nb: ⸨2⸩" }
    , { file: "partial.fld", δv: \_ -> select, expect: "a: ⸨1⸩\nb: ⸨2⸩" }
-   , { file: "len.fld", δv: \_ -> select, expect: "len: len\nxs: ⸨[1, 2]⸩" }
+   , { file: "len.fld", δv: \_ -> select, expect: "len: ⟪len⟫\nxs: ⸨[1, 2]⸩" }
    , { file: "dict_lookup.fld", δv: \_ -> select, expect: "d: ⟪{ ⟪a⟫: ⸨1⸩, b: 2 }⟫" }
    , { file: "seq.fld", δv: \arg -> arg cPair f_snd select, expect: "a: 1\nb: 2\nc: ⟪True⟫\nd: ⸨4⸩" }
    ]
