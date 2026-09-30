@@ -88,9 +88,9 @@ matchesMany classes (v : vs) (p : ps) = disjoint <$> matches classes v p <*> mat
    disjoint (ρ × αs) (ρ' × αs') = (ρ `unionWith_never` ρ') × (αs ∪ αs')
 matchesMany _ _ _ = error absurd
 
--- Bindings, body and inspected positions of the first case whose pattern matches.
-dispatch :: forall a. Ord a => ClassTable -> Val a -> List (Case a) -> Maybe (Env a × Stmt a × Set a)
-dispatch classes v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches classes v p
+-- Bindings, case and inspected positions of the first case whose pattern matches.
+dispatch :: forall a. Ord a => ClassTable -> Val a -> List (Case a) -> Maybe (Env a × Case a × Set a)
+dispatch classes v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × (p × s) × αs) <$> matches classes v p
 
 -- Bindings of a pattern which must match.
 assign :: forall m a. Ord a => MonadError Error m => Highlightable a => ClassTable -> Val a -> Pattern -> m (Env a × Set a)
@@ -288,7 +288,7 @@ evalStmt doc_opt ρ s αs = case s of
       v <- eval Nothing ρ e αs
       askClasses <#> (\classes -> dispatch classes v (NEL.toList bs)) >>= case _ of
          Nothing -> pure (Assigns empty empty)
-         Just (ρ' × s' × αs') -> do
+         Just (ρ' × (_ × s') × αs') -> do
             r <- evalStmt doc_opt (ρ <+> ρ') s' (αs ∪ αs')
             case r of
                Returns _ -> pure r

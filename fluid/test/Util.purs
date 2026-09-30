@@ -6,6 +6,8 @@ import App.Util (Selector, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
+import Data.Foldable (sum)
+import Data.Map as Map
 import Data.Set as Set
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
 import Control.Monad.Reader (class MonadReader)
@@ -19,18 +21,19 @@ import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
+import Eval.Dep (DepEval, depEval)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, Raw, botOf, erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain, Raw, botOf, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
 import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
-import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordGraphSize)
+import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Endo, Thunk, check, log', spyWhen, throw, throwLeft, withMsg, (×))
+import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
 import Util.Map (keys, restrict)
-import Val (class HasModuleStore, class Ann, Env, EnvStmt(..), Val)
+import Val (class HasModuleStore, class Ann, BaseVal(..), DictRep(..), Env(..), EnvStmt(..), Fun(..), MatrixRep(..), Val(..))
 
 type TestSuite m = Array (String × m Unit)
 
@@ -58,12 +61,14 @@ graphBenchmark name = benchmark ("G" <> "-" <> name)
 
 benchNames
    :: { eval :: String
+      , dep :: String
       , bwd :: String
       , fwd :: String
       }
 
 benchNames =
    { eval: "Eval"
+   , dep: "Dep"
    , bwd: "Demands"
    , fwd: "DemBy"
    }
@@ -84,6 +89,13 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
+   dep <- graphBenchmark benchNames.dep \_ ->
+      depEval gconfig s' :: m (DepEval Chain)
+   let out_dep = definitely "root labelled" (Map.lookup dep.root dep.g.vals)
+   when tracing.depEval $ log
+      ("depEval: " <> show (Map.size dep.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values dep.g.edges)) <> " edges")
+   unless (stripDocs out_dep == stripDocs (erase outα)) $
+      throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let evalG_bwd = fst <<< (depsOf graphed).bwd
    let evalG_op_bwd = fst <<< (depsOf graphed).fwd
    let EnvStmt ρ_raw s_raw = erase graphed.inα
@@ -110,6 +122,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       withMsg "fwd_expect" $ checkPretty fwd_expect (report out1)
 
    recordGraphSize g
+   recordDepGraphSize dep.g
 
 checkEq
    :: forall m a
@@ -152,3 +165,14 @@ testCondition testName b msg = do
       throw "Test failed" -- could improve this to accumulate test failures rather than "failing fast"
    where
    msg' = testName <> ": " <> msg
+
+-- Value without its doc annotations, for comparing evaluators that attach them differently.
+stripDocs :: forall a. Val a -> Val a
+stripDocs (Val α _ u) = Val α Nothing case u of
+   Constr c vs -> Constr c (stripDocs <$> vs)
+   List vs -> List (stripDocs <$> vs)
+   Dictionary (DictRep d) -> Dictionary (DictRep (map stripDocs <$> d))
+   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map stripDocs) vss × i × j))
+   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (stripDocs <$> ρ)) ds d)
+   Fun (Partial φ vs) -> Fun (Partial φ (stripDocs <$> vs))
+   _ -> u

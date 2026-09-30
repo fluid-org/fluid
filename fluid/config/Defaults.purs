@@ -12,6 +12,7 @@ type TracingConfig =
    , mediatingData :: Boolean
    , mouseEvent :: Boolean
    , intermediates :: Boolean
+   , depEval :: Boolean
    }
 
 tracingDefaults :: TracingConfig
@@ -26,6 +27,7 @@ tracingDefaults =
    , mediatingData: false
    , mouseEvent: false
    , intermediates: true
+   , depEval: false
    }
 
 -- Invariants that are potentially expensive to check and that we might want to disable in production,
