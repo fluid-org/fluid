@@ -36,9 +36,9 @@ def getHeight(offset, bar):
 
 changed126 = map(lambda r: r["changed"], ssp126preds)
 changed245 = map(lambda r: r["changed"], ssp245preds)
-ssp126Total = { type: "Total", emissions: sum(map(lambda r: r["emissions"], ssp126Source)) }
+ssp126Total = { "type": "Total", "emissions": sum(map(lambda r: r["emissions"], ssp126Source)) }
 ssp126table = [ssp126Total] + ssp126Source
-ssp245table = [{ type: "Total", emissions: find_percentile(50, changed245) }] + ssp245Source
+ssp245table = [{ "type": "Total", "emissions": find_percentile(50, changed245) }] + ssp245Source
 ssp126 = mkBarChart("SSP1-2.6", ssp126table)
 ssp245 = mkBarChart("SSP2-4.5", ssp245table)
 totals = map(stackedBarHeight, map(get("Total"), [ssp126, ssp245]))

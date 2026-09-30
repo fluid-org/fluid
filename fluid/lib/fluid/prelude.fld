@@ -143,7 +143,7 @@ def span(p, xs):
       return go(i + 1)
     return i
   n = go(0)
-  return { init: take(n, xs), rest: drop(n, xs) }
+  return { "init": take(n, xs), "rest": drop(n, xs) }
 
 # Each returned list is non-empty.
 # (a -> a -> Bool) -> List a -> List (List a)

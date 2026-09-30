@@ -1,9 +1,9 @@
 data = [
-  { energyType: "Bio", output: 6.2 },
-  { energyType: "Hydro", output: 260 },
-  { energyType: "Solar", output: 19.9 },
-  { energyType: "Wind", output: 91 },
-  { energyType: "Geo", output: 14.4 }
+  { "energyType": "Bio", "output": 6.2 },
+  { "energyType": "Hydro", "output": 260 },
+  { "energyType": "Solar", "output": 19.9 },
+  { "energyType": "Wind", "output": 91 },
+  { "energyType": "Geo", "output": 14.4 }
 ]
 
 types = ["Hydro", "Solar", "Geo"]

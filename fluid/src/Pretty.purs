@@ -19,7 +19,7 @@ import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
-import SExpr (Branch, Case, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Case, Clause(..), Expr(..), Import(..), LambdaClause(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type as T
 import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
@@ -183,7 +183,7 @@ instance Pretty Pattern where
    pretty (PAs p x) = pretty p <+> text "as" <+> text x
 
 instance Pretty (String × Pattern) where
-   pretty (k × v) = text k <> text ":" <+> pretty v
+   pretty (k × v) = string k <> text ":" <+> pretty v
 
 instance Ann a => Pretty (VarDef a) where
    pretty (VarDef v ψ s) = pretty v <> annot ψ <+> assignment (pretty s)
@@ -269,17 +269,13 @@ instance Ann a => Pretty (RecDefs a) where
 instance Ann a => Pretty (Branch a) where
    pretty (f × clause) = text "def" <+> text f <> pretty clause
 
-instance Ann a => Pretty (DictEntry a × Expr a) where
+instance Ann a => Pretty (Expr a × Expr a) where
    pretty (k × v) =
       pretty k <> stmt
          ( inlOrMul
               (text ":" <+> pretty v)
               (text ":" <> indent (line <> pretty v))
          )
-
-instance Ann a => Pretty (DictEntry a) where
-   pretty (ExprKey k) = brackets (pretty k)
-   pretty (VarKey a k) = highlightIf a (text k)
 
 instance Ann a => Pretty (List (ParagraphElem a)) where
    pretty xs = text "f\"\"\"" <> hsep (pretty <$> xs) <> text "\"\"\""
@@ -386,7 +382,7 @@ instance Highlightable a => Pretty (Val a) where
    pretty (Val a (Just v') u) = text "@doc" <> parens (pretty v') <+> highlightIf a (pretty u)
 
 instance Highlightable a => Pretty (Var × (a × Val a)) where
-   pretty (k × (a × v)) = highlightIf a (pretty k) <> text ":" <+> pretty v -- ???
+   pretty (k × (a × v)) = highlightIf a (string k) <> text ":" <+> pretty v
 
 instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Lit ℓ) = pretty ℓ

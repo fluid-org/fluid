@@ -1,9 +1,9 @@
 from util import find_with_key_
 
 ordinalMap = [
-  { lastDigit: 1, suffix: "st" },
-  { lastDigit: 2, suffix: "nd" },
-  { lastDigit: 3, suffix: "rd" }
+  { "lastDigit": 1, "suffix": "st" },
+  { "lastDigit": 2, "suffix": "nd" },
+  { "lastDigit": 3, "suffix": "rd" }
 ]
 
 def ordinal(n):

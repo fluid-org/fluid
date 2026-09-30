@@ -1,2 +1,2 @@
-person = { name: "Alice", age: 30 }
+person = { "name": "Alice", "age": 30 }
 describe = person["name"]

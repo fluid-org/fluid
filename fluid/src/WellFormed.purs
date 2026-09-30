@@ -34,7 +34,7 @@ import Expr (Pattern(..)) as S
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
 import Lattice (Raw)
 import Literal (Literal(..))
-import SExpr (Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Type as T
 import Util (type (×), checkDistinct, definitely, nonEmpty, singleton, whenever, (×), (∩))
 import Util.Pair (Pair(..))
@@ -190,7 +190,7 @@ capturesE (S.Var _) = Set.empty
 capturesE (S.Lit _ _) = Set.empty
 capturesE (S.Call _ e es xes) = capturesE e ∪ unions (capturesE <$> es) ∪ unions ((capturesE <<< snd) <$> xes)
 capturesE (S.Dictionary _ es) =
-   unions ((\(k × v) -> capturesDictKey k ∪ capturesE v) <$> es)
+   unions ((\(k × v) -> capturesE k ∪ capturesE v) <$> es)
 capturesE (S.Matrix _ e (x × y) e') =
    (capturesE e \\ (Set.singleton x ∪ Set.singleton y)) ∪ capturesE e'
 capturesE (S.Lambda (S.LambdaClause (ps × e))) =
@@ -209,12 +209,8 @@ capturesE (S.Paragraph es) = unions (capturesPe <$> es)
    capturesPe (S.Unquote e) = capturesE e
 capturesE (S.List _ es) = Set.unions (capturesE <$> es)
 capturesE (S.ListComp _ e gs) = capturesQualifiers gs ∪ (capturesE e \\ bv gs)
-capturesE (S.DictComp _ k e gs) = capturesQualifiers gs ∪ ((capturesDictKey k ∪ capturesE e) \\ bv gs)
+capturesE (S.DictComp _ k e gs) = capturesQualifiers gs ∪ ((capturesE k ∪ capturesE e) \\ bv gs)
 capturesE (S.DocExpr e e') = capturesE e ∪ capturesE e'
-
-capturesDictKey :: forall a. S.DictEntry a -> Set Var
-capturesDictKey (S.ExprKey e) = capturesE e
-capturesDictKey (S.VarKey _ _) = Set.empty
 
 capturesQualifiers :: forall a. List (S.Qualifier a) -> Set Var
 capturesQualifiers Nil = Set.empty
@@ -372,7 +368,7 @@ wellFormedExpr cxt (S.Lambda (S.LambdaClause (ps × e))) = do
    e' <- wellFormedExpr (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
    E.Lambda unit <$> clauses (NEL.singleton ((ps' <#> (_ × Nothing)) × Nothing × E.Return e'))
 wellFormedExpr cxt (S.Dictionary α kvs) =
-   E.Dictionary α <$> traverse (\(k × v) -> Pair <$> wellFormedDictKey cxt k <*> wellFormedExpr cxt v) kvs
+   E.Dictionary α <$> traverse (\(k × v) -> Pair <$> wellFormedExpr cxt k <*> wellFormedExpr cxt v) kvs
 wellFormedExpr cxt (S.Paragraph elems) =
    E.Constr unit cParagraph <<< (_ : Nil) <<< E.List unit <$> traverse pe elems
    where
@@ -383,17 +379,13 @@ wellFormedExpr cxt (S.ListComp α e gs) =
    (\(e' × gs') -> E.ListComp α e' gs') <$> wellFormedQualifiers cxt gs (\cxt' -> wellFormedExpr cxt' e)
 wellFormedExpr cxt (S.DictComp α k e gs) =
    (\((k' × e') × gs') -> E.DictComp α k' e' gs') <$> wellFormedQualifiers cxt gs \cxt' ->
-      (×) <$> wellFormedDictKey cxt' k <*> wellFormedExpr cxt' e
+      (×) <$> wellFormedExpr cxt' k <*> wellFormedExpr cxt' e
 wellFormedExpr cxt (S.DocExpr e e') = E.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
 
 asName :: Raw S.Expr -> Maybe Name
 asName (S.Var x) = Just (singleton x)
 asName (S.Attribute e y) = asName e <#> (_ <> singleton y)
 asName _ = Nothing
-
-wellFormedDictKey :: Cxt -> Raw S.DictEntry -> Either String (Raw E.Expr)
-wellFormedDictKey cxt (S.ExprKey e) = wellFormedExpr cxt e
-wellFormedDictKey _ (S.VarKey α x) = pure (E.Lit α (Str x))
 
 wellFormedQualifiers
    :: forall b

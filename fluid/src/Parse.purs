@@ -32,7 +32,7 @@ import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
 import Expr (Binop(..), Pattern(..))
-import SExpr (Branch, Clause(..), DictEntry(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type (Primitive(..), TypeExpr(..)) as T
 import Util (type (+), type (×), nonEmpty, singleton, (×))
 
@@ -78,7 +78,7 @@ simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPatter
       takeRights (Left _ : xs) = takeRights xs
 
    pRecord :: Parser Pattern
-   pRecord = defer \_ -> braces (fields variable pattern) <#> PRecord
+   pRecord = defer \_ -> braces (fields stringLiteral pattern) <#> PRecord
 
    pList :: Parser Pattern
    pList = defer \_ -> brackets (trailingCommas pattern) <#> PList
@@ -414,14 +414,8 @@ expr = context "expr" $ cond <?> "expression"
                ]
 
             where
-            key :: Parser (Raw DictEntry)
-            key = exprKey <|> varKey
-
-            exprKey :: Parser (Raw DictEntry)
-            exprKey = defer \_ -> brackets cond <#> ExprKey
-
-            varKey :: Parser (Raw DictEntry)
-            varKey = variable <#> VarKey unit
+            key :: Parser (Raw Expr)
+            key = defer \_ -> cond
 
          matrix :: Parser (Raw Expr)
          matrix = context "matrix" do

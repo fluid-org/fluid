@@ -23,7 +23,7 @@ data Expr a
    = Var Var
    | Lit a Literal
    | Call a (Expr a) (List (Expr a)) (List (Bind (Expr a))) -- constructor call when head names a class
-   | Dictionary a (List (DictEntry a × Expr a))
+   | Dictionary a (List (Expr a × Expr a))
    | Matrix a (Expr a) (Var × Var) (Expr a)
    | Lambda (LambdaClause a)
    | Attribute (Expr a) Var
@@ -37,10 +37,8 @@ data Expr a
    | Paragraph (Paragraph a)
    | List a (List (Expr a))
    | ListComp a (Expr a) (List (Qualifier a))
-   | DictComp a (DictEntry a) (Expr a) (List (Qualifier a))
+   | DictComp a (Expr a) (Expr a) (List (Qualifier a))
    | DocExpr (Expr a) (Expr a)
-
-data DictEntry a = ExprKey (Expr a) | VarKey a Var
 
 data ParagraphElem a = Token String | Unquote (Expr a)
 type Paragraph a = List (ParagraphElem a)
@@ -89,7 +87,6 @@ data Module a = Module (List Import) (List (Stmt a))
 derive instance Functor Stmt
 derive instance Functor Clause
 derive instance Functor LambdaClause
-derive instance Functor DictEntry
 derive instance Functor VarDef
 derive instance Functor Qualifier
 derive instance Functor ParagraphElem
@@ -100,11 +97,6 @@ instance Functor Module where
 
 instance JoinSemilattice a => JoinSemilattice (Expr a) where
    join _ = error unimplemented
-
-derive instance Eq a => Eq (DictEntry a)
-derive instance Generic (DictEntry a) _
-instance Show a => Show (DictEntry a) where
-   show c = genericShow c
 
 derive instance Eq a => Eq (Expr a)
 derive instance Generic (Expr a) _
@@ -201,10 +193,6 @@ instance FV (Clause a) where
 
 instance BV Param where
    bv (Param p _) = bv p
-
-instance FV (DictEntry a) where
-   fv (ExprKey e) = fv e
-   fv (VarKey _ _) = Set.empty
 
 instance FV (ParagraphElem a) where
    fv (Token _) = Set.empty
