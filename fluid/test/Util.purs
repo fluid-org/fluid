@@ -6,7 +6,10 @@ import App.Util (Selector, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
-import Data.Foldable (sum)
+import Data.Foldable (and, for_, sum)
+import Data.FunctorWithIndex (mapWithIndex)
+import Data.List (List)
+import Data.List as L
 import Data.Map as Map
 import Data.Set as Set
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
@@ -14,16 +17,17 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.String (null, trim)
-import Data.Tuple (fst)
+import Data.Tuple (fst, snd)
 import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
+import Graph.Dep (Pos, SparseRel(..), Vertex, mapPositions, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain, Raw, botOf, erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain, Lineage, Raw, botOf, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -32,8 +36,8 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
-import Util.Map (keys, restrict)
-import Val (class HasModuleStore, class Ann, BaseVal(..), DictRep(..), Env(..), EnvStmt(..), Fun(..), MatrixRep(..), Val(..))
+import Util.Map (get, keys, restrict, toUnfoldable, values)
+import Val (class HasModuleStore, class Ann, Env, EnvStmt(..), Val, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -62,6 +66,7 @@ graphBenchmark name = benchmark ("G" <> "-" <> name)
 benchNames
    :: { eval :: String
       , dep :: String
+      , materialise :: String
       , bwd :: String
       , fwd :: String
       }
@@ -69,6 +74,7 @@ benchNames
 benchNames =
    { eval: "Eval"
    , dep: "Dep"
+   , materialise: "Materialise"
    , bwd: "Demands"
    , fwd: "DemBy"
    }
@@ -90,11 +96,11 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
    dep <- graphBenchmark benchNames.dep \_ ->
-      depEval gconfig s' :: m (DepEval Chain)
+      depEval gconfig s' :: m (DepEval (Lineage (Vertex × Pos) Chain))
    let out_dep = definitely "root labelled" (Map.lookup dep.root dep.g.vals)
    when tracing.depEval $ log
       ("depEval: " <> show (Map.size dep.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values dep.g.edges)) <> " edges")
-   unless (stripDocs out_dep == stripDocs (erase outα)) $
+   unless (out_dep == stripDocs (erase outα)) $
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let evalG_bwd = fst <<< (depsOf graphed).bwd
    let evalG_op_bwd = fst <<< (depsOf graphed).fwd
@@ -108,6 +114,21 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    EnvStmt in_ρ _ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
+
+   -- Lineage of the output selection includes the α-graph's backward slice, input by input.
+   edges <- graphBenchmark benchNames.materialise \_ ->
+      pure (materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton dep.root))
+   let selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out0) # L.filter snd <#> fst)
+   for_ (toUnfoldable dep.inputs :: List (String × Vertex)) \(x × q) -> do
+      let
+         v_x = definitely "input labelled" (Map.lookup q dep.g.vals)
+         lineage = case Map.lookup (q × dep.root) edges of
+            Nothing -> Set.empty
+            Just (SparseRel { in_ }) -> Set.unions ((Set.toUnfoldable selected :: List Pos) <#> \j -> maybe Set.empty Map.keys (Map.lookup j in_))
+         sel_new = mapPositions (\i _ -> Set.member i lineage) (const false) v_x :: Val 𝔹
+         sel_old = get x in_ρ
+      unless (and (L.zipWith (\b b' -> not b || b') (positions sel_old) (positions sel_new))) $
+         throw ("lineage of " <> x <> " misses α-graph slice:\nlineage\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (EnvStmt (restrict inputs' in_ρ) (botOf s_raw)))
 
@@ -166,13 +187,3 @@ testCondition testName b msg = do
    where
    msg' = testName <> ": " <> msg
 
--- Value without its doc annotations, for comparing evaluators that attach them differently.
-stripDocs :: forall a. Val a -> Val a
-stripDocs (Val α _ u) = Val α Nothing case u of
-   Constr c vs -> Constr c (stripDocs <$> vs)
-   List vs -> List (stripDocs <$> vs)
-   Dictionary (DictRep d) -> Dictionary (DictRep (map stripDocs <$> d))
-   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map stripDocs) vss × i × j))
-   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (stripDocs <$> ρ)) ds d)
-   Fun (Partial φ vs) -> Fun (Partial φ (stripDocs <$> vs))
-   _ -> u

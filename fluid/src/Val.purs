@@ -106,6 +106,17 @@ instance Positions Env where
    traversePositions f g (Env ρ) =
       Env <<< D.fromFoldable <$> traverse (\(k × v) -> (k × _) <$> traversePositions f g v) (toUnfoldable ρ :: List _)
 
+-- Value without its doc annotations, which are not positions.
+stripDocs :: forall a. Val a -> Val a
+stripDocs (Val α _ u) = Val α Nothing case u of
+   Constr c vs -> Constr c (stripDocs <$> vs)
+   List vs -> List (stripDocs <$> vs)
+   Dictionary (DictRep d) -> Dictionary (DictRep (map stripDocs <$> d))
+   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map stripDocs) vss × i × j))
+   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (stripDocs <$> ρ)) ds d)
+   Fun (Partial φ vs) -> Fun (Partial φ (stripDocs <$> vs))
+   _ -> u
+
 firstOrder :: forall a. Val a -> Boolean
 firstOrder (Val _ _ u) = case u of
    Lit _ -> true

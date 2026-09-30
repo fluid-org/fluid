@@ -28,7 +28,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig, assign, dispatch, matches)
 import Expr (Branch(..), Def(..), Expr(..), Pattern, Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, edge, emptyGraph, positions, relabel, vertex)
+import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, positions, vertex)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..))
 import Operator (binopSymbol, unopSymbol)
@@ -39,7 +39,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), forDefs, matrixGet, matrixPut, moduleStore, rootOf)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), forDefs, matrixGet, matrixPut, moduleStore, rootOf, stripDocs)
 
 type Sources s = List (Vertex × Rel (Val s) (Val s))
 
@@ -75,7 +75,7 @@ sumPositions = positions >>> foldl add zero
 
 -- Weight 1 at every position except beneath the root of a closure.
 unitSection :: forall s. Semiring s => Raw Val -> Val s
-unitSection (Val _ doc u) = Val one (zeros <$> doc) case u of
+unitSection (Val _ _ u) = Val one Nothing case u of
    V.Lit ℓ -> V.Lit ℓ
    V.Constr c vs -> V.Constr c (unitSection <$> vs)
    V.List vs -> V.List (unitSection <$> vs)
@@ -86,7 +86,7 @@ unitSection (Val _ doc u) = Val one (zeros <$> doc) case u of
 
 -- Weight 1 at the root only.
 rootOnly :: forall s. Semiring s => Raw Val -> Val s
-rootOnly (Val _ doc u) = Val one (zeros <$> doc) (zeros u)
+rootOnly (Val _ _ u) = Val one Nothing (zeros u)
 
 field :: forall a. Int -> Val a -> Val a
 field i (Val _ _ (V.Constr _ vs)) = definitely' (vs !! i)
@@ -354,7 +354,7 @@ eval inputs = case _ of
       { moduleEnv } <- moduleStore
       let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
       v <- withMsg "Module member" $ lookup' x ρ_q
-      deliver inputs.ctrl { v: erase v, srcs: Nil }
+      deliver inputs.ctrl { v: stripDocs (erase v), srcs: Nil }
    App e es -> do
       f <- operand <$> eval inputs e
       os <- traverse (eval inputs >>> map operand) es
@@ -386,10 +386,9 @@ eval inputs = case _ of
       eval (inputs { ctrl = consume inputs.ctrl (singleton (fst o × rootOf)) }) (if b then e1 else e2)
    DocExpr e e' -> do
       doc <- eval inputs e
-      p × Val α _ u <- eval inputs e'
-      let v = Val α (Just (snd doc)) u
-      relabel p v
-      pure (p × v)
+      r <- eval inputs e'
+      attachDoc (fst r) (snd doc)
+      pure r
    where
    funName :: forall a. Expr a -> String
    funName (Var x) = x
@@ -636,7 +635,7 @@ depEval
 depEval { ρ, classes } s =
    withClasses classes do
       (root × inputs) × g <- flip runStateT emptyGraph do
-         ins <- for (unwrap (erase ρ) :: Dict (Raw Val)) \v -> vertex v <#> (_ × v)
+         ins <- for (unwrap (erase ρ) :: Dict (Raw Val)) \v -> vertex (stripDocs v) <#> (_ × stripDocs v)
          r <- evalStmt { ctrl: Nil, env: operand <$> ins } s
          pure (fst (asReturns r) × (fst <$> ins))
       pure { g, inputs, root }
