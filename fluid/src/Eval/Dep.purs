@@ -51,11 +51,11 @@ type Ctrl s = List (Vertex × Rel (Val s) s)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (Operand s) }
 
-data Result s = Returns (Vertex × Raw Val) | Assigns (Dict (Operand s))
+data Result s = Returns (Vertex × Raw Val) | Assigns (Dict (Operand s)) (Ctrl s)
 
 asReturns :: forall s. Result s -> Vertex × Raw Val
 asReturns (Returns r) = r
-asReturns (Assigns _) = error "Returns expected"
+asReturns (Assigns _ _) = error "Returns expected"
 
 -- ======================
 -- Weight vectors
@@ -136,18 +136,25 @@ consume ctrl consumed = consumed <> (second (\r -> mul ctrlWeight <<< r) <$> ctr
 
 -- Sum of the weights at the positions inspected by matching the pattern.
 inspected :: forall s. DepSemiring s => ClassTable -> Pattern -> Val s -> s
-inspected classes p x = foldl add zero (snd (definitely "pattern matches" (matches classes x p)))
+inspected classes p x = foldl add zero (snd (matches classes x p))
 
--- Operands bound by a pattern matching the operand, each depending at weight c on the inspected positions.
-bindings :: forall s. DepSemiring s => ClassTable -> Pattern -> Operand s -> Dict (Operand s)
-bindings classes p o = mapWithKey (\y v -> { v, srcs: project (binding y v) o }) (unwrap ρ)
+-- Sum of the weights at the positions inspected by the cases tried up to the first that matches.
+inspectedByCases :: forall s. DepSemiring s => ClassTable -> List Pattern -> Val s -> s
+inspectedByCases classes ps x = foldl add zero (go ps)
    where
-   ρ × _ = definitely "pattern matches" (matches classes o.v p)
+   go Nil = empty
+   go (p : ps') = case matches classes x p of
+      Just _ × αs -> αs
+      Nothing × αs -> αs ∪ go ps'
 
-   binding :: String -> Raw Val -> Val s -> Val s
-   binding y v x =
-      get y (unwrap (fst (definitely' (matches classes x p))))
-         `plus` scaleVal (ctrlWeight * inspected classes p x) (unitSection v)
+-- Operands bound by a pattern matching the operand.
+bindings :: forall s. DepSemiring s => ClassTable -> Pattern -> Operand s -> Dict (Operand s)
+bindings classes p o = mapWithKey (\y v -> { v, srcs: project (binding y) o }) (unwrap ρ)
+   where
+   ρ = definitely "pattern matches" (fst (matches classes o.v p))
+
+   binding :: String -> Val s -> Val s
+   binding y x = get y (unwrap (definitely' (fst (matches classes x p))))
 
 -- Closure capturing the operands, its root depending on control at weight c.
 closureOperand :: forall s. DepSemiring s => Ctrl s -> Dict (Operand s) -> Dict (Raw Def) -> Raw Def -> Operand s
@@ -416,7 +423,7 @@ qualifiers inputs (Generator p e : gs) = do
    classes <- askClasses
    concat <$> for (mapWithIndex const (L.fromFoldable vs)) \i -> do
       let el = { v: element i o.v, srcs: project (element i) o }
-      case matches classes el.v p of
+      case fst (matches classes el.v p) of
          Nothing -> pure Nil
          Just _ ->
             qualifiers
@@ -430,7 +437,7 @@ qualifiers inputs (Decl p e : gs) = do
    o <- operand <$> eval inputs e
    classes <- askClasses
    _ <- assign classes o.v p
-   qualifiers (inputs { env = inputs.env <+> bindings classes p o }) gs
+   qualifiers (inputs { env = inputs.env <+> bindings classes p o, ctrl = consume inputs.ctrl (projectCtrl (inspected classes p) o) }) gs
 
 -- Control sources from an operand, by a relation into the weight.
 projectCtrl :: forall s. Rel (Val s) s -> Operand s -> Ctrl s
@@ -453,7 +460,7 @@ evalStmt inputs = case _ of
    Return e -> Returns <$> eval inputs e
    If bs s_opt -> go (NEL.toList bs) inputs.ctrl
       where
-      go Nil ctrl = maybe (pure (Assigns empty)) (evalStmt (inputs { ctrl = ctrl })) s_opt
+      go Nil ctrl = maybe (pure (Assigns empty ctrl)) (evalStmt (inputs { ctrl = ctrl })) s_opt
       go (Branch e s' : bs') ctrl = do
          o <- eval (inputs { ctrl = ctrl }) e
          b <- bool (snd o)
@@ -462,30 +469,32 @@ evalStmt inputs = case _ of
    Match e bs -> do
       o <- operand <$> eval inputs e
       classes <- askClasses
+      let ctrl = consume inputs.ctrl (projectCtrl (inspectedByCases classes (fst <$> NEL.toList bs)) o)
       case dispatch classes o.v (NEL.toList bs) of
-         Nothing -> pure (Assigns empty)
+         Nothing -> pure (Assigns empty ctrl)
          Just (_ × (p × s') × _) -> do
             let ρ' = bindings classes p o
-            r <- evalStmt (inputs { env = inputs.env <+> ρ', ctrl = consume inputs.ctrl (projectCtrl (inspected classes p) o) }) s'
+            r <- evalStmt (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) s'
             case r of
                Returns _ -> pure r
-               Assigns ρ'' -> pure (Assigns (ρ' <+> ρ''))
+               Assigns ρ'' ctrl' -> pure (Assigns (ρ' <+> ρ'') ctrl')
    Assign p _ e -> do
       o <- operand <$> eval inputs e
       classes <- askClasses
       _ <- assign classes o.v p
-      pure (Assigns (bindings classes p o))
-   DefRec (RecDefs _ ds) -> pure (Assigns (closeDefs inputs ds))
-   Pass -> pure (Assigns empty)
-   ExprStmt e -> eval inputs e $> Assigns empty
+      pure (Assigns (bindings classes p o) (consume inputs.ctrl (projectCtrl (inspected classes p) o)))
+   DefRec (RecDefs _ ds) -> pure (Assigns (closeDefs inputs ds) inputs.ctrl)
+   Pass -> pure (Assigns empty inputs.ctrl)
+   ExprStmt e -> eval inputs e $> Assigns empty inputs.ctrl
    Assert e e_opt -> do
       o <- eval inputs e
       b <- bool (snd o)
-      if b then pure (Assigns empty)
+      let ctrl = consume inputs.ctrl (singleton (fst o × rootOf))
+      if b then pure (Assigns empty ctrl)
       else case e_opt of
          Nothing -> throw "AssertionError"
          Just e' -> do
-            _ × Val _ _ w <- eval (inputs { ctrl = consume inputs.ctrl (singleton (fst o × rootOf)) }) e'
+            _ × Val _ _ w <- eval (inputs { ctrl = ctrl }) e'
             throw
                ( "AssertionError: " <> case w of
                     V.Lit (Str str) -> str
@@ -495,7 +504,7 @@ evalStmt inputs = case _ of
       r1 <- evalStmt inputs s1
       case r1 of
          Returns _ -> pure r1
-         Assigns ρ' -> evalStmt (inputs { env = inputs.env <+> ρ' }) s2
+         Assigns ρ' ctrl -> evalStmt (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) s2
 
 -- Fewer arguments than the arity is a partial application; more applies the result to the rest.
 apply
@@ -519,7 +528,7 @@ apply inputs f os = case f.v of
    Val _ _ (V.Fun φ) -> do
       n <- arity'
       let k = length os
-      if k < n then vertexOf partial
+      if k < n then construct inputs.ctrl partial
       else if k == n then call φ os
       else call φ (take n os) >>= \r -> apply inputs (operand r) (drop n os)
       where
@@ -530,7 +539,7 @@ apply inputs f os = case f.v of
          V.Type c -> askClasses >>= arity (dottedName c)
          V.Partial _ _ -> error absurd
 
-      -- Root and function from the applied function, arguments injected at their slots.
+      -- Root and function from the applied function, arguments injected at their slots, control at the root.
       partial :: Operand s
       partial =
          { v: Val unit Nothing (V.Fun (V.Partial φ (_.v <$> os)))

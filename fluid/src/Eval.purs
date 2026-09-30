@@ -3,7 +3,6 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon)
-import Control.Alternative (guard)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
@@ -57,44 +56,44 @@ patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
 -- Bindings if the pattern matches, with the positions of the value that matching inspected.
-matches :: forall a. Ord a => ClassTable -> Val a -> Pattern -> Maybe (Env a × Set a)
-matches _ (Val α _ u) (PLit ℓ) = guard eq $> (empty × Set.singleton α)
-   where
-   eq = case u of
-      V.Lit ℓ' -> eqLiteral ℓ ℓ'
-      _ -> false
+matches :: forall a. Ord a => ClassTable -> Val a -> Pattern -> Maybe (Env a) × Set a
 matches _ v (PVar x)
-   | x == varAnon = pure (empty × empty)
-   | otherwise = pure (maplet x v × empty)
-matches _ _ PWild = pure (empty × empty)
-matches classes v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches classes v p
-matches classes (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
-   let cls' = definitely "declared class" (Map.lookup (dottedName c') classes)
-   guard (c `elem` ancestors cls')
-   second (insert α) <$> matchesMany classes (take (length ps) vs) ps
-matches _ _ (PConstr _ _ _) = Nothing
-matches classes (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
-   vps <- traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
-   second (insert α) <$> matchesMany classes (fst <$> vps) (snd <$> vps)
-matches _ _ (PRecord _) = Nothing
-matches classes (Val α _ (V.List vs)) (PList ps)
-   | A.length vs == length ps = second (insert α) <$> matchesMany classes (L.fromFoldable vs) ps
-matches _ _ (PList _) = Nothing
+   | x == varAnon = Just empty × empty
+   | otherwise = Just (maplet x v) × empty
+matches _ _ PWild = Just empty × empty
+matches classes v (PAs p x) = first (map (_ `unionWith_never` maplet x v)) (matches classes v p)
+matches classes (Val α _ u) p = second (insert α) case u, p of
+   V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × empty
+   V.Constr c' vs, PConstr c ps Nil
+      | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
+           matchesMany classes (take (length ps) vs) ps
+   V.Dictionary (DictRep xvs), PRecord xps ->
+      case traverse (\(x × p') -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p') xps of
+         Just vps -> matchesMany classes (fst <$> vps) (snd <$> vps)
+         Nothing -> Nothing × empty
+   V.List vs, PList ps | A.length vs == length ps -> matchesMany classes (L.fromFoldable vs) ps
+   _, _ -> Nothing × empty
 
-matchesMany :: forall a. Ord a => ClassTable -> List (Val a) -> List Pattern -> Maybe (Env a × Set a)
-matchesMany _ Nil Nil = pure (empty × empty)
-matchesMany classes (v : vs) (p : ps) = disjoint <$> matches classes v p <*> matchesMany classes vs ps
-   where
-   disjoint (ρ × αs) (ρ' × αs') = (ρ `unionWith_never` ρ') × (αs ∪ αs')
+matchesMany :: forall a. Ord a => ClassTable -> List (Val a) -> List Pattern -> Maybe (Env a) × Set a
+matchesMany _ Nil Nil = Just empty × empty
+matchesMany classes (v : vs) (p : ps) = case matches classes v p of
+   Nothing × αs -> Nothing × αs
+   Just ρ × αs -> case matchesMany classes vs ps of
+      Nothing × αs' -> Nothing × (αs ∪ αs')
+      Just ρ' × αs' -> Just (ρ `unionWith_never` ρ') × (αs ∪ αs')
 matchesMany _ _ _ = error absurd
 
 -- Bindings, case and inspected positions of the first case whose pattern matches.
 dispatch :: forall a. Ord a => ClassTable -> Val a -> List (Case a) -> Maybe (Env a × Case a × Set a)
-dispatch classes v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × (p × s) × αs) <$> matches classes v p
+dispatch classes v = oneOfMap \(p × s) -> case matches classes v p of
+   Just ρ × αs -> Just (ρ × (p × s) × αs)
+   Nothing × _ -> Nothing
 
 -- Bindings of a pattern which must match.
 assign :: forall m a. Ord a => MonadError Error m => Highlightable a => ClassTable -> Val a -> Pattern -> m (Env a × Set a)
-assign classes v p = matches classes v p # orElse ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
+assign classes v p = case matches classes v p of
+   Just ρ × αs -> pure (ρ × αs)
+   Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs ρ ds αs =
@@ -256,8 +255,8 @@ qualifiers ρ (Generator p e : gs) αs = do
       _ -> throw $ "Found " <> prettyP (unit <$ u) <> ", expected list"
    concat <$> for (L.fromFoldable vs) \v ->
       askClasses <#> (\classes -> matches classes v p) >>= case _ of
-         Nothing -> pure Nil
-         Just (ρ' × αs') -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
+         Nothing × _ -> pure Nil
+         Just ρ' × αs' -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
 qualifiers ρ (Decl p e : gs) αs = do
    classes <- askClasses
    ρ' × αs' <- eval Nothing ρ e αs >>= \v -> assign classes v p
