@@ -3,6 +3,7 @@ module Primitive.Defs where
 import Prelude hiding (absurd, apply, div, mod, top)
 
 import Bind (Bind, Var, dottedName)
+import Control.Monad.Error.Class (class MonadError)
 import Data.Argonaut.Core (Json, caseJson)
 import Data.Argonaut.Decode (parseJson)
 import Data.Array as Array
@@ -30,13 +31,15 @@ import DataType (cPair)
 import DefiniteAssignment (Cxt, Entry(..))
 import Debug (trace)
 import Dict (fromFoldable) as D
+import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
+import Effect.Exception (Error)
 import Eval (apply) as G
-import File (File(..), loadFileFromPath)
+import File (class LoadFile, File(..), loadFileFromPath)
 import Foreign.Object as FO
 import Graph (Vertex)
 import Graph.WithGraph (class MonadWithGraphAlloc)
-import Lattice (class BoundedJoinSemilattice, Raw, bot)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
 import Util (type (+), type (×), definitely, definitely', error, orThrow, singleton, throw, (×))
@@ -107,9 +110,9 @@ len =
       val doc_opt (singleton α) (Lit (Int n))
    op _ _ = throw "Single argument expected"
 
-   rel :: forall a. List (Val a) -> Either String (Val a)
-   rel (Val α _ u : Nil) = count u <#> \n -> Val α Nothing (Lit (Int n))
-   rel _ = Left "Single argument expected"
+   rel :: forall m a. MonadError Error m => List (Val a) -> m (Val a)
+   rel (Val α _ u : Nil) = orThrow (count u) <#> \n -> Val α Nothing (Lit (Int n))
+   rel _ = throw "Single argument expected"
 
    count :: forall a. BaseVal a -> Either String Int
    count (List vs) = pure (Array.length vs)
@@ -125,21 +128,41 @@ print_ =
    op doc_opt (x : Nil) = trace x \_ -> val doc_opt empty (Lit None)
    op _ _ = throw "Single argument expected"
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
    rel (_ : Nil) = pure (Val zero Nothing (Lit None))
-   rel _ = Left "Single argument expected"
+   rel _ = throw "Single argument expected"
 
 loadJson :: ForeignOp
 loadJson =
-   ForeignOp ("load_json" × ForeignOp' { arity: 1, op, rel: Nothing })
+   ForeignOp ("load_json" × ForeignOp' { arity: 1, op, rel: Just (PrimRel rel) })
    where
    op :: Op
-   op doc_opt (Val _ _ (Lit (Str path)) : Nil) = do
-      str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
-      case parseJson str of
-         Left err -> throw ("Failed to parse JSON: " <> show err)
-         Right json -> fromJson doc_opt json
+   op doc_opt (Val _ _ (Lit (Str path)) : Nil) = loadJsonFile path >>= fromJson doc_opt
    op _ _ = throw "String expected"
+
+   rel :: forall m a. MonadError Error m => MonadAff m => LoadFile m => DepSemiring a => List (Val a) -> m (Val a)
+   rel (Val α _ (Lit (Str path)) : Nil) = loadJsonFile path <#> jsonVal (ctrlWeight * α)
+   rel _ = throw "String expected"
+
+loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
+loadJsonFile path = do
+   str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
+   case parseJson str of
+      Left err -> throw ("Failed to parse JSON: " <> show err)
+      Right json -> pure json
+
+-- Weight α at every position.
+jsonVal :: forall a. a -> Json -> Val a
+jsonVal α json = caseJson
+   (\_ -> error "Null JSON value cannot be converted to Val")
+   (Bool >>> lit)
+   (\n -> lit (maybe (Float n) Int (Int.fromNumber n)))
+   (Str >>> lit)
+   (map (jsonVal α) >>> List >>> Val α Nothing)
+   (map (\x -> α × jsonVal α x) >>> wrap >>> DictRep >>> Dictionary >>> Val α Nothing)
+   json
+   where
+   lit = Lit >>> Val α Nothing
 
 fromJson :: forall m. MonadWithGraphAlloc m => MonadEffect m => Maybe (Val Vertex) -> Json -> m (Val Vertex)
 fromJson doc_opt =
@@ -194,10 +217,10 @@ dims =
       val doc_opt (singleton α) $ Constr cPair (v1 : v2 : Nil)
    op _ _ = throw "Matrix expected"
 
-   rel :: forall a. List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => List (Val a) -> m (Val a)
    rel (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) =
       pure (Val α Nothing (Constr cPair (Val β1 Nothing (Lit (Int i)) : Val β2 Nothing (Lit (Int j)) : Nil)))
-   rel _ = Left "Matrix expected"
+   rel _ = throw "Matrix expected"
 
 matrixUpdate :: ForeignOp
 matrixUpdate =
@@ -208,10 +231,10 @@ matrixUpdate =
       | c == cPair = val doc_opt (singleton α) (Matrix (matrixPut i j (const v) r))
    op _ _ = throw "Matrix, pair of integers and value expected"
 
-   rel :: forall a. List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => List (Val a) -> m (Val a)
    rel (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
       | c == cPair = pure (Val α Nothing (Matrix (matrixPut i j (const v) r)))
-   rel _ = Left "Matrix, pair of integers and value expected"
+   rel _ = throw "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
 find_str =
@@ -222,9 +245,9 @@ find_str =
       val doc_opt (singleton α # Set.insert β) (Lit (Int (find s1 s2)))
    op _ _ = throw "Two strings expected"
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
    rel (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (find s1 s2))))
-   rel _ = Left "Two strings expected"
+   rel _ = throw "Two strings expected"
 
    find :: String -> String -> Int
    find s1 s2 = fromMaybe (-1) (String.indexOf (Pattern s1) s2)
@@ -239,9 +262,9 @@ search =
       val doc_opt (singleton α # Set.insert β) ℓ
    op _ _ = throw "Two strings expected"
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
-   rel (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = matchIndex regex str <#> Val (α + β) Nothing
-   rel _ = Left "Two strings expected"
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
+   rel (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = orThrow (matchIndex regex str) <#> Val (α + β) Nothing
+   rel _ = throw "Two strings expected"
 
    matchIndex :: forall a. String -> String -> Either String (BaseVal a)
    matchIndex regex str = case Regex.regex regex noFlags of
@@ -261,12 +284,12 @@ split =
       val doc_opt αs (Constr cPair (before : after : Nil))
    op _ _ = throw "Int and string expected"
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
    rel (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) =
       pure (Val (α + β) Nothing (Constr cPair (part (String.take n str) : part (String.drop n str) : Nil)))
       where
       part w = Val (α + β) Nothing (Lit (Str w))
-   rel _ = Left "Int and string expected"
+   rel _ = throw "Int and string expected"
 
 dict_difference :: ForeignOp
 dict_difference =
@@ -277,10 +300,10 @@ dict_difference =
       val doc_opt (singleton α # Set.insert β) (Dictionary (DictRep (d \\ d')))
    op _ _ = throw "Dictionaries expected."
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
    rel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
       pure (Val (α + β) Nothing (Dictionary (DictRep (d \\ d'))))
-   rel _ = Left "Dictionaries expected."
+   rel _ = throw "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
 dict_disjointUnion =
@@ -291,10 +314,10 @@ dict_disjointUnion =
       val doc_opt (singleton α # Set.insert β) (Dictionary (DictRep (unionWith_never d d')))
    op _ _ = throw "Dictionaries expected"
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
    rel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
       pure (Val (α + β) Nothing (Dictionary (DictRep (unionWith_never d d'))))
-   rel _ = Left "Dictionaries expected"
+   rel _ = throw "Dictionaries expected"
 
 foldl_with_index :: ForeignOp
 foldl_with_index =
@@ -326,10 +349,10 @@ get =
          Just (_ × v) -> pure v
    op _ _ = throw "String and dictionary expected"
 
-   rel :: forall a. List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => List (Val a) -> m (Val a)
    rel (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
       pure (maybe (Val α Nothing (Lit None)) snd (lookup s d))
-   rel _ = Left "String and dictionary expected"
+   rel _ = throw "String and dictionary expected"
 
 insert :: ForeignOp
 insert =
@@ -340,10 +363,10 @@ insert =
       val doc_opt (singleton α) (Dictionary (DictRep (Map.insert k (α' × v) d)))
    op _ _ = throw "Dictionary, key and value expected"
 
-   rel :: forall a. List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => List (Val a) -> m (Val a)
    rel (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (Str k)) : v : Nil) =
       pure (Val α Nothing (Dictionary (DictRep (Map.insert k (α' × v) d))))
-   rel _ = Left "Dictionary, key and value expected"
+   rel _ = throw "Dictionary, key and value expected"
 
 dict_intersectionWith :: ForeignOp
 dict_intersectionWith =
@@ -385,9 +408,9 @@ intBinary id f =
       val doc_opt (singleton α # Set.insert β) (Lit (Int (f m n)))
    op _ _ = throw "Two integers expected"
 
-   rel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   rel :: forall m a. MonadError Error m => Semiring a => List (Val a) -> m (Val a)
    rel (Val α _ (Lit (Int m)) : Val β _ (Lit (Int n)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (f m n))))
-   rel _ = Left "Two integers expected"
+   rel _ = throw "Two integers expected"
 
 numToStr :: Int + Number -> String
 numToStr = show `union1` show

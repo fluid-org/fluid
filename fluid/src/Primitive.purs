@@ -3,6 +3,8 @@ module Primitive where
 import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
+import Control.Monad.Error.Class (class MonadError)
+import Effect.Exception (Error)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl)
 import Data.Int (toNumber)
@@ -152,8 +154,8 @@ unary id f =
       x <- orThrow (f.i.unpack v)
       val doc_opt (singleton α) (f.o.pack (f.fwd x))
 
-   rel :: forall a. Partial => List (Val a) -> Either String (Val a)
-   rel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
+   rel :: forall m a. Partial => MonadError Error m => List (Val a) -> m (Val a)
+   rel (Val α _ v : Nil) = orThrow (f.i.unpack v) <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b

@@ -15,7 +15,6 @@ import Data.Array (concat, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Either (Either)
 import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault, length)
 import Data.List (List(..), concatMap, (:), zipWith)
 import Data.List as L
@@ -35,7 +34,7 @@ import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
@@ -193,7 +192,16 @@ type Op =
 
 -- Dependence relation of a first-order primitive at its arguments, parametric in the annotation so that at a
 -- weight type it maps argument weight vectors to the result weight vector.
-newtype PrimRel = PrimRel (forall a. Semiring a => List (Val a) -> Either String (Val a))
+newtype PrimRel = PrimRel
+   ( forall m a
+      . MonadError Error m
+     => MonadAff m
+     => MonadReader FileCxt m
+     => LoadFile m
+     => DepSemiring a
+     => List (Val a)
+     -> m (Val a)
+   )
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
