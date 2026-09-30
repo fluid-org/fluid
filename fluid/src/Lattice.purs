@@ -40,19 +40,19 @@ class (BoundedLattice a, Neg a) <= BooleanLattice a
 class (Semiring s, Eq s) <= DepSemiring s where
    ctrlWeight :: s
 
-data Chain = Zero | Ctrl | One
+data Chain = Zero | Ctrl | Data
 
 derive instance Eq Chain
 derive instance Ord Chain
 
 instance Show Chain where
    show Zero = "0"
-   show Ctrl = "c"
-   show One = "1"
+   show Ctrl = "○"
+   show Data = "●"
 
 instance Semiring Chain where
    zero = Zero
-   one = One
+   one = Data
    add = max
    mul = min
 
