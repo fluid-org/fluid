@@ -36,6 +36,29 @@ class Neg a where
 
 class (BoundedLattice a, Neg a) <= BooleanLattice a
 
+-- Addition idempotent; ctrlWeight idempotent for multiplication and bounding its own multiples.
+class (Semiring s, Eq s) <= DepSemiring s where
+   ctrlWeight :: s
+
+data Chain = Zero | Ctrl | One
+
+derive instance Eq Chain
+derive instance Ord Chain
+
+instance Show Chain where
+   show Zero = "0"
+   show Ctrl = "c"
+   show One = "1"
+
+instance Semiring Chain where
+   zero = Zero
+   one = One
+   add = max
+   mul = min
+
+instance DepSemiring Chain where
+   ctrlWeight = Ctrl
+
 class BotOf t u | t -> u where
    botOf :: t -> u
 

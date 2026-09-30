@@ -11,13 +11,14 @@ import Control.Monad.Reader (class MonadReader, ReaderT)
 import Control.Monad.State (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
-import Data.Array (concat, (!!))
+import Data.Array (concat, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Array (zipWith) as A
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
-import Data.List (List(..), (:), zipWith)
+import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault, length)
+import Data.List (List(..), concatMap, (:), zipWith)
+import Data.List as L
+import Data.Tuple (snd)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set (Set, unions)
@@ -66,6 +67,70 @@ val doc_opt = new (flip Val doc_opt)
 
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
+
+class Positions f where
+   positions :: forall a. f a -> List a
+
+width :: forall f a. Positions f => f a -> Int
+width = positions >>> length
+
+instance Positions Val where
+   positions (Val α _ u) = α : positions u
+
+instance Positions BaseVal where
+   positions (Lit _) = Nil
+   positions (Constr _ vs) = concatMap positions vs
+   positions (List vs) = concatMap positions (L.fromFoldable vs)
+   positions (Dictionary d) = positions d
+   positions (Matrix m) = positions m
+   positions (Fun φ) = positions φ
+
+instance Positions Fun where
+   positions (Closure ρ _ _) = positions ρ
+   positions (Prim _) = Nil
+   positions (Type _) = Nil
+   positions (Partial φ vs) = positions φ <> concatMap positions vs
+
+instance Positions DictRep where
+   positions (DictRep d) = concatMap (\(_ × (α × v)) -> α : positions v) (toUnfoldable d)
+
+instance Positions MatrixRep where
+   positions (MatrixRep (vss × MatrixDim (_ × α) × MatrixDim (_ × β))) =
+      α : β : concatMap positions (L.fromFoldable (A.concat vss))
+
+instance Positions Env where
+   positions (Env ρ) = concatMap (snd >>> positions) (toUnfoldable ρ)
+
+newtype EvalIn a = EvalIn { ctrl :: a, env :: Env a }
+
+instance Positions EvalIn where
+   positions (EvalIn { ctrl, env }) = ctrl : positions env
+
+ctrlIn :: forall a. EvalIn a -> a
+ctrlIn (EvalIn { ctrl }) = ctrl
+
+envIn :: forall a. EvalIn a -> Env a
+envIn (EvalIn { env }) = env
+
+-- Linear map between free semimodules over the positions of a and b.
+type Rel a b = a -> b
+
+type EvalRel s = Rel (EvalIn s) (Val s)
+
+sumRel :: forall a f s. Apply f => Semiring s => Rel a (f s) -> Rel a (f s) -> Rel a (f s)
+sumRel r r' x = lift2 add (r x) (r' x)
+
+scaleRel :: forall a f s. Functor f => Semiring s => s -> Rel a (f s) -> Rel a (f s)
+scaleRel s r = map (mul s) <<< r
+
+firstOrder :: forall a. Val a -> Boolean
+firstOrder (Val _ _ u) = case u of
+   Lit _ -> true
+   Constr _ vs -> all firstOrder vs
+   List vs -> all firstOrder vs
+   Dictionary (DictRep d) -> all (snd >>> firstOrder) d
+   Matrix (MatrixRep (vss × _ × _)) -> all (all firstOrder) vss
+   Fun _ -> false
 
 data Fun a
    = Closure (Env a) (Dict (Def a)) (Def a)
@@ -189,8 +254,8 @@ type Array2 a = Array (Array a)
 
 matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
 matrixGet i j (MatrixRep (vss × _ × _)) = definitely "matrix indices within bounds" $ do
-   us <- vss !! i
-   us !! j
+   us <- vss A.!! i
+   us A.!! j
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
@@ -224,6 +289,7 @@ derive instance Functor Env
 derive instance Functor Fun
 derive instance Functor BaseVal
 derive instance Functor EnvStmt
+derive instance Functor EvalIn
 derive instance Traversable MatrixDim
 derive instance Traversable Val
 derive instance Traversable BaseVal
@@ -275,6 +341,9 @@ instance Apply Env where
 
 instance Apply EnvStmt where
    apply (EnvStmt fρ fs) (EnvStmt ρ s) = EnvStmt (fρ <*> ρ) (fs <*> s)
+
+instance Apply EvalIn where
+   apply (EvalIn f) (EvalIn x) = EvalIn { ctrl: f.ctrl x.ctrl, env: f.env <*> x.env }
 
 instance Foldable DictRep where
    foldl f acc (DictRep d) = foldl (\acc' (a × v) -> foldl f (acc' `f` a) v) acc d
@@ -410,7 +479,7 @@ instance Vertices (DictKey Vertex) where
 
 instance Vertices (MatrixRep Vertex) where
    vertices (MatrixRep (vss × i × j)) =
-      unions (concat (map vertices <$> vss))
+      unions (A.concat (map vertices <$> vss))
          ∪ vertices i
          ∪ vertices j
 
