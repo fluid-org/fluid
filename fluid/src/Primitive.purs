@@ -28,7 +28,7 @@ import Pretty (prettyP)
 import Util (type (+), type (×), absurd, definitely', error, orThrow, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Val (BaseVal(..), Deriv(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), val)
+import Val (BaseVal(..), PrimRel(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), val)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -145,15 +145,15 @@ unary id f =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, op: unsafePartial op', deriv: Just (Deriv (unsafePartial deriv)) }
+   op = ForeignOp' { arity: 1, op: unsafePartial op', rel: Just (PrimRel (unsafePartial rel)) }
 
    op' :: Partial => Op
    op' doc_opt (Val α _ v : Nil) = do
       x <- orThrow (f.i.unpack v)
       val doc_opt (singleton α) (f.o.pack (f.fwd x))
 
-   deriv :: forall a. Partial => List (Val a) -> Either String (Val a)
-   deriv (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
+   rel :: forall a. Partial => List (Val a) -> Either String (Val a)
+   rel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b
@@ -169,12 +169,12 @@ union1 :: forall a1 b. (a1 -> b) -> (Number -> b) -> a1 + Number -> b
 union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
--- Derivatives of the operators, from the positions their evaluation inspects.
-binopDeriv :: forall a. Ord a => Semiring a => Binop -> Val a -> Val a -> Either String (Val a)
-binopDeriv op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
+-- Dependence relations of the operators, from the positions their evaluation inspects.
+binopRel :: forall a. Ord a => Semiring a => Binop -> Val a -> Val a -> Either String (Val a)
+binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
 
-unopDeriv :: forall a. Ord a => Semiring a => Unop -> Val a -> Either String (Val a)
-unopDeriv op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
+unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> Either String (Val a)
+unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
 
 binop :: forall a. Ord a => Binop -> Val a -> Val a -> Either String (BaseVal a × Set a)
 binop Eq v v'

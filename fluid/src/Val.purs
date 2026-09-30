@@ -191,14 +191,14 @@ type Op =
    -> List (Val Vertex)
    -> m (Val Vertex)
 
--- Derivative of a first-order primitive at its arguments, parametric in the annotation so that at a weight
--- type it maps argument weight vectors to the result weight vector.
-newtype Deriv = Deriv (forall a. Semiring a => List (Val a) -> Either String (Val a))
+-- Dependence relation of a first-order primitive at its arguments, parametric in the annotation so that at a
+-- weight type it maps argument weight vectors to the result weight vector.
+newtype PrimRel = PrimRel (forall a. Semiring a => List (Val a) -> Either String (Val a))
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
    , op :: Op
-   , deriv :: Maybe Deriv -- Nothing for higher-order and effectful primitives
+   , rel :: Maybe PrimRel -- Nothing for higher-order and effectful primitives
    }
 
 newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq
