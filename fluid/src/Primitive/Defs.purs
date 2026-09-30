@@ -47,7 +47,7 @@ import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, intersectionWith, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, PrimMap(..), PrimRel(..), Val(..), matrixPut, pureRel, rootOf, val)
+import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, PrimRel(..), PrimRelAt(..), Val(..), matrixPut, pureRel, rootOf, val)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -134,15 +134,15 @@ print_ =
 
 loadJson :: ForeignOp
 loadJson =
-   ForeignOp ("load_json" × ForeignOp' { arity: 1, op, rel: Just (PrimRel rel) })
+   ForeignOp ("load_json" × ForeignOp' { arity: 1, op, rel: Just (PrimRelAt rel) })
    where
    op :: Op
    op doc_opt (Val _ _ (Lit (Str path)) : Nil) = loadJsonFile path >>= fromJson doc_opt
    op _ _ = throw "String expected"
 
-   rel :: forall m. MonadError Error m => MonadAff m => LoadFile m => List (Raw Val) -> m PrimMap
+   rel :: forall m. MonadError Error m => MonadAff m => LoadFile m => List (Raw Val) -> m PrimRel
    rel (Val _ _ (Lit (Str path)) : Nil) = loadJsonFile path <#> \json ->
-      PrimMap \vs -> jsonVal (ctrlWeight * foldl add zero (rootOf <$> vs)) json
+      PrimRel \vs -> jsonVal (ctrlWeight * foldl add zero (rootOf <$> vs)) json
    rel _ = throw "String expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json

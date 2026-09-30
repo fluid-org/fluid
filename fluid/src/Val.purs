@@ -34,7 +34,6 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
-import Graph.Dep (Rel)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
@@ -106,20 +105,6 @@ instance Positions MatrixRep where
 instance Positions Env where
    positions (Env ρ) = concatMap (snd >>> positions) (toUnfoldable ρ)
 
-newtype EvalIn a = EvalIn { ctrl :: a, env :: Env a }
-
-instance Positions EvalIn where
-   positions (EvalIn { ctrl, env }) = ctrl : positions env
-
-ctrlIn :: forall a. EvalIn a -> a
-ctrlIn (EvalIn { ctrl }) = ctrl
-
-envIn :: forall a. EvalIn a -> Env a
-envIn (EvalIn { env }) = env
-
--- Dependence relation of a subderivation.
-type EvalRel s = Rel (EvalIn s) (Val s)
-
 firstOrder :: forall a. Val a -> Boolean
 firstOrder (Val _ _ u) = case u of
    Lit _ -> true
@@ -189,26 +174,26 @@ type Op =
 
 -- Dependence relation of a primitive at a tuple of argument values, a linear map from argument weight
 -- vectors to the result weight vector; at Unit, the value itself.
-newtype PrimMap = PrimMap (forall a. DepSemiring a => List (Val a) -> Val a)
+newtype PrimRel = PrimRel (forall a. DepSemiring a => List (Val a) -> Val a)
 
-newtype PrimRel = PrimRel
+newtype PrimRelAt = PrimRelAt
    ( forall m
       . MonadError Error m
      => MonadAff m
      => MonadReader FileCxt m
      => LoadFile m
      => List (Raw Val)
-     -> m PrimMap
+     -> m PrimRel
    )
 
 -- Relation of a primitive without effects, checked at the argument values.
-pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> PrimRel
-pureRel f = PrimRel \vs -> orThrow (f vs) $> PrimMap (f >>> either (\_ -> error absurd) identity)
+pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> PrimRelAt
+pureRel f = PrimRelAt \vs -> orThrow (f vs) $> PrimRel (f >>> either (\_ -> error absurd) identity)
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
    , op :: Op
-   , rel :: Maybe PrimRel -- Nothing for higher-order and effectful primitives
+   , rel :: Maybe PrimRelAt -- Nothing for higher-order primitives
    }
 
 newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq
@@ -305,7 +290,6 @@ derive instance Functor Env
 derive instance Functor Fun
 derive instance Functor BaseVal
 derive instance Functor EnvStmt
-derive instance Functor EvalIn
 derive instance Traversable MatrixDim
 derive instance Traversable Val
 derive instance Traversable BaseVal
@@ -357,9 +341,6 @@ instance Apply Env where
 
 instance Apply EnvStmt where
    apply (EnvStmt fρ fs) (EnvStmt ρ s) = EnvStmt (fρ <*> ρ) (fs <*> s)
-
-instance Apply EvalIn where
-   apply (EvalIn f) (EvalIn x) = EvalIn { ctrl: f.ctrl x.ctrl, env: f.env <*> x.env }
 
 instance Foldable DictRep where
    foldl f acc (DictRep d) = foldl (\acc' (a × v) -> foldl f (acc' `f` a) v) acc d
