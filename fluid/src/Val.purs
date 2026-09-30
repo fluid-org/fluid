@@ -19,6 +19,7 @@ import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault,
 import Data.List (List(..), concatMap, (:), zipWith)
 import Data.List as L
 import Data.Tuple (snd)
+import Data.Either (Either, either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set (Set, unions)
@@ -33,12 +34,13 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
+import Graph.Dep (Rel)
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
-import Util (class IsEmpty, type (×), Endo, definitely, error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (class IsEmpty, type (×), Endo, absurd, definitely, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
@@ -73,6 +75,9 @@ class Positions f where
 
 width :: forall f a. Positions f => f a -> Int
 width = positions >>> length
+
+rootOf :: forall a. Val a -> a
+rootOf (Val α _ _) = α
 
 instance Positions Val where
    positions (Val α _ u) = α : positions u
@@ -112,16 +117,8 @@ ctrlIn (EvalIn { ctrl }) = ctrl
 envIn :: forall a. EvalIn a -> Env a
 envIn (EvalIn { env }) = env
 
--- Linear map between free semimodules over the positions of a and b.
-type Rel a b = a -> b
-
+-- Dependence relation of a subderivation.
 type EvalRel s = Rel (EvalIn s) (Val s)
-
-sumRel :: forall a f s. Apply f => Semiring s => Rel a (f s) -> Rel a (f s) -> Rel a (f s)
-sumRel r r' x = lift2 add (r x) (r' x)
-
-scaleRel :: forall a f s. Functor f => Semiring s => s -> Rel a (f s) -> Rel a (f s)
-scaleRel s r = map (mul s) <<< r
 
 firstOrder :: forall a. Val a -> Boolean
 firstOrder (Val _ _ u) = case u of
@@ -190,18 +187,23 @@ type Op =
    -> List (Val Vertex)
    -> m (Val Vertex)
 
--- Dependence relation of a first-order primitive at its arguments, parametric in the annotation so that at a
--- weight type it maps argument weight vectors to the result weight vector.
+-- Dependence relation of a primitive at a tuple of argument values, a linear map from argument weight
+-- vectors to the result weight vector; at Unit, the value itself.
+newtype PrimMap = PrimMap (forall a. DepSemiring a => List (Val a) -> Val a)
+
 newtype PrimRel = PrimRel
-   ( forall m a
+   ( forall m
       . MonadError Error m
      => MonadAff m
      => MonadReader FileCxt m
      => LoadFile m
-     => DepSemiring a
-     => List (Val a)
-     -> m (Val a)
+     => List (Raw Val)
+     -> m PrimMap
    )
+
+-- Relation of a primitive without effects, checked at the argument values.
+pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> PrimRel
+pureRel f = PrimRel \vs -> orThrow (f vs) $> PrimMap (f >>> either (\_ -> error absurd) identity)
 
 data ForeignOp' = ForeignOp'
    { arity :: Int

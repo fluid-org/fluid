@@ -3,8 +3,6 @@ module Primitive where
 import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
-import Control.Monad.Error.Class (class MonadError)
-import Effect.Exception (Error)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl)
 import Data.Int (toNumber)
@@ -30,7 +28,7 @@ import Pretty (prettyP)
 import Util (type (+), type (×), absurd, definitely', error, orThrow, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Val (BaseVal(..), PrimRel(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), val)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), pureRel, val)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -147,15 +145,15 @@ unary id f =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, op: unsafePartial op', rel: Just (PrimRel (unsafePartial rel)) }
+   op = ForeignOp' { arity: 1, op: unsafePartial op', rel: Just (pureRel (unsafePartial rel)) }
 
    op' :: Partial => Op
    op' doc_opt (Val α _ v : Nil) = do
       x <- orThrow (f.i.unpack v)
       val doc_opt (singleton α) (f.o.pack (f.fwd x))
 
-   rel :: forall m a. Partial => MonadError Error m => List (Val a) -> m (Val a)
-   rel (Val α _ v : Nil) = orThrow (f.i.unpack v) <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
+   rel :: forall a. Partial => List (Val a) -> Either String (Val a)
+   rel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b

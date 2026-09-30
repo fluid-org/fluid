@@ -37,8 +37,11 @@ class Neg a where
 class (BoundedLattice a, Neg a) <= BooleanLattice a
 
 -- Addition idempotent; ctrlWeight idempotent for multiplication and bounding its own multiples.
-class (Semiring s, Eq s) <= DepSemiring s where
+class (Semiring s, Ord s) <= DepSemiring s where
    ctrlWeight :: s
+
+instance DepSemiring Unit where
+   ctrlWeight = unit
 
 data Chain = Zero | Ctrl | Data
 
