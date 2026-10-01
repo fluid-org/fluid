@@ -114,15 +114,11 @@ matchesMany _ _ _ = error absurd
 -- Bindings of the first case whose pattern matches, with the control input afterwards: the positions inspected
 -- by the cases tried, or unchanged if nothing is inspected.
 dispatch :: forall s b. ClassTable -> List (Pattern × b) -> GVal s -> Ctrl s -> Maybe (Dict (GVal s) × b) × Ctrl s
-dispatch classes cases v ctrl = go cases Nil
-   where
-   go Nil ctrls = Nothing × after ctrls
-   go ((p × b) : cases') ctrls = case matches classes v p of
-      Just ρ × ctrls' -> Just (ρ × b) × after (ctrls <> ctrls')
-      Nothing × ctrls' -> go cases' (ctrls <> ctrls')
-
-   after Nil = ctrl
-   after ctrls = concat ctrls
+dispatch _ Nil _ ctrl = Nothing × ctrl
+dispatch classes ((p × b) : cases) v ctrl = case matches classes v p of
+   Just ρ × Nil -> Just (ρ × b) × ctrl
+   Just ρ × ctrls -> Just (ρ × b) × concat ctrls
+   Nothing × ctrls -> second (concat ctrls <> _) (dispatch classes cases v Nil)
 
 -- dispatch on a single pattern, which must match.
 assign :: forall m s. MonadError Error m => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)
