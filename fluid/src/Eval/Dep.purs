@@ -46,6 +46,7 @@ import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
 type GVal s = { v :: Raw Val, inEdges :: InEdges s }
+-- Dependence of the control input on values already in the graph.
 type Ctrl s = List (Vertex × Rel (Val s) s)
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
