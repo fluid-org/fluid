@@ -44,7 +44,7 @@ import Val (BaseVal(..), Fun(..)) as V
 import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), forDefs, matrixGet, matrixPut, moduleStore, rootOf, stripDocs)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
--- Value with the in-edges of a vertex made from it.
+-- Value with the relations into its positions from the vertices it depends on.
 type GVal s = { v :: Raw Val, inEdges :: InEdges s }
 type Ctrl s = List (Vertex × Rel (Val s) s)
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
