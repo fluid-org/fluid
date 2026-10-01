@@ -81,6 +81,14 @@ viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt 
 ctrlVia :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
 ctrlVia r v = second (r <<< _) <$> v.inEdges
 
+-- Adds dependence on control at weight c to the positions of v in the given section.
+withCtrl :: forall s. DepSemiring s => Ctrl s -> Val s -> GVal s -> GVal s
+withCtrl ctrl section v = v { inEdges = v.inEdges <> (ctrl <#> second \r x -> scale (ctrlWeight * r x) section) }
+
+-- Constructed value: root depends on control at weight c.
+constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
+constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)) v
+
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
 matches _ v (PVar x)
@@ -126,18 +134,15 @@ assign classes p v ctrl = case dispatch classes (singleton (p × unit)) v ctrl o
    Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
--- Closure capturing the values, its root depending on control at weight c.
+-- Closure capturing the environment.
 closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
-closure ctrl ρ ds d = { val, inEdges }
+closure ctrl ρ ds d = constructed ctrl { val, inEdges: viaAll (zip (fst <$> xvs) >>> D.fromFoldable >>> clo) (snd <$> xvs) }
    where
+   xvs = toUnfoldable ρ :: List (String × GVal s)
    val = Val unit Nothing (V.Fun (V.Closure (Env (_.val <$> ρ)) ds d))
-   zρ = zeros <<< _.val <$> ρ
 
-   clo :: Dict (Val s) -> s -> Val s
-   clo ρ' α = Val α Nothing (V.Fun (V.Closure (Env ρ') (zeros <$> ds) (zeros d)))
-
-   inEdges = concat (toUnfoldable ρ <#> \(y × v) -> via (\x -> clo (insert y x zρ) zero) v)
-      <> (ctrl <#> second \r x -> clo zρ (ctrlWeight * r x))
+   clo :: Dict (Val s) -> Val s
+   clo ρ' = Val zero Nothing (V.Fun (V.Closure (Env ρ') (zeros <$> ds) (zeros d)))
 
 closeDefs :: forall s. DepSemiring s => Inputs s -> Dict (Raw Def) -> Dict (GVal s)
 closeDefs inputs ds = ds <#> \d ->
@@ -156,20 +161,12 @@ vertexOf { val, inEdges } = do
    for_ inEdges \(q × r) -> edge q p r
    pure (p × val)
 
--- New vertex with control dependence at weight c on the given section of the value.
-vertexCtrl :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> Val s -> GVal s -> m (Vertex × Raw Val)
-vertexCtrl ctrl section v = do
-   p × val <- vertexOf v
-   for_ ctrl \(q × r) -> edge q p \x -> scale (ctrlWeight * r x) section
-   pure (p × val)
-
--- Value delivered rather than constructed: control dependence at every position.
+-- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Vertex × Raw Val)
-deliver ctrl v = vertexCtrl ctrl (unitSection v.val) v
+deliver ctrl v = vertexOf (withCtrl ctrl (unitSection v.val) v)
 
--- Constructed value: control dependence at the root.
 construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Vertex × Raw Val)
-construct ctrl v@{ val: Val _ _ u } = vertexCtrl ctrl (Val one Nothing (zeros u)) v
+construct ctrl v = vertexOf (constructed ctrl v)
 
 constructWith
    :: forall m s
