@@ -3,7 +3,6 @@ module Eval.Dep where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, varAnon)
-import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
@@ -30,7 +29,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig, assign, dispatch, matches)
 import Expr (Branch(..), Def(..), Expr(..), Pattern, Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, positions, vertex)
+import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, plus, scale, sumPositions, vertex, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..))
 import Operator (binopSymbol, unopSymbol)
@@ -59,18 +58,6 @@ asReturns (Assigns _ _) = error "Returns expected"
 -- ======================
 -- Weight vectors
 -- ======================
-
-zeros :: forall f s. Functor f => Semiring s => f Unit -> f s
-zeros = map (const zero)
-
-scaleVal :: forall s. Semiring s => s -> Val s -> Val s
-scaleVal a = map (mul a)
-
-plus :: forall s. Semiring s => Val s -> Val s -> Val s
-plus = lift2 add
-
-sumPositions :: forall s. Semiring s => Val s -> s
-sumPositions = positions >>> foldl add zero
 
 -- Weight 1 at every position except beneath the root of a closure.
 unitSection :: forall s. Semiring s => Raw Val -> Val s
@@ -186,7 +173,7 @@ vertexOf { v, inEdges } = do
 vertexCtrl :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> Val s -> GVal s -> m (Vertex × Raw Val)
 vertexCtrl ctrl section o = do
    p × v <- vertexOf o
-   for_ ctrl \(q × r) -> edge q p \x -> scaleVal (ctrlWeight * r x) section
+   for_ ctrl \(q × r) -> edge q p \x -> scale (ctrlWeight * r x) section
    pure (p × v)
 
 -- Value delivered rather than constructed: control dependence at every position.
@@ -310,7 +297,7 @@ eval inputs = case _ of
             xs <- askClasses <#> \classes -> definitely' (fieldsOf classes (dottedName c))
             i <- elemIndex x xs # orElse (dottedName c <> " has no field " <> x)
             let v = field i o.v
-            deliver inputs.ctrl { v, inEdges: project (\z -> field i z `plus` scaleVal (ctrlWeight * rootOf z) (unitSection v)) o }
+            deliver inputs.ctrl { v, inEdges: project (\z -> field i z `plus` scale (ctrlWeight * rootOf z) (unitSection v)) o }
          _ -> throw $ "Found " <> prettyP o.v <> ", expected object"
    Subscript e e' -> do
       o <- fromVertex <$> eval inputs e
@@ -339,8 +326,8 @@ eval inputs = case _ of
       subscript o o' select consumed =
          deliver inputs.ctrl
             { v
-            , inEdges: project (\z -> select z `plus` scaleVal (ctrlWeight * consumed z) u) o
-                 <> project (\w -> scaleVal (ctrlWeight * sumPositions w) u) o'
+            , inEdges: project (\z -> select z `plus` scale (ctrlWeight * consumed z) u) o
+                 <> project (\w -> scale (ctrlWeight * sumPositions w) u) o'
             }
          where
          v = select o.v

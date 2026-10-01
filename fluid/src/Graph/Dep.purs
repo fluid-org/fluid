@@ -38,14 +38,26 @@ mapPositions h g = traversePositions (\a -> state \n -> h n a × (n + 1)) g >>> 
 basis :: forall f a s. Positions f => Semiring s => f a -> Pos -> f s
 basis v i = mapPositions (\n _ -> if n == i then one else zero) (const zero) v
 
+zeros :: forall f a s. Functor f => Semiring s => f a -> f s
+zeros = map (const zero)
+
+scale :: forall f s. Functor f => Semiring s => s -> f s -> f s
+scale a = map (mul a)
+
+plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
+plus = lift2 add
+
+sumPositions :: forall f s. Positions f => Semiring s => f s -> s
+sumPositions = positions >>> foldl add zero
+
 -- Linear map between free semimodules over the positions of a and b.
 type Rel a b = a -> b
 
 sumRel :: forall a f s. Apply f => Semiring s => Rel a (f s) -> Rel a (f s) -> Rel a (f s)
-sumRel r r' x = lift2 add (r x) (r' x)
+sumRel r r' x = r x `plus` r' x
 
 scaleRel :: forall a f s. Functor f => Semiring s => s -> Rel a (f s) -> Rel a (f s)
-scaleRel s r = map (mul s) <<< r
+scaleRel s r = scale s <<< r
 
 -- Pair present exactly when its weight is non-zero.
 newtype SparseRel s = SparseRel
@@ -109,8 +121,8 @@ materialise g visible = sparseRel <$> (foldl step (Map.empty × Map.empty) (Map.
       else Map.insert p vec vecs × rels
       where
       vec = foldl
-         (\acc (q × r) -> maybe acc (\x -> lift2 add acc (r x)) (Map.lookup q vecs))
-         (map (const zero) v)
+         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (Map.lookup q vecs))
+         (zeros v)
          (maybe Nil Map.toUnfoldable (Map.lookup p g.edges))
 
       entries :: f (Lineage (Vertex × Pos) s) -> List ((Vertex × Vertex) × Map Pos (Map Pos s))
