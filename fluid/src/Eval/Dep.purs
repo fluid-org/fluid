@@ -26,7 +26,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig, assign, dispatch, matches)
+import Eval (GraphConfig, dispatch, matches)
 import Expr (Branch(..), Def(..), Expr(..), Pattern, Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, plus, scale, sumPositions, vertex, zeros)
@@ -78,20 +78,31 @@ viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt 
    where
    zs = zeros <<< _.val <$> vs
 
--- Control input after matching: the inspected positions, or unchanged if nothing is inspected.
-afterMatch :: forall s. DepSemiring s => (forall a. Ord a => Val a -> Set a) -> GVal s -> Ctrl s -> Ctrl s
-afterMatch inspected v ctrl
-   | Set.isEmpty (inspected v.val) = ctrl
-   | otherwise = ctrlVia (inspected >>> foldl add zero) v
-
--- Graph values bound by a pattern matching the value.
-bindings :: forall s. DepSemiring s => ClassTable -> Pattern -> GVal s -> Dict (GVal s)
-bindings classes p v = mapWithKey (\y val -> { val, inEdges: via (binding y) v }) (unwrap ρ)
+-- dispatch on a graph value: bindings of the first matching case as graph values, with the control input
+-- afterwards, which is the positions inspected by the cases tried, or unchanged if nothing is inspected.
+match
+   :: forall s b
+    . DepSemiring s
+   => ClassTable
+   -> List (Pattern × b)
+   -> GVal s
+   -> Ctrl s
+   -> Maybe (Dict (GVal s) × b) × Ctrl s
+match classes cases v ctrl =
+   (fst (dispatch classes v.val cases) <#> \(Env ρ × (p × b)) -> mapWithKey (\y val -> { val, inEdges: via (binding p y) v }) ρ × b)
+      × (if Set.isEmpty (inspected v.val) then ctrl else ctrlVia (inspected >>> foldl add zero) v)
    where
-   ρ = definitely "pattern matches" (fst (matches classes v.val p))
+   inspected :: forall a. Ord a => Val a -> Set a
+   inspected x = snd (dispatch classes x cases)
 
-   binding :: String -> Val s -> Val s
-   binding y x = get y (unwrap (definitely' (fst (matches classes x p))))
+   binding :: Pattern -> String -> Val s -> Val s
+   binding p y x = get y (unwrap (definitely' (fst (matches classes x p))))
+
+-- match against a single pattern, which must match.
+assign :: forall m s. MonadError Error m => DepSemiring s => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)
+assign classes p v ctrl = case match classes (singleton (p × unit)) v ctrl of
+   Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
+   Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
 -- Closure capturing the values, its root depending on control at weight c.
 closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
@@ -355,18 +366,16 @@ qualifiers inputs (Generator p e : gs) = do
       _ -> throw $ "Found " <> prettyP v.val <> ", expected list"
    classes <- askClasses
    passes <- for (mapWithIndex const (L.fromFoldable us)) \i -> do
-      let
-         el = { val: listElement i v.val, inEdges: via (listElement i) v }
-         ctrl = ctrlVia (\x -> rootOf x + foldl add zero (snd (matches classes (listElement i x) p))) v
-      case fst (matches classes el.val p) of
-         Nothing -> pure (Nil × ctrl)
-         Just _ -> qualifiers (inputs { env = inputs.env <+> bindings classes p el, ctrl = ctrl }) gs
+      let el = { val: listElement i v.val, inEdges: via (listElement i) v }
+      case match classes (singleton (p × unit)) el Nil of
+         Nothing × ctrl -> pure (Nil × (ctrlVia rootOf v <> ctrl))
+         Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrlVia rootOf v <> ctrl }) gs
    pure (concat (fst <$> passes) × concat (snd <$> passes))
 qualifiers inputs (Decl p e : gs) = do
    v <- gval <$> eval inputs e
    classes <- askClasses
-   _ <- assign classes v.val p
-   qualifiers (inputs { env = inputs.env <+> bindings classes p v, ctrl = afterMatch (\x -> snd (matches classes x p)) v inputs.ctrl }) gs
+   ρ' × ctrl <- assign classes p v inputs.ctrl
+   qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) gs
 
 ctrlVia :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
 ctrlVia r v = second (r <<< _) <$> v.inEdges
@@ -397,11 +406,9 @@ evalStmt inputs = case _ of
    Match e bs -> do
       v <- gval <$> eval inputs e
       classes <- askClasses
-      let ctrl = afterMatch (\x -> snd (dispatch classes x (NEL.toList bs))) v inputs.ctrl
-      case fst (dispatch classes v.val (NEL.toList bs)) of
-         Nothing -> pure (Assigns empty ctrl)
-         Just (_ × (p × s')) -> do
-            let ρ' = bindings classes p v
+      case match classes (NEL.toList bs) v inputs.ctrl of
+         Nothing × ctrl -> pure (Assigns empty ctrl)
+         Just (ρ' × s') × ctrl -> do
             r <- evalStmt (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) s'
             case r of
                Returns _ -> pure r
@@ -409,8 +416,8 @@ evalStmt inputs = case _ of
    Assign p _ e -> do
       v <- gval <$> eval inputs e
       classes <- askClasses
-      _ <- assign classes v.val p
-      pure (Assigns (bindings classes p v) (afterMatch (\x -> snd (matches classes x p)) v inputs.ctrl))
+      ρ' × ctrl <- assign classes p v inputs.ctrl
+      pure (Assigns ρ' ctrl)
    DefRec (RecDefs _ ds) -> pure (Assigns (closeDefs inputs ds) inputs.ctrl)
    Pass -> pure (Assigns empty inputs.ctrl)
    ExprStmt e -> eval inputs e $> Assigns empty inputs.ctrl
