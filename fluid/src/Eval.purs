@@ -7,7 +7,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.Array as A
-import Data.Foldable (elem, oneOfMap)
+import Data.Foldable (elem)
 import Data.List (List(..), concat, drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
@@ -25,7 +25,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -83,11 +83,12 @@ matchesMany classes (v : vs) (p : ps) = case matches classes v p of
       Just ρ' × αs' -> Just (ρ `unionWith_never` ρ') × (αs ∪ αs')
 matchesMany _ _ _ = error absurd
 
--- Bindings, case and inspected positions of the first case whose pattern matches.
-dispatch :: forall a. Ord a => ClassTable -> Val a -> List (Case a) -> Maybe (Env a × Case a × Set a)
-dispatch classes v = oneOfMap \(p × s) -> case matches classes v p of
-   Just ρ × αs -> Just (ρ × (p × s) × αs)
-   Nothing × _ -> Nothing
+-- Bindings and case of the first case whose pattern matches, with the positions inspected by the cases tried.
+dispatch :: forall a b. Ord a => ClassTable -> Val a -> List (Pattern × b) -> Maybe (Env a × (Pattern × b)) × Set a
+dispatch _ _ Nil = Nothing × empty
+dispatch classes v ((p × s) : cases) = case matches classes v p of
+   Just ρ × αs -> Just (ρ × (p × s)) × αs
+   Nothing × αs -> second (αs ∪ _) (dispatch classes v cases)
 
 -- Bindings of a pattern which must match.
 assign :: forall m a. Ord a => MonadError Error m => Highlightable a => ClassTable -> Val a -> Pattern -> m (Env a × Set a)
@@ -286,8 +287,8 @@ evalStmt doc_opt ρ s αs = case s of
    Match e bs -> do
       v <- eval Nothing ρ e αs
       askClasses <#> (\classes -> dispatch classes v (NEL.toList bs)) >>= case _ of
-         Nothing -> pure (Assigns empty empty)
-         Just (ρ' × (_ × s') × αs') -> do
+         Nothing × _ -> pure (Assigns empty empty)
+         Just (ρ' × (_ × s')) × αs' -> do
             r <- evalStmt doc_opt (ρ <+> ρ') s' (αs ∪ αs')
             case r of
                Returns _ -> pure r
