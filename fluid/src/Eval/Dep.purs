@@ -83,7 +83,8 @@ ctrlVia r v = second (r <<< _) <$> v.inEdges
 
 -- Adds dependence on control at weight c to the positions of v in the given section.
 withCtrl :: forall s. DepSemiring s => Ctrl s -> Val s -> GVal s -> GVal s
-withCtrl ctrl section v = v { inEdges = v.inEdges <> (ctrl <#> second \r x -> scale (ctrlWeight * r x) section) }
+withCtrl ctrl section v =
+   v { inEdges = v.inEdges <> (ctrl <#> second \r x -> scale (ctrlWeight * r x) section) }
 
 -- Constructed value: root depends on control at weight c.
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
@@ -136,7 +137,8 @@ assign classes p v ctrl = case dispatch classes (singleton (p × unit)) v ctrl o
 
 -- Closure capturing the environment.
 closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
-closure ctrl ρ ds d = constructed ctrl { val, inEdges: viaAll (zip (fst <$> xvs) >>> D.fromFoldable >>> clo) (snd <$> xvs) }
+closure ctrl ρ ds d =
+   constructed ctrl { val, inEdges: viaAll (zip (fst <$> xvs) >>> D.fromFoldable >>> clo) (snd <$> xvs) }
    where
    xvs = toUnfoldable ρ :: List (String × GVal s)
    val = Val unit Nothing (V.Fun (V.Closure (Env (_.val <$> ρ)) ds d))
@@ -176,7 +178,8 @@ constructWith
    -> (forall a. List (Val a) -> BaseVal a)
    -> List (GVal s)
    -> m (Vertex × Raw Val)
-constructWith ctrl mk vs = construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
+constructWith ctrl mk vs =
+   construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary

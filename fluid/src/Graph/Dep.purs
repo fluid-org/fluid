@@ -93,7 +93,8 @@ attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> f Unit -> m 
 attachDoc α v = modify_ \g -> g { docs = Map.insert α v g.docs }
 
 edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Vertex -> Vertex -> Rel (f s) (f s) -> m Unit
-edge α β r = modify_ \g -> g { edges = Map.alter (Just <<< Map.insertWith (flip sumRel) α r <<< fromMaybe Map.empty) β g.edges }
+edge α β r =
+   modify_ \g -> g { edges = Map.alter (Just <<< Map.insertWith (flip sumRel) α r <<< fromMaybe Map.empty) β g.edges }
 
 -- ======================
 -- boilerplate
@@ -112,7 +113,8 @@ materialise
    => DepGraph f (Lineage (Vertex × Pos) s)
    -> Set Vertex
    -> Map (Vertex × Vertex) (SparseRel s)
-materialise g visible = sparseRel <$> (foldl step (Map.empty × Map.empty) (Map.toUnfoldable g.vals :: List _) # snd)
+materialise g visible =
+   sparseRel <$> (foldl step (Map.empty × Map.empty) (Map.toUnfoldable g.vals :: List _) # snd)
    where
    step (vecs × rels) (p × v) =
       if Set.member p visible then
