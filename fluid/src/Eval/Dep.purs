@@ -72,7 +72,7 @@ gval (p × val) = { val, inEdges: singleton (p × identity) }
 via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
 via r v = second (r <<< _) <$> v.inEdges
 
--- In-edges of the value produced from several values: each through its argument, the rest zero.
+-- As via, for a relation of several arguments.
 viaAll :: forall s. Semiring s => Rel (List (Val s)) (Val s) -> List (GVal s) -> InEdges s
 viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt i x zs))) v) vs)
    where
