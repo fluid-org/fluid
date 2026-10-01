@@ -17,6 +17,7 @@ import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault)
 import Data.List (List(..), (:), zipWith)
+import Data.List ((!!)) as L
 import Data.Tuple (snd)
 import Data.Either (Either, either)
 import Data.Maybe (Maybe(..))
@@ -39,7 +40,7 @@ import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSem
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
-import Util (class IsEmpty, type (×), Endo, absurd, definitely, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (class IsEmpty, type (×), Endo, absurd, definitely, definitely', error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
@@ -269,6 +270,41 @@ matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
 matrixGet i j (MatrixRep (vss × _ × _)) = definitely "matrix indices within bounds" $ do
    us <- vss A.!! i
    us A.!! j
+
+cell :: forall a. Int -> Int -> Val a -> Val a
+cell i j (Val _ _ (Matrix r)) = matrixGet i j r
+cell _ _ _ = error absurd
+
+field :: forall a. Int -> Val a -> Val a
+field i (Val _ _ (Constr _ vs)) = definitely' (vs L.!! i)
+field _ _ = error absurd
+
+element :: forall a. Int -> Val a -> Val a
+element i (Val _ _ (List vs)) = definitely' (vs A.!! i)
+element _ _ = error absurd
+
+entries :: forall a. Val a -> Dict (a × Val a)
+entries (Val _ _ (Dictionary (DictRep d))) = d
+entries _ = error absurd
+
+entry :: forall a. String -> Val a -> a × Val a
+entry k = entries >>> get k
+
+fun :: forall a. Val a -> Fun a
+fun (Val _ _ (Fun φ)) = φ
+fun _ = error absurd
+
+captured :: forall a. String -> Val a -> Val a
+captured y (Val _ _ (Fun (Closure (Env ρ) _ _))) = get y ρ
+captured _ _ = error absurd
+
+partialFun :: forall a. Val a -> Val a
+partialFun (Val α doc (Fun (Partial φ _))) = Val α doc (Fun φ)
+partialFun _ = error absurd
+
+partialArg :: forall a. Int -> Val a -> Val a
+partialArg i (Val _ _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
+partialArg _ _ = error absurd
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =

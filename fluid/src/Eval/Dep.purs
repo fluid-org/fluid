@@ -10,7 +10,7 @@ import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (foldM, foldl, for_)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.List (List(..), concat, drop, elemIndex, length, take, updateAt, zip, (:), (!!))
+import Data.List (List(..), concat, drop, elemIndex, length, take, updateAt, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (toList) as NEL
 import Data.Map as Map
@@ -40,7 +40,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), forDefs, matrixGet, matrixPut, moduleStore, rootOf, stripDocs)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), captured, cell, element, entries, entry, field, forDefs, fun, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -73,30 +73,6 @@ unitSection (Val _ _ u) = Val one Nothing case u of
 -- Weight 1 at the root only.
 rootOnly :: forall s. Semiring s => Raw Val -> Val s
 rootOnly (Val _ _ u) = Val one Nothing (zeros u)
-
-field :: forall a. Int -> Val a -> Val a
-field i (Val _ _ (V.Constr _ vs)) = definitely' (vs !! i)
-field _ _ = error absurd
-
-element :: forall a. Int -> Val a -> Val a
-element i (Val _ _ (V.List vs)) = definitely' (vs A.!! i)
-element _ _ = error absurd
-
-entry :: forall a. String -> Val a -> a × Val a
-entry k (Val _ _ (V.Dictionary (DictRep d))) = get k d
-entry _ _ = error absurd
-
-captured :: forall a. String -> Val a -> Val a
-captured y (Val _ _ (V.Fun (V.Closure (Env ρ) _ _))) = get y ρ
-captured _ _ = error absurd
-
-partialFun :: forall a. Val a -> Val a
-partialFun (Val α doc (V.Fun (V.Partial φ _))) = Val α doc (V.Fun φ)
-partialFun _ = error absurd
-
-partialArg :: forall a. Int -> Val a -> Val a
-partialArg i (Val _ _ (V.Fun (V.Partial _ vs))) = definitely' (vs !! i)
-partialArg _ _ = error absurd
 
 -- ======================
 -- Graph values
@@ -317,10 +293,6 @@ eval inputs = case _ of
          Val _ _ (V.Matrix _), _ -> throw $ "Found " <> prettyP o'.v <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP o.v <> ", expected list, dict or matrix"
       where
-      cell :: forall a. Int -> Int -> Val a -> Val a
-      cell i j (Val _ _ (V.Matrix r)) = matrixGet i j r
-      cell _ _ _ = error absurd
-
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
       subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> (forall a. Semiring a => Val a -> a) -> m (Vertex × Raw Val)
       subscript o o' select consumed =
@@ -526,10 +498,6 @@ apply inputs f os = case f.v of
          }
          where
          zs = zeros <<< _.v <$> os
-
-      fun :: Val s -> V.Fun s
-      fun (Val _ _ (V.Fun φ')) = φ'
-      fun _ = error absurd
    _ -> throw $ "Found " <> prettyP f.v <> ", expected function"
    where
    -- Applying a function consumes its root.
@@ -578,10 +546,6 @@ apply inputs f os = case f.v of
          where
          key = { v: Val unit Nothing (V.Lit (Str k)), inEdges: project (\x -> Val (fst (entry k x)) Nothing (V.Lit (Str k))) d }
    higherOrder _ id _ = throw ("No dependence relation for " <> id)
-
-   entries :: forall a. Val a -> Dict (a × Val a)
-   entries (Val _ _ (V.Dictionary (DictRep d))) = d
-   entries _ = error absurd
 
    dictEntry :: String -> GVal s -> GVal s
    dictEntry k d = { v: snd (entry k d.v), inEdges: project (entry k >>> snd) d }
