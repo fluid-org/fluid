@@ -72,11 +72,11 @@ gval (p × val) = { val, inEdges: singleton (p × identity) }
 via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
 via r v = second (r <<< _) <$> v.inEdges
 
-injections :: forall s. Semiring s => (List (Val s) -> BaseVal s) -> List (GVal s) -> InEdges s
-injections mk vs = concat (mapWithIndex (\i v -> via (\x -> Val zero Nothing (mk (slot i x))) v) vs)
+-- In-edges of the value produced from several values: each through its argument, the rest zero.
+viaAll :: forall s. Semiring s => Rel (List (Val s)) (Val s) -> List (GVal s) -> InEdges s
+viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt i x zs))) v) vs)
    where
    zs = zeros <<< _.val <$> vs
-   slot i x = definitely' (updateAt i x zs)
 
 -- Positions inspected by the patterns tried in order, up to the first that matches.
 inspectedBy :: forall a. Ord a => ClassTable -> List Pattern -> Val a -> Set a
@@ -156,7 +156,7 @@ constructWith
    -> (forall a. List (Val a) -> BaseVal a)
    -> List (GVal s)
    -> m (Vertex × Raw Val)
-constructWith ctrl mk vs = construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: injections mk vs }
+constructWith ctrl mk vs = construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
@@ -481,11 +481,9 @@ apply inputs f vs = case f.val of
       partial :: GVal s
       partial =
          { val: Val unit Nothing (V.Fun (V.Partial φ (_.val <$> vs)))
-         , inEdges: via (\x -> Val (rootOf x) Nothing (V.Fun (V.Partial (fun x) zs))) f
-              <> concat (mapWithIndex (\i v -> via (\y -> Val zero Nothing (V.Fun (V.Partial (zeros φ) (definitely' (updateAt i y zs))))) v) vs)
+         , inEdges: via (\x -> Val (rootOf x) Nothing (V.Fun (V.Partial (fun x) (zeros <<< _.val <$> vs)))) f
+              <> viaAll (V.Partial (zeros φ) >>> V.Fun >>> Val zero Nothing) vs
          }
-         where
-         zs = zeros <<< _.val <$> vs
    _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
    where
    -- Applying a function consumes its root.
@@ -500,11 +498,7 @@ apply inputs f vs = case f.val of
       V.Prim (ForeignOp (id × ForeignOp' { rel })) -> case rel of
          Just (PrimRelAt relAt) -> do
             PrimRel g <- relAt (_.val <$> vs')
-            let zs = zeros <<< _.val <$> vs'
-            deliver ctrl
-               { val: g (_.val <$> vs')
-               , inEdges: concat (mapWithIndex (\i v -> via (\x -> g (definitely' (updateAt i x zs))) v) vs')
-               }
+            deliver ctrl { val: g (_.val <$> vs'), inEdges: viaAll g vs' }
          Nothing -> higherOrder (inputs { ctrl = ctrl }) id vs'
       V.Type c -> constructWith ctrl (V.Constr c) vs'
       V.Partial _ _ -> error absurd
