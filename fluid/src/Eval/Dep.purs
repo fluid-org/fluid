@@ -17,8 +17,6 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (second)
-import Data.Set (Set)
-import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
@@ -26,7 +24,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig, dispatch, matches)
+import Eval (GraphConfig, matchPattern)
 import Expr (Branch(..), Def(..), Expr(..), Pattern, Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, plus, scale, sumPositions, vertex, zeros)
@@ -40,7 +38,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), annotationAt, closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs, subvalue)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -78,9 +76,9 @@ viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt 
    where
    zs = zeros <<< _.val <$> vs
 
--- dispatch on a graph value: bindings of the first matching case as graph values, with the control input
--- afterwards, which is the positions inspected by the cases tried, or unchanged if nothing is inspected.
-match
+-- Bindings of the first case whose pattern matches, as graph values, with the control input afterwards: the
+-- positions inspected by the cases tried, or unchanged if nothing is inspected.
+dispatch
    :: forall s b
     . DepSemiring s
    => ClassTable
@@ -88,19 +86,19 @@ match
    -> GVal s
    -> Ctrl s
    -> Maybe (Dict (GVal s) × b) × Ctrl s
-match classes cases v ctrl =
-   (fst (dispatch classes v.val cases) <#> \(Env ρ × (p × b)) -> mapWithKey (\y val -> { val, inEdges: via (binding p y) v }) ρ × b)
-      × (if Set.isEmpty (inspected v.val) then ctrl else ctrlVia (inspected >>> foldl add zero) v)
+dispatch classes cases v ctrl = go cases Nil
    where
-   inspected :: forall a. Ord a => Val a -> Set a
-   inspected x = snd (dispatch classes x cases)
+   go Nil places = Nothing × after places
+   go ((p × b) : cases') places = case matchPattern classes Nil v.val p of
+      Just ρ × places' -> Just ((ρ <#> \π -> { val: subvalue π v.val, inEdges: via (subvalue π) v }) × b) × after (places <> places')
+      Nothing × places' -> go cases' (places <> places')
 
-   binding :: Pattern -> String -> Val s -> Val s
-   binding p y x = get y (unwrap (definitely' (fst (matches classes x p))))
+   after Nil = ctrl
+   after places = ctrlVia (\x -> foldl add zero (flip annotationAt x <$> places)) v
 
--- match against a single pattern, which must match.
+-- dispatch on a single pattern, which must match.
 assign :: forall m s. MonadError Error m => DepSemiring s => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)
-assign classes p v ctrl = case match classes (singleton (p × unit)) v ctrl of
+assign classes p v ctrl = case dispatch classes (singleton (p × unit)) v ctrl of
    Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
@@ -367,7 +365,7 @@ qualifiers inputs (Generator p e : gs) = do
    classes <- askClasses
    passes <- for (mapWithIndex const (L.fromFoldable us)) \i -> do
       let el = { val: listElement i v.val, inEdges: via (listElement i) v }
-      case match classes (singleton (p × unit)) el Nil of
+      case dispatch classes (singleton (p × unit)) el Nil of
          Nothing × ctrl -> pure (Nil × (ctrlVia rootOf v <> ctrl))
          Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrlVia rootOf v <> ctrl }) gs
    pure (concat (fst <$> passes) × concat (snd <$> passes))
@@ -406,7 +404,7 @@ evalStmt inputs = case _ of
    Match e bs -> do
       v <- gval <$> eval inputs e
       classes <- askClasses
-      case match classes (NEL.toList bs) v inputs.ctrl of
+      case dispatch classes (NEL.toList bs) v inputs.ctrl of
          Nothing × ctrl -> pure (Assigns empty ctrl)
          Just (ρ' × s') × ctrl -> do
             r <- evalStmt (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) s'

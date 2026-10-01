@@ -7,7 +7,9 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.Array as A
+import Data.Bifunctor (bimap)
 import Data.Foldable (elem)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
@@ -43,7 +45,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class Highlightable, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, matrixGet, val)
+import Val (class HasModuleStore, class Highlightable, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Path, Place(..), Result(..), Step(..), Val(..), annotationAt, asReturns, forDefs, matrixGet, subvalue, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -55,33 +57,40 @@ type GraphConfig =
 patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
--- Bindings if the pattern matches, with the positions of the value that matching inspected.
-matches :: forall a. Ord a => ClassTable -> Val a -> Pattern -> Maybe (Env a) × Set a
-matches _ v (PVar x)
-   | x == varAnon = Just empty × empty
-   | otherwise = Just (maplet x v) × empty
-matches _ _ PWild = Just empty × empty
-matches classes v (PAs p x) = first (map (_ `unionWith_never` maplet x v)) (matches classes v p)
-matches classes (Val α _ u) p = second (insert α) case u, p of
-   V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × empty
+-- Paths of the variables bound if the pattern matches the subvalue at the path, with the places inspected.
+matchPattern :: forall a. ClassTable -> Path -> Val a -> Pattern -> Maybe (Dict Path) × List Place
+matchPattern _ π _ (PVar x)
+   | x == varAnon = Just empty × Nil
+   | otherwise = Just (maplet x π) × Nil
+matchPattern _ _ _ PWild = Just empty × Nil
+matchPattern classes π v (PAs p x) = first (map (_ `unionWith_never` maplet x π)) (matchPattern classes π v p)
+matchPattern classes π (Val _ _ u) p = second (Root π : _) case u, p of
+   V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Constr c' vs, PConstr c ps Nil
       | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
-           matchesMany classes (take (length ps) vs) ps
+           matchPatterns classes (mapWithIndex (\i v -> L.snoc π (Field i) × v) (take (length ps) vs)) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x (unwrap xvs) <#> \(β × v) -> β × (v × p')) xps of
-         Just entries -> second (_ ∪ Set.fromFoldable (fst <$> entries)) (matchesMany classes (fst <<< snd <$> entries) (snd <<< snd <$> entries))
-         Nothing -> Nothing × empty
-   V.List vs, PList ps | A.length vs == length ps -> matchesMany classes (L.fromFoldable vs) ps
-   _, _ -> Nothing × empty
+      case traverse (\(x × p') -> lookup x (unwrap xvs) <#> \(_ × v) -> x × (v × p')) xps of
+         Just entries -> second ((Key π <<< fst <$> entries) <> _)
+            (matchPatterns classes (entries <#> \(x × (v × _)) -> L.snoc π (Entry x) × v) (snd <<< snd <$> entries))
+         Nothing -> Nothing × Nil
+   V.List vs, PList ps | A.length vs == length ps ->
+      matchPatterns classes (mapWithIndex (\i v -> L.snoc π (Element i) × v) (L.fromFoldable vs)) ps
+   _, _ -> Nothing × Nil
 
-matchesMany :: forall a. Ord a => ClassTable -> List (Val a) -> List Pattern -> Maybe (Env a) × Set a
-matchesMany _ Nil Nil = Just empty × empty
-matchesMany classes (v : vs) (p : ps) = case matches classes v p of
-   Nothing × αs -> Nothing × αs
-   Just ρ × αs -> case matchesMany classes vs ps of
-      Nothing × αs' -> Nothing × (αs ∪ αs')
-      Just ρ' × αs' -> Just (ρ `unionWith_never` ρ') × (αs ∪ αs')
-matchesMany _ _ _ = error absurd
+matchPatterns :: forall a. ClassTable -> List (Path × Val a) -> List Pattern -> Maybe (Dict Path) × List Place
+matchPatterns _ Nil Nil = Just empty × Nil
+matchPatterns classes ((π × v) : πvs) (p : ps) = case matchPattern classes π v p of
+   Nothing × places -> Nothing × places
+   Just ρ × places -> case matchPatterns classes πvs ps of
+      Nothing × places' -> Nothing × (places <> places')
+      Just ρ' × places' -> Just (ρ `unionWith_never` ρ') × (places <> places')
+matchPatterns _ _ _ = error absurd
+
+-- Bindings if the pattern matches, with the positions of the value that matching inspected.
+matches :: forall a. Ord a => ClassTable -> Val a -> Pattern -> Maybe (Env a) × Set a
+matches classes v p =
+   bimap (map \ρ -> Env (flip subvalue v <$> ρ)) (map (flip annotationAt v) >>> Set.fromFoldable) (matchPattern classes Nil v p)
 
 -- Bindings and case of the first case whose pattern matches, with the positions inspected by the cases tried.
 dispatch :: forall a b. Ord a => ClassTable -> Val a -> List (Pattern × b) -> Maybe (Env a × (Pattern × b)) × Set a

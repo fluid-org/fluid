@@ -18,7 +18,7 @@ import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
-import Data.Tuple (snd)
+import Data.Tuple (fst, snd)
 import Data.Either (Either, either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -305,6 +305,24 @@ partialFun _ = error absurd
 partialArg :: forall a. Int -> Val a -> Val a
 partialArg i (Val _ _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 partialArg _ _ = error absurd
+
+data Step = Field Int | Element Int | Entry String
+
+-- Steps from a value to one of its subvalues.
+type Path = List Step
+
+-- Position of a value: root of the subvalue at a path, or presence of a key in the dictionary at a path.
+data Place = Root Path | Key Path String
+
+subvalue :: forall a. Path -> Val a -> Val a
+subvalue Nil v = v
+subvalue (Field i : π) v = subvalue π (field i v)
+subvalue (Element i : π) v = subvalue π (listElement i v)
+subvalue (Entry k : π) v = subvalue π (snd (dictEntry k v))
+
+annotationAt :: forall a. Place -> Val a -> a
+annotationAt (Root π) v = rootOf (subvalue π v)
+annotationAt (Key π k) v = fst (dictEntry k (subvalue π v))
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
