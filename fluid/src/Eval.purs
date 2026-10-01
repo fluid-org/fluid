@@ -3,13 +3,14 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon)
+import Control.Alternative (guard)
+import Control.Plus (empty) as Plus
+import Control.Monad.Maybe.Trans (MaybeT(..), lift, runMaybeT)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array ((..))
 import Data.Array as A
-import Data.Bifunctor (bimap)
-import Data.Foldable (elem)
-import Data.FunctorWithIndex (mapWithIndex)
+import Data.Foldable (elem, oneOfMap)
 import Data.List (List(..), concat, drop, find, foldM, foldl, length, take, unzip, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (head, snoc, unsnoc, fromList, toList) as NEL
@@ -21,13 +22,13 @@ import Data.Set (Set, insert)
 import Data.Set as Set
 import Data.Traversable (class Foldable, for, sequence, traverse)
 import Data.Tuple (curry, fst, snd)
-import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
+import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, classEntry, fieldsOf)
 import DefiniteAssignment (ancestors)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
+import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
@@ -45,7 +46,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class Highlightable, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Path, Place(..), Result(..), Step(..), Val(..), annotationAt, asReturns, forDefs, matrixGet, subvalue, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, matrixGet, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -57,53 +58,45 @@ type GraphConfig =
 patternMismatch :: String -> String -> String
 patternMismatch s s' = "Pattern mismatch: found " <> s <> ", expected " <> s'
 
--- Paths of the variables bound if the pattern matches the subvalue at the path, with the places inspected.
-matchPattern :: forall a. ClassTable -> Path -> Val a -> Pattern -> Maybe (Dict Path) × List Place
-matchPattern _ π _ (PVar x)
-   | x == varAnon = Just empty × Nil
-   | otherwise = Just (maplet x π) × Nil
-matchPattern _ _ _ PWild = Just empty × Nil
-matchPattern classes π v (PAs p x) = first (map (_ `unionWith_never` maplet x π)) (matchPattern classes π v p)
-matchPattern classes π (Val _ _ u) p = second (Root π : _) case u, p of
-   V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
-   V.Constr c' vs, PConstr c ps Nil
-      | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
-           matchPatterns classes (mapWithIndex (\i v -> L.snoc π (Field i) × v) (take (length ps) vs)) ps
-   V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x (unwrap xvs) <#> \(_ × v) -> x × (v × p')) xps of
-         Just entries -> second ((Key π <<< fst <$> entries) <> _)
-            (matchPatterns classes (entries <#> \(x × (v × _)) -> L.snoc π (Entry x) × v) (snd <<< snd <$> entries))
-         Nothing -> Nothing × Nil
-   V.List vs, PList ps | A.length vs == length ps ->
-      matchPatterns classes (mapWithIndex (\i v -> L.snoc π (Element i) × v) (L.fromFoldable vs)) ps
-   _, _ -> Nothing × Nil
+-- Bindings if the pattern matches, with the vertices of the value that matching inspected.
+matches :: forall m. HasClasses m => MonadError Error m => Val Vertex -> Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matches (Val α _ u) (PLit ℓ) = guard eq $> (empty × Set.singleton α)
+   where
+   eq = case u of
+      V.Lit ℓ' -> eqLiteral ℓ ℓ'
+      _ -> false
+matches v (PVar x)
+   | x == varAnon = pure (empty × empty)
+   | otherwise = pure (maplet x v × empty)
+matches _ PWild = pure (empty × empty)
+matches v (PAs p x) = first (_ `unionWith_never` maplet x v) <$> matches v p
+matches (Val α _ (V.Constr c' vs)) (PConstr c ps Nil) = do
+   cls' <- lift (askClasses >>= classEntry (dottedName c'))
+   guard (c `elem` ancestors cls')
+   second (insert α) <$> matchesMany (take (length ps) vs) ps
+matches _ (PConstr _ _ _) = Plus.empty
+matches (Val α _ (V.Dictionary (DictRep xvs))) (PRecord xps) = do
+   vps <- MaybeT $ pure $ traverse (\(x × p) -> lookup x (unwrap xvs) <#> \(_ × v) -> v × p) xps
+   second (insert α) <$> matchesMany (fst <$> vps) (snd <$> vps)
+matches _ (PRecord _) = Plus.empty
+matches (Val α _ (V.List vs)) (PList ps)
+   | A.length vs == length ps = second (insert α) <$> matchesMany (L.fromFoldable vs) ps
+matches _ (PList _) = Plus.empty
 
-matchPatterns :: forall a. ClassTable -> List (Path × Val a) -> List Pattern -> Maybe (Dict Path) × List Place
-matchPatterns _ Nil Nil = Just empty × Nil
-matchPatterns classes ((π × v) : πvs) (p : ps) = case matchPattern classes π v p of
-   Nothing × places -> Nothing × places
-   Just ρ × places -> case matchPatterns classes πvs ps of
-      Nothing × places' -> Nothing × (places <> places')
-      Just ρ' × places' -> Just (ρ `unionWith_never` ρ') × (places <> places')
-matchPatterns _ _ _ = error absurd
+matchesMany :: forall m. HasClasses m => MonadError Error m => List (Val Vertex) -> List Pattern -> MaybeT m (Env Vertex × Set Vertex)
+matchesMany Nil Nil = pure (empty × empty)
+matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
+   where
+   disjoint (ρ × αs) (ρ' × αs') = (ρ `unionWith_never` ρ') × (αs ∪ αs')
+matchesMany _ _ = error absurd
 
--- Bindings if the pattern matches, with the positions of the value that matching inspected.
-matches :: forall a. Ord a => ClassTable -> Val a -> Pattern -> Maybe (Env a) × Set a
-matches classes v p =
-   bimap (map \ρ -> Env (flip subvalue v <$> ρ)) (map (flip annotationAt v) >>> Set.fromFoldable) (matchPattern classes Nil v p)
-
--- Bindings and case of the first case whose pattern matches, with the positions inspected by the cases tried.
-dispatch :: forall a b. Ord a => ClassTable -> Val a -> List (Pattern × b) -> Maybe (Env a × (Pattern × b)) × Set a
-dispatch _ _ Nil = Nothing × empty
-dispatch classes v ((p × s) : cases) = case matches classes v p of
-   Just ρ × αs -> Just (ρ × (p × s)) × αs
-   Nothing × αs -> second (αs ∪ _) (dispatch classes v cases)
+-- Bindings, body and inspected vertices of the first case whose pattern matches.
+dispatch :: forall m. HasClasses m => MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
+dispatch v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches v p
 
 -- Bindings of a pattern which must match.
-assign :: forall m a. Ord a => MonadError Error m => Highlightable a => ClassTable -> Val a -> Pattern -> m (Env a × Set a)
-assign classes v p = case matches classes v p of
-   Just ρ × αs -> pure (ρ × αs)
-   Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
+assign :: forall m. HasClasses m => MonadError Error m => Val Vertex -> Pattern -> m (Env Vertex × Set Vertex)
+assign v p = runMaybeT (matches v p) >>= orElse ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
 
 closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
 closeDefs ρ ds αs =
@@ -264,12 +257,11 @@ qualifiers ρ (Generator p e : gs) αs = do
       V.List vs -> pure vs
       _ -> throw $ "Found " <> prettyP (unit <$ u) <> ", expected list"
    concat <$> for (L.fromFoldable vs) \v ->
-      askClasses <#> (\classes -> matches classes v p) >>= case _ of
-         Nothing × _ -> pure Nil
-         Just ρ' × αs' -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
+      runMaybeT (matches v p) >>= case _ of
+         Nothing -> pure Nil
+         Just (ρ' × αs') -> qualifiers (ρ <+> ρ') gs (insert β (αs ∪ αs'))
 qualifiers ρ (Decl p e : gs) αs = do
-   classes <- askClasses
-   ρ' × αs' <- eval Nothing ρ e αs >>= \v -> assign classes v p
+   ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
    qualifiers (ρ <+> ρ') gs (αs ∪ αs')
 
 evalStmt
@@ -295,16 +287,15 @@ evalStmt doc_opt ρ s αs = case s of
          if b then evalStmt doc_opt ρ s' (insert α αs') else go bs' (insert α αs')
    Match e bs -> do
       v <- eval Nothing ρ e αs
-      askClasses <#> (\classes -> dispatch classes v (NEL.toList bs)) >>= case _ of
-         Nothing × _ -> pure (Assigns empty empty)
-         Just (ρ' × (_ × s')) × αs' -> do
+      runMaybeT (dispatch v (NEL.toList bs)) >>= case _ of
+         Nothing -> pure (Assigns empty empty)
+         Just (ρ' × s' × αs') -> do
             r <- evalStmt doc_opt (ρ <+> ρ') s' (αs ∪ αs')
             case r of
                Returns _ -> pure r
                Assigns ρ'' αs'' -> pure (Assigns (ρ' <+> ρ'') αs'')
    Assign p _ e -> do
-      classes <- askClasses
-      ρ' × αs' <- eval Nothing ρ e αs >>= \v -> assign classes v p
+      ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
       pure (Assigns ρ' αs')
    DefRec (RecDefs α ds) -> do
       ρ' <- closeDefs ρ ds (insert α αs)

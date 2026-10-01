@@ -8,7 +8,7 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (foldM, foldl, for_)
+import Data.Foldable (elem, foldM, foldl, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, updateAt, zip, (:))
 import Data.List as L
@@ -16,20 +16,21 @@ import Data.List.NonEmpty (toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
-import Data.Profunctor.Strong (second)
+import Data.Profunctor.Strong (first, second)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
+import DefiniteAssignment (ancestors)
 import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig, matchPattern)
-import Expr (Branch(..), Def(..), Expr(..), Pattern, Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
+import Eval (GraphConfig)
+import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, plus, scale, sumPositions, vertex, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
-import Literal (Literal(..))
+import Literal (Literal(..), eqLiteral)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
@@ -38,7 +39,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), annotationAt, closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs, subvalue)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Path, Place(..), PrimRel(..), PrimRelAt(..), Step(..), Val(..), annotationAt, closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs, subvalue)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -75,6 +76,36 @@ viaAll :: forall s. Semiring s => Rel (List (Val s)) (Val s) -> List (GVal s) ->
 viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt i x zs))) v) vs)
    where
    zs = zeros <<< _.val <$> vs
+
+-- Paths of the variables bound if the pattern matches the subvalue at the path, with the places inspected.
+matchPattern :: forall a. ClassTable -> Path -> Val a -> Pattern -> Maybe (Dict Path) × List Place
+matchPattern _ π _ (PVar x)
+   | x == varAnon = Just empty × Nil
+   | otherwise = Just (maplet x π) × Nil
+matchPattern _ _ _ PWild = Just empty × Nil
+matchPattern classes π v (PAs p x) = first (map (_ `unionWith_never` maplet x π)) (matchPattern classes π v p)
+matchPattern classes π (Val _ _ u) p = second (Root π : _) case u, p of
+   V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
+   V.Constr c' vs, PConstr c ps Nil
+      | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
+           matchPatterns classes (mapWithIndex (\i v -> L.snoc π (Field i) × v) (take (length ps) vs)) ps
+   V.Dictionary (DictRep xvs), PRecord xps ->
+      case traverse (\(x × p') -> lookup x xvs <#> \(_ × v) -> x × (v × p')) xps of
+         Just kvs -> second ((Key π <<< fst <$> kvs) <> _)
+            (matchPatterns classes (kvs <#> \(x × (v × _)) -> L.snoc π (Entry x) × v) (snd <<< snd <$> kvs))
+         Nothing -> Nothing × Nil
+   V.List vs, PList ps | A.length vs == length ps ->
+      matchPatterns classes (mapWithIndex (\i v -> L.snoc π (Element i) × v) (L.fromFoldable vs)) ps
+   _, _ -> Nothing × Nil
+
+matchPatterns :: forall a. ClassTable -> List (Path × Val a) -> List Pattern -> Maybe (Dict Path) × List Place
+matchPatterns _ Nil Nil = Just empty × Nil
+matchPatterns classes ((π × v) : πvs) (p : ps) = case matchPattern classes π v p of
+   Nothing × places -> Nothing × places
+   Just ρ × places -> case matchPatterns classes πvs ps of
+      Nothing × places' -> Nothing × (places <> places')
+      Just ρ' × places' -> Just (ρ `unionWith_never` ρ') × (places <> places')
+matchPatterns _ _ _ = error absurd
 
 -- Bindings of the first case whose pattern matches, as graph values, with the control input afterwards: the
 -- positions inspected by the cases tried, or unchanged if nothing is inspected.
