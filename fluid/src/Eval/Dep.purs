@@ -70,10 +70,6 @@ unitSection (Val _ _ u) = Val one Nothing case u of
       V.Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
    V.Fun φ -> V.Fun (zeros φ)
 
--- Weight 1 at the root only.
-rootOnly :: forall s. Semiring s => Raw Val -> Val s
-rootOnly (Val _ _ u) = Val one Nothing (zeros u)
-
 -- ======================
 -- Graph values
 -- ======================
@@ -158,7 +154,7 @@ deliver ctrl o = vertexCtrl ctrl (unitSection o.v) o
 
 -- Constructed value: control dependence at the root.
 construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Vertex × Raw Val)
-construct ctrl o = vertexCtrl ctrl (rootOnly o.v) o
+construct ctrl o@{ v: Val _ _ u } = vertexCtrl ctrl (Val one Nothing (zeros u)) o
 
 constructWith
    :: forall m s
