@@ -55,10 +55,6 @@ asReturns :: forall s. Result s -> Vertex × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
--- ======================
--- Weight vectors
--- ======================
-
 -- Weight 1 at every position except beneath the root of a closure.
 unitSection :: forall s. Semiring s => Raw Val -> Val s
 unitSection (Val _ _ u) = Val one Nothing case u of
@@ -69,10 +65,6 @@ unitSection (Val _ _ u) = Val one Nothing case u of
    V.Matrix (MatrixRep (vss × MatrixDim (i × _) × MatrixDim (j × _))) ->
       V.Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
    V.Fun φ -> V.Fun (zeros φ)
-
--- ======================
--- Graph values
--- ======================
 
 gval :: forall s. Vertex × Raw Val -> GVal s
 gval (p × v) = { v, inEdges: singleton (p × identity) }
