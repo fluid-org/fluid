@@ -271,32 +271,32 @@ matrixGet i j (MatrixRep (vss × _ × _)) = definitely "matrix indices within bo
    us <- vss A.!! i
    us A.!! j
 
-cell :: forall a. Int -> Int -> Val a -> Val a
-cell i j (Val _ _ (Matrix r)) = matrixGet i j r
-cell _ _ _ = error absurd
+matrixElement :: forall a. Int -> Int -> Val a -> Val a
+matrixElement i j (Val _ _ (Matrix r)) = matrixGet i j r
+matrixElement _ _ _ = error absurd
 
 field :: forall a. Int -> Val a -> Val a
 field i (Val _ _ (Constr _ vs)) = definitely' (vs L.!! i)
 field _ _ = error absurd
 
-element :: forall a. Int -> Val a -> Val a
-element i (Val _ _ (List vs)) = definitely' (vs A.!! i)
-element _ _ = error absurd
+listElement :: forall a. Int -> Val a -> Val a
+listElement i (Val _ _ (List vs)) = definitely' (vs A.!! i)
+listElement _ _ = error absurd
 
-entries :: forall a. Val a -> Dict (a × Val a)
-entries (Val _ _ (Dictionary (DictRep d))) = d
-entries _ = error absurd
+dictEntries :: forall a. Val a -> Dict (a × Val a)
+dictEntries (Val _ _ (Dictionary (DictRep d))) = d
+dictEntries _ = error absurd
 
-entry :: forall a. String -> Val a -> a × Val a
-entry k = entries >>> get k
+dictEntry :: forall a. String -> Val a -> a × Val a
+dictEntry k = dictEntries >>> get k
 
 fun :: forall a. Val a -> Fun a
 fun (Val _ _ (Fun φ)) = φ
 fun _ = error absurd
 
-captured :: forall a. String -> Val a -> Val a
-captured y (Val _ _ (Fun (Closure (Env ρ) _ _))) = get y ρ
-captured _ _ = error absurd
+closureEnv :: forall a. Val a -> Env a
+closureEnv (Val _ _ (Fun (Closure ρ _ _))) = ρ
+closureEnv _ = error absurd
 
 partialFun :: forall a. Val a -> Val a
 partialFun (Val α doc (Fun (Partial φ _))) = Val α doc (Fun φ)

@@ -40,7 +40,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), captured, cell, element, entries, entry, field, forDefs, fun, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -170,7 +170,7 @@ constructWith
    -> m (Vertex × Raw Val)
 constructWith ctrl mk os = construct ctrl { v: Val unit Nothing (mk (_.v <$> os)), inEdges: injections mk os }
 
--- Dictionary from key and value values; later entries overwrite earlier ones.
+-- Dictionary from key and value values; later dictEntries overwrite earlier ones.
 dictionary
    :: forall m s
     . MonadState (DepGraph Val s) m
@@ -178,9 +178,9 @@ dictionary
    => Ctrl s
    -> List (String × GVal s × GVal s)
    -> m (Vertex × Raw Val)
-dictionary ctrl entries = construct ctrl { v: Val unit Nothing (V.Dictionary (DictRep d)), inEdges }
+dictionary ctrl dictEntries = construct ctrl { v: Val unit Nothing (V.Dictionary (DictRep d)), inEdges }
    where
-   winners = Map.toUnfoldable (Map.fromFoldable entries) :: List (String × GVal s × GVal s)
+   winners = Map.toUnfoldable (Map.fromFoldable dictEntries) :: List (String × GVal s × GVal s)
    d = D.fromFoldable (winners <#> \(k × _ × u) -> k × (unit × u.v))
    zd = (\(_ × u) -> zero × zeros u) <$> d
 
@@ -215,20 +215,20 @@ eval inputs = case _ of
    Var x -> deliver inputs.ctrl (get x inputs.env)
    Lit _ ℓ -> construct inputs.ctrl { v: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
    Dictionary _ ees -> do
-      entries <- for ees \(Pair e e') -> do
+      dictEntries <- for ees \(Pair e e') -> do
          k <- eval inputs e
          s <- orThrow (unpack string (snd k)) <#> fst
          u <- eval inputs e'
          pure (s × fromVertex k × fromVertex u)
-      dictionary inputs.ctrl entries
+      dictionary inputs.ctrl dictEntries
    DictComp _ e e' gs -> do
       cs × ctrl <- qualifiers inputs gs
-      entries <- for cs \inputs' -> do
+      dictEntries <- for cs \inputs' -> do
          k <- eval inputs' e
          s <- orThrow (unpack string (snd k)) <#> fst
          u <- eval inputs' e'
          pure (s × fromVertex k × fromVertex u)
-      dictionary ctrl entries
+      dictionary ctrl dictEntries
    List _ es -> do
       os <- traverse (eval inputs >>> map fromVertex) es
       constructWith inputs.ctrl (A.fromFoldable >>> V.List) os
@@ -255,8 +255,8 @@ eval inputs = case _ of
          vss = map _.v <$> oss
          m = MatrixRep (vss × MatrixDim (i' × unit) × MatrixDim (j' × unit))
          zm = zeros m
-         cell i j o = project (\z -> Val zero Nothing (V.Matrix (matrixPut i j (const z) zm))) o
-         inEdges = concat (A.toUnfoldable (A.concat (mapWithIndex (\i os -> mapWithIndex (\j o -> cell i j o) os) oss)))
+         matrixElement i j o = project (\z -> Val zero Nothing (V.Matrix (matrixPut i j (const z) zm))) o
+         inEdges = concat (A.toUnfoldable (A.concat (mapWithIndex (\i os -> mapWithIndex (\j o -> matrixElement i j o) os) oss)))
             <> project (\p -> Val zero Nothing (V.Matrix (MatrixRep (map (map zeros) vss × MatrixDim (i' × height p) × MatrixDim (j' × width p))))) dims
       construct inputs.ctrl { v: Val unit Nothing (V.Matrix m), inEdges }
       where
@@ -281,15 +281,15 @@ eval inputs = case _ of
       case o.v, o'.v of
          Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (Str s)) -> do
             _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
-            subscript o o' (entry s >>> snd) (\z -> rootOf z + fst (entry s z))
+            subscript o o' (dictEntry s >>> snd) (\z -> rootOf z + fst (dictEntry s z))
          Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP o'.v <> ", expected str"
          Val _ _ (V.List vs), Val _ _ (V.Lit (Int i)) -> do
             let i' = if i < 0 then A.length vs + i else i
             _ <- vs A.!! i' # orElse ("List index " <> show i <> " out of range")
-            subscript o o' (element i') rootOf
+            subscript o o' (listElement i') rootOf
          Val _ _ (V.List _), _ -> throw $ "Found " <> prettyP o'.v <> ", expected int"
          Val _ _ (V.Matrix _), Val _ _ (V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil)) | c == cPair ->
-            subscript o o' (cell i j) rootOf
+            subscript o o' (matrixElement i j) rootOf
          Val _ _ (V.Matrix _), _ -> throw $ "Found " <> prettyP o'.v <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP o.v <> ", expected list, dict or matrix"
       where
@@ -350,7 +350,7 @@ eval inputs = case _ of
    funName _ = "unknown"
 
 -- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
--- short by a failed guard or an element that does not match.
+-- short by a failed guard or an listElement that does not match.
 qualifiers
    :: forall m s
     . HasClasses m
@@ -378,8 +378,8 @@ qualifiers inputs (Generator p e : gs) = do
    classes <- askClasses
    passes <- for (mapWithIndex const (L.fromFoldable vs)) \i -> do
       let
-         el = { v: element i o.v, inEdges: project (element i) o }
-         ctrl = projectCtrl (\x -> rootOf x + inspected classes p (element i x)) o
+         el = { v: listElement i o.v, inEdges: project (listElement i) o }
+         ctrl = projectCtrl (\x -> rootOf x + inspected classes p (listElement i x)) o
       case fst (matches classes el.v p) of
          Nothing -> pure (Nil × ctrl)
          Just _ -> qualifiers (inputs { env = inputs.env <+> bindings classes p el, ctrl = ctrl }) gs
@@ -505,7 +505,7 @@ apply inputs f os = case f.v of
    call φ os' = case φ of
       V.Closure (Env ρ1) ds (Def xs _ s) -> do
          let
-            ρ1' = mapWithKey (\y v -> { v, inEdges: project (captured y) f }) ρ1
+            ρ1' = mapWithKey (\y v -> { v, inEdges: project (closureEnv >>> get y) f }) ρ1
             ρ2 = closeDefs { ctrl, env: ρ1' } ds
             ρ3 = foldl (\ρ (x × o) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x o) empty (zip (paramVar <$> xs) os')
          asReturns <$> evalStmt { ctrl, env: ρ1' <+> ρ2 <+> ρ3 } s
@@ -526,29 +526,29 @@ apply inputs f os = case f.v of
    higherOrder :: Inputs s -> String -> List (GVal s) -> m (Vertex × Raw Val)
    higherOrder inputs' "dict_map" (g : d : Nil) = do
       f' <- fromVertex <$> deliver inputs'.ctrl g
-      results <- for (toUnfoldable (entries d.v)) \(k × _) -> do
-         r <- apply inputs' f' (singleton (dictEntry k d))
+      results <- for (toUnfoldable (dictEntries d.v)) \(k × _) -> do
+         r <- apply inputs' f' (singleton (entryValue k d))
          pure (k × fromVertex r)
       construct inputs'.ctrl (dictFrom (singleton d) results)
    higherOrder inputs' "dict_intersectionWith" (g : d1 : d2 : Nil) = do
       f' <- fromVertex <$> deliver inputs'.ctrl g
-      results <- for (L.filter (\(k × _) -> lookup k (entries d2.v) /= Nothing) (toUnfoldable (entries d1.v))) \(k × _) -> do
-         r <- apply inputs' f' (dictEntry k d1 : dictEntry k d2 : Nil)
+      results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.v) /= Nothing) (toUnfoldable (dictEntries d1.v))) \(k × _) -> do
+         r <- apply inputs' f' (entryValue k d1 : entryValue k d2 : Nil)
          pure (k × fromVertex r)
       construct inputs'.ctrl (dictFrom (d1 : d2 : Nil) results)
    higherOrder inputs' "foldl_with_index" (g : u : d : Nil) = do
       f' <- fromVertex <$> deliver inputs'.ctrl g
       r <- deliver inputs'.ctrl u
-      foldM (step f') r (toUnfoldable (entries d.v) :: List (String × (Unit × Raw Val)))
+      foldM (step f') r (toUnfoldable (dictEntries d.v) :: List (String × (Unit × Raw Val)))
       where
       step f' acc (k × _) =
-         apply inputs' f' (key : fromVertex acc : dictEntry k d : Nil)
+         apply inputs' f' (key : fromVertex acc : entryValue k d : Nil)
          where
-         key = { v: Val unit Nothing (V.Lit (Str k)), inEdges: project (\x -> Val (fst (entry k x)) Nothing (V.Lit (Str k))) d }
+         key = { v: Val unit Nothing (V.Lit (Str k)), inEdges: project (\x -> Val (fst (dictEntry k x)) Nothing (V.Lit (Str k))) d }
    higherOrder _ id _ = throw ("No dependence relation for " <> id)
 
-   dictEntry :: String -> GVal s -> GVal s
-   dictEntry k d = { v: snd (entry k d.v), inEdges: project (entry k >>> snd) d }
+   entryValue :: String -> GVal s -> GVal s
+   entryValue k d = { v: snd (dictEntry k d.v), inEdges: project (dictEntry k >>> snd) d }
 
    dict :: Dict (s × Val s) -> Val s
    dict = DictRep >>> V.Dictionary >>> Val zero Nothing
@@ -557,7 +557,7 @@ apply inputs f os = case f.v of
    dictFrom :: List (GVal s) -> List (String × GVal s) -> GVal s
    dictFrom ds kvs =
       { v: Val unit Nothing (V.Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × o) -> k × (unit × o.v)))))
-      , inEdges: concat (ds <#> project \x -> Val (rootOf x) Nothing (V.Dictionary (DictRep (mapWithKey (\k (_ × zu) -> fst (get k (entries x)) × zu) zd))))
+      , inEdges: concat (ds <#> project \x -> Val (rootOf x) Nothing (V.Dictionary (DictRep (mapWithKey (\k (_ × zu) -> fst (get k (dictEntries x)) × zu) zd))))
            <> concat (kvs <#> \(k × o) -> project (\y -> dict (insert k (zero × y) zd)) o)
       }
       where
