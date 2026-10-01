@@ -18,7 +18,7 @@ import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
-import Data.Tuple (fst, snd)
+import Data.Tuple (snd)
 import Data.Either (Either, either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -305,24 +305,6 @@ partialFun _ = error absurd
 partialArg :: forall a. Int -> Val a -> Val a
 partialArg i (Val _ _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 partialArg _ _ = error absurd
-
-data Step = Field Int | Element Int | Entry String | Key String
-
--- Location within a value: of a subvalue, or of the presence of a dictionary key if the last step is Key.
-type Loc = List Step
-
-subvalue :: forall a. Loc -> Val a -> Val a
-subvalue Nil v = v
-subvalue (Field i : loc) v = subvalue loc (field i v)
-subvalue (Element i : loc) v = subvalue loc (listElement i v)
-subvalue (Entry k : loc) v = subvalue loc (snd (dictEntry k v))
-subvalue (Key _ : _) _ = error absurd
-
--- Annotation at the position located: presence of the key if the last step is Key, otherwise root of the subvalue.
-annotationAt :: forall a. Loc -> Val a -> a
-annotationAt Nil v = rootOf v
-annotationAt (Key k : Nil) v = fst (dictEntry k v)
-annotationAt (step : loc) v = annotationAt loc (subvalue (step : Nil) v)
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
