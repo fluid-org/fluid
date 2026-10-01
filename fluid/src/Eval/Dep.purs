@@ -39,7 +39,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Path, Place(..), PrimRel(..), PrimRelAt(..), Step(..), Val(..), annotationAt, closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs, subvalue)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Loc, PrimRel(..), PrimRelAt(..), Step(..), Val(..), annotationAt, closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs, subvalue)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -78,34 +78,35 @@ viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt 
    where
    zs = zeros <<< _.val <$> vs
 
--- Paths of the variables bound if the pattern matches the subvalue at the path, with the places inspected.
-matches :: forall a. ClassTable -> Path -> Val a -> Pattern -> Maybe (Dict Path) × List Place
-matches _ π _ (PVar x)
+-- Locations of the variables bound if the pattern matches the subvalue at the location, with the locations
+-- of the positions inspected.
+matches :: forall a. ClassTable -> Loc -> Val a -> Pattern -> Maybe (Dict Loc) × List Loc
+matches _ loc _ (PVar x)
    | x == varAnon = Just empty × Nil
-   | otherwise = Just (maplet x π) × Nil
+   | otherwise = Just (maplet x loc) × Nil
 matches _ _ _ PWild = Just empty × Nil
-matches classes π v (PAs p x) = first (map (_ `unionWith_never` maplet x π)) (matches classes π v p)
-matches classes π (Val _ _ u) p = second (Root π : _) case u, p of
+matches classes loc v (PAs p x) = first (map (_ `unionWith_never` maplet x loc)) (matches classes loc v p)
+matches classes loc (Val _ _ u) p = second (loc : _) case u, p of
    V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Constr c' vs, PConstr c ps Nil
       | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
-           matchesMany classes (mapWithIndex (\i v -> L.snoc π (Field i) × v) (take (length ps) vs)) ps
+           matchesMany classes (mapWithIndex (\i v -> L.snoc loc (Field i) × v) (take (length ps) vs)) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
       case traverse (\(x × p') -> lookup x xvs <#> \(_ × v) -> x × (v × p')) xps of
-         Just kvs -> second ((Key π <<< fst <$> kvs) <> _)
-            (matchesMany classes (kvs <#> \(x × (v × _)) -> L.snoc π (Entry x) × v) (snd <<< snd <$> kvs))
+         Just kvs -> second ((L.snoc loc <<< Key <<< fst <$> kvs) <> _)
+            (matchesMany classes (kvs <#> \(x × (v × _)) -> L.snoc loc (Entry x) × v) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
    V.List vs, PList ps | A.length vs == length ps ->
-      matchesMany classes (mapWithIndex (\i v -> L.snoc π (Element i) × v) (L.fromFoldable vs)) ps
+      matchesMany classes (mapWithIndex (\i v -> L.snoc loc (Element i) × v) (L.fromFoldable vs)) ps
    _, _ -> Nothing × Nil
 
-matchesMany :: forall a. ClassTable -> List (Path × Val a) -> List Pattern -> Maybe (Dict Path) × List Place
+matchesMany :: forall a. ClassTable -> List (Loc × Val a) -> List Pattern -> Maybe (Dict Loc) × List Loc
 matchesMany _ Nil Nil = Just empty × Nil
-matchesMany classes ((π × v) : πvs) (p : ps) = case matches classes π v p of
-   Nothing × places -> Nothing × places
-   Just ρ × places -> case matchesMany classes πvs ps of
-      Nothing × places' -> Nothing × (places <> places')
-      Just ρ' × places' -> Just (ρ `unionWith_never` ρ') × (places <> places')
+matchesMany classes ((loc × v) : vs) (p : ps) = case matches classes loc v p of
+   Nothing × locs -> Nothing × locs
+   Just ρ × locs -> case matchesMany classes vs ps of
+      Nothing × locs' -> Nothing × (locs <> locs')
+      Just ρ' × locs' -> Just (ρ `unionWith_never` ρ') × (locs <> locs')
 matchesMany _ _ _ = error absurd
 
 -- Bindings of the first case whose pattern matches, as graph values, with the control input afterwards: the
@@ -120,13 +121,13 @@ dispatch
    -> Maybe (Dict (GVal s) × b) × Ctrl s
 dispatch classes cases v ctrl = go cases Nil
    where
-   go Nil places = Nothing × after places
-   go ((p × b) : cases') places = case matches classes Nil v.val p of
-      Just ρ × places' -> Just ((ρ <#> \π -> { val: subvalue π v.val, inEdges: via (subvalue π) v }) × b) × after (places <> places')
-      Nothing × places' -> go cases' (places <> places')
+   go Nil locs = Nothing × after locs
+   go ((p × b) : cases') locs = case matches classes Nil v.val p of
+      Just ρ × locs' -> Just ((ρ <#> \loc -> { val: subvalue loc v.val, inEdges: via (subvalue loc) v }) × b) × after (locs <> locs')
+      Nothing × locs' -> go cases' (locs <> locs')
 
    after Nil = ctrl
-   after places = ctrlVia (\x -> foldl add zero (flip annotationAt x <$> places)) v
+   after locs = ctrlVia (\x -> foldl add zero (flip annotationAt x <$> locs)) v
 
 -- dispatch on a single pattern, which must match.
 assign :: forall m s. MonadError Error m => DepSemiring s => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)

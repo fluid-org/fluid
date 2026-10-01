@@ -306,23 +306,23 @@ partialArg :: forall a. Int -> Val a -> Val a
 partialArg i (Val _ _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 partialArg _ _ = error absurd
 
-data Step = Field Int | Element Int | Entry String
+data Step = Field Int | Element Int | Entry String | Key String
 
--- Steps from a value to one of its subvalues.
-type Path = List Step
+-- Location within a value: of a subvalue, or of the presence of a dictionary key if the last step is Key.
+type Loc = List Step
 
--- Position of a value: root of the subvalue at a path, or presence of a key in the dictionary at a path.
-data Place = Root Path | Key Path String
-
-subvalue :: forall a. Path -> Val a -> Val a
+subvalue :: forall a. Loc -> Val a -> Val a
 subvalue Nil v = v
-subvalue (Field i : π) v = subvalue π (field i v)
-subvalue (Element i : π) v = subvalue π (listElement i v)
-subvalue (Entry k : π) v = subvalue π (snd (dictEntry k v))
+subvalue (Field i : loc) v = subvalue loc (field i v)
+subvalue (Element i : loc) v = subvalue loc (listElement i v)
+subvalue (Entry k : loc) v = subvalue loc (snd (dictEntry k v))
+subvalue (Key _ : _) _ = error absurd
 
-annotationAt :: forall a. Place -> Val a -> a
-annotationAt (Root π) v = rootOf (subvalue π v)
-annotationAt (Key π k) v = fst (dictEntry k (subvalue π v))
+-- Annotation at the position located: presence of the key if the last step is Key, otherwise root of the subvalue.
+annotationAt :: forall a. Loc -> Val a -> a
+annotationAt Nil v = rootOf v
+annotationAt (Key k : Nil) v = fst (dictEntry k v)
+annotationAt (step : loc) v = annotationAt loc (subvalue (step : Nil) v)
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
