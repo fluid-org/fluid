@@ -170,7 +170,7 @@ constructWith
    -> m (Vertex × Raw Val)
 constructWith ctrl mk os = construct ctrl { v: Val unit Nothing (mk (_.v <$> os)), inEdges: injections mk os }
 
--- Dictionary from key and value values; later dictEntries overwrite earlier ones.
+-- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
    :: forall m s
     . MonadState (DepGraph Val s) m
@@ -178,9 +178,9 @@ dictionary
    => Ctrl s
    -> List (String × GVal s × GVal s)
    -> m (Vertex × Raw Val)
-dictionary ctrl dictEntries = construct ctrl { v: Val unit Nothing (V.Dictionary (DictRep d)), inEdges }
+dictionary ctrl kvs = construct ctrl { v: Val unit Nothing (V.Dictionary (DictRep d)), inEdges }
    where
-   winners = Map.toUnfoldable (Map.fromFoldable dictEntries) :: List (String × GVal s × GVal s)
+   winners = Map.toUnfoldable (Map.fromFoldable kvs) :: List (String × GVal s × GVal s)
    d = D.fromFoldable (winners <#> \(k × _ × u) -> k × (unit × u.v))
    zd = (\(_ × u) -> zero × zeros u) <$> d
 
@@ -215,20 +215,20 @@ eval inputs = case _ of
    Var x -> deliver inputs.ctrl (get x inputs.env)
    Lit _ ℓ -> construct inputs.ctrl { v: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
    Dictionary _ ees -> do
-      dictEntries <- for ees \(Pair e e') -> do
+      kvs <- for ees \(Pair e e') -> do
          k <- eval inputs e
          s <- orThrow (unpack string (snd k)) <#> fst
          u <- eval inputs e'
          pure (s × fromVertex k × fromVertex u)
-      dictionary inputs.ctrl dictEntries
+      dictionary inputs.ctrl kvs
    DictComp _ e e' gs -> do
       cs × ctrl <- qualifiers inputs gs
-      dictEntries <- for cs \inputs' -> do
+      kvs <- for cs \inputs' -> do
          k <- eval inputs' e
          s <- orThrow (unpack string (snd k)) <#> fst
          u <- eval inputs' e'
          pure (s × fromVertex k × fromVertex u)
-      dictionary ctrl dictEntries
+      dictionary ctrl kvs
    List _ es -> do
       os <- traverse (eval inputs >>> map fromVertex) es
       constructWith inputs.ctrl (A.fromFoldable >>> V.List) os
@@ -255,8 +255,8 @@ eval inputs = case _ of
          vss = map _.v <$> oss
          m = MatrixRep (vss × MatrixDim (i' × unit) × MatrixDim (j' × unit))
          zm = zeros m
-         matrixElement i j o = project (\z -> Val zero Nothing (V.Matrix (matrixPut i j (const z) zm))) o
-         inEdges = concat (A.toUnfoldable (A.concat (mapWithIndex (\i os -> mapWithIndex (\j o -> matrixElement i j o) os) oss)))
+         cell i j o = project (\z -> Val zero Nothing (V.Matrix (matrixPut i j (const z) zm))) o
+         inEdges = concat (A.toUnfoldable (A.concat (mapWithIndex (\i os -> mapWithIndex (\j o -> cell i j o) os) oss)))
             <> project (\p -> Val zero Nothing (V.Matrix (MatrixRep (map (map zeros) vss × MatrixDim (i' × height p) × MatrixDim (j' × width p))))) dims
       construct inputs.ctrl { v: Val unit Nothing (V.Matrix m), inEdges }
       where
@@ -350,7 +350,7 @@ eval inputs = case _ of
    funName _ = "unknown"
 
 -- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
--- short by a failed guard or an listElement that does not match.
+-- short by a failed guard or an element that does not match.
 qualifiers
    :: forall m s
     . HasClasses m
