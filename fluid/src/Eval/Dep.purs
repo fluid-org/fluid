@@ -68,11 +68,11 @@ unitSection (Val _ _ u) = Val one Nothing case u of
 gval :: forall s. Vertex × Raw Val -> GVal s
 gval (p × val) = { val, inEdges: singleton (p × identity) }
 
--- Dependence of the result of r at v on values already in the graph.
+-- Dependence on values already in the graph of a value that depends on v by r.
 via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
 via r v = second (r <<< _) <$> v.inEdges
 
--- Dependence of the result of r at vs on values already in the graph.
+-- Dependence on values already in the graph of a value that depends on vs by r.
 viaAll :: forall s. Semiring s => Rel (List (Val s)) (Val s) -> List (GVal s) -> InEdges s
 viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt i x zs))) v) vs)
    where
