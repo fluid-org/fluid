@@ -70,7 +70,7 @@ gval :: forall s. Vertex × Raw Val -> GVal s
 gval (p × v) = { v, inEdges: singleton (p × identity) }
 
 project :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
-project f o = second (f <<< _) <$> o.inEdges
+project r o = second (r <<< _) <$> o.inEdges
 
 injections :: forall s. Semiring s => (List (Val s) -> BaseVal s) -> List (GVal s) -> InEdges s
 injections mk os = concat (mapWithIndex (\i o -> project (\x -> Val zero Nothing (mk (slot i x))) o) os)
@@ -379,7 +379,7 @@ qualifiers inputs (Decl p e : gs) = do
    qualifiers (inputs { env = inputs.env <+> bindings classes p o, ctrl = afterMatch classes (singleton p) o inputs.ctrl }) gs
 
 projectCtrl :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
-projectCtrl f o = second (f <<< _) <$> o.inEdges
+projectCtrl r o = second (r <<< _) <$> o.inEdges
 
 evalStmt
    :: forall m s
