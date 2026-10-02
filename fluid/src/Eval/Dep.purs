@@ -130,11 +130,11 @@ eval inputs = case _ of
    Var x -> deliver inputs.ctrl (get x inputs.env)
    Lit ℓ -> construct inputs.ctrl { val: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
    Dictionary ees -> do
-      kvs <- for ees \(Pair e e') -> entry inputs e e'
+      kvs <- for ees \(Pair e e') -> evalEntry inputs e e'
       dictionary inputs.ctrl kvs
    DictComp e e' gs -> do
       cs × ctrl <- qualifiers inputs gs
-      kvs <- for cs \inputs' -> entry inputs' e e'
+      kvs <- for cs \inputs' -> evalEntry inputs' e e'
       dictionary ctrl kvs
    List es -> do
       vs <- traverse (eval inputs >>> map gval) es
@@ -238,8 +238,8 @@ eval inputs = case _ of
       attachDoc (fst r) (fst doc)
       pure r
    where
-   entry :: Inputs s -> Expr -> Expr -> m (String × GVal s × GVal s)
-   entry inputs' e e' = do
+   evalEntry :: Inputs s -> Expr -> Expr -> m (String × GVal s × GVal s)
+   evalEntry inputs' e e' = do
       k <- eval inputs' e
       s <- orThrow (unpack string (snd k)) <#> fst
       u <- eval inputs' e'
