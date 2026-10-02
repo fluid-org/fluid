@@ -206,9 +206,6 @@ dictionary ctrl kvs = construct ctrl { val: Val unit Nothing (V.Dictionary (Dict
 -- Evaluation
 -- ======================
 
-bool :: forall m. MonadError Error m => Raw Val -> m Boolean
-bool (Val _ _ u) = orThrow (boolean.unpack u)
-
 eval
    :: forall m s
     . HasClasses m
@@ -339,15 +336,15 @@ eval inputs = case _ of
       deliver inputs.ctrl { val: Val unit Nothing u, inEdges: via (unopRel op >>> either (\_ -> error absurd) identity) v }
    And e e' -> do
       p × val <- eval inputs e
-      b <- bool val
+      b × _ <- orThrow (unpack boolean val)
       if b then eval (inputs { ctrl = singleton (p × rootOf) }) e' else pure (p × val)
    Or e e' -> do
       p × val <- eval inputs e
-      b <- bool val
+      b × _ <- orThrow (unpack boolean val)
       if b then pure (p × val) else eval (inputs { ctrl = singleton (p × rootOf) }) e'
    Cond e1 e e2 -> do
       p × val <- eval inputs e
-      b <- bool val
+      b × _ <- orThrow (unpack boolean val)
       eval (inputs { ctrl = singleton (p × rootOf) }) (if b then e1 else e2)
    DocExpr e e' -> do
       doc <- eval inputs e
@@ -378,7 +375,7 @@ qualifiers
 qualifiers inputs Nil = pure (singleton inputs × inputs.ctrl)
 qualifiers inputs (Guard e : gs) = do
    p × val <- eval inputs e
-   b <- bool val
+   b × _ <- orThrow (unpack boolean val)
    let ctrl = singleton (p × rootOf)
    if b then qualifiers (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
 qualifiers inputs (Generator p e : gs) = do
@@ -419,7 +416,7 @@ evalStmt inputs = case _ of
       go Nil ctrl = maybe (pure (Assigns empty ctrl)) (evalStmt (inputs { ctrl = ctrl })) s_opt
       go (Branch e s' : bs') ctrl = do
          p × val <- eval (inputs { ctrl = ctrl }) e
-         b <- bool val
+         b × _ <- orThrow (unpack boolean val)
          let ctrl' = singleton (p × rootOf)
          if b then evalStmt (inputs { ctrl = ctrl' }) s' else go bs' ctrl'
    Match e bs -> do
@@ -442,7 +439,7 @@ evalStmt inputs = case _ of
    ExprStmt e -> eval inputs e $> Assigns empty inputs.ctrl
    Assert e e_opt -> do
       p × val <- eval inputs e
-      b <- bool val
+      b × _ <- orThrow (unpack boolean val)
       let ctrl = singleton (p × rootOf)
       if b then pure (Assigns empty ctrl)
       else case e_opt of
