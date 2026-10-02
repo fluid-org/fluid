@@ -31,7 +31,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig)
 import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, plus, scale, sumPositions, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, scale, sumPositions, vertex, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Operator (binopSymbol, unopSymbol)
@@ -275,8 +275,7 @@ eval inputs = case _ of
          Val _ _ (V.Constr c _) -> do
             xs <- askClasses <#> \classes -> definitely' (fieldsOf classes (dottedName c))
             i <- elemIndex x xs # orElse (dottedName c <> " has no field " <> x)
-            let val = field i v.val
-            deliver inputs.ctrl { val, inEdges: via (\z -> field i z `plus` scale (ctrlWeight * rootOf z) (unitSection val)) v }
+            deliver (inputs.ctrl <> ctrlVia rootOf v) { val: field i v.val, inEdges: via (field i) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
    Subscript e e' -> do
       v@{ val: Val _ _ u } <- gval <$> eval inputs e
@@ -297,16 +296,9 @@ eval inputs = case _ of
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, dict or matrix"
       where
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
-      subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> (forall a. Semiring a => Val a -> a) -> m (Vertex × Raw Val)
+      subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Vertex × Raw Val)
       subscript v v' select consumed =
-         deliver inputs.ctrl
-            { val
-            , inEdges: via (\z -> select z `plus` scale (ctrlWeight * consumed z) u) v
-                 <> via (\w -> scale (ctrlWeight * sumPositions w) u) v'
-            }
-         where
-         val = select v.val
-         u = unitSection val
+         deliver (inputs.ctrl <> ctrlVia consumed v <> ctrlVia sumPositions v') { val: select v.val, inEdges: via select v }
    ModMember q x -> do
       { moduleEnv } <- moduleStore
       let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
