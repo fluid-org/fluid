@@ -8,7 +8,7 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, foldM, foldMap, foldl, for_)
+import Data.Foldable (elem, fold, foldM, foldMap, foldl, for_)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
@@ -379,12 +379,11 @@ qualifiers inputs (Generator p e : gs) = do
       Val _ _ (V.List us) -> pure us
       _ -> throw $ "Found " <> prettyP v.val <> ", expected list"
    classes <- askClasses
-   passes <- for (mapWithIndex const (L.fromFoldable us)) \i -> do
+   fold <$> for (mapWithIndex const (L.fromFoldable us)) \i -> do
       let el = { val: listElement i v.val, inEdges: via (listElement i) v }
       case dispatch classes (singleton (p × unit)) el Nil of
          Nothing × ctrl -> pure (Nil × (ctrlVia rootOf v <> ctrl))
          Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrlVia rootOf v <> ctrl }) gs
-   pure (concat (fst <$> passes) × concat (snd <$> passes))
 qualifiers inputs (Decl p e : gs) = do
    v <- gval <$> eval inputs e
    classes <- askClasses
