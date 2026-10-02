@@ -8,16 +8,16 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, foldM, foldl, for_)
+import Data.Foldable (elem, foldM, foldMap, foldl, for_)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.List (List(..), concat, drop, elemIndex, length, take, updateAt, zip, (:))
+import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
-import Data.Traversable (for, traverse)
+import Data.Traversable (class Traversable, for, mapAccumL, traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ancestors)
 import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
@@ -73,10 +73,11 @@ via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
 via r v = second (r <<< _) <$> v.inEdges
 
 -- Dependence on values already in the graph of a value that depends on vs by r.
-viaAll :: forall s. Semiring s => Rel (List (Val s)) (Val s) -> List (GVal s) -> InEdges s
-viaAll r vs = concat (mapWithIndex (\i v -> via (\x -> r (definitely' (updateAt i x zs))) v) vs)
+viaAll :: forall t s. Traversable t => Semiring s => Rel (t (Val s)) (Val s) -> t (GVal s) -> InEdges s
+viaAll r vs = ivs # foldMap \(i × v) -> via (\x -> r (zs <#> \(j × z) -> if i == j then x else z)) v
    where
-   zs = zeros <<< _.val <$> vs
+   ivs = (mapAccumL (\i v -> { accum: i + 1, value: i × v }) 0 vs).value
+   zs = map (zeros <<< _.val) <$> ivs
 
 ctrlVia :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
 ctrlVia r v = second (r <<< _) <$> v.inEdges
@@ -136,13 +137,9 @@ destructure classes p v ctrl = case dispatch classes (singleton (p × unit)) v c
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
 closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
-closure ctrl ρ ds d =
-   constructed ctrl { val, inEdges: viaAll (zip (fst <$> xvs) >>> D.fromFoldable >>> clo) (snd <$> xvs) }
+closure ctrl ρ ds d = constructed ctrl { val: clo (_.val <$> ρ), inEdges: viaAll clo ρ }
    where
-   xvs = toUnfoldable ρ :: List (String × GVal s)
-   val = Val unit Nothing (V.Fun (V.Closure (Env (_.val <$> ρ)) ds d))
-
-   clo :: Dict (Val s) -> Val s
+   clo :: forall a. Semiring a => Dict (Val a) -> Val a
    clo ρ' = Val zero Nothing (V.Fun (V.Closure (Env ρ') (zeros <$> ds) (zeros d)))
 
 closeDefs :: forall s. DepSemiring s => Inputs s -> Dict (Raw Def) -> Dict (GVal s)
