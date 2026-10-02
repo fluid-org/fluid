@@ -10,6 +10,8 @@ import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (elem, foldM, foldMap, foldl, for_)
 import Data.Functor.Compose (Compose(..))
+import Data.Functor.Product (Product(..), product)
+import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
@@ -168,12 +170,13 @@ construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl 
 construct ctrl v = vertexOf (constructed ctrl v)
 
 constructWith
-   :: forall m s
-    . MonadState (DepGraph Val s) m
+   :: forall t m s
+    . Traversable t
+   => MonadState (DepGraph Val s) m
    => DepSemiring s
    => Ctrl s
-   -> (forall a. List (Val a) -> BaseVal a)
-   -> List (GVal s)
+   -> (forall a. t (Val a) -> BaseVal a)
+   -> t (GVal s)
    -> m (Vertex × Raw Val)
 constructWith ctrl mk vs =
    construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
@@ -252,29 +255,19 @@ eval inputs = case _ of
          (i' × j' >= 1 × 1)
          ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
       vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
-         let ρ' = maplet x (index dims height i) `unionWith_never` maplet y (index dims width j)
+         let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
          gval <$> eval (inputs { env = inputs.env <+> ρ' }) e
-      let valss = map _.val <$> vss
-      construct inputs.ctrl
-         { val: mat valss (i' × unit) (j' × unit)
-         , inEdges: viaAll (\zss -> mat (unwrap zss) (i' × zero) (j' × zero)) (Compose vss)
-              <> via (\p -> mat (map zeros <$> valss) (i' × height p) (j' × width p)) dims
-         }
+      constructWith inputs.ctrl (mat i' j') (product (Compose vss) (Identity dims))
       where
-      index :: GVal s -> (Val s -> s) -> Int -> GVal s
+      index :: GVal s -> Int -> Int -> GVal s
       index dims k n =
          { val: Val unit Nothing (V.Lit (Int n))
-         , inEdges: via (\p -> Val (ctrlWeight * k p) Nothing (V.Lit (Int n))) dims
+         , inEdges: via (\p -> Val (ctrlWeight * rootOf (field k p)) Nothing (V.Lit (Int n))) dims
          }
 
-      mat :: forall a. Semiring a => Array (Array (Val a)) -> Int × a -> Int × a -> Val a
-      mat vss (i × α) (j × β) = Val zero Nothing (V.Matrix (MatrixRep (vss × MatrixDim (i × α) × MatrixDim (j × β))))
-
-      height :: forall a. Val a -> a
-      height = field 0 >>> rootOf
-
-      width :: forall a. Val a -> a
-      width = field 1 >>> rootOf
+      mat :: forall a. Int -> Int -> Product (Compose Array Array) Identity (Val a) -> BaseVal a
+      mat i j (Product (Compose vss × Identity p)) =
+         V.Matrix (MatrixRep (vss × MatrixDim (i × rootOf (field 0 p)) × MatrixDim (j × rootOf (field 1 p))))
    Lambda _ d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
    Attribute e x -> do
       v <- gval <$> eval inputs e
