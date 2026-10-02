@@ -25,7 +25,6 @@ import Data.Tuple (fst, snd)
 import DefiniteAssignment (ancestors)
 import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
 import Dict (Dict)
-import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (GraphConfig)
@@ -42,7 +41,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, ctrlVia, deliver, dictEntry, field, forDefs, fun, gval, listElement, matrixElement, moduleStore, partialArg, partialFun, rootOf, stripDocs, via, viaAll)
+import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, ctrlVia, deliver, dictEntry, dictionary, field, forDefs, fun, gval, listElement, matrixElement, moduleStore, partialArg, partialFun, rootOf, stripDocs, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -113,20 +112,6 @@ closeDefs inputs ds = ds <#> \d ->
 -- ======================
 -- Evaluation
 -- ======================
-
--- Dictionary from keys and values; later entries overwrite earlier ones.
-dictionary
-   :: forall m s
-    . MonadState (DepGraph Val s) m
-   => DepSemiring s
-   => Ctrl s
-   -> List (String × GVal s × GVal s)
-   -> m (Vertex × Raw Val)
-dictionary ctrl kvs =
-   constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
-   where
-   mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
-   mk (Compose d) = V.Dictionary (DictRep (d <#> \(Pair key v) -> rootOf key × v))
 
 eval
    :: forall m s
