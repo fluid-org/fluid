@@ -9,6 +9,7 @@ import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (elem, foldM, foldMap, foldl, for_)
+import Data.Functor.Compose (Compose(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
@@ -39,7 +40,7 @@ import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toU
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, matrixPut, moduleStore, partialArg, partialFun, rootOf, stripDocs)
+import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, moduleStore, partialArg, partialFun, rootOf, stripDocs)
 
 type InEdges s = List (Vertex × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -256,13 +257,14 @@ eval inputs = case _ of
          let ρ' = maplet x (index height i) `unionWith_never` maplet y (index width j)
          gval <$> eval (inputs { env = inputs.env <+> ρ' }) e
       let
+         mat :: forall a. Semiring a => Array (Array (Val a)) -> a -> a -> Val a
+         mat vss' α β = Val zero Nothing (V.Matrix (MatrixRep (vss' × MatrixDim (i' × α) × MatrixDim (j' × β))))
          valss = map _.val <$> vss
-         m = MatrixRep (valss × MatrixDim (i' × unit) × MatrixDim (j' × unit))
-         zm = zeros m
-         cell i j v = via (\z -> Val zero Nothing (V.Matrix (matrixPut i j (const z) zm))) v
-         inEdges = concat (A.toUnfoldable (A.concat (mapWithIndex (\i vs -> mapWithIndex (\j v -> cell i j v) vs) vss)))
-            <> via (\p -> Val zero Nothing (V.Matrix (MatrixRep (map (map zeros) valss × MatrixDim (i' × height p) × MatrixDim (j' × width p))))) dims
-      construct inputs.ctrl { val: Val unit Nothing (V.Matrix m), inEdges }
+      construct inputs.ctrl
+         { val: mat valss unit unit
+         , inEdges: viaAll (\zss -> mat (unwrap zss) zero zero) (Compose vss)
+              <> via (\p -> mat (map zeros <$> valss) (height p) (width p)) dims
+         }
       where
       height :: forall a. Val a -> a
       height = field 0 >>> rootOf
@@ -280,21 +282,21 @@ eval inputs = case _ of
             deliver inputs.ctrl { val, inEdges: via (\z -> field i z `plus` scale (ctrlWeight * rootOf z) (unitSection val)) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
    Subscript e e' -> do
-      v <- gval <$> eval inputs e
-      v' <- gval <$> eval inputs e'
-      case v.val, v'.val of
-         Val _ _ (V.Dictionary (DictRep d)), Val _ _ (V.Lit (Str s)) -> do
+      v@{ val: Val _ _ u } <- gval <$> eval inputs e
+      v'@{ val: Val _ _ u' } <- gval <$> eval inputs e'
+      case u, u' of
+         V.Dictionary (DictRep d), V.Lit (Str s) -> do
             _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
             subscript v v' (dictEntry s >>> snd) (\z -> rootOf z + fst (dictEntry s z))
-         Val _ _ (V.Dictionary _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected str"
-         Val _ _ (V.List vs), Val _ _ (V.Lit (Int i)) -> do
+         V.Dictionary _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected str"
+         V.List vs, V.Lit (Int i) -> do
             let i' = if i < 0 then A.length vs + i else i
             _ <- vs A.!! i' # orElse ("List index " <> show i <> " out of range")
             subscript v v' (listElement i') rootOf
-         Val _ _ (V.List _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
-         Val _ _ (V.Matrix _), Val _ _ (V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil)) | c == cPair ->
+         V.List _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
+         V.Matrix _, V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil) | c == cPair ->
             subscript v v' (matrixElement i j) rootOf
-         Val _ _ (V.Matrix _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
+         V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, dict or matrix"
       where
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
