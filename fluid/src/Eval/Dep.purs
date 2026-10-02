@@ -38,7 +38,7 @@ import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
 import Util (type (×), absurd, check, definitely, definitely', error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
+import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
@@ -118,18 +118,11 @@ dictionary
    => Ctrl s
    -> List (String × GVal s × GVal s)
    -> m (Vertex × Raw Val)
-dictionary ctrl kvs = construct ctrl { val: Val unit Nothing (V.Dictionary (DictRep d)), inEdges }
+dictionary ctrl kvs =
+   constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
    where
-   winners = Map.toUnfoldable (Map.fromFoldable kvs) :: List (String × GVal s × GVal s)
-   d = D.fromFoldable (winners <#> \(k × _ × v) -> k × (unit × v.val))
-   zd = (\(_ × u) -> zero × zeros u) <$> d
-
-   dict :: Dict (s × Val s) -> Val s
-   dict = DictRep >>> V.Dictionary >>> Val zero Nothing
-
-   inEdges = concat $ winners <#> \(k × key × v) ->
-      via (\x -> dict (insert k (rootOf x × zeros v.val) zd)) key
-         <> via (\y -> dict (insert k (zero × y) zd)) v
+   mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
+   mk (Compose d) = V.Dictionary (DictRep (d <#> \(Pair key v) -> rootOf key × v))
 
 -- ======================
 -- Evaluation
