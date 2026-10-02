@@ -472,7 +472,8 @@ apply inputs f@{ val: Val _ _ u } vs = case u of
          V.Type c -> askClasses >>= arity (dottedName c)
          V.Partial _ _ -> error absurd
 
-      -- Partial application of f to vs, with root and function depending on those of f, and arguments on vs.
+      -- Partial application of f to vs. Its root and function depend on the root and function of f. Each of its
+      -- arguments depends on the corresponding element of vs.
       partial :: GVal s
       partial =
          { val: Val unit Nothing (V.Fun (V.Partial φ (_.val <$> vs)))
