@@ -251,21 +251,25 @@ eval inputs = case _ of
       check
          (i' × j' >= 1 × 1)
          ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
-      let
-         index k n = { val: Val unit Nothing (V.Lit (Int n)), inEdges: via (\p -> Val (ctrlWeight * k p) Nothing (V.Lit (Int n))) dims }
       vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
-         let ρ' = maplet x (index height i) `unionWith_never` maplet y (index width j)
+         let ρ' = maplet x (index dims height i) `unionWith_never` maplet y (index dims width j)
          gval <$> eval (inputs { env = inputs.env <+> ρ' }) e
-      let
-         mat :: forall a. Semiring a => Array (Array (Val a)) -> a -> a -> Val a
-         mat vss' α β = Val zero Nothing (V.Matrix (MatrixRep (vss' × MatrixDim (i' × α) × MatrixDim (j' × β))))
-         valss = map _.val <$> vss
+      let valss = map _.val <$> vss
       construct inputs.ctrl
-         { val: mat valss unit unit
-         , inEdges: viaAll (\zss -> mat (unwrap zss) zero zero) (Compose vss)
-              <> via (\p -> mat (map zeros <$> valss) (height p) (width p)) dims
+         { val: mat valss (i' × unit) (j' × unit)
+         , inEdges: viaAll (\zss -> mat (unwrap zss) (i' × zero) (j' × zero)) (Compose vss)
+              <> via (\p -> mat (map zeros <$> valss) (i' × height p) (j' × width p)) dims
          }
       where
+      index :: GVal s -> (Val s -> s) -> Int -> GVal s
+      index dims k n =
+         { val: Val unit Nothing (V.Lit (Int n))
+         , inEdges: via (\p -> Val (ctrlWeight * k p) Nothing (V.Lit (Int n))) dims
+         }
+
+      mat :: forall a. Semiring a => Array (Array (Val a)) -> Int × a -> Int × a -> Val a
+      mat vss (i × α) (j × β) = Val zero Nothing (V.Matrix (MatrixRep (vss × MatrixDim (i × α) × MatrixDim (j × β))))
+
       height :: forall a. Val a -> a
       height = field 0 >>> rootOf
 
