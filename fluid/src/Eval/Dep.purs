@@ -110,6 +110,10 @@ closeDefs inputs ds = ds <#> \d ->
    in
       constructed inputs.ctrl (closure (restrict (fv ds' ∪ fv d) inputs.env) ds' d)
 
+-- ======================
+-- Evaluation
+-- ======================
+
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
    :: forall m s
@@ -123,10 +127,6 @@ dictionary ctrl kvs =
    where
    mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
    mk (Compose d) = V.Dictionary (DictRep (d <#> \(Pair key v) -> rootOf key × v))
-
--- ======================
--- Evaluation
--- ======================
 
 eval
    :: forall m s
@@ -145,19 +145,11 @@ eval inputs = case _ of
    Var x -> deliver inputs.ctrl (get x inputs.env)
    Lit ℓ -> construct inputs.ctrl { val: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
    Dictionary ees -> do
-      kvs <- for ees \(Pair e e') -> do
-         k <- eval inputs e
-         s <- orThrow (unpack string (snd k)) <#> fst
-         u <- eval inputs e'
-         pure (s × gval k × gval u)
+      kvs <- for ees \(Pair e e') -> entry inputs e e'
       dictionary inputs.ctrl kvs
    DictComp e e' gs -> do
       cs × ctrl <- qualifiers inputs gs
-      kvs <- for cs \inputs' -> do
-         k <- eval inputs' e
-         s <- orThrow (unpack string (snd k)) <#> fst
-         u <- eval inputs' e'
-         pure (s × gval k × gval u)
+      kvs <- for cs \inputs' -> entry inputs' e e'
       dictionary ctrl kvs
    List es -> do
       vs <- traverse (eval inputs >>> map gval) es
@@ -261,6 +253,13 @@ eval inputs = case _ of
       attachDoc (fst r) (fst doc)
       pure r
    where
+   entry :: Inputs s -> Expr -> Expr -> m (String × GVal s × GVal s)
+   entry inputs' e e' = do
+      k <- eval inputs' e
+      s <- orThrow (unpack string (snd k)) <#> fst
+      u <- eval inputs' e'
+      pure (s × gval k × gval u)
+
    funName :: Expr -> String
    funName (Var x) = x
    funName (App e _) = funName e
