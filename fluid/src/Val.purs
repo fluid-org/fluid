@@ -8,14 +8,14 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except (ExceptT)
 import Control.Monad.Reader (class MonadReader, ReaderT)
-import Control.Monad.State (StateT)
+import Control.Monad.State (class MonadState, StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
 import Data.Array (concat, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, all, foldMapDefaultL, foldl, foldrDefault)
+import Data.Foldable (class Foldable, all, fold, foldMapDefaultL, foldl, foldrDefault, for_)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
 import Data.Tuple (snd)
@@ -24,7 +24,8 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set (Set, unions)
 import Data.Set as Set
-import Data.Traversable (class Traversable, sequenceDefault, traverse)
+import Data.Profunctor.Strong (second)
+import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
 import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
@@ -34,9 +35,10 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
-import Graph.Dep (class Positions, traversePositions)
+import Graph.Dep (class Positions, DepGraph, Rel, edge, scale, traversePositions, vertex, zeros)
+import Graph.Dep (Vertex) as Dep
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, Chain(..), class JoinSemilattice, class MeetSemilattice, Raw, expand, (∧), (∨))
+import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, Chain(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
@@ -185,28 +187,103 @@ type Op =
    -> List (Val Vertex)
    -> m (Val Vertex)
 
--- Dependence relation of a primitive at a tuple of argument values, a linear map from argument weight
--- vectors to the result weight vector; at Unit, the value itself.
-newtype PrimRel = PrimRel (forall a. DepSemiring a => List (Val a) -> Val a)
+type InEdges s = List (Dep.Vertex × Rel (Val s) (Val s))
+-- Value together with its dependence on values already in the graph.
+type GVal s = { val :: Raw Val, inEdges :: InEdges s }
+-- Dependence of the control input on values already in the graph.
+type Ctrl s = List (Dep.Vertex × Rel (Val s) s)
 
-newtype PrimRelAt = PrimRelAt
-   ( forall m
-      . MonadError Error m
-     => MonadAff m
-     => MonadReader FileCxt m
-     => LoadFile m
-     => List (Raw Val)
-     -> m PrimRel
-   )
+-- Weight 1 at every position except beneath the root of a closure.
+unitSection :: forall s. Semiring s => Raw Val -> Val s
+unitSection (Val _ _ u) = Val one Nothing case u of
+   Lit ℓ -> Lit ℓ
+   Constr c vs -> Constr c (unitSection <$> vs)
+   List vs -> List (unitSection <$> vs)
+   Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
+   Matrix (MatrixRep (vss × MatrixDim (i × _) × MatrixDim (j × _))) ->
+      Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
+   Fun φ -> Fun (zeros φ)
+
+gval :: forall s. Dep.Vertex × Raw Val -> GVal s
+gval (p × v) = { val: v, inEdges: singleton (p × identity) }
+
+-- Dependence on values already in the graph of a value that depends on v by r.
+via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
+via r v = second (r <<< _) <$> v.inEdges
+
+-- Dependence on values already in the graph of a value that depends on vs by r.
+viaAll :: forall t s. Traversable t => Semiring s => Rel (t (Val s)) (Val s) -> t (GVal s) -> InEdges s
+viaAll r vs = fold (ivs <#> \(i × v) -> via (\x -> r (zs <#> \(j × z) -> if i == j then x else z)) v)
+   where
+   ivs = (mapAccumL (\i v -> { accum: i + 1, value: i × v }) 0 vs).value
+   zs = map (zeros <<< _.val) <$> ivs
+
+ctrlVia :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
+ctrlVia r v = second (r <<< _) <$> v.inEdges
+
+-- Adds dependence on control at weight c to the positions of v in the given section.
+withCtrl :: forall s. DepSemiring s => Ctrl s -> Val s -> GVal s -> GVal s
+withCtrl ctrl section v =
+   v { inEdges = v.inEdges <> (ctrl <#> second \r x -> scale (ctrlWeight * r x) section) }
+
+-- Constructed value: root depends on control at weight c.
+constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
+constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)) v
+
+vertexOf :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Vertex × Raw Val)
+vertexOf { val: v, inEdges } = do
+   p <- vertex v
+   for_ inEdges \(q × r) -> edge q p r
+   pure (p × v)
+
+-- Value delivered rather than constructed: every position depends on control at weight c.
+deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Vertex × Raw Val)
+deliver ctrl v = vertexOf (withCtrl ctrl (unitSection v.val) v)
+
+construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Vertex × Raw Val)
+construct ctrl v = vertexOf (constructed ctrl v)
+
+constructWith
+   :: forall t m s
+    . Traversable t
+   => MonadState (DepGraph Val s) m
+   => DepSemiring s
+   => Ctrl s
+   -> (forall a. t (Val a) -> BaseVal a)
+   -> t (GVal s)
+   -> m (Dep.Vertex × Raw Val)
+constructWith ctrl mk vs =
+   construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
+
+type DepOp =
+   forall m s
+    . HasClasses m
+   => HasModuleStore m
+   => MonadError Error m
+   => MonadAff m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => MonadState (DepGraph Val s) m
+   => DepSemiring s
+   => Ctrl s
+   -> List (GVal s)
+   -> m (Dep.Vertex × Raw Val)
+
+-- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
+-- vector; at Unit, the value itself.
+fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
+fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
 -- Relation of a primitive without effects, checked at the argument values.
-pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> PrimRelAt
-pureRel f = PrimRelAt \vs -> orThrow (f vs) $> PrimRel (f >>> either (\_ -> error absurd) identity)
+pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> DepOp
+pureRel f ctrl vs = do
+   _ <- orThrow (f (_.val <$> vs))
+   fromRel (f >>> either (\_ -> error absurd) identity) ctrl vs
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
    , op :: Op
-   , rel :: Maybe PrimRelAt -- Nothing for higher-order primitives
+   , depOp :: DepOp
    }
 
 newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq

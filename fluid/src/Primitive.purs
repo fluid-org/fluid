@@ -145,7 +145,7 @@ unary id f =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, op: unsafePartial op', rel: Just (pureRel (unsafePartial rel)) }
+   op = ForeignOp' { arity: 1, op: unsafePartial op', depOp: pureRel (unsafePartial rel) }
 
    op' :: Partial => Op
    op' doc_opt (Val α _ v : Nil) = do

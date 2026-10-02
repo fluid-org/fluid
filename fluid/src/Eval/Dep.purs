@@ -8,7 +8,7 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, fold, foldM, foldMap, foldl, for_)
+import Data.Foldable (elem, fold, foldl)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
@@ -20,7 +20,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
-import Data.Traversable (class Traversable, for, mapAccumL, traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ancestors)
 import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
@@ -31,24 +31,19 @@ import Effect.Exception (Error)
 import Eval (GraphConfig)
 import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, edge, emptyGraph, scale, sumPositions, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, emptyGraph, sumPositions, vertex, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
 import Util (type (×), absurd, check, definitely, definitely', error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, toUnfoldable, unionWith_never, (<+>))
+import Util.Map (get, insert, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), PrimRel(..), PrimRelAt(..), Val(..), closureEnv, dictEntries, dictEntry, field, forDefs, fun, listElement, matrixElement, moduleStore, partialArg, partialFun, rootOf, stripDocs)
+import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, ctrlVia, deliver, dictEntry, field, forDefs, fun, gval, listElement, matrixElement, moduleStore, partialArg, partialFun, rootOf, stripDocs, via, viaAll)
 
-type InEdges s = List (Vertex × Rel (Val s) (Val s))
--- Value together with its dependence on values already in the graph.
-type GVal s = { val :: Raw Val, inEdges :: InEdges s }
--- Dependence of the control input on values already in the graph.
-type Ctrl s = List (Vertex × Rel (Val s) s)
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
 data Result s = Returns (Vertex × Raw Val) | Assigns (Dict (GVal s)) (Ctrl s)
@@ -56,43 +51,6 @@ data Result s = Returns (Vertex × Raw Val) | Assigns (Dict (GVal s)) (Ctrl s)
 asReturns :: forall s. Result s -> Vertex × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
-
--- Weight 1 at every position except beneath the root of a closure.
-unitSection :: forall s. Semiring s => Raw Val -> Val s
-unitSection (Val _ _ u) = Val one Nothing case u of
-   V.Lit ℓ -> V.Lit ℓ
-   V.Constr c vs -> V.Constr c (unitSection <$> vs)
-   V.List vs -> V.List (unitSection <$> vs)
-   V.Dictionary (DictRep d) -> V.Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
-   V.Matrix (MatrixRep (vss × MatrixDim (i × _) × MatrixDim (j × _))) ->
-      V.Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
-   V.Fun φ -> V.Fun (zeros φ)
-
-gval :: forall s. Vertex × Raw Val -> GVal s
-gval (p × val) = { val, inEdges: singleton (p × identity) }
-
--- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
-via r v = second (r <<< _) <$> v.inEdges
-
--- Dependence on values already in the graph of a value that depends on vs by r.
-viaAll :: forall t s. Traversable t => Semiring s => Rel (t (Val s)) (Val s) -> t (GVal s) -> InEdges s
-viaAll r vs = ivs # foldMap \(i × v) -> via (\x -> r (zs <#> \(j × z) -> if i == j then x else z)) v
-   where
-   ivs = (mapAccumL (\i v -> { accum: i + 1, value: i × v }) 0 vs).value
-   zs = map (zeros <<< _.val) <$> ivs
-
-ctrlVia :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
-ctrlVia r v = second (r <<< _) <$> v.inEdges
-
--- Adds dependence on control at weight c to the positions of v in the given section.
-withCtrl :: forall s. DepSemiring s => Ctrl s -> Val s -> GVal s -> GVal s
-withCtrl ctrl section v =
-   v { inEdges = v.inEdges <> (ctrl <#> second \r x -> scale (ctrlWeight * r x) section) }
-
--- Constructed value: root depends on control at weight c.
-constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)) v
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
@@ -151,35 +109,6 @@ closeDefs inputs ds = ds <#> \d ->
       ds' = ds `forDefs` d
    in
       constructed inputs.ctrl (closure (restrict (fv ds' ∪ fv d) inputs.env) ds' d)
-
--- ======================
--- Vertices
--- ======================
-
-vertexOf :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Vertex × Raw Val)
-vertexOf { val, inEdges } = do
-   p <- vertex val
-   for_ inEdges \(q × r) -> edge q p r
-   pure (p × val)
-
--- Value delivered rather than constructed: every position depends on control at weight c.
-deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Vertex × Raw Val)
-deliver ctrl v = vertexOf (withCtrl ctrl (unitSection v.val) v)
-
-construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Vertex × Raw Val)
-construct ctrl v = vertexOf (constructed ctrl v)
-
-constructWith
-   :: forall t m s
-    . Traversable t
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
-   => Ctrl s
-   -> (forall a. t (Val a) -> BaseVal a)
-   -> t (GVal s)
-   -> m (Vertex × Raw Val)
-constructWith ctrl mk vs =
-   construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
@@ -307,7 +236,7 @@ eval inputs = case _ of
    App e es -> do
       f <- gval <$> eval inputs e
       vs <- traverse (eval inputs >>> map gval) es
-      withMsg ("In " <> funName e) $ apply inputs f vs
+      withMsg ("In " <> funName e) $ apply inputs.ctrl f vs
    BinOp e op e' -> do
       v <- gval <$> eval inputs e
       v' <- gval <$> eval inputs e'
@@ -450,20 +379,20 @@ apply
    => LoadFile m
    => MonadState (DepGraph Val s) m
    => DepSemiring s
-   => Inputs s
+   => Ctrl s
    -> GVal s
    -> List (GVal s)
    -> m (Vertex × Raw Val)
-apply inputs f@{ val: Val _ _ u } vs = case u of
+apply ctrl f@{ val: Val _ _ u } vs = case u of
    V.Fun (V.Partial φ us) ->
-      apply inputs { val: Val unit Nothing (V.Fun φ), inEdges: via partialFun f }
+      apply ctrl { val: Val unit Nothing (V.Fun φ), inEdges: via partialFun f }
          (mapWithIndex (\i val -> { val, inEdges: via (partialArg i) f }) us <> vs)
    V.Fun φ -> do
       n <- arity'
       let k = length vs
-      if k < n then construct inputs.ctrl partial
+      if k < n then construct ctrl partial
       else if k == n then call φ vs
-      else call φ (take n vs) >>= \r -> apply inputs (gval r) (drop n vs)
+      else call φ (take n vs) >>= \r -> apply ctrl (gval r) (drop n vs)
       where
       arity' :: m Int
       arity' = case φ of
@@ -487,58 +416,14 @@ apply inputs f@{ val: Val _ _ u } vs = case u of
       V.Closure (Env ρ1) ds (Def xs _ s) -> do
          let
             ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
-            ρ2 = closeDefs { ctrl, env: ρ1' } ds
+            ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
             ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip (paramVar <$> xs) vs')
-         asReturns <$> evalStmt { ctrl, env: ρ1' <+> ρ2 <+> ρ3 } s
-      V.Prim (ForeignOp (id × ForeignOp' { rel })) -> case rel of
-         Just (PrimRelAt relAt) -> do
-            PrimRel g <- relAt (_.val <$> vs')
-            deliver ctrl { val: g (_.val <$> vs'), inEdges: viaAll g vs' }
-         Nothing -> higherOrder (inputs { ctrl = ctrl }) id vs'
-      V.Type c -> constructWith ctrl (V.Constr c) vs'
+         asReturns <$> evalStmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
+      V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp ctrl' vs'
+      V.Type c -> constructWith ctrl' (V.Constr c) vs'
       V.Partial _ _ -> error absurd
       where
-      ctrl = ctrlVia rootOf f
-
-   higherOrder :: Inputs s -> String -> List (GVal s) -> m (Vertex × Raw Val)
-   higherOrder inputs' "dict_map" (g : d : Nil) = do
-      f' <- gval <$> deliver inputs'.ctrl g
-      results <- for (toUnfoldable (dictEntries d.val)) \(k × _) -> do
-         r <- apply inputs' f' (singleton (entryValue k d))
-         pure (k × gval r)
-      construct inputs'.ctrl (dictFrom (singleton d) results)
-   higherOrder inputs' "dict_intersectionWith" (g : d1 : d2 : Nil) = do
-      f' <- gval <$> deliver inputs'.ctrl g
-      results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (toUnfoldable (dictEntries d1.val))) \(k × _) -> do
-         r <- apply inputs' f' (entryValue k d1 : entryValue k d2 : Nil)
-         pure (k × gval r)
-      construct inputs'.ctrl (dictFrom (d1 : d2 : Nil) results)
-   higherOrder inputs' "foldl_with_index" (g : v : d : Nil) = do
-      f' <- gval <$> deliver inputs'.ctrl g
-      r <- deliver inputs'.ctrl v
-      foldM (step f') r (toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
-      where
-      step f' acc (k × _) =
-         apply inputs' f' (key : gval acc : entryValue k d : Nil)
-         where
-         key = { val: Val unit Nothing (V.Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) Nothing (V.Lit (Str k))) d }
-   higherOrder _ id _ = throw ("No dependence relation for " <> id)
-
-   entryValue :: String -> GVal s -> GVal s
-   entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> snd) d }
-
-   dict :: Dict (s × Val s) -> Val s
-   dict = DictRep >>> V.Dictionary >>> Val zero Nothing
-
-   -- Dictionary with the given values, its root and key positions from those of the dictionary values.
-   dictFrom :: List (GVal s) -> List (String × GVal s) -> GVal s
-   dictFrom ds kvs =
-      { val: Val unit Nothing (V.Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-      , inEdges: concat (ds <#> via \x -> Val (rootOf x) Nothing (V.Dictionary (DictRep (mapWithKey (\k (_ × zu) -> fst (get k (dictEntries x)) × zu) zd))))
-           <> concat (kvs <#> \(k × v) -> via (\y -> dict (insert k (zero × y) zd)) v)
-      }
-      where
-      zd = D.fromFoldable (kvs <#> \(k × v) -> k × (zero × zeros v.val))
+      ctrl' = ctrlVia rootOf f
 
 type DepEval s =
    { g :: DepGraph Val s
