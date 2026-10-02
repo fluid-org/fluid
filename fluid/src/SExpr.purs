@@ -10,12 +10,11 @@ import Data.List.NonEmpty (NonEmptyList)
 import Data.Maybe (Maybe, maybe)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (fst, snd)
-import Lattice (class JoinSemilattice)
 import Literal (Literal)
 import Expr (class BV, class FV, Binop, Pattern, Unop, bv, fv)
 import Type as T
 import Util.Set ((\\), (∪))
-import Util (type (×), error, unimplemented, (×))
+import Util (type (×), (×))
 
 -- Surface language expressions.
 
