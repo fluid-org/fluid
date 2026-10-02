@@ -28,7 +28,7 @@ import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
 import Graph.Dep (Pos, SparseRel, Vertex, lineage, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain(..), Lineage, Raw, botOf, erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -38,7 +38,7 @@ import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, rec
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
 import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, class Ann, Env(..), EnvStmt(..), Val, stripDocs)
+import Val (class HasModuleStore, Env(..), Val, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -87,8 +87,8 @@ testProperties
    => MonadReader FileCxt m
    => LoadFile m
    => MonadWriter BenchRow m
-   => Raw SE.Stmt
-   -> Raw Expr.Stmt
+   => SE.Stmt
+   -> Expr.Stmt
    -> GraphConfig
    -> SelectionSpec
    -> AffError m Unit
@@ -105,14 +105,14 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let evalG_bwd = fst <<< (depsOf graphed).bwd
    let evalG_op_bwd = fst <<< (depsOf graphed).fwd
-   let EnvStmt ρ_raw s_raw = erase graphed.inα
+   let ρ_raw = erase graphed.inα
    let inputs' = if Array.null inputs then keys ρ_raw else Set.fromFoldable inputs
 
    let arg = constrArg (fieldIndex gconfig.classes)
    let v = map (const top) outα :: Val 𝔹
    let out0 = fst (δv arg (const unselected <$> v)) <#> getPersistent
 
-   EnvStmt in_ρ _ <- do
+   in_ρ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
@@ -124,7 +124,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
          throw ("lineage of " <> x <> " misses α-graph slice:\nlineage\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
 
-   out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (EnvStmt (restrict inputs' in_ρ) (botOf s_raw)))
+   out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (restrict inputs' in_ρ))
 
    case bwd_expect of
       Nothing -> pure unit
@@ -186,13 +186,13 @@ checkEq op1 op2 x y = do
    check (left == "") left
    check (right == "") right
 
-testPretty :: forall m a. Ann a => Show a => SE.Stmt a -> AffError m Unit
+testPretty :: forall m. SE.Stmt -> AffError m Unit
 testPretty s = do
    log' ("**** prettyP")
    log' (prettyP s)
    s' × _ <- throwLeft <#> withMsg "testPretty" $ parseProgram (prettyP s)
-   unless (eq (erase s) (erase s')) $
-      throw ("parse/prettyP round trip:\nOriginal\n" <> prettyP (erase s) <> "\nNew\n" <> prettyP (erase s'))
+   unless (s == s') $
+      throw ("parse/prettyP round trip:\nOriginal\n" <> prettyP s <> "\nNew\n" <> prettyP s')
 
 checkPretty :: forall m. String -> String -> EffectError m Unit
 checkPretty expect actual = do

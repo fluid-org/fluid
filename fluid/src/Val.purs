@@ -30,7 +30,7 @@ import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Def, Module, Stmt, fv)
+import Expr (Def, Module, fv)
 import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
@@ -89,7 +89,7 @@ instance Positions BaseVal where
 
 instance Positions Fun where
    traversePositions f g = case _ of
-      Closure ρ ds d -> Closure <$> traversePositions f g ρ <*> pure (map g <$> ds) <*> pure (map g d)
+      Closure ρ ds d -> (\ρ' -> Closure ρ' ds d) <$> traversePositions f g ρ
       Prim op -> pure (Prim op)
       Type c -> pure (Type c)
       Partial φ vs -> Partial <$> traversePositions f g φ <*> traverse (traversePositions f g) vs
@@ -130,7 +130,7 @@ firstOrder (Val _ _ u) = case u of
    Fun _ -> false
 
 data Fun a
-   = Closure (Env a) (Dict (Def a)) (Def a)
+   = Closure (Env a) (Dict Def) Def
    | Prim ForeignOp
    | Type Name -- class as a value, as at the Python runtime
    | Partial (Fun a) (List (Val a)) -- fewer arguments than the arity of the function, which is not itself partial
@@ -147,7 +147,7 @@ instance (Ann a, BoundedLattice b) => Ann (a × b)
 
 type ModuleStore =
    { ρ0 :: Env Vertex -- members of the implicit modules
-   , moduleBody :: Map ModuleName (Module Vertex)
+   , moduleBody :: Map ModuleName Module
    , moduleEnv :: Map ModuleName (Env Vertex)
    }
 
@@ -318,9 +318,7 @@ instance Map (Env a) String (Val a) where
    insert k v (Env ρ) = Env (insert k v ρ)
    toUnfoldable (Env ρ) = toUnfoldable ρ
 
-data EnvStmt a = EnvStmt (Env a) (Stmt a)
-
-reaches :: forall a. Dict (Def a) -> Endo (Set Var)
+reaches :: Dict Def -> Endo (Set Var)
 reaches ds xs = go (Set.toUnfoldable xs) empty
    where
    dom_ds = keys ds
@@ -333,7 +331,7 @@ reaches ds xs = go (Set.toUnfoldable xs) empty
       where
       d = get x ds
 
-forDefs :: forall a. Dict (Def a) -> Def a -> Dict (Def a)
+forDefs :: Dict Def -> Def -> Dict Def
 forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
 
 -- Wrap internal representations to provide foldable/traversable instances.
@@ -419,19 +417,16 @@ derive instance Functor Val
 derive instance Functor Env
 derive instance Functor Fun
 derive instance Functor BaseVal
-derive instance Functor EnvStmt
 derive instance Traversable MatrixDim
 derive instance Traversable Val
 derive instance Traversable BaseVal
 derive instance Traversable Fun
 derive instance Traversable Env
-derive instance Traversable EnvStmt
 derive instance Foldable MatrixDim
 derive instance Foldable Val
 derive instance Foldable BaseVal
 derive instance Foldable Fun
 derive instance Foldable Env
-derive instance Foldable EnvStmt
 
 instance Apply Val where
    apply (Val fα Nothing fv) (Val α Nothing v) = Val (fα α) Nothing (fv <*> v)
@@ -448,7 +443,7 @@ instance Apply BaseVal where
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where
-   apply (Closure fρ fds fd) (Closure ρ ds d) = Closure (fρ <*> ρ) (((<*>) <$> fds) <*> ds) (fd <*> d)
+   apply (Closure fρ ds d) (Closure ρ _ _) = Closure (fρ <*> ρ) ds d
    apply (Prim op) (Prim _) = Prim op
    apply (Type c) (Type c') = Type (c ≜ c')
    apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
@@ -468,9 +463,6 @@ instance Apply MatrixDim where
 
 instance Apply Env where
    apply (Env fρ) (Env ρ) = Env (((<*>) <$> fρ) <*> ρ)
-
-instance Apply EnvStmt where
-   apply (EnvStmt fρ fs) (EnvStmt ρ s) = EnvStmt (fρ <*> ρ) (fs <*> s)
 
 instance Foldable DictRep where
    foldl f acc (DictRep d) = foldl (\acc' (a × v) -> foldl f (acc' `f` a) v) acc d
@@ -518,8 +510,7 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
    join x y = (∨) <$> x <*> y
 
 instance JoinSemilattice a => JoinSemilattice (Fun a) where
-   join (Closure ρ ds d) (Closure ρ' ds' d') =
-      Closure (ρ ∨ ρ') (ds ∨ ds') (d ∨ d')
+   join (Closure ρ ds d) (Closure ρ' _ _) = Closure (ρ ∨ ρ') ds d
    join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    join (Type c) (Type c') = Type (c ≜ c')
    join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
@@ -557,8 +548,7 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
-   expand (Closure ρ ds d) (Closure ρ' ds' d') =
-      Closure (expand ρ ρ') (expand ds ds') (expand d d')
+   expand (Closure ρ ds d) (Closure ρ' _ _) = Closure (expand ρ ρ') ds d
    expand (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    expand (Type c) (Type c') = Type (c ≜ c')
    expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
@@ -574,7 +564,6 @@ derive instance Eq a => Eq (MatrixRep a)
 derive instance Eq a => Eq (MatrixDim a)
 derive instance Eq a => Eq (Fun a)
 derive instance Eq a => Eq (Env a)
-derive instance Eq a => Eq (EnvStmt a)
 
 derive instance Newtype (Env a) _
 
@@ -614,13 +603,10 @@ instance Vertices (MatrixDim Vertex) where
    vertices md@(MatrixDim (_ × α)) = singleton (DVertex (α × pack md))
 
 instance Vertices (Fun Vertex) where
-   vertices (Closure ρ ds d) = vertices ρ ∪ vertices ds ∪ vertices d
+   vertices (Closure ρ _ _) = vertices ρ
    vertices (Prim _) = empty
    vertices (Type _) = empty
    vertices (Partial φ vs) = vertices φ ∪ unions (vertices <$> vs)
 
 instance Vertices (Env Vertex) where
    vertices (Env ρ) = unions (vertices <$> values ρ)
-
-instance Vertices (EnvStmt Vertex) where
-   vertices (EnvStmt ρ s) = vertices ρ ∪ vertices s

@@ -33,9 +33,9 @@ import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
-import Graph.WithGraph (class MonadWithGraphAlloc, alloc, new, runAllocT, runWithGraphT_spy)
+import Graph.WithGraph (class MonadWithGraphAlloc, new, runAllocT, runWithGraphT_spy)
 import Literal (Literal(..), eqLiteral)
-import Lattice (Raw, 𝔹)
+import Lattice (𝔹)
 import ModuleGraph (ModuleName)
 import Pretty (prettyP)
 import Operator (binopSymbol, unopSymbol)
@@ -46,7 +46,7 @@ import Util.Map (delete, lookup, lookup', maplet, restrict, unionWith_never, (<+
 import Util.Pair (unzip) as P
 import Util.Set ((∪), empty)
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), EnvStmt(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, matrixGet, val)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), MatrixDim(..), MatrixRep(..), Result(..), Val(..), asReturns, forDefs, matrixGet, val)
 
 -- Needs a better name.
 type GraphConfig =
@@ -91,14 +91,14 @@ matchesMany (v : vs) (p : ps) = disjoint <$> matches v p <*> matchesMany vs ps
 matchesMany _ _ = error absurd
 
 -- Bindings, body and inspected vertices of the first case whose pattern matches.
-dispatch :: forall m. HasClasses m => MonadError Error m => Val Vertex -> List (Case Vertex) -> MaybeT m (Env Vertex × Stmt Vertex × Set Vertex)
+dispatch :: forall m. HasClasses m => MonadError Error m => Val Vertex -> List Case -> MaybeT m (Env Vertex × Stmt × Set Vertex)
 dispatch v = oneOfMap \(p × s) -> (\(ρ × αs) -> ρ × s × αs) <$> matches v p
 
 -- Bindings of a pattern which must match.
 assign :: forall m. HasClasses m => MonadError Error m => Val Vertex -> Pattern -> m (Env Vertex × Set Vertex)
 assign v p = runMaybeT (matches v p) >>= orElse ("Pattern mismatch: " <> prettyP v <> " does not match " <> prettyP p)
 
-closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict (Def Vertex) -> Set Vertex -> m (Env Vertex)
+closeDefs :: forall m. HasClasses m => MonadWithGraphAlloc m => Env Vertex -> Dict Def -> Set Vertex -> m (Env Vertex)
 closeDefs ρ ds αs =
    Env <$> for ds \d ->
       let
@@ -155,14 +155,14 @@ eval
    => LoadFile m
    => Maybe (Val Vertex) -- optional doc-comment context
    -> Env Vertex
-   -> Expr Vertex
+   -> Expr
    -> Set Vertex
    -> m (Val Vertex)
 eval doc_opt ρ e0 αs = do
    αu_opt <- evalVal ρ e0 αs
    case αu_opt of
-      Just (α × u) ->
-         new (flip Val doc_opt) (insert α αs) u
+      Just u ->
+         new (flip Val doc_opt) αs u
       Nothing -> case e0 of
          Var x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (variable " <> x <> ")"
@@ -219,17 +219,17 @@ eval doc_opt ρ e0 αs = do
          Cond e1 e e2 -> do
             b × α <- eval Nothing ρ e αs >>= unpack boolean >>> orThrow
             eval doc_opt ρ (if b then e1 else e2) (insert α αs)
-         ListComp α e gs -> do
+         ListComp e gs -> do
             ρs <- qualifiers ρ gs αs
             vs <- for ρs \(ρ' × αs') -> eval Nothing ρ' e αs'
-            val doc_opt (insert α (αs ∪ Set.unions (snd <$> ρs))) (V.List (A.fromFoldable vs))
+            val doc_opt (αs ∪ Set.unions (snd <$> ρs)) (V.List (A.fromFoldable vs))
          DocExpr e e' -> do
             v <- eval Nothing ρ e αs
             traceWhen (isJust doc_opt) "Outer doc trumps inner doc"
             eval (Just $ fromMaybe v doc_opt) ρ e' αs
          _ -> error absurd
    where
-   funName :: forall a. Expr a -> String
+   funName :: Expr -> String
    funName (Var x) = x
    funName (App e _) = funName e
    funName _ = "unknown"
@@ -244,7 +244,7 @@ qualifiers
    => MonadAff m
    => LoadFile m
    => Env Vertex
-   -> List (Qualifier Vertex)
+   -> List Qualifier
    -> Set Vertex
    -> m (List (Env Vertex × Set Vertex))
 qualifiers ρ Nil αs = pure (singleton (ρ × αs))
@@ -274,7 +274,7 @@ evalStmt
    => LoadFile m
    => Maybe (Val Vertex)
    -> Env Vertex
-   -> Stmt Vertex
+   -> Stmt
    -> Set Vertex
    -> m (Result Vertex)
 evalStmt doc_opt ρ s αs = case s of
@@ -297,9 +297,9 @@ evalStmt doc_opt ρ s αs = case s of
    Assign p _ e -> do
       ρ' × αs' <- eval Nothing ρ e αs >>= flip assign p
       pure (Assigns ρ' αs')
-   DefRec (RecDefs α ds) -> do
-      ρ' <- closeDefs ρ ds (insert α αs)
-      pure (Assigns ρ' (insert α αs))
+   DefRec (RecDefs ds) -> do
+      ρ' <- closeDefs ρ ds αs
+      pure (Assigns ρ' αs)
    Pass -> pure (Assigns empty empty)
    ExprStmt e -> do
       _ <- eval Nothing ρ e αs
@@ -331,31 +331,31 @@ evalVal
    => MonadAff m
    => LoadFile m
    => Env Vertex
-   -> Expr Vertex
+   -> Expr
    -> Set Vertex
-   -> m (Maybe (Vertex × BaseVal Vertex))
-evalVal _ (Lit α ℓ) _ =
-   pure $ Just (α × V.Lit ℓ)
-evalVal ρ (Dictionary α ees) αs = do
+   -> m (Maybe (BaseVal Vertex))
+evalVal _ (Lit ℓ) _ =
+   pure $ Just (V.Lit ℓ)
+evalVal ρ (Dictionary ees) αs = do
    vs × us <- traverse (traverse (flip (eval Nothing ρ) αs)) ees <#> P.unzip
    ss × βs <- traverse (unpack string >>> orThrow) vs <#> unzip
-   pure $ Just (α × V.Dictionary (DictRep (D.fromFoldable (zip ss (zip βs us)))))
+   pure $ Just (V.Dictionary (DictRep (D.fromFoldable (zip ss (zip βs us)))))
 -- Later entries overwrite earlier ones, per update in the spec.
-evalVal ρ (DictComp α e e' gs) αs = do
+evalVal ρ (DictComp e e' gs) αs = do
    ρs <- qualifiers ρ gs αs
    entries <- for ρs \(ρ' × αs') -> do
       s × β <- eval Nothing ρ' e αs' >>= unpack string >>> orThrow
       u <- eval Nothing ρ' e' αs'
       pure (s × (β × u))
-   pure $ Just (α × V.Dictionary (DictRep (D.fromFoldable entries)))
-evalVal ρ (List α es) αs = do
+   pure $ Just (V.Dictionary (DictRep (D.fromFoldable entries)))
+evalVal ρ (List es) αs = do
    vs <- traverse (flip (eval Nothing ρ) αs) es
-   pure $ Just (α × V.List (A.fromFoldable vs))
-evalVal ρ (Constr α c es) αs = do
+   pure $ Just (V.List (A.fromFoldable vs))
+evalVal ρ (Constr c es) αs = do
    askClasses >>= checkArity (dottedName c) (length es)
    vs <- traverse (flip (eval Nothing ρ) αs) es
-   pure $ Just (α × V.Constr c vs)
-evalVal ρ (Matrix α e (x × y) e') αs = do
+   pure $ Just (V.Constr c vs)
+evalVal ρ (Matrix e (x × y) e') αs = do
    (i' × β) × (j' × β') <- eval Nothing ρ e' αs >>= unpack intPair >>> orThrow <#> fst
    check
       (i' × j' >= 1 × 1)
@@ -366,9 +366,9 @@ evalVal ρ (Matrix α e (x × y) e') αs = do
          j <- 0 .. (j' - 1)
          let ρ' = maplet x (Val β Nothing (V.Lit (Int i))) `unionWith_never` (maplet y (Val β' Nothing (V.Lit (Int j))))
          singleton (eval Nothing (ρ <+> ρ') e αs)
-   pure $ Just (α × V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
-evalVal ρ (Lambda α d) _ =
-   pure $ Just (α × V.Fun (V.Closure (restrict (fv d) ρ) empty d))
+   pure $ Just (V.Matrix (MatrixRep (vss × MatrixDim (i' × β) × MatrixDim (j' × β'))))
+evalVal ρ (Lambda d) _ =
+   pure $ Just (V.Fun (V.Closure (restrict (fv d) ρ) empty d))
 evalVal _ _ _ = pure Nothing
 
 eval_module
@@ -381,7 +381,7 @@ eval_module
    => LoadFile m
    => Env Vertex
    -> ModuleName
-   -> Module Vertex
+   -> Module
    -> Set Vertex
    -> m (Env Vertex)
 eval_module ρ0 q (Module is ss0) αs0 = do
@@ -389,7 +389,7 @@ eval_module ρ0 q (Module is ss0) αs0 = do
    v_name <- val Nothing empty (V.Lit (Str (dottedName q)))
    go ρ_imp (maplet "__name__" v_name) ss0 αs0
    where
-   go :: Env Vertex -> Env Vertex -> List (Stmt Vertex) -> Set Vertex -> m (Env Vertex)
+   go :: Env Vertex -> Env Vertex -> List Stmt -> Set Vertex -> m (Env Vertex)
    go _ ρ' Nil _ = pure ρ'
    go ρ ρ' (s : ss) αs = do
       r <- evalStmt Nothing (ρ <+> ρ') s αs
@@ -506,19 +506,17 @@ graphEval
    => LoadFile m
    => MonadError Error m
    => GraphConfig
-   -> Raw Stmt
-   -> m (GraphEval GraphImpl EnvStmt Val)
+   -> Stmt
+   -> m (GraphEval GraphImpl Env Val)
 graphEval { n, ρ, classes } stmt =
    withClasses classes do
-      { moduleBody, ρ0, moduleEnv } <- moduleStore
-      let mαs = Set.unions (vertices <$> Map.values moduleBody) ∪ vertices ρ0 ∪ Set.unions (vertices <$> Map.values moduleEnv)
-      _ × _ × g × inα × outα <- flip runAllocT n do
-         sα <- alloc stmt
-         let inα = EnvStmt ρ sα
-         g × outα <- runWithGraphT_spy (asReturns <$> evalStmt Nothing ρ sα mempty) (vertices inα ∪ mαs)
+      { ρ0, moduleEnv } <- moduleStore
+      let mαs = vertices ρ0 ∪ Set.unions (vertices <$> Map.values moduleEnv)
+      _ × _ × g × outα <- flip runAllocT n do
+         g × outα <- runWithGraphT_spy (asReturns <$> evalStmt Nothing ρ stmt mempty) (vertices ρ ∪ mαs)
          when checking.outputsInGraph $ check (vertices outα ⊆ vertices g) "outputs in graph"
-         pure (g × inα × outα)
-      pure { g, graph_bwd, inα, outα }
+         pure (g × outα)
+      pure { g, graph_bwd, inα: ρ, outα }
    where
    graph_bwd = curry (bwdSlice # spyFun' tracing.graphBwdSlice "bwdSlice")
    spyFun' b msg = spyFunWhen b msg (showVertices *** showGraph) showGraph

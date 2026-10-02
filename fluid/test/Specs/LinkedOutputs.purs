@@ -117,7 +117,11 @@ linkedOutputs_cases =
                      >.> matrixElement 2 1 select
                      >.> matrixElement 2 2 select
                 )
-     , inert_expect: \arg -> Just (topα select' >.> arg cPair f_fst (matrixDims select') >.> arg cPair f_snd (matrixDims select'))
+     , inert_expect: \arg -> Just
+          ( topα select'
+               >.> arg cPair f_fst (topα select' >.> matrixDims select')
+               >.> arg cPair f_snd (topα select' >.> matrixDims select')
+          )
      , file: "linked_outputs/convolution.fld"
      }
    , linkedOutputs_spec1

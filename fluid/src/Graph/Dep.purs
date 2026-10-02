@@ -22,7 +22,7 @@ newtype Vertex = Vertex Int
 
 type Pos = Int -- index under the position ordering of a value
 
--- Second function maps the annotations that are not positions (documentation, syntax).
+-- Second function maps the annotations that are not positions (documentation).
 class Positions f where
    traversePositions :: forall m a b. Applicative m => (a -> m b) -> (a -> b) -> f a -> m (f b)
 

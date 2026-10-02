@@ -97,13 +97,13 @@ destructure classes p v ctrl = case dispatch classes (singleton (p × unit)) v c
    Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
-closure :: forall s. Semiring s => Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
+closure :: forall s. Semiring s => Dict (GVal s) -> Dict Def -> Def -> GVal s
 closure ρ ds d = { val: clo (_.val <$> ρ), inEdges: viaAll clo ρ }
    where
    clo :: forall a. Semiring a => Dict (Val a) -> Val a
-   clo ρ' = Val zero Nothing (V.Fun (V.Closure (Env ρ') (zeros <$> ds) (zeros d)))
+   clo ρ' = Val zero Nothing (V.Fun (V.Closure (Env ρ') ds d))
 
-closeDefs :: forall s. DepSemiring s => Inputs s -> Dict (Raw Def) -> Dict (GVal s)
+closeDefs :: forall s. DepSemiring s => Inputs s -> Dict Def -> Dict (GVal s)
 closeDefs inputs ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
@@ -146,19 +146,19 @@ eval
    => MonadState (DepGraph Val s) m
    => DepSemiring s
    => Inputs s
-   -> Raw Expr
+   -> Expr
    -> m (Vertex × Raw Val)
 eval inputs = case _ of
    Var x -> deliver inputs.ctrl (get x inputs.env)
-   Lit _ ℓ -> construct inputs.ctrl { val: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
-   Dictionary _ ees -> do
+   Lit ℓ -> construct inputs.ctrl { val: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
+   Dictionary ees -> do
       kvs <- for ees \(Pair e e') -> do
          k <- eval inputs e
          s <- orThrow (unpack string (snd k)) <#> fst
          u <- eval inputs e'
          pure (s × gval k × gval u)
       dictionary inputs.ctrl kvs
-   DictComp _ e e' gs -> do
+   DictComp e e' gs -> do
       cs × ctrl <- qualifiers inputs gs
       kvs <- for cs \inputs' -> do
          k <- eval inputs' e
@@ -166,18 +166,18 @@ eval inputs = case _ of
          u <- eval inputs' e'
          pure (s × gval k × gval u)
       dictionary ctrl kvs
-   List _ es -> do
+   List es -> do
       vs <- traverse (eval inputs >>> map gval) es
       constructWith inputs.ctrl (A.fromFoldable >>> V.List) vs
-   ListComp _ e gs -> do
+   ListComp e gs -> do
       cs × ctrl <- qualifiers inputs gs
       vs <- for cs \inputs' -> gval <$> eval inputs' e
       constructWith ctrl (A.fromFoldable >>> V.List) vs
-   Constr _ c es -> do
+   Constr c es -> do
       askClasses >>= checkArity (dottedName c) (length es)
       vs <- traverse (eval inputs >>> map gval) es
       constructWith inputs.ctrl (V.Constr c) vs
-   Matrix _ e (x × y) e' -> do
+   Matrix e (x × y) e' -> do
       dims <- gval <$> eval inputs e'
       (i' × _) × (j' × _) <- orThrow (unpack intPair dims.val) <#> fst
       check
@@ -197,7 +197,7 @@ eval inputs = case _ of
       mat :: forall a. Int -> Int -> Product (Compose Array Array) Identity (Val a) -> BaseVal a
       mat i j (Product (Compose vss × Identity p)) =
          V.Matrix (MatrixRep (vss × MatrixDim (i × rootOf (field 0 p)) × MatrixDim (j × rootOf (field 1 p))))
-   Lambda _ d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
+   Lambda d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
    Attribute e x -> do
       v <- gval <$> eval inputs e
       case v.val of
@@ -268,7 +268,7 @@ eval inputs = case _ of
       attachDoc (fst r) (snd doc)
       pure r
    where
-   funName :: forall a. Expr a -> String
+   funName :: Expr -> String
    funName (Var x) = x
    funName (App e _) = funName e
    funName _ = "unknown"
@@ -286,7 +286,7 @@ qualifiers
    => MonadState (DepGraph Val s) m
    => DepSemiring s
    => Inputs s
-   -> List (Raw Qualifier)
+   -> List Qualifier
    -> m (List (Inputs s) × Ctrl s)
 qualifiers inputs Nil = pure (singleton inputs × inputs.ctrl)
 qualifiers inputs (Guard e : gs) = do
@@ -322,7 +322,7 @@ evalStmt
    => MonadState (DepGraph Val s) m
    => DepSemiring s
    => Inputs s
-   -> Raw Stmt
+   -> Stmt
    -> m (Result s)
 evalStmt inputs = case _ of
    Return e -> Returns <$> eval inputs e
@@ -349,7 +349,7 @@ evalStmt inputs = case _ of
       classes <- askClasses
       ρ' × ctrl <- destructure classes p v inputs.ctrl
       pure (Assigns ρ' ctrl)
-   DefRec (RecDefs _ ds) -> pure (Assigns (closeDefs inputs ds) inputs.ctrl)
+   DefRec (RecDefs ds) -> pure (Assigns (closeDefs inputs ds) inputs.ctrl)
    Pass -> pure (Assigns empty inputs.ctrl)
    ExprStmt e -> eval inputs e $> Assigns empty inputs.ctrl
    Assert e e_opt -> do
@@ -441,7 +441,7 @@ depEval
    => LoadFile m
    => DepSemiring s
    => GraphConfig
-   -> Raw Stmt
+   -> Stmt
    -> m (DepEval s)
 depEval { ρ, classes } s =
    withClasses classes do
