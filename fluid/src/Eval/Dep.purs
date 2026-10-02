@@ -99,17 +99,17 @@ matches _ v (PVar x)
    | otherwise = Just (maplet x v) × Nil
 matches _ _ PWild = Just empty × Nil
 matches classes v (PAs p x) = first (map (_ `unionWith_never` maplet x v)) (matches classes v p)
-matches classes v p = second (ctrlVia rootOf v : _) case v.val, p of
-   Val _ _ (V.Lit ℓ'), PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
-   Val _ _ (V.Constr c' vs), PConstr c ps Nil
+matches classes v@{ val: Val _ _ u } p = second (ctrlVia rootOf v : _) case u, p of
+   V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
+   V.Constr c' vs, PConstr c ps Nil
       | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
            matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (field i) v }) (take (length ps) vs)) ps
-   Val _ _ (V.Dictionary (DictRep xvs)), PRecord xps ->
+   V.Dictionary (DictRep xvs), PRecord xps ->
       case traverse (\(x × p') -> lookup x xvs <#> \(_ × val) -> x × { val, inEdges: via (dictEntry x >>> snd) v } × p') xps of
          Just kvs -> second ((kvs <#> \(x × _) -> ctrlVia (dictEntry x >>> fst) v) <> _)
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
-   Val _ _ (V.List vs), PList ps | A.length vs == length ps ->
+   V.List vs, PList ps | A.length vs == length ps ->
       matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (listElement i) v }) (L.fromFoldable vs)) ps
    _, _ -> Nothing × Nil
 
@@ -137,8 +137,8 @@ destructure classes p v ctrl = case dispatch classes (singleton (p × unit)) v c
    Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
-closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
-closure ctrl ρ ds d = constructed ctrl { val: clo (_.val <$> ρ), inEdges: viaAll clo ρ }
+closure :: forall s. Semiring s => Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
+closure ρ ds d = { val: clo (_.val <$> ρ), inEdges: viaAll clo ρ }
    where
    clo :: forall a. Semiring a => Dict (Val a) -> Val a
    clo ρ' = Val zero Nothing (V.Fun (V.Closure (Env ρ') (zeros <$> ds) (zeros d)))
@@ -148,7 +148,7 @@ closeDefs inputs ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
    in
-      closure inputs.ctrl (restrict (fv ds' ∪ fv d) inputs.env) ds' d
+      constructed inputs.ctrl (closure (restrict (fv ds' ∪ fv d) inputs.env) ds' d)
 
 -- ======================
 -- Vertices
@@ -271,7 +271,7 @@ eval inputs = case _ of
 
       width :: forall a. Val a -> a
       width = field 1 >>> rootOf
-   Lambda _ d -> vertexOf (closure inputs.ctrl (restrict (fv d) inputs.env) empty d)
+   Lambda _ d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
    Attribute e x -> do
       v <- gval <$> eval inputs e
       case v.val of
@@ -470,11 +470,11 @@ apply
    -> GVal s
    -> List (GVal s)
    -> m (Vertex × Raw Val)
-apply inputs f vs = case f.val of
-   Val _ _ (V.Fun (V.Partial φ us)) ->
+apply inputs f@{ val: Val _ _ u } vs = case u of
+   V.Fun (V.Partial φ us) ->
       apply inputs { val: Val unit Nothing (V.Fun φ), inEdges: via partialFun f }
          (mapWithIndex (\i val -> { val, inEdges: via (partialArg i) f }) us <> vs)
-   Val _ _ (V.Fun φ) -> do
+   V.Fun φ -> do
       n <- arity'
       let k = length vs
       if k < n then construct inputs.ctrl partial
