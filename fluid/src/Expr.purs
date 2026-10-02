@@ -2,7 +2,7 @@ module Expr where
 
 import Prelude hiding (absurd, top)
 
-import Bind (Bind, Name, Var)
+import Bind (Bind, Name, Var, varThis)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList)
@@ -113,7 +113,7 @@ instance FV Expr where
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
    fv (ListComp e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
    fv (DictComp e e' gs) = fvQualifiers gs ∪ ((fv e ∪ fv e') \\ bv gs)
-   fv (DocExpr doc e) = fv doc ∪ fv e
+   fv (DocExpr doc e) = (fv doc \\ singleton varThis) ∪ fv e
 
 fvQualifiers :: List Qualifier -> Set Var
 fvQualifiers Nil = empty

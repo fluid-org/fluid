@@ -2,7 +2,7 @@ module Eval.Dep where
 
 import Prelude hiding (absurd, apply)
 
-import Bind (dottedName, varAnon)
+import Bind (dottedName, varAnon, varThis)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
@@ -263,9 +263,9 @@ eval inputs = case _ of
       b × _ <- orThrow (unpack boolean val)
       eval (inputs { ctrl = singleton (p × rootOf) }) (if b then e1 else e2)
    DocExpr e e' -> do
-      doc <- eval inputs e
       r <- eval inputs e'
-      attachDoc (fst r) (snd doc)
+      doc <- eval (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
+      attachDoc (fst r) (fst doc)
       pure r
    where
    funName :: Expr -> String

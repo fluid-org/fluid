@@ -37,6 +37,9 @@ simple n = case uncons n of
 
 varAnon = "_" :: Var
 
+-- Bound to the documented value within a doc.
+varThis = "this" :: Var
+
 -- Discrete partial order for variables.
 mustGeq :: Var -> Var -> Var
 mustGeq x y = definitely "greater" (whenever (x == y) x)

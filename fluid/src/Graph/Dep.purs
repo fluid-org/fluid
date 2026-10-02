@@ -75,7 +75,7 @@ sparseRel in_ = SparseRel { out, in_ }
 type DepGraph (f :: Type -> Type) s =
    { next :: Int
    , vals :: Map Vertex (f Unit)
-   , docs :: Map Vertex (f Unit)
+   , docs :: Map Vertex Vertex -- vertex ↦ vertex of its doc
    , edges :: Map Vertex (Map Vertex (Rel (f s) (f s))) -- target ↦ source ↦ relation
    }
 
@@ -89,8 +89,8 @@ vertex v = do
    modify_ \g -> g { next = n + 1, vals = Map.insert α v g.vals }
    pure α
 
-attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> f Unit -> m Unit
-attachDoc α v = modify_ \g -> g { docs = Map.insert α v g.docs }
+attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
+attachDoc α β = modify_ \g -> g { docs = Map.insert α β g.docs }
 
 edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Vertex -> Vertex -> Rel (f s) (f s) -> m Unit
 edge α β r =

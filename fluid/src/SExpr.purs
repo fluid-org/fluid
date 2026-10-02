@@ -2,7 +2,7 @@ module SExpr where
 
 import Prelude hiding (top)
 
-import Bind (Bind, Name, Var)
+import Bind (Bind, Name, Var, varThis)
 import Data.Set (Set, empty, singleton, unions) as Set
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
@@ -151,7 +151,7 @@ instance FV Expr where
    fv (List es) = Set.unions (fv <$> es)
    fv (ListComp e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
    fv (DictComp k e gs) = fvQualifiers gs ∪ ((fv k ∪ fv e) \\ bv gs)
-   fv (DocExpr e e') = fv e ∪ fv e'
+   fv (DocExpr e e') = (fv e \\ Set.singleton varThis) ∪ fv e'
 
 instance FV Stmt where
    fv (Return e) = fv e

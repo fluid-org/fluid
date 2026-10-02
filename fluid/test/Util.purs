@@ -117,8 +117,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
    -- Lineage of the output selection includes the α-graph's backward slice, input by input.
-   edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep)
-   let Env ρ_dep = inputLineage dep edges out0
+   edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep dep.root)
+   let Env ρ_dep = inputLineage dep dep.root edges out0
    for_ (toUnfoldable ρ_dep :: List (String × Val Chain)) \(x × sel_new) -> do
       let sel_old = get x in_ρ
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
@@ -141,30 +141,32 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
 type DepSpec =
    { file :: String
+   , doc :: Boolean -- select on the doc of the output
    , δv :: ConstrArg -> Selector Val
-   , expect :: String -- input environment with lineage of the output selection, data ⸨ ⸩ and control ⟪ ⟫
+   , expect :: String -- input environment with lineage of the selection, data ⸨ ⸩ and control ⟪ ⟫
    }
 
--- Materialised relations from the inputs to the root, with every intermediate hidden.
-materialiseEnds :: DepEval (Lineage (Vertex × Pos) Chain) -> Map (Vertex × Vertex) (SparseRel Chain)
-materialiseEnds dep = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton dep.root)
+-- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
+materialiseEnds :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map (Vertex × Vertex) (SparseRel Chain)
+materialiseEnds dep p = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton p)
 
-inputLineage :: DepEval (Lineage (Vertex × Pos) Chain) -> Map (Vertex × Vertex) (SparseRel Chain) -> Val 𝔹 -> Env Chain
-inputLineage dep edges out = Env $ dep.inputs <#> \q ->
-   lineage edges dep.root selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
+inputLineage :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map (Vertex × Vertex) (SparseRel Chain) -> Val 𝔹 -> Env Chain
+inputLineage dep p edges out = Env $ dep.inputs <#> \q ->
+   lineage edges p selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
    where
    selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
 
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> DepSpec -> AffError m Unit
-testDep file { δv, expect } = do
+testDep file { doc, δv, expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
    dep <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) Chain))
    let
-      out = definitely "root labelled" (Map.lookup dep.root dep.g.vals)
+      p = if doc then definitely "output documented" (Map.lookup dep.root dep.g.docs) else dep.root
+      out = definitely "vertex labelled" (Map.lookup p dep.g.vals)
       arg = constrArg (fieldIndex gconfig.classes)
       out0 = fst (δv arg (const unselected <$> (map (const top) out :: Val 𝔹))) <#> getPersistent
-   let Env ρ = inputLineage dep (materialiseEnds dep) out0
+   let Env ρ = inputLineage dep p (materialiseEnds dep p) out0
    withMsg "expect" $ checkPretty expect $ joinWith "\n" $
       (toUnfoldable ρ :: Array (String × Val Chain)) <#> \(x × v) -> x <> ": " <> prettyP v
 

@@ -2,7 +2,7 @@ module WellFormed where
 
 import Prelude
 
-import Bind (Bind, Name, Var, dottedName, prefixOf, properPrefixOf, (↦))
+import Bind (Bind, Name, Var, dottedName, prefixOf, properPrefixOf, varThis, (↦))
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (StateT, get, mapStateT, modify_, runStateT)
 import Control.Monad.Trans.Class (lift)
@@ -209,7 +209,7 @@ capturesE (S.Paragraph es) = unions (capturesPe <$> es)
 capturesE (S.List es) = Set.unions (capturesE <$> es)
 capturesE (S.ListComp e gs) = capturesQualifiers gs ∪ (capturesE e \\ bv gs)
 capturesE (S.DictComp k e gs) = capturesQualifiers gs ∪ ((capturesE k ∪ capturesE e) \\ bv gs)
-capturesE (S.DocExpr e e') = capturesE e ∪ capturesE e'
+capturesE (S.DocExpr e e') = (capturesE e \\ Set.singleton varThis) ∪ capturesE e'
 
 capturesQualifiers :: List S.Qualifier -> Set Var
 capturesQualifiers Nil = Set.empty
@@ -379,7 +379,8 @@ wellFormedExpr cxt (S.ListComp e gs) =
 wellFormedExpr cxt (S.DictComp k e gs) =
    (\((k' × e') × gs') -> E.DictComp k' e' gs') <$> wellFormedQualifiers cxt gs \cxt' ->
       (×) <$> wellFormedExpr cxt' k <*> wellFormedExpr cxt' e
-wellFormedExpr cxt (S.DocExpr e e') = E.DocExpr <$> wellFormedExpr cxt e <*> wellFormedExpr cxt e'
+wellFormedExpr cxt (S.DocExpr e e') =
+   E.DocExpr <$> wellFormedExpr (cxt `extendCxt` constMap true (Set.singleton varThis)) e <*> wellFormedExpr cxt e'
 
 asName :: S.Expr -> Maybe Name
 asName (S.Var x) = Just (singleton x)
