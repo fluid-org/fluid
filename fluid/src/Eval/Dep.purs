@@ -130,12 +130,11 @@ dispatch classes ((p × b) : cases) v ctrl = case matches classes v p of
    Nothing × ctrls -> second (concat ctrls <> _) (dispatch classes cases v Nil)
 
 -- dispatch on a single pattern, which must match.
-assign :: forall m s. MonadError Error m => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)
-assign classes p v ctrl = case dispatch classes (singleton (p × unit)) v ctrl of
+destructure :: forall m s. MonadError Error m => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)
+destructure classes p v ctrl = case dispatch classes (singleton (p × unit)) v ctrl of
    Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
--- Closure capturing the environment.
 closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict (Raw Def) -> Raw Def -> GVal s
 closure ctrl ρ ds d =
    constructed ctrl { val, inEdges: viaAll (zip (fst <$> xvs) >>> D.fromFoldable >>> clo) (snd <$> xvs) }
@@ -393,7 +392,7 @@ qualifiers inputs (Generator p e : gs) = do
 qualifiers inputs (Decl p e : gs) = do
    v <- gval <$> eval inputs e
    classes <- askClasses
-   ρ' × ctrl <- assign classes p v inputs.ctrl
+   ρ' × ctrl <- destructure classes p v inputs.ctrl
    qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) gs
 
 evalStmt
@@ -432,7 +431,7 @@ evalStmt inputs = case _ of
    Assign p _ e -> do
       v <- gval <$> eval inputs e
       classes <- askClasses
-      ρ' × ctrl <- assign classes p v inputs.ctrl
+      ρ' × ctrl <- destructure classes p v inputs.ctrl
       pure (Assigns ρ' ctrl)
    DefRec (RecDefs _ ds) -> pure (Assigns (closeDefs inputs ds) inputs.ctrl)
    Pass -> pure (Assigns empty inputs.ctrl)
