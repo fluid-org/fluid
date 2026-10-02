@@ -444,11 +444,7 @@ evalStmt inputs = case _ of
          Nothing -> throw "AssertionError"
          Just e' -> do
             _ × Val _ _ w <- eval (inputs { ctrl = ctrl }) e'
-            throw
-               ( "AssertionError: " <> case w of
-                    V.Lit (Str str) -> str
-                    _ -> prettyP w
-               )
+            throw ("AssertionError: " <> either (\_ -> prettyP w) identity (string.unpack w))
    Seq s1 s2 -> do
       r1 <- evalStmt inputs s1
       case r1 of
