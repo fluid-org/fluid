@@ -36,7 +36,7 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
-import Graph.Dep (class Positions, DepGraph, Rel, edge, scale, traversePositions, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, edge, scale, vertex, zeros)
 import Graph.Dep (Vertex) as Dep
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, Chain(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
@@ -76,40 +76,6 @@ asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else N
 
 rootOf :: forall a. Val a -> a
 rootOf (Val α _ _) = α
-
-instance Positions Val where
-   traversePositions f g (Val α doc u) = Val <$> f α <*> pure (map g <$> doc) <*> traversePositions f g u
-
-instance Positions BaseVal where
-   traversePositions f g = case _ of
-      Lit ℓ -> pure (Lit ℓ)
-      Constr c vs -> Constr c <$> traverse (traversePositions f g) vs
-      List vs -> List <$> traverse (traversePositions f g) vs
-      Dictionary d -> Dictionary <$> traversePositions f g d
-      Matrix m -> Matrix <$> traversePositions f g m
-      Fun φ -> Fun <$> traversePositions f g φ
-
-instance Positions Fun where
-   traversePositions f g = case _ of
-      Closure ρ ds d -> (\ρ' -> Closure ρ' ds d) <$> traversePositions f g ρ
-      Prim op -> pure (Prim op)
-      Type c -> pure (Type c)
-      Partial φ vs -> Partial <$> traversePositions f g φ <*> traverse (traversePositions f g) vs
-
-instance Positions DictRep where
-   traversePositions f g (DictRep d) =
-      DictRep <<< D.fromFoldable <$> traverse (\(k × (α × v)) -> (\β v' -> k × (β × v')) <$> f α <*> traversePositions f g v) (toUnfoldable d :: List _)
-
-instance Positions MatrixRep where
-   traversePositions f g (MatrixRep (vss × MatrixDim (i × α) × MatrixDim (j × β))) =
-      (\α' β' vss' -> MatrixRep (vss' × MatrixDim (i × α') × MatrixDim (j × β')))
-         <$> f α
-         <*> f β
-         <*> traverse (traverse (traversePositions f g)) vss
-
-instance Positions Env where
-   traversePositions f g (Env ρ) =
-      Env <<< D.fromFoldable <$> traverse (\(k × v) -> (k × _) <$> traversePositions f g v) (toUnfoldable ρ :: List _)
 
 -- Value without its doc annotations, which are not positions.
 stripDocs :: forall a. Val a -> Val a

@@ -14,6 +14,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
+import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (snd)
 import Lattice (class DepSemiring, Lineage(..))
 import Util (type (×), (×))
@@ -22,21 +23,17 @@ newtype Vertex = Vertex Int
 
 type Pos = Int -- index under the position ordering of a value
 
--- Second function maps the annotations that are not positions (documentation).
-class Positions f where
-   traversePositions :: forall m a b. Applicative m => (a -> m b) -> (a -> b) -> f a -> m (f b)
+positions :: forall f a. Traversable f => f a -> List a
+positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
-positions :: forall f a. Positions f => f a -> List a
-positions = traversePositions (\a -> modify_ (a : _)) (const unit) >>> flip execState Nil >>> L.reverse
-
-width :: forall f a. Positions f => f a -> Int
+width :: forall f a. Traversable f => f a -> Int
 width = positions >>> length
 
-mapPositions :: forall f a b. Positions f => (Pos -> a -> b) -> (a -> b) -> f a -> f b
-mapPositions h g = traversePositions (\a -> state \n -> h n a × (n + 1)) g >>> flip evalState 0
+mapPositions :: forall f a b. Traversable f => (Pos -> a -> b) -> f a -> f b
+mapPositions h = traverse (\a -> state \n -> h n a × (n + 1)) >>> flip evalState 0
 
-basis :: forall f a s. Positions f => Semiring s => f a -> Pos -> f s
-basis v i = mapPositions (\n _ -> if n == i then one else zero) (const zero) v
+basis :: forall f a s. Traversable f => Semiring s => f a -> Pos -> f s
+basis v i = mapPositions (\n _ -> if n == i then one else zero) v
 
 zeros :: forall f a s. Functor f => Semiring s => f a -> f s
 zeros = map (const zero)
@@ -47,7 +44,7 @@ scale a = map (mul a)
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
 
-sumPositions :: forall f s. Positions f => Semiring s => f s -> s
+sumPositions :: forall f s. Traversable f => Semiring s => f s -> s
 sumPositions = positions >>> foldl add zero
 
 -- Linear map between free semimodules over the positions of a and b.
@@ -107,7 +104,7 @@ derive newtype instance Show Vertex
 -- Relies on every edge running from an earlier to a later vertex in evaluation order.
 materialise
    :: forall f s
-    . Positions f
+    . Traversable f
    => Apply f
    => DepSemiring s
    => DepGraph f (Lineage (Vertex × Pos) s)
@@ -118,7 +115,7 @@ materialise g visible =
    where
    step (vecs × rels) (p × v) =
       if Set.member p visible then
-         Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) (const zero) v) vecs
+         Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) vecs
             × Map.unionWith (Map.unionWith Map.union) rels (Map.fromFoldableWith (Map.unionWith Map.union) (entries vec))
       else Map.insert p vec vecs × rels
       where
@@ -132,8 +129,8 @@ materialise g visible =
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> (q × p) × Map.singleton j (Map.singleton i w)
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
-lineage :: forall f s. Positions f => Semiring s => Map (Vertex × Vertex) (SparseRel s) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
-lineage edges target selected source v = mapPositions (\i _ -> weight i) (const zero) v
+lineage :: forall f s. Traversable f => Semiring s => Map (Vertex × Vertex) (SparseRel s) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
+lineage edges target selected source v = mapPositions (\i _ -> weight i) v
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup (source × target) edges)
    weight i = foldl add zero ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))
