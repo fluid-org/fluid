@@ -77,7 +77,7 @@ asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else N
 root :: forall a. Val a -> a
 root (Val α _ _) = α
 
--- Value without its doc annotations.
+-- Values entering the dependence graph carry no docs, which are vertices there; retire with the α-graph.
 stripDocs :: forall a. Val a -> Val a
 stripDocs (Val α _ u) = Val α Nothing case u of
    Constr c vs -> Constr c (stripDocs <$> vs)
