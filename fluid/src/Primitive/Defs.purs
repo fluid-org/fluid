@@ -109,19 +109,19 @@ len =
    where
    op :: Op
    op doc_opt (Val α _ u : Nil) = do
-      n <- orThrow (count u)
+      n <- orThrow (len_ u)
       val doc_opt (singleton α) (Lit (Int n))
    op _ _ = throw "Single argument expected"
 
    rel :: forall a. List (Val a) -> Either String (Val a)
-   rel (Val α _ u : Nil) = count u <#> \n -> Val α Nothing (Lit (Int n))
+   rel (Val α _ u : Nil) = len_ u <#> \n -> Val α Nothing (Lit (Int n))
    rel _ = Left "Single argument expected"
 
-   count :: forall a. BaseVal a -> Either String Int
-   count (List vs) = pure (Array.length vs)
-   count (Dictionary (DictRep d)) = pure (Set.size (keys d))
-   count (Lit (Str s)) = pure (String.length s)
-   count u = Left (typeMismatch u "Sized")
+   len_ :: forall a. BaseVal a -> Either String Int
+   len_ (List vs) = pure (Array.length vs)
+   len_ (Dictionary (DictRep d)) = pure (Set.size (keys d))
+   len_ (Lit (Str s)) = pure (String.length s)
+   len_ u = Left (typeMismatch u "Sized")
 
 print_ :: ForeignOp
 print_ =
