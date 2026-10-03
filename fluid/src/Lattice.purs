@@ -44,23 +44,23 @@ class (Semiring s, Ord s) <= DepSemiring s where
 instance DepSemiring Unit where
    ctrlWeight = unit
 
-data Chain = Zero | Ctrl | Data
+data DepKind = Zero | Ctrl | Data
 
-derive instance Eq Chain
-derive instance Ord Chain
+derive instance Eq DepKind
+derive instance Ord DepKind
 
-instance Show Chain where
+instance Show DepKind where
    show Zero = "0"
    show Ctrl = "○"
    show Data = "●"
 
-instance Semiring Chain where
+instance Semiring DepKind where
    zero = Zero
    one = Data
    add = max
    mul = min
 
-instance DepSemiring Chain where
+instance DepSemiring DepKind where
    ctrlWeight = Ctrl
 
 -- Trivial extension of s by weighted combinations of positions k: the product of two combinations is zero.

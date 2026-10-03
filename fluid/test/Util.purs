@@ -28,7 +28,7 @@ import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
 import Graph.Dep (Pos, SparseRel, Vertex, lineage, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, Chain(..), Lineage, erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -97,7 +97,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
    dep <- graphBenchmark benchNames.dep \_ ->
-      depEval gconfig s' :: m (DepEval (Lineage (Vertex × Pos) Chain))
+      depEval gconfig s' :: m (DepEval (Lineage (Vertex × Pos) DepKind))
    let out_dep = definitely "root labelled" (Map.lookup dep.root dep.g.vals)
    when tracing.depEval $ log
       ("depEval: " <> show (Map.size dep.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values dep.g.edges)) <> " edges")
@@ -119,7 +119,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    -- Lineage of the output selection includes the α-graph's backward slice, input by input.
    edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep dep.root)
    let Env ρ_dep = inputLineage dep dep.root edges (stripDocs out0)
-   for_ (toUnfoldable ρ_dep :: List (String × Val Chain)) \(x × sel_new) -> do
+   for_ (toUnfoldable ρ_dep :: List (String × Val DepKind)) \(x × sel_new) -> do
       let sel_old = stripDocs (get x in_ρ)
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
          throw ("lineage of " <> x <> " misses α-graph slice:\nlineage\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
@@ -147,10 +147,10 @@ type DepSpec =
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-materialiseEnds :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map Vertex (Map Vertex (SparseRel Chain))
+materialiseEnds :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind))
 materialiseEnds dep p = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton p)
 
-inputLineage :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map Vertex (Map Vertex (SparseRel Chain)) -> Val 𝔹 -> Env Chain
+inputLineage :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
 inputLineage dep p edges out = Env $ dep.inputs <#> \q ->
    lineage edges p selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
    where
@@ -160,7 +160,7 @@ testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m =
 testDep file { doc, δv, expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
-   dep <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) Chain))
+   dep <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) DepKind))
    let
       p = if doc then definitely "output documented" (Map.lookup dep.root dep.g.docs) else dep.root
       out = definitely "vertex labelled" (Map.lookup p dep.g.vals)
@@ -168,7 +168,7 @@ testDep file { doc, δv, expect } = do
       out0 = fst (δv arg (const unselected <$> (map (const top) out :: Val 𝔹))) <#> getPersistent
    let Env ρ = inputLineage dep p (materialiseEnds dep p) out0
    withMsg "expect" $ checkPretty expect $ joinWith "\n" $
-      (toUnfoldable ρ :: Array (String × Val Chain)) <#> \(x × v) -> x <> ": " <> prettyP v
+      (toUnfoldable ρ :: Array (String × Val DepKind)) <#> \(x × v) -> x <> ": " <> prettyP v
 
 checkEq
    :: forall m a

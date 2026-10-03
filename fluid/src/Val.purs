@@ -39,7 +39,7 @@ import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexDa
 import Graph.Dep (DepGraph, Rel, edge, scale, vertex, zeros)
 import Graph.Dep (Vertex) as Dep
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, Chain(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
+import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
@@ -378,7 +378,7 @@ instance Highlightable Boolean where
    highlightIf false = identity
    highlightIf true = \doc -> text "⸨" <> doc <> text "⸩"
 
-instance Highlightable Chain where
+instance Highlightable DepKind where
    highlightIf Zero = identity
    highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
    highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
