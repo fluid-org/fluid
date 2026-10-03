@@ -12,7 +12,7 @@ import Data.Array as A
 import Data.Array.NonEmpty (NonEmptyArray, fromArray)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
+import Data.Either (Either(..), either)
 import Data.Foldable (class Foldable, foldr, for_)
 import Data.Functor.Compose (Compose)
 import Data.Functor.Product (Product)
@@ -149,6 +149,9 @@ definitely msg Nothing = error ("definitely " <> msg)
 
 definitely' :: forall a. Maybe a -> a
 definitely' = definitely absurd
+
+definitelyRight :: forall a b. Either a b -> b
+definitelyRight = either (\_ -> error absurd) identity
 
 onlyIf :: forall m a. Bind m => Alternative m => Boolean -> a -> m a
 onlyIf b a = do

@@ -20,7 +20,7 @@ import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
 import Data.Tuple (snd)
-import Data.Either (Either, either)
+import Data.Either (Either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Set (Set, unions)
@@ -43,7 +43,7 @@ import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSem
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
-import Util (class IsEmpty, type (×), Endo, absurd, definitely, definitely', error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (class IsEmpty, type (×), Endo, absurd, definitely, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
@@ -176,7 +176,7 @@ gval :: forall s. Dep.Vertex × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
 
 -- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s. Rel (Val s) (Val s) -> GVal s -> InEdges s
+via :: forall s b. Rel (Val s) b -> GVal s -> List (Dep.Vertex × Rel (Val s) b)
 via r v = second (r <<< _) <$> v.inEdges
 
 -- Dependence on values already in the graph of a value that depends on vs by r.
@@ -185,9 +185,6 @@ viaAll r vs = fold (ivs <#> \(i × v) -> via (\x -> r (zs <#> \(j × z) -> if i 
    where
    ivs = (mapAccumL (\i v -> { accum: i + 1, value: i × v }) 0 vs).value
    zs = map (zeros <<< _.val) <$> ivs
-
-ctrlVia :: forall s. Rel (Val s) s -> GVal s -> Ctrl s
-ctrlVia r v = second (r <<< _) <$> v.inEdges
 
 -- Adds dependence on control at weight c to the positions of v in the given section.
 withCtrl :: forall s. DepSemiring s => Ctrl s -> Val s -> GVal s -> GVal s
@@ -260,7 +257,7 @@ fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> DepOp
 pureRel f ctrl vs = do
    _ <- orThrow (f (_.val <$> vs))
-   fromRel (f >>> either (\_ -> error absurd) identity) ctrl vs
+   fromRel (f >>> definitelyRight) ctrl vs
 
 data ForeignOp' = ForeignOp'
    { arity :: Int

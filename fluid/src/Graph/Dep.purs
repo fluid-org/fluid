@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Control.Monad.State (class MonadState, evalState, execState, gets, modify_, state)
-import Data.Foldable (foldl, length)
+import Data.Foldable (foldl, sum)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.List as L
@@ -26,9 +26,6 @@ type Pos = Int -- index under the position ordering of a value
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
-width :: forall f a. Traversable f => f a -> Int
-width = positions >>> length
-
 mapPositions :: forall f a b. Traversable f => (Pos -> a -> b) -> f a -> f b
 mapPositions h = traverse (\a -> state \n -> h n a × (n + 1)) >>> flip evalState 0
 
@@ -46,9 +43,6 @@ type Rel a b = a -> b
 
 sumRel :: forall a f s. Apply f => Semiring s => Rel a (f s) -> Rel a (f s) -> Rel a (f s)
 sumRel r r' x = r x `plus` r' x
-
-scaleRel :: forall a f s. Functor f => Semiring s => s -> Rel a (f s) -> Rel a (f s)
-scaleRel s r = scale s <<< r
 
 -- Pair present exactly when its weight is non-zero.
 newtype SparseRel s = SparseRel
@@ -127,4 +121,4 @@ lineage :: forall f s. Traversable f => Semiring s => Map (Vertex × Vertex) (Sp
 lineage edges target selected source v = mapPositions (\i _ -> weight i) v
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup (source × target) edges)
-   weight i = foldl add zero ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))
+   weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))
