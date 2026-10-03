@@ -15,11 +15,10 @@ import Data.Array (concat, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, all, fold, foldMapDefaultL, foldl, foldrDefault, for_)
+import Data.Foldable (class Foldable, fold, foldMapDefaultL, foldl, foldrDefault, for_)
 import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
-import Data.Tuple (snd)
 import Data.Either (Either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -87,15 +86,6 @@ stripDocs (Val α _ u) = Val α Nothing case u of
    Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (stripDocs <$> ρ)) ds d)
    Fun (Partial φ vs) -> Fun (Partial φ (stripDocs <$> vs))
    _ -> u
-
-firstOrder :: forall a. Val a -> Boolean
-firstOrder (Val _ _ u) = case u of
-   Lit _ -> true
-   Constr _ vs -> all firstOrder vs
-   List vs -> all firstOrder vs
-   Dictionary (DictRep d) -> all (snd >>> firstOrder) d
-   Matrix (MatrixRep (vss × _ × _)) -> all (all firstOrder) vss
-   Fun _ -> false
 
 data Fun a
    = Closure (Env a) (Dict Def) Def
