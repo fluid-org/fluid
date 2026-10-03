@@ -8,7 +8,7 @@ import Data.Foldable (foldl, sum)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.List as L
-import Data.Map (Map)
+import Data.Map (Map, alter, fromFoldableWith, insertWith, lookup, unionWith)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype)
@@ -52,7 +52,7 @@ newtype SparseRel s = SparseRel
 sparseRel :: forall s. Map Pos (Map Pos s) -> SparseRel s
 sparseRel in_ = SparseRel { out, in_ }
    where
-   out = Map.fromFoldableWith Map.union
+   out = fromFoldableWith Map.union
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × Map.singleton j w)
 
 -- Vertices labelled by values of shape f; edges labelled by relations, parallel edges summed.
@@ -78,7 +78,7 @@ attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 
 edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Vertex -> Vertex -> Rel (f s) (f s) -> m Unit
 edge p q r =
-   modify_ \g -> g { edges = Map.alter (Just <<< Map.insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
+   modify_ \g -> g { edges = alter (Just <<< insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
 
 -- Relies on every edge running from an earlier to a later vertex in evaluation order.
 materialise
@@ -100,25 +100,25 @@ materialise g visible =
       else { vecs: Map.insert p vec vecs, rels }
       where
       vec = foldl
-         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (Map.lookup q vecs))
+         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (lookup q vecs))
          (zeros v)
-         (maybe Nil Map.toUnfoldable (Map.lookup p g.edges))
+         (maybe Nil Map.toUnfoldable (lookup p g.edges))
 
       -- Edges into p from each visible vertex, read off the lineage at every position of p.
       edgesInto :: Map Vertex (Map Pos (Map Pos s))
-      edgesInto = foldl (Map.unionWith Map.union) Map.empty $
+      edgesInto = foldl (unionWith Map.union) Map.empty $
          mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions vec)
 
       bySource :: Map (Vertex × Pos) s -> Map Vertex (Map Pos s)
-      bySource m = Map.fromFoldableWith Map.union $
+      bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
 lineage :: forall f s. Traversable f => Semiring s => Map Vertex (Map Vertex (SparseRel s)) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
 lineage edges target selected source v = mapPositions (\i _ -> weight i) v
    where
-   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup target edges >>= Map.lookup source)
-   weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))
+   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup target edges >>= lookup source)
+   weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (lookup j in_ >>= lookup i))
 
 -- ======================
 -- boilerplate
