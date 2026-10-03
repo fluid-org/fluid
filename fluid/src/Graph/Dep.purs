@@ -32,9 +32,6 @@ width = positions >>> length
 mapPositions :: forall f a b. Traversable f => (Pos -> a -> b) -> f a -> f b
 mapPositions h = traverse (\a -> state \n -> h n a × (n + 1)) >>> flip evalState 0
 
-basis :: forall f a s. Traversable f => Semiring s => f a -> Pos -> f s
-basis v i = mapPositions (\n _ -> if n == i then one else zero) v
-
 zeros :: forall f a s. Functor f => Semiring s => f a -> f s
 zeros = map (const zero)
 
@@ -43,9 +40,6 @@ scale a = map (mul a)
 
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
-
-sumPositions :: forall f s. Traversable f => Semiring s => f s -> s
-sumPositions = positions >>> foldl add zero
 
 -- Linear map between free semimodules over the positions of a and b.
 type Rel a b = a -> b

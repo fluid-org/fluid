@@ -8,7 +8,7 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, fold, foldl)
+import Data.Foldable (elem, fold, foldl, sum)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
@@ -30,7 +30,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig)
 import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, emptyGraph, sumPositions, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, emptyGraph, vertex, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Operator (binopSymbol, unopSymbol)
@@ -197,7 +197,7 @@ eval inputs = case _ of
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
       subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Vertex × Raw Val)
       subscript v v' select consumed =
-         deliver (inputs.ctrl <> ctrlVia consumed v <> ctrlVia sumPositions v') { val: select v.val, inEdges: via select v }
+         deliver (inputs.ctrl <> ctrlVia consumed v <> ctrlVia sum v') { val: select v.val, inEdges: via select v }
    ModMember q x -> do
       { moduleEnv } <- moduleStore
       let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
