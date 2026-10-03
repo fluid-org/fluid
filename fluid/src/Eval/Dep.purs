@@ -211,10 +211,10 @@ eval inputs = case _ of
       v <- gval <$> eval inputs e
       v' <- gval <$> eval inputs e'
       u <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v.val v'.val) <#> fst
-      let rel x y = definitelyRight (binopRel op x y)
+      let dep x y = definitelyRight (binopRel op x y)
       deliver inputs.ctrl
          { val: Val unit Nothing u
-         , inEdges: via (\x -> rel x (zeros v'.val)) v <> via (\y -> rel (zeros v.val) y) v'
+         , inEdges: via (\x -> dep x (zeros v'.val)) v <> via (\y -> dep (zeros v.val) y) v'
          }
    UnOp op e -> do
       v <- gval <$> eval inputs e

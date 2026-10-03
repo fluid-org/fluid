@@ -145,15 +145,15 @@ unary id f =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, op: unsafePartial op', depOp: pureRel (unsafePartial rel) }
+   op = ForeignOp' { arity: 1, op: unsafePartial op', depOp: pureRel (unsafePartial dep) }
 
    op' :: Partial => Op
    op' doc_opt (Val α _ v : Nil) = do
       x <- orThrow (f.i.unpack v)
       val doc_opt (singleton α) (f.o.pack (f.fwd x))
 
-   rel :: forall a. Partial => List (Val a) -> Either String (Val a)
-   rel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
+   dep :: forall a. Partial => List (Val a) -> Either String (Val a)
+   dep (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b
