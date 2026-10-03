@@ -147,10 +147,10 @@ type DepSpec =
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-materialiseEnds :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map (Vertex × Vertex) (SparseRel Chain)
+materialiseEnds :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map Vertex (Map Vertex (SparseRel Chain))
 materialiseEnds dep p = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton p)
 
-inputLineage :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map (Vertex × Vertex) (SparseRel Chain) -> Val 𝔹 -> Env Chain
+inputLineage :: DepEval (Lineage (Vertex × Pos) Chain) -> Vertex -> Map Vertex (Map Vertex (SparseRel Chain)) -> Val 𝔹 -> Env Chain
 inputLineage dep p edges out = Env $ dep.inputs <#> \q ->
    lineage edges p selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
    where

@@ -247,7 +247,7 @@ eval inputs = case _ of
    funName (App e _) = funName e
    funName _ = "unknown"
 
--- Boolean condition, with the control input afterwards: its root.
+-- Condition as a Boolean; its root is the control input for what follows.
 condition
    :: forall m s
     . HasClasses m

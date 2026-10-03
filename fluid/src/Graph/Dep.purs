@@ -96,14 +96,14 @@ materialise
    => DepSemiring s
    => DepGraph f (Lineage (Vertex × Pos) s)
    -> Set Vertex
-   -> Map (Vertex × Vertex) (SparseRel s)
+   -> Map Vertex (Map Vertex (SparseRel s)) -- target ↦ source ↦ relation
 materialise g visible =
-   sparseRel <$> (foldl step { vecs: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
+   (foldl step { vecs: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
    where
    step { vecs, rels } (p × v) =
       if Set.member p visible then
          { vecs: Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) vecs
-         , rels: rels `Map.union` edgesInto vec
+         , rels: Map.insert p (sparseRel <$> edgesInto vec) rels
          }
       else { vecs: Map.insert p vec vecs, rels }
       where
@@ -113,16 +113,16 @@ materialise g visible =
          (maybe Nil Map.toUnfoldable (Map.lookup p g.edges))
 
       -- Edges into p from each visible vertex, read off the lineage at every position of p.
-      edgesInto :: f (Lineage (Vertex × Pos) s) -> Map (Vertex × Vertex) (Map Pos (Map Pos s))
+      edgesInto :: f (Lineage (Vertex × Pos) s) -> Map Vertex (Map Pos (Map Pos s))
       edgesInto x = foldl (Map.unionWith Map.union) Map.empty $
          mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions x)
 
-      bySource :: Map (Vertex × Pos) s -> Map (Vertex × Vertex) (Map Pos s)
-      bySource m = Map.fromFoldableWith Map.union ((Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> (q × p) × Map.singleton i w)
+      bySource :: Map (Vertex × Pos) s -> Map Vertex (Map Pos s)
+      bySource m = Map.fromFoldableWith Map.union ((Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w)
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
-lineage :: forall f s. Traversable f => Semiring s => Map (Vertex × Vertex) (SparseRel s) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
+lineage :: forall f s. Traversable f => Semiring s => Map Vertex (Map Vertex (SparseRel s)) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
 lineage edges target selected source v = mapPositions (\i _ -> weight i) v
    where
-   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup (source × target) edges)
+   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup target edges >>= Map.lookup source)
    weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))
