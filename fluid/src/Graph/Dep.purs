@@ -69,24 +69,16 @@ emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 vertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Vertex
 vertex v = do
    size <- gets _.size
-   let α = Vertex size
-   modify_ \g -> g { size = size + 1, vals = Map.insert α v g.vals }
-   pure α
+   let p = Vertex size
+   modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals }
+   pure p
 
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
-attachDoc α β = modify_ \g -> g { docs = Map.insert α β g.docs }
+attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 
 edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Vertex -> Vertex -> Rel (f s) (f s) -> m Unit
-edge α β r =
-   modify_ \g -> g { edges = Map.alter (Just <<< Map.insertWith (flip sumRel) α r <<< fromMaybe Map.empty) β g.edges }
-
--- ======================
--- boilerplate
--- ======================
-derive instance Eq Vertex
-derive instance Ord Vertex
-derive instance Newtype Vertex _
-derive newtype instance Show Vertex
+edge p q r =
+   modify_ \g -> g { edges = Map.alter (Just <<< Map.insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
 
 -- Relies on every edge running from an earlier to a later vertex in evaluation order.
 materialise
@@ -103,7 +95,7 @@ materialise g visible =
    step { vecs, rels } (p × v) =
       if Set.member p visible then
          { vecs: Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) vecs
-         , rels: Map.insert p (sparseRel <$> edgesInto vec) rels
+         , rels: Map.insert p (sparseRel <$> edgesInto) rels
          }
       else { vecs: Map.insert p vec vecs, rels }
       where
@@ -113,9 +105,9 @@ materialise g visible =
          (maybe Nil Map.toUnfoldable (Map.lookup p g.edges))
 
       -- Edges into p from each visible vertex, read off the lineage at every position of p.
-      edgesInto :: f (Lineage (Vertex × Pos) s) -> Map Vertex (Map Pos (Map Pos s))
-      edgesInto x = foldl (Map.unionWith Map.union) Map.empty $
-         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions x)
+      edgesInto :: Map Vertex (Map Pos (Map Pos s))
+      edgesInto = foldl (Map.unionWith Map.union) Map.empty $
+         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions vec)
 
       bySource :: Map (Vertex × Pos) s -> Map Vertex (Map Pos s)
       bySource m = Map.fromFoldableWith Map.union ((Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w)
@@ -126,3 +118,11 @@ lineage edges target selected source v = mapPositions (\i _ -> weight i) v
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (Map.lookup target edges >>= Map.lookup source)
    weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (Map.lookup j in_ >>= Map.lookup i))
+
+-- ======================
+-- boilerplate
+-- ======================
+derive instance Eq Vertex
+derive instance Ord Vertex
+derive instance Newtype Vertex _
+derive newtype instance Show Vertex
