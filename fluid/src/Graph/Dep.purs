@@ -110,7 +110,8 @@ materialise g visible =
          mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions vec)
 
       bySource :: Map (Vertex × Pos) s -> Map Vertex (Map Pos s)
-      bySource m = Map.fromFoldableWith Map.union ((Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w)
+      bySource m = Map.fromFoldableWith Map.union $
+         (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
 lineage :: forall f s. Traversable f => Semiring s => Map Vertex (Map Vertex (SparseRel s)) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
