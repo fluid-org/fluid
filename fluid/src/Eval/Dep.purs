@@ -41,7 +41,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, listElement, matrixElement, moduleStore, partialArg, partialFun, rootOf, stripDocs, via, viaAll)
+import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, listElement, matrixElement, moduleStore, partialArg, partialFun, root, stripDocs, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -58,7 +58,7 @@ matches _ v (PVar x)
    | otherwise = Just (maplet x v) × Nil
 matches _ _ PWild = Just empty × Nil
 matches classes v (PAs p x) = first (map (_ `unionWith_never` maplet x v)) (matches classes v p)
-matches classes v@{ val: Val _ _ u } p = second (via rootOf v : _) case u, p of
+matches classes v@{ val: Val _ _ u } p = second (via root v : _) case u, p of
    V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Constr c' vs, PConstr c ps Nil
       | c `elem` ancestors (definitely "declared class" (Map.lookup (dottedName c') classes)) ->
@@ -161,12 +161,12 @@ eval inputs = case _ of
       index :: GVal s -> Int -> Int -> GVal s
       index dims k n =
          { val: Val unit Nothing (V.Lit (Int n))
-         , inEdges: via (\p -> Val (ctrlWeight * rootOf (field k p)) Nothing (V.Lit (Int n))) dims
+         , inEdges: via (\p -> Val (ctrlWeight * root (field k p)) Nothing (V.Lit (Int n))) dims
          }
 
       mat :: forall a. Int -> Int -> Product (Compose Array Array) Identity (Val a) -> BaseVal a
       mat i j (Product (Compose vss × Identity p)) =
-         V.Matrix (MatrixRep (vss × MatrixDim (i × rootOf (field 0 p)) × MatrixDim (j × rootOf (field 1 p))))
+         V.Matrix (MatrixRep (vss × MatrixDim (i × root (field 0 p)) × MatrixDim (j × root (field 1 p))))
    Lambda d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
    Attribute e x -> do
       v <- gval <$> eval inputs e
@@ -174,7 +174,7 @@ eval inputs = case _ of
          Val _ _ (V.Constr c _) -> do
             xs <- askClasses <#> \classes -> definitely' (fieldsOf classes (dottedName c))
             i <- elemIndex x xs # orElse (dottedName c <> " has no field " <> x)
-            deliver (inputs.ctrl <> via rootOf v) { val: field i v.val, inEdges: via (field i) v }
+            deliver (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
    Subscript e e' -> do
       v@{ val: Val _ _ u } <- gval <$> eval inputs e
@@ -182,15 +182,15 @@ eval inputs = case _ of
       case u, u' of
          V.Dictionary (DictRep d), V.Lit (Str s) -> do
             _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
-            subscript v v' (dictEntry s >>> snd) (\z -> rootOf z + fst (dictEntry s z))
+            subscript v v' (dictEntry s >>> snd) (\z -> root z + fst (dictEntry s z))
          V.Dictionary _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected str"
          V.List vs, V.Lit (Int i) -> do
             let i' = if i < 0 then A.length vs + i else i
             _ <- vs A.!! i' # orElse ("List index " <> show i <> " out of range")
-            subscript v v' (listElement i') rootOf
+            subscript v v' (listElement i') root
          V.List _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Matrix _, V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil) | c == cPair ->
-            subscript v v' (matrixElement i j) rootOf
+            subscript v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, dict or matrix"
       where
@@ -264,7 +264,7 @@ condition
 condition inputs e = do
    p × val <- eval inputs e
    holds × _ <- orThrow (unpack boolean val)
-   pure { holds, ctrl: singleton (p × rootOf), value: p × val }
+   pure { holds, ctrl: singleton (p × root), value: p × val }
 
 -- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
 -- short by a failed guard or an element that does not match.
@@ -294,8 +294,8 @@ qualifiers inputs (Generator p e : gs) = do
    fold <$> for (mapWithIndex const (L.fromFoldable us)) \i -> do
       let el = { val: listElement i v.val, inEdges: via (listElement i) v }
       case dispatch classes (singleton (p × unit)) el Nil of
-         Nothing × ctrl -> pure (Nil × (via rootOf v <> ctrl))
-         Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via rootOf v <> ctrl }) gs
+         Nothing × ctrl -> pure (Nil × (via root v <> ctrl))
+         Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via root v <> ctrl }) gs
 qualifiers inputs (Decl p e : gs) = do
    v <- gval <$> eval inputs e
    classes <- askClasses
@@ -392,7 +392,7 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
       partial :: GVal s
       partial =
          { val: Val unit Nothing (V.Fun (V.Partial φ (_.val <$> vs)))
-         , inEdges: via (\x -> Val (rootOf x) Nothing (V.Fun (V.Partial (fun x) (zeros <<< _.val <$> vs)))) f
+         , inEdges: via (\x -> Val (root x) Nothing (V.Fun (V.Partial (fun x) (zeros <<< _.val <$> vs)))) f
               <> viaAll (V.Partial (zeros φ) >>> V.Fun >>> Val zero Nothing) vs
          }
    _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
@@ -410,7 +410,7 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
       V.Type c -> constructWith ctrl' (V.Constr c) vs'
       V.Partial _ _ -> error absurd
       where
-      ctrl' = via rootOf f
+      ctrl' = via root f
 
 type DepEval s =
    { g :: DepGraph Val s
@@ -432,8 +432,8 @@ depEval
    -> m (DepEval s)
 depEval { ρ, classes } s =
    withClasses classes do
-      (root × inputs) × g <- flip runStateT emptyGraph do
+      (p × inputs) × g <- flip runStateT emptyGraph do
          ins <- for (unwrap (erase ρ) :: Dict (Raw Val)) \v -> vertex (stripDocs v) <#> (_ × stripDocs v)
          r <- evalStmt { ctrl: Nil, env: gval <$> ins } s
          pure (fst (asReturns r) × (fst <$> ins))
-      pure { g, inputs, root }
+      pure { g, inputs, root: p }

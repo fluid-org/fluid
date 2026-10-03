@@ -50,7 +50,7 @@ import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, intersectionWith, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Op, Val(..), construct, deliver, dictEntries, dictEntry, fromRel, gval, matrixPut, pureRel, rootOf, val, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Op, Val(..), construct, deliver, dictEntries, dictEntry, fromRel, gval, matrixPut, pureRel, root, val, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -146,7 +146,7 @@ loadJson =
    depOp :: DepOp
    depOp ctrl vs@({ val: Val _ _ (Lit (Str path)) } : Nil) = do
       json <- loadJsonFile path
-      fromRel (\us -> jsonVal (ctrlWeight * foldl add zero (rootOf <$> us)) json) ctrl vs
+      fromRel (\us -> jsonVal (ctrlWeight * foldl add zero (root <$> us)) json) ctrl vs
    depOp _ _ = throw "String expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
@@ -434,7 +434,7 @@ entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> s
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
 dictFrom ds kvs =
    { val: Val unit Nothing (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-   , inEdges: L.concat (ds <#> via \x -> Val (rootOf x) Nothing (Dictionary (DictRep (Dict.mapWithKey (\k (_ × zu) -> fst (dictEntry k x) × zu) zd))))
+   , inEdges: L.concat (ds <#> via \x -> Val (root x) Nothing (Dictionary (DictRep (Dict.mapWithKey (\k (_ × zu) -> fst (dictEntry k x) × zu) zd))))
         <> L.concat (kvs <#> \(k × v) -> via (\y -> dict (Map.insert k (zero × y) zd)) v)
    }
    where

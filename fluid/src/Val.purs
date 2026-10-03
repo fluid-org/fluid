@@ -74,10 +74,10 @@ val doc_opt = new (flip Val doc_opt)
 asVal :: VertexData -> Maybe (Val Vertex)
 asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
 
-rootOf :: forall a. Val a -> a
-rootOf (Val α _ _) = α
+root :: forall a. Val a -> a
+root (Val α _ _) = α
 
--- Value without its doc annotations, which are not positions.
+-- Value without its doc annotations.
 stripDocs :: forall a. Val a -> Val a
 stripDocs (Val α _ u) = Val α Nothing case u of
    Constr c vs -> Constr c (stripDocs <$> vs)
@@ -232,7 +232,7 @@ dictionary ctrl kvs =
    constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
    where
    mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
-   mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> rootOf key × v))
+   mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> root key × v))
 
 type DepOp =
    forall m s
