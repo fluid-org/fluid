@@ -26,7 +26,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Pos, SparseRel, Vertex, lineage, materialise, positions)
+import Graph.Dep (Pos, SparseRel, Vertex, dependence, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -116,13 +116,13 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
-   -- Lineage of the output selection includes the α-graph's backward slice, input by input.
+   -- Dependence of the output selection includes the α-graph's backward slice, input by input.
    edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep dep.root)
-   let Env ρ_dep = inputLineage dep dep.root edges (stripDocs out0)
+   let Env ρ_dep = inputDependence dep dep.root edges (stripDocs out0)
    for_ (toUnfoldable ρ_dep :: List (String × Val DepKind)) \(x × sel_new) -> do
       let sel_old = stripDocs (get x in_ρ)
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
-         throw ("lineage of " <> x <> " misses α-graph slice:\nlineage\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
+         throw ("dependence of " <> x <> " misses α-graph slice:\ndependence\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (restrict inputs' in_ρ))
 
@@ -143,16 +143,16 @@ type DepSpec =
    { file :: String
    , doc :: Boolean -- select on the doc of the output
    , δv :: ConstrArg -> Selector Val
-   , expect :: String -- input environment with lineage of the selection, data ⸨ ⸩ and control ⟪ ⟫
+   , expect :: String -- input environment with dependence of the selection, data ⸨ ⸩ and control ⟪ ⟫
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
 materialiseEnds :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind))
 materialiseEnds dep p = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton p)
 
-inputLineage :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
-inputLineage dep p edges out = Env $ dep.inputs <#> \q ->
-   lineage edges p selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
+inputDependence :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
+inputDependence dep p edges out = Env $ dep.inputs <#> \q ->
+   dependence edges p selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
    where
    selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
 
@@ -166,7 +166,7 @@ testDep file { doc, δv, expect } = do
       out = definitely "vertex labelled" (Map.lookup p dep.g.vals)
       arg = constrArg (fieldIndex gconfig.classes)
       out0 = fst (δv arg (const unselected <$> (map (const top) out :: Val 𝔹))) <#> getPersistent
-   let Env ρ = inputLineage dep p (materialiseEnds dep p) out0
+   let Env ρ = inputDependence dep p (materialiseEnds dep p) out0
    withMsg "expect" $ checkPretty expect $ joinWith "\n" $
       (toUnfoldable ρ :: Array (String × Val DepKind)) <#> \(x × v) -> x <> ": " <> prettyP v
 
