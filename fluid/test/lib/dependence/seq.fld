@@ -1,0 +1,9 @@
+from dependence.seq_inputs import a, b, c, d
+
+if c:
+   x = a
+else:
+   x = b
+y = d
+
+(x, y)

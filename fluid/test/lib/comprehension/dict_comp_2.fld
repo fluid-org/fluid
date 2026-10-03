@@ -1,1 +1,1 @@
-{ [k]: v + w for [k, v] in [["a", 1], ["b", 2]] for w in [10, 20] }
+{ k: v + w for [k, v] in [["a", 1], ["b", 2]] for w in [10, 20] }

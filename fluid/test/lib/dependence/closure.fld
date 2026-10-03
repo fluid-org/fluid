@@ -1,0 +1,6 @@
+from dependence.closure_inputs import a, b
+
+def add(x):
+   return lambda y: x + y
+
+add(a)(b)

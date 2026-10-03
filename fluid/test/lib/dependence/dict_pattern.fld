@@ -1,0 +1,9 @@
+from dependence.dict_pattern_inputs import d
+
+match d:
+   case {"a": x}:
+      y = x
+   case _:
+      y = 0
+
+y

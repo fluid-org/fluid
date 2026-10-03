@@ -17,7 +17,7 @@ assignment d = stmtOrExpr
 
 record :: List Doc -> Doc
 record ds = inlOrMul
-   (text "{" <+> sep' (text ", ") ds <+> text "}")
+   (text "{" <> sep' (text ", ") ds <> text "}")
    (text "{" <> indent (line <> sep' (text "," <> line) ds) <++> text "}")
 
 enclose :: Doc -> Doc -> Doc -> Doc

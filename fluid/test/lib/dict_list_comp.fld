@@ -1,4 +1,4 @@
-[x for { fst: x, snd: [] } in [
-  { fst: 5, third: "hello", snd: [] },
-  { fst: 6, snd: [7, 8] }
+[x for { "fst": x, "snd": [] } in [
+  { "fst": 5, "third": "hello", "snd": [] },
+  { "fst": 6, "snd": [7, 8] }
 ]]

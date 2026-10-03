@@ -12,7 +12,14 @@ misc_cases =
    , { file: "compose.fld", fwd_expect: "5" }
    , { file: "custom_infix.fld", fwd_expect: "True" }
    , { file: "dicts.fld"
-     , fwd_expect: "{ d: {}, e: { a: 5, ab: 6 }, e_ab: 6, f: { a: 6, ab: 7 }, g: { a: 5 } }"
+     , fwd_expect:
+          """{
+  "d": {},
+  "e": {"a": 5, "ab": 6},
+  "e_ab": 6,
+  "f": {"a": 6, "ab": 7},
+  "g": {"a": 5}
+}"""
      }
    , { file: "div_mod_quot_rem.fld"
      , fwd_expect: "[[1, -2, -2, 1], [2, -1, 1, -2], [1, -1, -1, 1], [2, 2, -2, -2]]"
@@ -121,7 +128,7 @@ misc_cases =
    , { file: "qualified_access.fld", fwd_expect: "1" }
    , { file: "range.fld", fwd_expect: "[(0, 0), (0, 1), (1, 0), (1, 1)]" }
    , { file: "record_lookup.fld", fwd_expect: "True" }
-   , { file: "records.fld", fwd_expect: "{ a: 2, b: 6, c: 7, d: [5], e: 7 }" }
+   , { file: "records.fld", fwd_expect: "{\"a\": 2, \"b\": 6, \"c\": 7, \"d\": [5], \"e\": 7}" }
    , { file: "reverse.fld", fwd_expect: "[2, 1]" }
    , { file: "ternary/basic_false.fld", fwd_expect: "6" }
    , { file: "ternary/basic_true.fld", fwd_expect: "5" }

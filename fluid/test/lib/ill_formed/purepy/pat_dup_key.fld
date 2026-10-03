@@ -1,6 +1,6 @@
-v = {a: 1}
+v = {"a": 1}
 match v:
-   case {a: x, a: y}:
+   case {"a": x, "a": y}:
       z = x
    case _:
       z = 0

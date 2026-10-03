@@ -18,6 +18,6 @@ comprehension_cases =
    , { file: "comprehension/list_comp_8.fld", fwd_expect: "[5, 4, 3]" }
    , { file: "comprehension/list_comp_9.fld", fwd_expect: "[10, 19]" }
    , { file: "comprehension/list_comp_10.fld", fwd_expect: "[]" }
-   , { file: "comprehension/dict_comp_1.fld", fwd_expect: "{ bb: 2, ccc: 3 }" }
-   , { file: "comprehension/dict_comp_2.fld", fwd_expect: "{ a: 21, b: 22 }" }
+   , { file: "comprehension/dict_comp_1.fld", fwd_expect: "{\"bb\": 2, \"ccc\": 3}" }
+   , { file: "comprehension/dict_comp_2.fld", fwd_expect: "{\"a\": 21, \"b\": 22}" }
    ]

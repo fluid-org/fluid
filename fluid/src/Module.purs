@@ -26,7 +26,6 @@ import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory
 import Graph (Vertex, vertices)
 import Graph.GraphImpl (GraphImpl)
 import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
-import Lattice (Raw)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
@@ -36,11 +35,10 @@ import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
-import Util.Set ((∪))
 import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env)
 import Val (BaseVal(..)) as V
 
-type Config = { s :: Raw S.Stmt, e :: Raw Stmt, gconfig :: GraphConfig }
+type Config = { s :: S.Stmt, e :: Stmt, gconfig :: GraphConfig }
 
 isModule :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => ModuleName -> m Boolean
 isModule q = do
@@ -103,18 +101,17 @@ allocTopLevel
    => MonadError Error m
    => MonadReader FileCxt m
    => LoadFile m
-   => Map ModuleName (Raw Module)
+   => Map ModuleName Module
    -> List S.Import
    -> m (Int × Env Vertex)
 allocTopLevel mods imports = do
    n × _ × ρ <- flip runAllocT 0 do
       predefined' <- traverse (alloc <<< snd) predefined
-      mods' <- traverse alloc mods
-      let αs = Set.unions (vertices <$> Map.values predefined') ∪ Set.unions (vertices <$> Map.values mods')
+      let αs = Set.unions (vertices <$> Map.values predefined')
       _ × ρ <-
          runWithGraphT_spy
             ( do
-                 modifyModuleStore (_ { moduleBody = mods', moduleEnv = predefined' })
+                 modifyModuleStore (_ { moduleBody = mods, moduleEnv = predefined' })
                  for_ implicit \q -> load q >>= \ρ_q -> modifyModuleStore (\s -> s { ρ0 = s.ρ0 <+> ρ_q })
                  { ρ0 } <- moduleStore
                  ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0 imports
@@ -158,7 +155,7 @@ parseModules
    => MonadReader FileCxt m
    => LoadFile m
    => List S.Import
-   -> m (Map ModuleName (Raw S.Module))
+   -> m (Map ModuleName S.Module)
 parseModules imports = do
    deps <- traverse (importDeps mainModule) imports
    let roots = implicit <> (deps >>= _.load)
@@ -173,9 +170,9 @@ parseModules imports = do
    collectModules
       :: Set ModuleName
       -> DependencyGraph
-      -> Map ModuleName (Raw S.Module)
+      -> Map ModuleName S.Module
       -> List ModuleName
-      -> m (DependencyGraph × Map ModuleName (Raw S.Module))
+      -> m (DependencyGraph × Map ModuleName S.Module)
    collectModules visited depGraph mods pending = case pending of
       Nil -> pure $ (depGraph × mods)
       mod : rest
@@ -192,7 +189,7 @@ parseModules imports = do
                  (Map.insert mod mod' mods)
                  (toLoad <> rest)
 
-   parseAndCollect :: ModuleName -> m (Raw S.Module × List ModuleName × List ModuleName)
+   parseAndCollect :: ModuleName -> m (S.Module × List ModuleName × List ModuleName)
    parseAndCollect path = do
       FileCxt { fluidSrcPaths } <- ask
       let file = File (pathName path <> fluidExtension)
