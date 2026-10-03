@@ -57,20 +57,20 @@ sparseRel in_ = SparseRel { out, in_ }
 
 -- Vertices labelled by values of shape f; edges labelled by relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
-   { next :: Int
+   { size :: Int -- vertices allocated so far
    , vals :: Map Vertex (f Unit)
    , docs :: Map Vertex Vertex -- vertex ↦ vertex of its doc
    , edges :: Map Vertex (Map Vertex (Rel (f s) (f s))) -- target ↦ source ↦ relation
    }
 
 emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { next: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
+emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 
 vertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Vertex
 vertex v = do
-   n <- gets _.next
-   let α = Vertex n
-   modify_ \g -> g { next = n + 1, vals = Map.insert α v g.vals }
+   size <- gets _.size
+   let α = Vertex size
+   modify_ \g -> g { size = size + 1, vals = Map.insert α v g.vals }
    pure α
 
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
