@@ -26,7 +26,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Pos, SparseRel, Vertex, dependence, materialise, positions)
+import Graph.Dep (Pos, SparseRel, Vertex, dep, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -96,11 +96,11 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
-   dep <- graphBenchmark benchNames.dep \_ ->
+   eval <- graphBenchmark benchNames.dep \_ ->
       depEval gconfig s' :: m (DepEval (Lineage (Vertex × Pos) DepKind))
-   let out_dep = definitely "root labelled" (Map.lookup dep.root dep.g.vals)
+   let out_dep = definitely "root labelled" (Map.lookup eval.root eval.g.vals)
    when tracing.depEval $ log
-      ("depEval: " <> show (Map.size dep.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values dep.g.edges)) <> " edges")
+      ("depEval: " <> show (Map.size eval.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values eval.g.edges)) <> " edges")
    unless (out_dep == stripDocs (erase outα)) $
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let evalG_bwd = fst <<< (depsOf graphed).bwd
@@ -117,8 +117,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
-   edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep dep.root)
-   let Env ρ_dep = inputDependence dep dep.root edges (stripDocs out0)
+   edges <- graphBenchmark benchNames.materialise \_ -> pure (inputEdges eval eval.root)
+   let Env ρ_dep = inputDep eval eval.root edges (stripDocs out0)
    for_ (toUnfoldable ρ_dep :: List (String × Val DepKind)) \(x × sel_new) -> do
       let sel_old = stripDocs (get x in_ρ)
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
@@ -137,7 +137,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       withMsg "fwd_expect" $ checkPretty fwd_expect (prettyP (report out1))
 
    recordGraphSize g
-   recordDepGraphSize dep.g
+   recordDepGraphSize eval.g
 
 type DepSpec =
    { file :: String
@@ -147,12 +147,12 @@ type DepSpec =
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-materialiseEnds :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind))
-materialiseEnds dep p = materialise dep.g (Set.fromFoldable (values dep.inputs) `Set.union` Set.singleton p)
+inputEdges :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind))
+inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `Set.union` Set.singleton p)
 
-inputDependence :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
-inputDependence dep p edges out = Env $ dep.inputs <#> \q ->
-   dependence edges p selected q (definitely "input labelled" (Map.lookup q dep.g.vals))
+inputDep :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
+inputDep eval p edges out = Env $ eval.inputs <#> \q ->
+   dep edges p selected q (definitely "input labelled" (Map.lookup q eval.g.vals))
    where
    selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
 
@@ -160,13 +160,13 @@ testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m =
 testDep file { doc, δv, expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
-   dep <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) DepKind))
+   eval <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) DepKind))
    let
-      p = if doc then definitely "output documented" (Map.lookup dep.root dep.g.docs) else dep.root
-      out = definitely "vertex labelled" (Map.lookup p dep.g.vals)
+      p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
+      out = definitely "vertex labelled" (Map.lookup p eval.g.vals)
       arg = constrArg (fieldIndex gconfig.classes)
       out0 = fst (δv arg (const unselected <$> (map (const top) out :: Val 𝔹))) <#> getPersistent
-   let Env ρ = inputDependence dep p (materialiseEnds dep p) out0
+   let Env ρ = inputDep eval p (inputEdges eval p) out0
    withMsg "expect" $ checkPretty expect $ joinWith "\n" $
       (toUnfoldable ρ :: Array (String × Val DepKind)) <#> \(x × v) -> x <> ": " <> prettyP v
 
