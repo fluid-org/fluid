@@ -15,7 +15,6 @@ import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
-import Data.Tuple (snd)
 import Lattice (class DepSemiring, Lineage(..))
 import Util (type (×), (×))
 
@@ -99,22 +98,27 @@ materialise
    -> Set Vertex
    -> Map (Vertex × Vertex) (SparseRel s)
 materialise g visible =
-   sparseRel <$> (foldl step (Map.empty × Map.empty) (Map.toUnfoldable g.vals :: List _) # snd)
+   sparseRel <$> (foldl step { vecs: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
    where
-   step (vecs × rels) (p × v) =
+   step { vecs, rels } (p × v) =
       if Set.member p visible then
-         Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) vecs
-            × Map.unionWith (Map.unionWith Map.union) rels (Map.fromFoldableWith (Map.unionWith Map.union) (entries vec))
-      else Map.insert p vec vecs × rels
+         { vecs: Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) vecs
+         , rels: rels `Map.union` edgesInto vec
+         }
+      else { vecs: Map.insert p vec vecs, rels }
       where
       vec = foldl
          (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (Map.lookup q vecs))
          (zeros v)
          (maybe Nil Map.toUnfoldable (Map.lookup p g.edges))
 
-      entries :: f (Lineage (Vertex × Pos) s) -> List ((Vertex × Vertex) × Map Pos (Map Pos s))
-      entries x = mapWithIndex (\j (Lineage (_ × m)) -> j × m) (positions x) >>= \(j × m) ->
-         (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> (q × p) × Map.singleton j (Map.singleton i w)
+      -- Edges into p from each visible vertex, read off the lineage at every position of p.
+      edgesInto :: f (Lineage (Vertex × Pos) s) -> Map (Vertex × Vertex) (Map Pos (Map Pos s))
+      edgesInto x = foldl (Map.unionWith Map.union) Map.empty $
+         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions x)
+
+      bySource :: Map (Vertex × Pos) s -> Map (Vertex × Vertex) (Map Pos s)
+      bySource m = Map.fromFoldableWith Map.union ((Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> (q × p) × Map.singleton i w)
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
 lineage :: forall f s. Traversable f => Semiring s => Map (Vertex × Vertex) (SparseRel s) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
