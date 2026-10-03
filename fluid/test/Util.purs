@@ -118,9 +118,9 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
    -- Lineage of the output selection includes the α-graph's backward slice, input by input.
    edges <- graphBenchmark benchNames.materialise \_ -> pure (materialiseEnds dep dep.root)
-   let Env ρ_dep = inputLineage dep dep.root edges out0
+   let Env ρ_dep = inputLineage dep dep.root edges (stripDocs out0)
    for_ (toUnfoldable ρ_dep :: List (String × Val Chain)) \(x × sel_new) -> do
-      let sel_old = get x in_ρ
+      let sel_old = stripDocs (get x in_ρ)
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
          throw ("lineage of " <> x <> " misses α-graph slice:\nlineage\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
 
