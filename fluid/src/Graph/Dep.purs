@@ -90,24 +90,24 @@ materialise
    -> Set Vertex
    -> Map Vertex (Map Vertex (SparseRel s)) -- target ↦ source ↦ relation
 materialise g visible =
-   (foldl step { vecs: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
+   (foldl step { deps: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
    where
-   step { vecs, rels } (p × v) =
+   step { deps, rels } (p × v) =
       if Set.member p visible then
-         { vecs: Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) vecs
+         { deps: Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) deps
          , rels: Map.insert p (sparseRel <$> edgesInto) rels
          }
-      else { vecs: Map.insert p vec vecs, rels }
+      else { deps: Map.insert p dep deps, rels }
       where
-      vec = foldl
-         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (lookup q vecs))
+      dep = foldl
+         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (lookup q deps))
          (zeros v)
          (maybe Nil Map.toUnfoldable (lookup p g.edges))
 
       -- Edges into p from each visible vertex, read off the lineage at every position of p.
       edgesInto :: Map Vertex (Map Pos (Map Pos s))
       edgesInto = foldl (unionWith Map.union) Map.empty $
-         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions vec)
+         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions dep)
 
       bySource :: Map (Vertex × Pos) s -> Map Vertex (Map Pos s)
       bySource m = fromFoldableWith Map.union $
