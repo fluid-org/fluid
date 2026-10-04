@@ -412,7 +412,6 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
       where
       ctrl' = via root f
 
--- Members of the module, recorded as derivations.
 evalModule
    :: forall m s
     . HasClasses m
