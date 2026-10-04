@@ -76,8 +76,8 @@ vertex v = do
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
 attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 
-edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Deriv -> Deriv -> Rel (f s) (f s) -> m Unit
-edge p q r =
+addEdge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Deriv -> Deriv -> Rel (f s) (f s) -> m Unit
+addEdge p q r =
    modify_ \g -> g { edges = alter (Just <<< insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
 
 -- Relies on every edge running from an earlier to a later vertex in evaluation order.
