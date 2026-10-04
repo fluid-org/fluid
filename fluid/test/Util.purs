@@ -26,7 +26,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Pos, SparseRel, Vertex, dep, materialise, positions)
+import Graph.Dep (Pos, SparseRel, Deriv, dep, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -97,7 +97,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
    eval <- graphBenchmark benchNames.dep \_ ->
-      depEval gconfig s' :: m (DepEval (Lineage (Vertex × Pos) DepKind))
+      depEval gconfig s' :: m (DepEval (Lineage (Deriv × Pos) DepKind))
    let out_dep = definitely "root labelled" (Map.lookup eval.root eval.g.vals)
    when tracing.depEval $ log
       ("depEval: " <> show (Map.size eval.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values eval.g.edges)) <> " edges")
@@ -147,10 +147,10 @@ type DepSpec =
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-inputEdges :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind))
+inputEdges :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Map Deriv (Map Deriv (SparseRel DepKind))
 inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `Set.union` Set.singleton p)
 
-inputDep :: DepEval (Lineage (Vertex × Pos) DepKind) -> Vertex -> Map Vertex (Map Vertex (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
+inputDep :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Map Deriv (Map Deriv (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
 inputDep eval p edges out = Env $ eval.inputs <#> \q ->
    dep edges p selected q (definitely "input labelled" (Map.lookup q eval.g.vals))
    where
@@ -160,7 +160,7 @@ testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m =
 testDep file { doc, δv, expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
-   eval <- depEval gconfig e :: m (DepEval (Lineage (Vertex × Pos) DepKind))
+   eval <- depEval gconfig e :: m (DepEval (Lineage (Deriv × Pos) DepKind))
    let
       p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
       out = definitely "vertex labelled" (Map.lookup p eval.g.vals)

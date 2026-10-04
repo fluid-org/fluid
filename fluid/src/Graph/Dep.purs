@@ -18,7 +18,7 @@ import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
 import Util (type (×), (×))
 
-newtype Vertex = Vertex Int
+newtype Deriv = Deriv Int
 
 type Pos = Int -- index under the position ordering of a value
 
@@ -58,25 +58,25 @@ sparseRel in_ = SparseRel { out, in_ }
 -- Vertices labelled by values of shape f; edges labelled by relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
-   , vals :: Map Vertex (f Unit)
-   , docs :: Map Vertex Vertex -- vertex ↦ vertex of its doc
-   , edges :: Map Vertex (Map Vertex (Rel (f s) (f s))) -- target ↦ source ↦ relation
+   , vals :: Map Deriv (f Unit)
+   , docs :: Map Deriv Deriv -- vertex ↦ vertex of its doc
+   , edges :: Map Deriv (Map Deriv (Rel (f s) (f s))) -- target ↦ source ↦ relation
    }
 
 emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 
-vertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Vertex
+vertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
 vertex v = do
    size <- gets _.size
-   let p = Vertex size
+   let p = Deriv size
    modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals }
    pure p
 
-attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
+attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
 attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 
-edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Vertex -> Vertex -> Rel (f s) (f s) -> m Unit
+edge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Deriv -> Deriv -> Rel (f s) (f s) -> m Unit
 edge p q r =
    modify_ \g -> g { edges = alter (Just <<< insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
 
@@ -86,9 +86,9 @@ materialise
     . Traversable f
    => Apply f
    => DepSemiring s
-   => DepGraph f (Lineage (Vertex × Pos) s)
-   -> Set Vertex
-   -> Map Vertex (Map Vertex (SparseRel s)) -- target ↦ source ↦ relation
+   => DepGraph f (Lineage (Deriv × Pos) s)
+   -> Set Deriv
+   -> Map Deriv (Map Deriv (SparseRel s)) -- target ↦ source ↦ relation
 materialise g visible =
    (foldl step { weightsAt: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
    where
@@ -105,16 +105,16 @@ materialise g visible =
          (maybe Nil Map.toUnfoldable (lookup p g.edges))
 
       -- Edges into p from each visible vertex, read off the lineage at every position of p.
-      edgesInto :: Map Vertex (Map Pos (Map Pos s))
+      edgesInto :: Map Deriv (Map Pos (Map Pos s))
       edgesInto = foldl (unionWith Map.union) Map.empty $
          mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions weights)
 
-      bySource :: Map (Vertex × Pos) s -> Map Vertex (Map Pos s)
+      bySource :: Map (Deriv × Pos) s -> Map Deriv (Map Pos s)
       bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
-dep :: forall f s. Traversable f => Semiring s => Map Vertex (Map Vertex (SparseRel s)) -> Vertex -> Set Pos -> Vertex -> f Unit -> f s
+dep :: forall f s. Traversable f => Semiring s => Map Deriv (Map Deriv (SparseRel s)) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
 dep edges target selected source v = mapPositions (\i _ -> weight i) v
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup target edges >>= lookup source)
@@ -123,7 +123,7 @@ dep edges target selected source v = mapPositions (\i _ -> weight i) v
 -- ======================
 -- boilerplate
 -- ======================
-derive instance Eq Vertex
-derive instance Ord Vertex
-derive instance Newtype Vertex _
-derive newtype instance Show Vertex
+derive instance Eq Deriv
+derive instance Ord Deriv
+derive instance Newtype Deriv _
+derive newtype instance Show Deriv

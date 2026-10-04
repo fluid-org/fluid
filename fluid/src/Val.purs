@@ -36,7 +36,7 @@ import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
 import Graph.Dep (DepGraph, Rel, edge, scale, vertex, zeros)
-import Graph.Dep (Vertex) as Dep
+import Graph.Dep (Deriv) as Dep
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
@@ -145,11 +145,11 @@ type Op =
    -> List (Val Vertex)
    -> m (Val Vertex)
 
-type InEdges s = List (Dep.Vertex × Rel (Val s) (Val s))
+type InEdges s = List (Dep.Deriv × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
 type GVal s = { val :: Raw Val, inEdges :: InEdges s }
 -- Dependence of the control input on values already in the graph.
-type Ctrl s = List (Dep.Vertex × Rel (Val s) s)
+type Ctrl s = List (Dep.Deriv × Rel (Val s) s)
 
 -- Weight 1 at every position except beneath the root of a closure.
 unitSection :: forall s. Semiring s => Raw Val -> Val s
@@ -162,11 +162,11 @@ unitSection (Val _ _ u) = Val one Nothing case u of
       Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
    Fun φ -> Fun (zeros φ)
 
-gval :: forall s. Dep.Vertex × Raw Val -> GVal s
+gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
 
 -- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s b. Rel (Val s) b -> GVal s -> List (Dep.Vertex × Rel (Val s) b)
+via :: forall s b. Rel (Val s) b -> GVal s -> List (Dep.Deriv × Rel (Val s) b)
 via r v = second (r <<< _) <$> v.inEdges
 
 -- Dependence on values already in the graph of a value that depends on vs by r.
@@ -185,17 +185,17 @@ withCtrl ctrl section v =
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)) v
 
-vertexOf :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Vertex × Raw Val)
+vertexOf :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
 vertexOf { val: v, inEdges } = do
    p <- vertex v
    for_ inEdges \(q × r) -> edge q p r
    pure (p × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
-deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Vertex × Raw Val)
+deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
 deliver ctrl v = vertexOf (withCtrl ctrl (unitSection v.val) v)
 
-construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Vertex × Raw Val)
+construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
 construct ctrl v = vertexOf (constructed ctrl v)
 
 constructWith
@@ -206,7 +206,7 @@ constructWith
    => Ctrl s
    -> (forall a. t (Val a) -> BaseVal a)
    -> t (GVal s)
-   -> m (Dep.Vertex × Raw Val)
+   -> m (Dep.Deriv × Raw Val)
 constructWith ctrl mk vs =
    construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
 
@@ -217,7 +217,7 @@ dictionary
    => DepSemiring s
    => Ctrl s
    -> List (String × GVal s × GVal s)
-   -> m (Dep.Vertex × Raw Val)
+   -> m (Dep.Deriv × Raw Val)
 dictionary ctrl kvs =
    constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
    where
@@ -236,7 +236,7 @@ type DepOp =
    => DepSemiring s
    => Ctrl s
    -> List (GVal s)
-   -> m (Dep.Vertex × Raw Val)
+   -> m (Dep.Deriv × Raw Val)
 
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.

@@ -30,7 +30,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig)
 import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Vertex, attachDoc, emptyGraph, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, Deriv, attachDoc, emptyGraph, vertex, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Operator (binopSymbol, unopSymbol)
@@ -45,9 +45,9 @@ import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
-data Result s = Returns (Vertex × Raw Val) | Assigns (Dict (GVal s)) (Ctrl s)
+data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Ctrl s)
 
-asReturns :: forall s. Result s -> Vertex × Raw Val
+asReturns :: forall s. Result s -> Deriv × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
@@ -125,7 +125,7 @@ eval
    => DepSemiring s
    => Inputs s
    -> Expr
-   -> m (Vertex × Raw Val)
+   -> m (Deriv × Raw Val)
 eval inputs = case _ of
    Var x -> deliver inputs.ctrl (get x inputs.env)
    Lit ℓ -> construct inputs.ctrl { val: Val unit Nothing (V.Lit ℓ), inEdges: Nil }
@@ -195,7 +195,7 @@ eval inputs = case _ of
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, dict or matrix"
       where
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
-      subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Vertex × Raw Val)
+      subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Deriv × Raw Val)
       subscript v v' select consumed =
          deliver (inputs.ctrl <> via consumed v <> via sum v') { val: select v.val, inEdges: via select v }
    ModMember q x -> do
@@ -260,7 +260,7 @@ condition
    => DepSemiring s
    => Inputs s
    -> Expr
-   -> m { holds :: Boolean, ctrl :: Ctrl s, value :: Vertex × Raw Val }
+   -> m { holds :: Boolean, ctrl :: Ctrl s, value :: Deriv × Raw Val }
 condition inputs e = do
    p × val <- eval inputs e
    holds × _ <- orThrow (unpack boolean val)
@@ -369,7 +369,7 @@ apply
    => Ctrl s
    -> GVal s
    -> List (GVal s)
-   -> m (Vertex × Raw Val)
+   -> m (Deriv × Raw Val)
 apply ctrl f@{ val: Val _ _ u } vs = case u of
    V.Fun (V.Partial φ us) ->
       apply ctrl { val: Val unit Nothing (V.Fun φ), inEdges: via partialFun f }
@@ -398,7 +398,7 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
    _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
    where
    -- Applying a function consumes its root.
-   call :: V.Fun Unit -> List (GVal s) -> m (Vertex × Raw Val)
+   call :: V.Fun Unit -> List (GVal s) -> m (Deriv × Raw Val)
    call φ vs' = case φ of
       V.Closure (Env ρ1) ds (Def xs _ s) -> do
          let
@@ -414,8 +414,8 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
 
 type DepEval s =
    { g :: DepGraph Val s
-   , inputs :: Dict Vertex
-   , root :: Vertex
+   , inputs :: Dict Deriv
+   , root :: Deriv
    }
 
 depEval
