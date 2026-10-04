@@ -22,10 +22,10 @@ def energy(year, c_names):
     rensCap = sum(map(lambda x: x["capacity"], filteredRen))
     nonRensCap = sumNonRenewables(non_ren_x)
     return {
-      name: c_name,
-      totalCap: rensCap + nonRensCap,
-      nonRenewables: nonRensCap,
-      renCapFactor: (rensOut + non_ren_x["nuclearOut"]) / (rensCap + non_ren_x["nuclearCap"])
+      "name": c_name,
+      "totalCap": rensCap + nonRensCap,
+      "nonRenewables": nonRensCap,
+      "renCapFactor": (rensOut + non_ren_x["nuclearOut"]) / (rensCap + non_ren_x["nuclearCap"])
     }
 
   return map(energy_per_country, c_names)

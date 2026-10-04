@@ -8,45 +8,49 @@ import Data.Argonaut.Core (Json, caseJson)
 import Data.Argonaut.Decode (parseJson)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Foldable (foldM)
+import Data.Foldable (foldM, foldl)
 import Data.Int (ceil, floor, toNumber)
 import Data.Int (quot, rem) as I
 import Data.Int as Int
 import Data.List (List(..), (:))
+import Data.List as L
 import Data.Map (Map)
 import Data.Map as M
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (wrap)
 import Data.Number (fromString)
 import Data.Number (cos, e, exp, log, pi, sin, sqrt, tan) as N
-import Data.Set (Set, empty)
+import Data.Set (empty)
 import Data.Set as Set
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, sequence, traverse)
-import Data.Tuple (fst)
+import Data.Tuple (fst, snd)
 import DataType (cPair)
 import DefiniteAssignment (Cxt, Entry(..))
 import Debug (trace)
 import Dict (fromFoldable) as D
+import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
 import Effect.Exception (Error)
 import Eval (apply) as G
-import File (File(..), loadFileFromPath)
+import Eval.Dep (apply) as Dep
+import File (class LoadFile, File(..), loadFileFromPath)
 import Foreign.Object as FO
 import Graph (Vertex)
+import Graph.Dep (zeros)
 import Graph.WithGraph (class MonadWithGraphAlloc)
-import Lattice (class BoundedJoinSemilattice, Raw, bot)
+import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
-import Util (type (+), type (×), definitely, definitely', error, singleton, throw, (×))
+import Util (type (+), type (×), definitely, definitely', error, orThrow, singleton, throw, (×))
 import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, intersectionWith, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), matrixPut, val)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Op, Val(..), construct, deliver, dictEntries, dictEntry, fromRel, gval, matrixPut, pureRel, root, val, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -101,39 +105,69 @@ predefined = M.fromFoldable
 
 len :: ForeignOp
 len =
-   ForeignOp ("len" × ForeignOp' { arity: 1, op })
+   ForeignOp ("len" × ForeignOp' { arity: 1, op, depOp: pureRel depRel })
    where
    op :: Op
-   op doc_opt (v : Nil) = do
-      αs × n <- count v
-      val doc_opt αs (Lit (Int n))
-      where
-      count :: forall m. MonadError Error m => Val Vertex -> m (Set Vertex × Int)
-      count (Val α _ (List vs)) = pure (singleton α × Array.length vs)
-      count (Val α _ (Dictionary (DictRep d))) = pure (singleton α × Set.size (keys d))
-      count (Val α _ (Lit (Str s))) = pure (singleton α × String.length s)
-      count (Val _ _ u) = throw (typeMismatch u "Sized")
+   op doc_opt (Val α _ u : Nil) = do
+      n <- orThrow (len_ u)
+      val doc_opt (singleton α) (Lit (Int n))
    op _ _ = throw "Single argument expected"
+
+   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel (Val α _ u : Nil) = len_ u <#> \n -> Val α Nothing (Lit (Int n))
+   depRel _ = Left "Single argument expected"
+
+   len_ :: forall a. BaseVal a -> Either String Int
+   len_ (List vs) = pure (Array.length vs)
+   len_ (Dictionary (DictRep d)) = pure (Set.size (keys d))
+   len_ (Lit (Str s)) = pure (String.length s)
+   len_ u = Left (typeMismatch u "Sized")
 
 print_ :: ForeignOp
 print_ =
-   ForeignOp ("print" × ForeignOp' { arity: 1, op })
+   ForeignOp ("print" × ForeignOp' { arity: 1, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (x : Nil) = trace x \_ -> val doc_opt empty (Lit None)
    op _ _ = throw "Single argument expected"
 
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (_ : Nil) = pure (Val zero Nothing (Lit None))
+   depRel _ = Left "Single argument expected"
+
 loadJson :: ForeignOp
 loadJson =
-   ForeignOp ("load_json" × ForeignOp' { arity: 1, op })
+   ForeignOp ("load_json" × ForeignOp' { arity: 1, op, depOp })
    where
    op :: Op
-   op doc_opt (Val _ _ (Lit (Str path)) : Nil) = do
-      str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
-      case parseJson str of
-         Left err -> throw ("Failed to parse JSON: " <> show err)
-         Right json -> fromJson doc_opt json
+   op doc_opt (Val _ _ (Lit (Str path)) : Nil) = loadJsonFile path >>= fromJson doc_opt
    op _ _ = throw "String expected"
+
+   depOp :: DepOp
+   depOp ctrl vs@({ val: Val _ _ (Lit (Str path)) } : Nil) = do
+      json <- loadJsonFile path
+      fromRel (\us -> jsonVal (ctrlWeight * foldl add zero (root <$> us)) json) ctrl vs
+   depOp _ _ = throw "String expected"
+
+loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
+loadJsonFile path = do
+   str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
+   case parseJson str of
+      Left err -> throw ("Failed to parse JSON: " <> show err)
+      Right json -> pure json
+
+-- Weight α at every position.
+jsonVal :: forall a. a -> Json -> Val a
+jsonVal α json = caseJson
+   (\_ -> error "Null JSON value cannot be converted to Val")
+   (Bool >>> lit)
+   (\n -> lit (maybe (Float n) Int (Int.fromNumber n)))
+   (Str >>> lit)
+   (map (jsonVal α) >>> List >>> Val α Nothing)
+   (map (\x -> α × jsonVal α x) >>> wrap >>> DictRep >>> Dictionary >>> Val α Nothing)
+   json
+   where
+   lit = Lit >>> Val α Nothing
 
 fromJson :: forall m. MonadWithGraphAlloc m => MonadEffect m => Maybe (Val Vertex) -> Json -> m (Val Vertex)
 fromJson doc_opt =
@@ -179,7 +213,7 @@ fromJson doc_opt =
 
 dims :: ForeignOp
 dims =
-   ForeignOp ("dims" × ForeignOp' { arity: 1, op })
+   ForeignOp ("dims" × ForeignOp' { arity: 1, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) = do
@@ -188,45 +222,64 @@ dims =
       val doc_opt (singleton α) $ Constr cPair (v1 : v2 : Nil)
    op _ _ = throw "Matrix expected"
 
+   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) =
+      pure (Val α Nothing (Constr cPair (Val β1 Nothing (Lit (Int i)) : Val β2 Nothing (Lit (Int j)) : Nil)))
+   depRel _ = Left "Matrix expected"
+
 matrixUpdate :: ForeignOp
 matrixUpdate =
-   ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, op })
+   ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
       | c == cPair = val doc_opt (singleton α) (Matrix (matrixPut i j (const v) r))
    op _ _ = throw "Matrix, pair of integers and value expected"
 
+   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
+      | c == cPair = pure (Val α Nothing (Matrix (matrixPut i j (const v) r)))
+   depRel _ = Left "Matrix, pair of integers and value expected"
+
 find_str :: ForeignOp
 find_str =
-   ForeignOp ("find_str" × ForeignOp' { arity: 2, op })
+   ForeignOp ("find_str" × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
-   op doc_opt (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) = do
-      val doc_opt (singleton α # Set.insert β) (Lit (Int i))
-      where
-      i = fromMaybe (-1) (String.indexOf (Pattern s1) s2)
+   op doc_opt (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) =
+      val doc_opt (singleton α # Set.insert β) (Lit (Int (find s1 s2)))
    op _ _ = throw "Two strings expected"
+
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (find s1 s2))))
+   depRel _ = Left "Two strings expected"
+
+   find :: String -> String -> Int
+   find s1 s2 = fromMaybe (-1) (String.indexOf (Pattern s1) s2)
 
 search :: ForeignOp
 search =
-   ForeignOp ("search" × ForeignOp' { arity: 2, op })
+   ForeignOp ("search" × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = do
-      case Regex.regex regex noFlags of
-         Left msg -> throw $ "Regex expected: " <> msg
-         Right regex' -> do
-            let αs = singleton α # Set.insert β
-            case Regex.search regex' str of
-               Nothing -> val doc_opt αs (Lit None)
-               Just n -> val doc_opt αs (Lit (Int n))
+      ℓ <- orThrow (matchIndex regex str)
+      val doc_opt (singleton α # Set.insert β) ℓ
    op _ _ = throw "Two strings expected"
+
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = matchIndex regex str <#> Val (α + β) Nothing
+   depRel _ = Left "Two strings expected"
+
+   matchIndex :: forall a. String -> String -> Either String (BaseVal a)
+   matchIndex regex str = case Regex.regex regex noFlags of
+      Left msg -> Left ("Regex expected: " <> msg)
+      Right regex' -> pure (Lit (maybe None Int (Regex.search regex' str)))
 
 -- When strings implement an abstract sequence type can express in terms of take/drop
 split :: ForeignOp
 split =
-   ForeignOp ("split" × ForeignOp' { arity: 2, op })
+   ForeignOp ("split" × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) = do
@@ -236,27 +289,44 @@ split =
       val doc_opt αs (Constr cPair (before : after : Nil))
    op _ _ = throw "Int and string expected"
 
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) =
+      pure (Val (α + β) Nothing (Constr cPair (part (String.take n str) : part (String.drop n str) : Nil)))
+      where
+      part w = Val (α + β) Nothing (Lit (Str w))
+   depRel _ = Left "Int and string expected"
+
 dict_difference :: ForeignOp
 dict_difference =
-   ForeignOp ("dict_difference" × ForeignOp' { arity: 2, op })
+   ForeignOp ("dict_difference" × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
       val doc_opt (singleton α # Set.insert β) (Dictionary (DictRep (d \\ d')))
    op _ _ = throw "Dictionaries expected."
 
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
+      pure (Val (α + β) Nothing (Dictionary (DictRep (d \\ d'))))
+   depRel _ = Left "Dictionaries expected."
+
 dict_disjointUnion :: ForeignOp
 dict_disjointUnion =
-   ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, op })
+   ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) = do
       val doc_opt (singleton α # Set.insert β) (Dictionary (DictRep (unionWith_never d d')))
    op _ _ = throw "Dictionaries expected"
 
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
+      pure (Val (α + β) Nothing (Dictionary (DictRep (unionWith_never d d'))))
+   depRel _ = Left "Dictionaries expected"
+
 foldl_with_index :: ForeignOp
 foldl_with_index =
-   ForeignOp ("foldl_with_index" × ForeignOp' { arity: 3, op })
+   ForeignOp ("foldl_with_index" × ForeignOp' { arity: 3, op, depOp })
    where
    op :: Op
    op doc_opt (v : u : Val _ _ (Dictionary (DictRep d)) : Nil) =
@@ -273,9 +343,20 @@ foldl_with_index =
       kvs = Dict.toUnfoldable d
    op _ _ = throw "Function, value and dictionary expected"
 
+   depOp :: DepOp
+   depOp ctrl (g : v : d : Nil) = do
+      f <- gval <$> deliver ctrl g
+      r <- deliver ctrl v
+      foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
+      where
+      step f acc (k × _) = Dep.apply ctrl f (key : gval acc : entryValue k d : Nil)
+         where
+         key = { val: Val unit Nothing (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) Nothing (Lit (Str k))) d }
+   depOp _ _ = throw "Function, value and dictionary expected"
+
 get :: ForeignOp
 get =
-   ForeignOp ("get" × ForeignOp' { arity: 2, op })
+   ForeignOp ("get" × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
@@ -284,18 +365,28 @@ get =
          Just (_ × v) -> pure v
    op _ _ = throw "String and dictionary expected"
 
+   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
+      pure (maybe (Val α Nothing (Lit None)) snd (lookup s d))
+   depRel _ = Left "String and dictionary expected"
+
 insert :: ForeignOp
 insert =
-   ForeignOp ("insert" × ForeignOp' { arity: 3, op })
+   ForeignOp ("insert" × ForeignOp' { arity: 3, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (Str k)) : v : Nil) =
       val doc_opt (singleton α) (Dictionary (DictRep (Map.insert k (α' × v) d)))
    op _ _ = throw "Dictionary, key and value expected"
 
+   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (Str k)) : v : Nil) =
+      pure (Val α Nothing (Dictionary (DictRep (Map.insert k (α' × v) d))))
+   depRel _ = Left "Dictionary, key and value expected"
+
 dict_intersectionWith :: ForeignOp
 dict_intersectionWith =
-   ForeignOp ("dict_intersectionWith" × ForeignOp' { arity: 3, op })
+   ForeignOp ("dict_intersectionWith" × ForeignOp' { arity: 3, op, depOp })
    where
    op :: Op
    op doc_opt (v : Val α _ (Dictionary (DictRep d1)) : Val α' _ (Dictionary (DictRep d2)) : Nil) = do
@@ -308,15 +399,47 @@ dict_intersectionWith =
          pure (β'' × v'')
    op _ _ = throw "Function and two dictionaries expected"
 
+   depOp :: DepOp
+   depOp ctrl (g : d1 : d2 : Nil) = do
+      f <- gval <$> deliver ctrl g
+      results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (Dict.toUnfoldable (dictEntries d1.val))) \(k × _) -> do
+         r <- Dep.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil)
+         pure (k × gval r)
+      construct ctrl (dictFrom (d1 : d2 : Nil) results)
+   depOp _ _ = throw "Function and two dictionaries expected"
+
 dict_map :: ForeignOp
 dict_map =
-   ForeignOp ("dict_map" × ForeignOp' { arity: 2, op })
+   ForeignOp ("dict_map" × ForeignOp' { arity: 2, op, depOp })
    where
    op :: Op
    op doc_opt (v : Val α _ (Dictionary (DictRep d)) : Nil) = do
       d' <- traverse (\(β × u) -> (β × _) <$> G.apply Nothing v (u : Nil)) d
       val doc_opt (singleton α) (Dictionary (DictRep d'))
    op _ _ = throw "Function and dictionary expected"
+
+   depOp :: DepOp
+   depOp ctrl (g : d : Nil) = do
+      f <- gval <$> deliver ctrl g
+      results <- for (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val))) \(k × _) -> do
+         r <- Dep.apply ctrl f (singleton (entryValue k d))
+         pure (k × gval r)
+      construct ctrl (dictFrom (singleton d) results)
+   depOp _ _ = throw "Function and dictionary expected"
+
+entryValue :: forall s. String -> GVal s -> GVal s
+entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> snd) d }
+
+-- Dictionary with the given values, its root and key positions from those of the dictionary values.
+dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
+dictFrom ds kvs =
+   { val: Val unit Nothing (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
+   , inEdges: L.concat (ds <#> via \x -> Val (root x) Nothing (Dictionary (DictRep (Dict.mapWithKey (\k (_ × zu) -> fst (dictEntry k x) × zu) zd))))
+        <> L.concat (kvs <#> \(k × v) -> via (\y -> dict (Map.insert k (zero × y) zd)) v)
+   }
+   where
+   zd = D.fromFoldable (kvs <#> \(k × v) -> k × (zero × zeros v.val))
+   dict = DictRep >>> Dictionary >>> Val zero Nothing
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot
@@ -326,12 +449,16 @@ rem = intBinary "rem" I.rem
 
 intBinary :: String -> (Int -> Int -> Int) -> ForeignOp
 intBinary id f =
-   ForeignOp (id × ForeignOp' { arity: 2, op })
+   ForeignOp (id × ForeignOp' { arity: 2, op, depOp: pureRel depRel })
    where
    op :: Op
    op doc_opt (Val α _ (Lit (Int m)) : Val β _ (Lit (Int n)) : Nil) =
       val doc_opt (singleton α # Set.insert β) (Lit (Int (f m n)))
    op _ _ = throw "Two integers expected"
+
+   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel (Val α _ (Lit (Int m)) : Val β _ (Lit (Int n)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (f m n))))
+   depRel _ = Left "Two integers expected"
 
 numToStr :: Int + Number -> String
 numToStr = show `union1` show

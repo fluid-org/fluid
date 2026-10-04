@@ -20,7 +20,7 @@ import Dict (Dict)
 import Effect (Effect)
 import File (Folder)
 import Graph (DVertex, Vertex, Query)
-import Lattice (𝔹, Raw, (∨))
+import Lattice (𝔹, (∨))
 import SExpr as S
 import Util (type (×), Endo, check, (×))
 import Util.Map (toUnfoldable, values)
@@ -144,7 +144,7 @@ data Direction = LinkedInputs | LinkedOutputs | Intermediates
 
 type Fig =
    { spec :: Options
-   , s :: Raw S.Stmt
+   , s :: S.Stmt
    , ρ :: Env (SelStates 𝔹)
    , v :: Val (SelStates 𝔹)
    , ι :: Env (SelStates 𝔹)

@@ -24,7 +24,7 @@ def precip(ensemble_data):
   return mean([ ensemble_data[ model ] for model in models ])
 
 hydroData_agg = {
-  pr: {
-    std: { extra_annual: dict_map(precip, hydroData["pr"]["std"]["extra_annual"]["ens"]) }
+  "pr": {
+    "std": { "extra_annual": dict_map(precip, hydroData["pr"]["std"]["extra_annual"]["ens"]) }
   }
 }

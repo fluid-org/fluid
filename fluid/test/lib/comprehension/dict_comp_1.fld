@@ -1,1 +1,1 @@
-{ [x]: len(x) for x in ["a", "bb", "ccc"] if len(x) > 1 }
+{ x: len(x) for x in ["a", "bb", "ccc"] if len(x) > 1 }

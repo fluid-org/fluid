@@ -1,0 +1,3 @@
+from dependence.subscript_inputs import i, xs
+
+xs[i]

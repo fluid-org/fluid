@@ -37,7 +37,7 @@ import Test.Util.Debug (tracing)
 import Util (type (×), Endo, absurd, error, spyWhen, (×), (∩))
 import Util.Map (filterKeys, insert, keys, lookup, mapWithKey, restrict)
 import Util.Set (empty, (\\), (∈), (∪))
-import Val (class HasModuleStore, Env(..), EnvStmt(..), Val(..), asVal)
+import Val (class HasModuleStore, Env(..), Val(..), asVal)
 
 str
    :: { output :: String -- pseudo-variable to use as name of output view
@@ -198,11 +198,10 @@ lift selState_f f v = first (apply selState_f) (f (v <#> to𝔹))
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking } fluidSrc = do
    { s, e, gconfig } <- prepConfig fluidSrc
-   eval@({ inα: EnvStmt ρα _, outα, g: g0 }) <- graphEval gconfig e
+   eval@({ inα: ρα, outα, g: g0 }) <- graphEval gconfig e
    let
       opEval = withOp eval
       inputs' = Set.fromFoldable inputs
-      EnvStmt _ s' = erase eval.inα
       Env ρ_restricted = restrict inputs' ρα
       in_roots = Set.fromFoldable $ (\(Val α _ _) -> α) <$> ρ_restricted
 
@@ -210,15 +209,15 @@ loadFig options@{ inputs, linking } fluidSrc = do
 
       io :: ConjugatePair GraphImpl Env Val
       io =
-         { fwd: \ρ -> deps.fwd (EnvStmt ρ (botOf s'))
-         , bwd: \v -> first (\(EnvStmt ρ _) -> restrict inputs' ρ) (deps.bwd v)
+         { fwd: deps.fwd
+         , bwd: \v -> first (restrict inputs') (deps.bwd v)
          }
 
       in_views = const Nothing <$> ρ_restricted
       unselected = { ρ: botOf ρα, v: botOf outα } :: IO 𝔹
 
       inertBwd = vertices g0 \\ (vertices $ snd $ io.bwd $ topOf outα)
-      inertFwd = vertices g0 \\ (vertices $ snd $ deps.fwd (EnvStmt (topOf ρα) (botOf s')))
+      inertFwd = vertices g0 \\ (vertices $ snd $ deps.fwd (topOf ρα))
 
       inert = { ρ: select𝔹s ρα inertBwd, v: select𝔹s outα inertFwd } :: IO 𝔹
       inert' = { ρ: selState <$> inert.ρ, v: selState <$> inert.v } :: IO (𝔹 -> SelState 𝔹)

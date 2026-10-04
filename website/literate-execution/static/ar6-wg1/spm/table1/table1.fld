@@ -5,13 +5,13 @@ from fluid.view import MultiView
 
 def newDataTable(offset):
   return map(lambda s: {
-    scenario: s["scenario"],
-    beNear: s["bestEstNear"] + offset,
-    nearRange: (s["lowNear"], s["highNear"]),
-    beMid: s["bestEstMid"],
-    midRange: (s["lowMid"], s["highMid"]),
-    beLong: s["bestEstLate"],
-    longRange: (s["lowLate"], s["highLate"])
+    "scenario": s["scenario"],
+    "beNear": s["bestEstNear"] + offset,
+    "nearRange": (s["lowNear"], s["highNear"]),
+    "beMid": s["bestEstMid"],
+    "midRange": (s["lowMid"], s["highMid"]),
+    "beLong": s["bestEstLate"],
+    "longRange": (s["lowLate"], s["highLate"])
   }, tableData)
 
 def getByScenario(data, scenario):

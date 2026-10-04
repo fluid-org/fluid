@@ -116,19 +116,19 @@ bwd_cases =
      , bwd_expect: \_ -> envVal "a_2" select >.> envVal "b" select
      , δv: \_ -> dictKey "ab" select'
      , inputs: []
-     , fwd_expect: "{ a: 5, ⸨ab⸩: 6 }"
+     , fwd_expect: "{\"a\": 5, ⸨\"ab\"⸩: 6}"
      }
    , { file: "dict/difference.fld"
      , bwd_expect: \_ -> envVal "e" (dict select') >.> envVal "f" (dict select')
      , δv: \_ -> dict select'
      , inputs: []
-     , fwd_expect: "⸨{ a: 5 }⸩"
+     , fwd_expect: "⸨{\"a\": 5}⸩"
      }
    , { file: "dict/disjoint_union.fld"
      , bwd_expect: \_ -> envVal "d1" (dictKey "a" select') >.> envVal "d2" (dictVal "c" select)
      , δv: \_ -> dictKey "a" select' >.> dictVal "c" select
      , inputs: []
-     , fwd_expect: "{ ⸨a⸩: 5, b: 6, c: ⸨7⸩ }"
+     , fwd_expect: "{⸨\"a\"⸩: 5, \"b\": 6, \"c\": ⸨7⸩}"
      }
    , { file: "dict/foldl_with_index.fld"
      , bwd_expect: \_ -> envVal "d" (dictVal "b" (listElement 0 select))
@@ -140,7 +140,7 @@ bwd_cases =
      , bwd_expect: \_ -> envVal "d1" (dictVal "b" select >.> dictVal "c" select) >.> envVal "d2" (dictVal "b" select >.> dictVal "c" select)
      , δv: \_ -> dictVal "b" select >.> dictVal "c" select
      , inputs: []
-     , fwd_expect: "{ b: ⸨0⸩, c: ⸨20⸩ }"
+     , fwd_expect: "{\"b\": ⸨0⸩, \"c\": ⸨20⸩}"
      }
    , { file: "dict/map.fld"
      , bwd_expect: \_ -> envVal "d" (dictVal "a" (listElement 0 select) >.> dictVal "b" (listElement 0 select))

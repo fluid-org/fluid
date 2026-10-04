@@ -9,7 +9,7 @@ import Data.Foldable (sum)
 import Data.Int (toNumber)
 import Data.List (List(..), fold, length, union)
 import Data.Map (Map, unionWith, keys, values)
-import Data.Map (empty, singleton) as Map
+import Data.Map (empty, fromFoldable, singleton, size, values) as Map
 import Data.Newtype (class Newtype, over2)
 import Data.Number (pow, sqrt)
 import Data.Tuple (snd)
@@ -17,6 +17,7 @@ import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
 import Graph (class Graph, size)
+import Graph.Dep (DepGraph)
 import Util (type (×), EffectError, Thunk, debug, force, (×), singleton)
 
 logAs :: forall m. MonadEffect m => String -> String -> m Unit
@@ -80,6 +81,13 @@ benchmark' name m = do
 recordGraphSize :: forall g m. Graph g => MonadWriter BenchRow m => g -> m Unit
 recordGraphSize g =
    tell (BenchRow $ Map.singleton "Graph-Nodes" (singleton $ toNumber $ size g))
+
+recordDepGraphSize :: forall f s m. MonadWriter BenchRow m => DepGraph f s -> m Unit
+recordDepGraphSize g =
+   tell $ BenchRow $ Map.fromFoldable
+      [ "Dep-Vertices" × singleton (toNumber (Map.size g.vals))
+      , "Dep-Edges" × singleton (toNumber (sum (Map.size <$> Map.values g.edges)))
+      ]
 
 divRow :: BenchRow -> Int -> BenchRow
 divRow (BenchRow row) n =

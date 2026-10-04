@@ -1,0 +1,3 @@
+from dependence.dict_lookup_inputs import d
+
+d["a"]

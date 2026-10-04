@@ -6,6 +6,7 @@ import Data.Array (zipWith) as A
 import Data.Bifunctor (bimap)
 import Data.Foldable (length)
 import Data.List (List, zipWith)
+import Data.Map (Map, empty, filter, unionWith) as M
 import Data.Maybe (Maybe(..))
 import Data.Profunctor.Strong ((***))
 import Data.Set (subset)
@@ -35,6 +36,48 @@ class Neg a where
    neg :: Endo a
 
 class (BoundedLattice a, Neg a) <= BooleanLattice a
+
+-- Addition idempotent; ctrlWeight idempotent for multiplication and bounding its own multiples.
+class (Semiring s, Ord s) <= DepSemiring s where
+   ctrlWeight :: s
+
+instance DepSemiring Unit where
+   ctrlWeight = unit
+
+data DepKind = Zero | Ctrl | Data
+
+derive instance Eq DepKind
+derive instance Ord DepKind
+
+instance Show DepKind where
+   show Zero = "0"
+   show Ctrl = "○"
+   show Data = "●"
+
+instance Semiring DepKind where
+   zero = Zero
+   one = Data
+   add = max
+   mul = min
+
+instance DepSemiring DepKind where
+   ctrlWeight = Ctrl
+
+-- Trivial extension of s by weighted combinations of positions k: the product of two combinations is zero.
+newtype Lineage k s = Lineage (s × M.Map k s)
+
+instance (Ord k, DepSemiring s) => Semiring (Lineage k s) where
+   zero = Lineage (zero × M.empty)
+   one = Lineage (one × M.empty)
+   add (Lineage (a × m)) (Lineage (b × n)) = Lineage ((a + b) × M.unionWith add m n)
+   mul (Lineage (a × m)) (Lineage (b × n)) =
+      Lineage ((a * b) × M.filter (_ /= zero) (M.unionWith add (mul a <$> n) (mul b <$> m)))
+
+instance (Ord k, DepSemiring s) => DepSemiring (Lineage k s) where
+   ctrlWeight = Lineage (ctrlWeight × M.empty)
+
+derive instance (Eq k, Eq s) => Eq (Lineage k s)
+derive instance (Ord k, Ord s) => Ord (Lineage k s)
 
 class BotOf t u | t -> u where
    botOf :: t -> u

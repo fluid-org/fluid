@@ -1,0 +1,3 @@
+from dependence.var_inputs import x
+
+x

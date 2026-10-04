@@ -1,11 +1,11 @@
 d = {}
-e = { ["a"]: 5, ["a" + "b"]: 6 }
-f = { ["ab"]: 12 }
+e = { "a": 5, "a" + "b": 6 }
+f = { "ab": 12 }
 
 {
-  d: d,
-  e: e,
-  e_ab: e["ab"],
-  f: dict_map(lambda x: 1 + x, e),
-  g: dict_difference(e, f)
+  "d": d,
+  "e": e,
+  "e_ab": e["ab"],
+  "f": dict_map(lambda x: 1 + x, e),
+  "g": dict_difference(e, f)
 }

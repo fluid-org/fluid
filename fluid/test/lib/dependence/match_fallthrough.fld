@@ -1,0 +1,9 @@
+from dependence.match_fallthrough_inputs import Foo, v, w
+
+match v:
+   case Foo():
+      x = 1
+   case _:
+      x = w
+
+x

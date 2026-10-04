@@ -36,6 +36,7 @@ simple n = case uncons n of
    _ -> Nothing
 
 varAnon = "_" :: Var
+varThis = "this" :: Var -- bound to the documented value within a doc
 
 -- Discrete partial order for variables.
 mustGeq :: Var -> Var -> Var
