@@ -104,15 +104,15 @@ instance Highlightable a => Highlightable (a × b) where
 instance (Ann a, BoundedLattice b) => Ann (a × b)
 
 type ModuleStore =
-   { ρ0 :: Env Vertex -- members of the implicit modules
+   { ρ0α :: Env Vertex -- members of the implicit modules
    , moduleBody :: Map ModuleName Module
-   , moduleEnv :: Map ModuleName (Env Vertex)
+   , moduleEnvα :: Map ModuleName (Env Vertex)
    , depGraph :: DepGraph Val (Lineage (Dep.Deriv × Dep.Pos) DepKind)
-   , moduleDerivs :: Map ModuleName (Dict Dep.Deriv) -- members as derivations in depGraph
+   , moduleEnv :: Map ModuleName (Dict Dep.Deriv) -- members as derivations in depGraph
    }
 
 emptyModuleStore :: ModuleStore
-emptyModuleStore = { ρ0: empty, moduleBody: Map.empty, moduleEnv: Map.empty, depGraph: emptyGraph, moduleDerivs: Map.empty }
+emptyModuleStore = { ρ0α: empty, moduleBody: Map.empty, moduleEnvα: Map.empty, depGraph: emptyGraph, moduleEnv: Map.empty }
 
 class Monad m <= HasModuleStore m where
    moduleStore :: m ModuleStore

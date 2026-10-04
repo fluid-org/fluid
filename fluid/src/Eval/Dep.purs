@@ -199,8 +199,8 @@ eval inputs = case _ of
       subscript v v' select consumed =
          deliver (inputs.ctrl <> via consumed v <> via sum v') { val: select v.val, inEdges: via select v }
    ModMember q x -> do
-      { moduleDerivs } <- moduleStore
-      let ρ_q = definitely "module loaded" (Map.lookup q moduleDerivs)
+      { moduleEnv } <- moduleStore
+      let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
       p <- withMsg "Module member" $ lookup' x ρ_q
       gvalAt p >>= deliver inputs.ctrl
    App e es -> do
@@ -484,8 +484,8 @@ evalImport enclosing ρ = case _ of
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)
-implicitMembers = moduleStore <#> \{ moduleDerivs } ->
-   foldl (\ρ q -> ρ <+> findWithDefault empty q moduleDerivs) empty implicit
+implicitMembers = moduleStore <#> \{ moduleEnv } ->
+   foldl (\ρ q -> ρ <+> findWithDefault empty q moduleEnv) empty implicit
 
 load
    :: forall m s
@@ -500,13 +500,13 @@ load
    => ModuleName
    -> m (Dict Deriv)
 load q = do
-   { moduleBody, moduleDerivs } <- moduleStore
-   case Map.lookup q moduleDerivs of
+   { moduleBody, moduleEnv } <- moduleStore
+   case Map.lookup q moduleEnv of
       Just ρ_q -> pure ρ_q
       Nothing -> do
          ρ0 <- implicitMembers
          ρ_q <- maybe (pure empty) (evalModule ρ0 q) (Map.lookup q moduleBody)
-         modifyModuleStore (\s -> s { moduleDerivs = Map.insert q ρ_q s.moduleDerivs })
+         modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
          pure ρ_q
 
 type DepEval =
