@@ -35,7 +35,7 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
-import Graph.Dep (DepGraph, Rel, addEdge, scale, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, addEdge, deriv, scale, zeros)
 import Graph.Dep (Deriv) as Dep
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
@@ -187,7 +187,7 @@ constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)
 
 record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
 record { val: v, inEdges } = do
-   p <- vertex v
+   p <- deriv v
    for_ inEdges \(q × r) -> addEdge q p r
    pure (p × v)
 

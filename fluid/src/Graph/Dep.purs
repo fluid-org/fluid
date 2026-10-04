@@ -66,8 +66,8 @@ type DepGraph (f :: Type -> Type) s =
 emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 
-vertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
-vertex v = do
+deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
+deriv v = do
    size <- gets _.size
    let p = Deriv size
    modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals }

@@ -30,7 +30,7 @@ import Effect.Exception (Error)
 import Eval (GraphConfig)
 import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Deriv, attachDoc, emptyGraph, vertex, zeros)
+import Graph.Dep (DepGraph, Rel, Deriv, attachDoc, deriv, emptyGraph, zeros)
 import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Operator (binopSymbol, unopSymbol)
@@ -433,7 +433,7 @@ depEval
 depEval { ρ, classes } s =
    withClasses classes do
       (p × inputs) × g <- flip runStateT emptyGraph do
-         ins <- for (unwrap (erase ρ) :: Dict (Raw Val)) \v -> vertex (stripDocs v) <#> (_ × stripDocs v)
+         ins <- for (unwrap (erase ρ) :: Dict (Raw Val)) \v -> deriv (stripDocs v) <#> (_ × stripDocs v)
          r <- evalStmt { ctrl: Nil, env: gval <$> ins } s
          pure (fst (asReturns r) × (fst <$> ins))
       pure { g, inputs, root: p }
