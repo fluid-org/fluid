@@ -185,18 +185,18 @@ withCtrl ctrl section v =
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)) v
 
-vertexOf :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
-vertexOf { val: v, inEdges } = do
+record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
+record { val: v, inEdges } = do
    p <- vertex v
    for_ inEdges \(q × r) -> addEdge q p r
    pure (p × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-deliver ctrl v = vertexOf (withCtrl ctrl (unitSection v.val) v)
+deliver ctrl v = record (withCtrl ctrl (unitSection v.val) v)
 
 construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-construct ctrl v = vertexOf (constructed ctrl v)
+construct ctrl v = record (constructed ctrl v)
 
 constructWith
    :: forall t m s
