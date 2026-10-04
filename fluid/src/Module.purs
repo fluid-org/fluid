@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Monad.Except (class MonadError)
 import Control.Monad.Reader (class MonadReader, ask)
+import Control.Monad.State (runStateT)
 import Bind (dottedName, pathName, prefixOf)
 import Data.List.NonEmpty (snoc, unsnoc, fromList) as NEL
 import Data.Either (Either(..))
@@ -17,13 +18,16 @@ import Data.Set as Set
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import DataType (class HasClasses, ClassTable)
+import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (GraphConfig, evalImport, load)
+import Eval.Dep (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
 import Graph (Vertex, vertices)
+import Graph.Dep (Deriv, deriv, emptyGraph)
 import Graph.GraphImpl (GraphImpl)
 import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
 import Literal (Literal(..))
@@ -35,7 +39,7 @@ import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env)
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env(..), Val(..))
 import Val (BaseVal(..)) as V
 
 type Config = { s :: S.Stmt, e :: Stmt, gconfig :: GraphConfig }
@@ -122,6 +126,29 @@ allocTopLevel mods imports = do
       pure ρ
    pure (n × ρ)
 
+-- Top-level environment as derivations in a fresh dependence graph, kept in the module store.
+depTopLevel
+   :: forall m
+    . HasClasses m
+   => HasModuleStore m
+   => MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => List S.Import
+   -> m (Dict Deriv)
+depTopLevel imports = do
+   inputs × depGraph <- flip runStateT emptyGraph do
+      predefined' <- traverse (\(_ × Env ρ) -> traverse deriv ρ) predefined
+      modifyModuleStore (_ { moduleDerivs = predefined' })
+      for_ implicit Dep.load
+      ρ0 <- Dep.implicitMembers
+      ρ1 <- foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
+      name <- deriv (Val unit Nothing (V.Lit (Str "__main__")))
+      pure (ρ1 <+> maplet "__name__" name)
+   modifyModuleStore (_ { depGraph = depGraph })
+   pure inputs
+
 prepConfig
    :: forall m
     . HasClasses m
@@ -139,13 +166,17 @@ prepConfig fluidSrc = do
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
       n × ρ <- allocTopLevel (Map.mapMaybe _.mod loaded) imports
+      inputs <- depTopLevel imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
-      { moduleEnv } <- moduleStore
+      check (keys ρ == keys inputs) "top-level environment matches its derivations"
+      { moduleEnv, moduleDerivs } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
-         when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q ->
+         when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q -> do
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": members match its environment")
-      let gconfig = { n, ρ: restrict (fv e) ρ, classes }
+            check (Just (keys ρ_q) == (keys <$> Map.lookup q moduleDerivs))
+               ("module " <> dottedName q <> ": members match their derivations")
+      let gconfig = { n, ρ: restrict (fv e) ρ, inputs: restrict (fv e) inputs, classes }
       pure { s, e, gconfig }
 
 parseModules

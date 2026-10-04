@@ -8,7 +8,7 @@ import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except (ExceptT)
 import Control.Monad.Reader (class MonadReader, ReaderT)
-import Control.Monad.State (class MonadState, StateT)
+import Control.Monad.State (class MonadState, StateT, gets)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
 import Data.Array (concat, zipWith, (!!)) as A
@@ -35,10 +35,10 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import Foreign.Object (foldMap)
 import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
-import Graph.Dep (DepGraph, Rel, addEdge, deriv, scale, zeros)
-import Graph.Dep (Deriv) as Dep
+import Graph.Dep (DepGraph, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
+import Graph.Dep (Deriv, Pos) as Dep
 import Graph.WithGraph (class MonadWithGraphAlloc, new)
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, expand, (∧), (∨))
+import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
 import Unsafe.Coerce (unsafeCoerce)
@@ -107,10 +107,12 @@ type ModuleStore =
    { ρ0 :: Env Vertex -- members of the implicit modules
    , moduleBody :: Map ModuleName Module
    , moduleEnv :: Map ModuleName (Env Vertex)
+   , depGraph :: DepGraph Val (Lineage (Dep.Deriv × Dep.Pos) DepKind)
+   , moduleDerivs :: Map ModuleName (Dict Dep.Deriv) -- members as derivations in depGraph
    }
 
 emptyModuleStore :: ModuleStore
-emptyModuleStore = { ρ0: empty, moduleBody: Map.empty, moduleEnv: Map.empty }
+emptyModuleStore = { ρ0: empty, moduleBody: Map.empty, moduleEnv: Map.empty, depGraph: emptyGraph, moduleDerivs: Map.empty }
 
 class Monad m <= HasModuleStore m where
    moduleStore :: m ModuleStore
@@ -164,6 +166,10 @@ unitSection (Val _ _ u) = Val one Nothing case u of
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
+
+-- Value of a derivation already in the graph.
+gvalAt :: forall m s. MonadState (DepGraph Val s) m => Dep.Deriv -> m (GVal s)
+gvalAt p = gets \g -> gval (p × valAt g p)
 
 -- Dependence on values already in the graph of a value that depends on v by r.
 via :: forall s b. Rel (Val s) b -> GVal s -> List (Dep.Deriv × Rel (Val s) b)

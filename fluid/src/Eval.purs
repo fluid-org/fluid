@@ -31,6 +31,7 @@ import Effect.Exception (Error)
 import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
+import Graph.Dep (Deriv)
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, new, runAllocT, runWithGraphT_spy)
@@ -52,6 +53,7 @@ import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictR
 type GraphConfig =
    { n :: Int
    , ρ :: Env Vertex
+   , inputs :: Dict Deriv -- ρ as derivations in the module store's dependence graph
    , classes :: ClassTable
    }
 
