@@ -10,7 +10,6 @@ import Data.Foldable (and, for_, sum)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Set as Set
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
@@ -26,7 +25,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Pos, SparseRel, Deriv, dep, materialise, positions)
+import Graph.Dep (Deriv, Edges, Pos, SparseRel, dep, materialise, positions)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -147,10 +146,10 @@ type DepSpec =
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-inputEdges :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Map Deriv (Map Deriv (SparseRel DepKind))
+inputEdges :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Edges (SparseRel DepKind)
 inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `Set.union` Set.singleton p)
 
-inputDep :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Map Deriv (Map Deriv (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
+inputDep :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Edges (SparseRel DepKind) -> Val 𝔹 -> Env DepKind
 inputDep eval p edges out = Env $ eval.inputs <#> \q ->
    dep edges q selected p (definitely "input labelled" (Map.lookup q eval.g.vals))
    where

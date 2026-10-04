@@ -55,12 +55,14 @@ sparseRel in_ = SparseRel { out, in_ }
    out = fromFoldableWith Map.union
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × Map.singleton j w)
 
+type Edges r = Map Deriv (Map Deriv r) -- target ↦ source ↦ relation
+
 -- Vertices labelled by values of shape f; edges labelled by relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Map Deriv (f Unit)
    , docs :: Map Deriv Deriv -- vertex ↦ vertex of its doc
-   , edges :: Map Deriv (Map Deriv (Rel (f s) (f s))) -- target ↦ source ↦ relation
+   , edges :: Edges (Rel (f s) (f s))
    }
 
 emptyGraph :: forall f s. DepGraph f s
@@ -88,7 +90,7 @@ materialise
    => DepSemiring s
    => DepGraph f (Lineage (Deriv × Pos) s)
    -> Set Deriv
-   -> Map Deriv (Map Deriv (SparseRel s)) -- target ↦ source ↦ relation
+   -> Edges (SparseRel s)
 materialise g visible =
    (foldl step { weightsAt: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
    where
@@ -114,7 +116,7 @@ materialise g visible =
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
 -- Weights at the positions of p related to the selected positions of q.
-dep :: forall f s. Traversable f => Semiring s => Map Deriv (Map Deriv (SparseRel s)) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
+dep :: forall f s. Traversable f => Semiring s => Edges (SparseRel s) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
 dep edges p selected q = mapPositions weight
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup q edges >>= lookup p)
