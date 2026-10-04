@@ -113,11 +113,11 @@ materialise g visible =
       bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
--- Weights at the positions of a source vertex related to the selected positions of a target vertex.
+-- Weights at the positions of p related to the selected positions of q.
 dep :: forall f s. Traversable f => Semiring s => Map Deriv (Map Deriv (SparseRel s)) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
-dep edges target selected source = mapPositions weight
+dep edges p selected q = mapPositions weight
    where
-   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup target edges >>= lookup source)
+   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup q edges >>= lookup p)
    weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (lookup j in_ >>= lookup i))
 
 -- ======================

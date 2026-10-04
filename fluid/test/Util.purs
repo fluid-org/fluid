@@ -152,7 +152,7 @@ inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `S
 
 inputDep :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Map Deriv (Map Deriv (SparseRel DepKind)) -> Val 𝔹 -> Env DepKind
 inputDep eval p edges out = Env $ eval.inputs <#> \q ->
-   dep edges p selected q (definitely "input labelled" (Map.lookup q eval.g.vals))
+   dep edges q selected p (definitely "input labelled" (Map.lookup q eval.g.vals))
    where
    selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
 
