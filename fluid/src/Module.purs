@@ -126,8 +126,8 @@ allocTopLevel mods imports = do
       pure ρ
    pure (n × ρ)
 
--- Top-level environment as derivations in a fresh dependence graph, kept in the module store.
-depTopLevel
+-- Load modules into a new dependence graph, kept in the store; return the top-level environment as a vertex per variable.
+loadTopLevel
    :: forall m
     . HasClasses m
    => HasModuleStore m
@@ -137,7 +137,7 @@ depTopLevel
    => LoadFile m
    => List S.Import
    -> m (Dict Deriv)
-depTopLevel imports = do
+loadTopLevel imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- traverse (\(_ × Env ρ) -> traverse deriv ρ) predefined
       modifyModuleStore (_ { moduleEnv = predefined' })
@@ -166,7 +166,7 @@ prepConfig fluidSrc = do
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
       n × ρ <- allocTopLevel (Map.mapMaybe _.mod loaded) imports
-      inputs <- depTopLevel imports
+      inputs <- loadTopLevel imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
       check (keys ρ == keys inputs) "top-level environment matches its derivations"
       { moduleEnvα, moduleEnv } <- moduleStore
