@@ -432,11 +432,11 @@ evalModule
    -> m (Dict Deriv)
 evalModule ρ0 q (Module is ss) = do
    ρ_imp <- foldM (evalImport q) ρ0 is
-   name <- deriv (Val unit Nothing (V.Lit (Str (dottedName q))))
-   ρ <- traverse gvalAt (ρ_imp <+> maplet "__name__" name)
+   ρ_name <- maplet "__name__" <$> deriv (Val unit Nothing (V.Lit (Str (dottedName q))))
+   ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
    bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
    members <- traverse (record >>> map fst) bindings
-   pure (maplet "__name__" name <+> members)
+   pure (ρ_name <+> members)
 
 -- Bind imported value members; delete bindings for names that now denote modules.
 evalImport
