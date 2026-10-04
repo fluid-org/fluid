@@ -115,7 +115,7 @@ materialise g visible =
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
 dep :: forall f s. Traversable f => Semiring s => Map Deriv (Map Deriv (SparseRel s)) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
-dep edges target selected source v = mapPositions weight v
+dep edges target selected source = mapPositions weight
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup target edges >>= lookup source)
    weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (lookup j in_ >>= lookup i))
