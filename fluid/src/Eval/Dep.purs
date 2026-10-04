@@ -51,6 +51,10 @@ asReturns :: forall s. Result s -> Deriv × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
+asAssigns :: forall s. Result s -> Dict (GVal s) × Ctrl s
+asAssigns (Assigns ρ ctrl) = ρ × ctrl
+asAssigns (Returns _) = error "Assigns expected"
+
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
 matches _ v (PVar x)
@@ -426,20 +430,13 @@ evalModule
    -> ModuleName
    -> Module
    -> m (Dict Deriv)
-evalModule ρ0 q (Module is ss0) = do
+evalModule ρ0 q (Module is ss) = do
    ρ_imp <- foldM (evalImport q) ρ0 is
    name <- deriv (Val unit Nothing (V.Lit (Str (dottedName q))))
    ρ <- traverse gvalAt (ρ_imp <+> maplet "__name__" name)
-   members <- go ρ empty ss0 Nil >>= traverse (record >>> map fst)
+   bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
+   members <- traverse (record >>> map fst) bindings
    pure (maplet "__name__" name <+> members)
-   where
-   go :: Dict (GVal s) -> Dict (GVal s) -> List Stmt -> Ctrl s -> m (Dict (GVal s))
-   go _ ρ' Nil _ = pure ρ'
-   go ρ ρ' (s : ss) ctrl = do
-      r <- evalStmt { ctrl, env: ρ <+> ρ' } s
-      case r of
-         Assigns ρ'' ctrl' -> go ρ (ρ' <+> ρ'') ss ctrl'
-         Returns _ -> error absurd
 
 -- Bind imported value members; delete bindings for names that now denote modules.
 evalImport
