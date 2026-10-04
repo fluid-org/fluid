@@ -16,7 +16,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), (×))
+import Util (type (×), definitely, (×))
 
 newtype Deriv = Deriv Int
 
@@ -67,6 +67,9 @@ type DepGraph (f :: Type -> Type) s =
 
 emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
+
+valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
+valAt g p = definitely "labelled" (lookup p g.vals)
 
 deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
 deriv v = do

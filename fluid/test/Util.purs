@@ -6,7 +6,7 @@ import App.Util (Selector, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
-import Data.Foldable (and, for_, sum)
+import Data.Foldable (and, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
@@ -25,7 +25,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Deriv, Edges, Pos, SparseRel, dep, materialise, positions)
+import Graph.Dep (Deriv, Edges, Pos, SparseRel, dep, materialise, positions, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -97,19 +97,15 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphEval gconfig s'
    eval <- graphBenchmark benchNames.dep \_ ->
       depEval gconfig s' :: m (DepEval (Lineage (Deriv × Pos) DepKind))
-   let out_dep = definitely "root labelled" (Map.lookup eval.root eval.g.vals)
-   when tracing.depEval $ log
-      ("depEval: " <> show (Map.size eval.g.vals) <> " vertices, " <> show (sum (Map.size <$> Map.values eval.g.edges)) <> " edges")
+   let out_dep = valAt eval.g eval.root
    unless (out_dep == stripDocs (erase outα)) $
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let evalG_bwd = fst <<< (depsOf graphed).bwd
    let evalG_op_bwd = fst <<< (depsOf graphed).fwd
-   let ρ_raw = erase graphed.inα
-   let inputs' = if Array.null inputs then keys ρ_raw else Set.fromFoldable inputs
+   let inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
 
    let arg = constrArg (fieldIndex gconfig.classes)
-   let v = map (const top) outα :: Val 𝔹
-   let out0 = fst (δv arg (const unselected <$> v)) <#> getPersistent
+   let out0 = selectOn δv arg outα
 
    in_ρ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
@@ -151,7 +147,7 @@ inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `S
 
 inputDep :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Edges (SparseRel DepKind) -> Val 𝔹 -> Env DepKind
 inputDep eval p edges out = Env $ eval.inputs <#> \q ->
-   dep edges q selected p (definitely "input labelled" (Map.lookup q eval.g.vals))
+   dep edges q selected p (valAt eval.g q)
    where
    selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
 
@@ -162,12 +158,14 @@ testDep file { doc, δv, expect } = do
    eval <- depEval gconfig e :: m (DepEval (Lineage (Deriv × Pos) DepKind))
    let
       p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
-      out = definitely "vertex labelled" (Map.lookup p eval.g.vals)
-      arg = constrArg (fieldIndex gconfig.classes)
-      out0 = fst (δv arg (const unselected <$> (map (const top) out :: Val 𝔹))) <#> getPersistent
+      out0 = selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)
    let Env ρ = inputDep eval p (inputEdges eval p) out0
    withMsg "expect" $ checkPretty expect $ joinWith "\n" $
       (toUnfoldable ρ :: Array (String × Val DepKind)) <#> \(x × v) -> x <> ": " <> prettyP v
+
+-- Persistent selection made by δv on the output.
+selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
+selectOn δv arg v = fst (δv arg (const unselected <$> (map (const top) v :: Val 𝔹))) <#> getPersistent
 
 checkEq
    :: forall m a
