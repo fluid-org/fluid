@@ -25,8 +25,8 @@ type Pos = Int -- index under the position ordering of a value
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
-mapPositions :: forall f a b. Traversable f => (Pos -> a -> b) -> f a -> f b
-mapPositions h = traverse (\a -> state \n -> h n a × (n + 1)) >>> flip evalState 0
+mapPositions :: forall f a b. Traversable f => (Pos -> b) -> f a -> f b
+mapPositions h = traverse (\_ -> state \n -> h n × (n + 1)) >>> flip evalState 0
 
 zeros :: forall f a s. Functor f => Semiring s => f a -> f s
 zeros = map (const zero)
@@ -94,7 +94,7 @@ materialise g visible =
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
-         { weightsAt: Map.insert p (mapPositions (\i _ -> Lineage (zero × Map.singleton (p × i) one)) v) weightsAt
+         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × Map.singleton (p × i) one)) v) weightsAt
          , rels: Map.insert p (sparseRel <$> edgesInto) rels
          }
       else { weightsAt: Map.insert p weights weightsAt, rels }
@@ -115,7 +115,7 @@ materialise g visible =
 
 -- Weights at the positions of a source vertex related to the selected positions of a target vertex.
 dep :: forall f s. Traversable f => Semiring s => Map Deriv (Map Deriv (SparseRel s)) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
-dep edges target selected source v = mapPositions (\i _ -> weight i) v
+dep edges target selected source v = mapPositions weight v
    where
    in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup target edges >>= lookup source)
    weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (lookup j in_ >>= lookup i))
