@@ -142,7 +142,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 -- Visible vertex carrying the selection.
 data Visible
    = Output
-   | Input String -- variable defined as a documented value; by convention the doc is the variable's name
+   | Input String -- imported variable, documented with its name
    | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc Visible
 
