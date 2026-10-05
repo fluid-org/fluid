@@ -129,14 +129,17 @@ materialise g visible =
 
 -- Keep at each vertex only the positions where the predicate holds.
 mask :: forall f s. Traversable f => (f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
-mask keep g = g { edges = g.edges # mapWithIndex \q -> mapWithIndex \p (SparseRel r) -> SparseRel { in_: only q p r.in_, out: only p q r.out } }
+mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
    where
+   rel q p (SparseRel r) = SparseRel { in_: only q p r.in_, out: only p q r.out }
    kept p = selected (keep (definitely' (lookup p g.vals)))
-   only p q m = Map.filter (not <<< Map.isEmpty) (Map.filterKeys (_ `Set.member` kept q) <$> Map.filterKeys (_ `Set.member` kept p) m)
+   only p q m = Map.filter (not <<< Map.isEmpty) $
+      Map.filterKeys (_ `Set.member` kept q) <$> Map.filterKeys (_ `Set.member` kept p) m
 
 -- Positions carrying true.
 selected :: forall f. Traversable f => f Boolean -> Set Pos
-selected v = Set.fromFoldable (L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v)))
+selected v = Set.fromFoldable $
+   L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v))
 
 -- Sparse dependence relation applied to sparse weights.
 applyRel :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
@@ -168,8 +171,8 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
 fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step ws (p × sources) = foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
-   into p ws r w = add' p (applyRel r.out w) ws
+   step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
+   into p ws (SparseRel r) w = add' p (applyRel r.out w) ws
 
 -- ======================
 -- boilerplate
