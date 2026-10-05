@@ -129,10 +129,10 @@ materialise g visible =
       (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
 -- Keep at each vertex only the positions where the predicate holds.
-mask :: forall f s. Traversable f => (f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
+mask :: forall f s. Traversable f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
 mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
    where
-   kept = g.vals <#> (keep >>> selected)
+   kept = mapWithIndex (\p -> keep p >>> selected) g.vals
    rel q p (SparseRel r) = SparseRel { in_: only ks_q ks_p r.in_, out: only ks_p ks_q r.out }
       where
       ks_q = definitely' (lookup q kept)

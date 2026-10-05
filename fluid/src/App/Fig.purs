@@ -4,19 +4,20 @@ import Prelude hiding (absurd, compare)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Util (SelState(..), SelStates(..), Selection, SelectionType(..), Selector, 𝕊, getSel, selState, selStates, to𝔹, to𝕊, primary, primaryOrSecondary)
-import App.Util.Selector (constrArg, envVal, ViewSetter)
+import App.Util.Selector (constrArg, envVal, sel𝔹, ViewSetter)
 import App.View (view')
 import App.View.Util (Direction(..), Fig, Options, HTMLId, View, drawView)
 import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
 import DataType (class HasClasses, fieldIndex)
+import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array as A
 import Data.Foldable (elem, or)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
 import Data.Set as Set
@@ -172,7 +173,7 @@ drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
-loadFig options@{ inputs, linking, query } fluidSrc = do
+loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    { s, e, gconfig } <- prepConfig fluidSrc
    eval@{ g: g@{ docs }, root } <- depEval gconfig e
    let
@@ -191,7 +192,6 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
          else empty
 
       unmasked = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
-      masked = mask dataPositions unmasked
 
       val :: forall a. Map Deriv (Val a) -> Deriv × Maybe Deriv -> Val a
       val m (p × d) = let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
@@ -202,11 +202,15 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
       unvals :: forall a. Dict (Deriv × Maybe Deriv) -> Dict (Val a) -> Map Deriv (Val a)
       unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
+      everything = map (const true) <$> unmasked.vals
+      ignored = unvals ins (unwrap (sel𝔹 ignoreInputs (Env (ins <#> val everything))))
+      masked = unmasked # mask \p v ->
+         maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
+
       bwd' graph sel = map (_ /= Zero) <$> bwd graph (selected <$> sel)
       fwd' graph sel = map (_ /= Zero) <$> fwd graph (selected <$> sel)
 
       -- Positions which the output does not depend on, and which do not depend on any input.
-      everything = map (const true) <$> unmasked.vals
       inertBwd graph = map not <$> bwd' graph (unval out (val everything out))
       inertFwd graph = map not <$> fwd' graph (Map.filterKeys (_ `elem` eval.inputs) everything)
       inertρ = inertBwd masked

@@ -2,7 +2,7 @@ module App.View.Util where
 
 import Prelude
 
-import App.Util (SelState, SelStates, Selectable, Selection, SelectionType, SetSel, 𝕊, classes, selClasses, selClassesFor)
+import App.Util (SelState, SelStates, Selectable, Selection, SelectionType, Selector, SetSel, 𝕊, classes, selClasses, selClassesFor)
 import App.Util.Selector (ConstrArg, dictVal)
 import App.View.Util.D3 (create, isEmpty, on, rootSelect, select, setAttrs)
 import App.View.Util.D3 as D3
@@ -134,6 +134,7 @@ type Options =
    { fluidSrcPaths :: Array Folder
    , inputs :: Array Var
    , query :: Boolean -- show documented intermediates
+   , ignoreInputs :: Selector Env -- input positions left out of linked queries; superseded by #1585
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }

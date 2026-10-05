@@ -3,7 +3,7 @@ module Test.Specs.LinkedOutputs where
 import Prelude
 
 import App.Util (SelectionType(..))
-import App.Util.Selector (barSegment, listElement, matrixDims, matrixElement, topα, (>.>), select, select')
+import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, selectNone, topα, (>.>), select, select')
 import Data.Maybe (Maybe(..))
 import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cPoint, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
 import Test.Util (fluidSrcPaths)
@@ -16,6 +16,7 @@ linkedOutputs_spec1 =
         { fluidSrcPaths
         , inputs: [ "renewables" ]
         , query: false
+        , ignoreInputs: envVal "renewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
         , linking: true
         , rowFilter: Nothing
         }
@@ -42,6 +43,7 @@ linkedOutputs_spec2 =
         { fluidSrcPaths
         , inputs: [ "nonRenewables" ]
         , query: false
+        , ignoreInputs: envVal "nonRenewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
         , linking: true
         , rowFilter: Nothing
         }
@@ -66,6 +68,7 @@ movingAverages_spec =
         { fluidSrcPaths
         , inputs: [ "methane" ]
         , query: false
+        , ignoreInputs: selectNone
         , linking: true
         , rowFilter: Nothing
         }
@@ -81,6 +84,7 @@ linkedOutputs_cases =
           { fluidSrcPaths
           , inputs: [ "data" ]
           , query: false
+          , ignoreInputs: selectNone
           , linking: true
           , rowFilter: Nothing
           }
@@ -94,6 +98,7 @@ linkedOutputs_cases =
 
           , inputs: [ "data" ]
           , query: false
+          , ignoreInputs: selectNone
           , linking: true
           , rowFilter: Nothing
           }

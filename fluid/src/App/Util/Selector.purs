@@ -63,6 +63,13 @@ listElement :: Int -> SelSetter Val Val
 listElement n δv = unsafePartial $ case _ of
    Val α doc (List vs) -> first (\v' -> Val α doc (List (unsafeUpdateAt n v' vs))) (δv (vs ! n))
 
+eachElement :: SelSetter Val Val
+eachElement δv = unsafePartial $ case _ of
+   Val α doc (List vs) -> Val α doc (List (T.fst <<< δv <$> vs)) × Persistent
+
+selectNone :: forall a. SetSel a
+selectNone = (_ × Persistent)
+
 constrArg :: FieldIndex -> ConstrArg
 constrArg fieldIndex c f δv = unsafePartial $ case _ of
    Val α doc (Constr c' us) | last c == last c' ->
