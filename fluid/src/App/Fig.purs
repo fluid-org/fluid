@@ -209,12 +209,16 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
       everything = map (const true) <$> unmasked.vals
       inertBwd graph = map not <$> bwd' graph (unval out (val everything out))
       inertFwd graph = map not <$> fwd' graph (Map.filterKeys (_ `elem` eval.inputs) everything)
+      inertρ = inertBwd masked
+      inertV = inertFwd masked
+      inertBwdι = inertBwd unmasked
+      inertFwdι = inertFwd unmasked
 
       toρ :: Map Deriv (Val 𝔹) -> Env (SelState 𝔹)
-      toρ m = Env (ins <#> \p -> selState <$> val (inertBwd masked) p <*> val m p)
+      toρ m = Env (ins <#> \p -> selState <$> val inertρ p <*> val m p)
 
       toV :: Map Deriv (Val 𝔹) -> Val (SelState 𝔹)
-      toV m = selState <$> val (inertFwd masked) out <*> val m out
+      toV m = selState <$> val inertV out <*> val m out
 
       toι :: Map Deriv (Val 𝔹) -> Dict (Val 𝔹)
       toι m = D.fromFoldable (A.filter (snd >>> or) (toUnfoldable (ιs <#> val m)))
@@ -249,8 +253,8 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
    pure
       { spec: options
       , s
-      , ρ: Env (ins <#> \p -> (\inert -> selStates inert false false) <$> val (inertBwd masked) p)
-      , v: (\inert -> selStates inert false false) <$> val (inertFwd masked) out
+      , ρ: Env (ins <#> \p -> (\inert -> selStates inert false false) <$> val inertρ p)
+      , v: (\inert -> selStates inert false false) <$> val inertV out
       , ι: empty
       , linkedOutputs
       , linkedInputs
@@ -259,7 +263,7 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
       , in_views: ins $> Nothing
       , out_view: Nothing
       , intermediate_views: empty
-      , inerts: ιs <#> \p -> (&&) <$> val (inertBwd unmasked) p <*> val (inertFwd unmasked) p
+      , inerts: ιs <#> \p -> (&&) <$> val inertBwdι p <*> val inertFwdι p
       , fieldIndex: fieldIndex gconfig.classes
       }
 

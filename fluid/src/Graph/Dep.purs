@@ -109,32 +109,36 @@ materialise g visible =
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
          { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × Map.singleton (p × i) one)) v) weightsAt
-         , rels: Map.insert p (sparseRel <$> edgesInto) rels
+         , rels: Map.insert p (sparseRel <$> maybe Map.empty edgesInto weights) rels
          }
-      else { weightsAt: Map.insert p weights weightsAt, rels }
+      else { weightsAt: maybe weightsAt (\w -> Map.insert p w weightsAt) weights, rels }
       where
+      -- Weights at p; Nothing if p does not depend on any visible vertex.
       weights = foldl
-         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (lookup q weightsAt))
-         (zeros v)
+         (\acc (q × r) -> maybe acc (\x -> Just (maybe (r x) (_ `plus` r x) acc)) (lookup q weightsAt))
+         Nothing
          (maybe Nil Map.toUnfoldable (lookup p g.edges))
 
-      -- Edges into p from each visible vertex, read off the lineage at every position of p.
-      edgesInto :: Map Deriv (Map Pos (Map Pos s))
-      edgesInto = foldl (unionWith Map.union) Map.empty $
-         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions weights)
+   -- Edges into a vertex from each visible vertex, read off the lineage at every position.
+   edgesInto :: f (Lineage (Deriv × Pos) s) -> Map Deriv (Map Pos (Map Pos s))
+   edgesInto ws = foldl (unionWith Map.union) Map.empty $
+      mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions ws)
 
-      bySource :: Map (Deriv × Pos) s -> Map Deriv (Map Pos s)
-      bySource m = fromFoldableWith Map.union $
-         (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
+   bySource :: Map (Deriv × Pos) s -> Map Deriv (Map Pos s)
+   bySource m = fromFoldableWith Map.union $
+      (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
 -- Keep at each vertex only the positions where the predicate holds.
 mask :: forall f s. Traversable f => (f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
 mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
    where
-   rel q p (SparseRel r) = SparseRel { in_: only q p r.in_, out: only p q r.out }
-   kept p = selected (keep (definitely' (lookup p g.vals)))
-   only p q m = Map.filter (not <<< Map.isEmpty) $
-      Map.filterKeys (_ `Set.member` kept q) <$> Map.filterKeys (_ `Set.member` kept p) m
+   kept = g.vals <#> (keep >>> selected)
+   rel q p (SparseRel r) = SparseRel { in_: only ks_q ks_p r.in_, out: only ks_p ks_q r.out }
+      where
+      ks_q = definitely' (lookup q kept)
+      ks_p = definitely' (lookup p kept)
+   only ks ks' m = Map.filter (not <<< Map.isEmpty) $
+      Map.filterKeys (_ `Set.member` ks') <$> Map.filterKeys (_ `Set.member` ks) m
 
 -- Positions carrying true.
 selected :: forall f. Traversable f => f Boolean -> Set Pos
