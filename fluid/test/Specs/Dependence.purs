@@ -2,46 +2,95 @@ module Test.Specs.Dependence where
 
 import Prelude
 
-import App.Util.Selector (matrixElement, select)
-import DataType (cPair, f_fst, f_snd)
-import Test.Util (DepSpec, Dir(..), Visible(..))
-
--- Select whole output of a file under dependence/.
-bwd :: String -> String -> DepSpec
-bwd file expect = { file: "dependence/" <> file, on: Output, δv: \_ -> select, dir: Bwd, expect }
-
--- Select whole of an input of a file under dependence/.
-fwd :: String -> String -> String -> DepSpec
-fwd file x expect = { file: "dependence/" <> file, on: Input x, δv: \_ -> select, dir: Fwd, expect }
+import App.Util.Selector (listElement, matrixElement, select)
+import DataType (cPair, cParagraph, f_fragments, f_fst, f_snd)
+import Test.Util (DepSpec, Query(..), Visible(..))
 
 dep_cases :: Array DepSpec
 dep_cases =
-   [ bwd "var.fld" "x: ⸨[⸨1⸩, ⸨2⸩]⸩\n⸨[⸨1⸩, ⸨2⸩]⸩"
-   , bwd "cond.fld" "b: ⟪True⟫\ny: ⸨1⸩\nz: 2\n⸨1⸩"
-   , bwd "match_fallthrough.fld" "v: ⟪Bar()⟫\nw: ⸨5⸩\n⸨5⸩"
-   , bwd "early_return.fld" "a: 1\nb: ⸨2⸩\nc: ⟪False⟫\n⸨2⸩"
-   , bwd "attribute.fld" "p: ⟪P(⸨1⸩, 2)⟫\n⸨1⸩"
-   , bwd "subscript.fld" "i: ⟪1⟫\nxs: ⟪[3, ⸨4⸩, 5]⟫\n⸨4⸩"
-   , bwd "filter.fld" "n: ⟪5⟫\nxs: ⟪[⸨8⸩, ⟪4⟫, ⸨7⸩, ⟪3⟫]⟫\n⸨[⸨8⸩, ⸨7⸩]⸩"
-   , bwd "closure.fld" "a: ⸨1⸩\nb: ⸨2⸩\n⸨3⸩"
-   , bwd "partial.fld" "a: ⸨1⸩\nb: ⸨2⸩\n⸨3⸩"
-   , bwd "len.fld" "len: ⟪len⟫\nxs: ⸨[1, 2]⸩\n⸨2⸩"
-   , bwd "dict_lookup.fld" "d: ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
-   , bwd "dict_pattern.fld" "d: ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
-   , (bwd "seq.fld" "a: 1\nb: 2\nc: ⟪True⟫\nd: ⸨4⸩\n(1, ⸨4⸩)") { δv = \arg -> arg cPair f_snd select }
-   , (bwd "doc_this.fld" "x: ⸨1⸩\ny: ⸨2⸩\n@doc(⸨Paragraph(⸨[⸨\"Sum\"⸩, ⸨\"is\"⸩, ⸨3⸩]⸩)⸩) ⸨3⸩") { on = OutputDoc }
-   , fwd "cond.fld" "b" "b: ⸨True⸩\ny: 1\nz: 2\n⟪1⟫"
-   , fwd "cond.fld" "y" "b: True\ny: ⸨1⸩\nz: 2\n⸨1⸩"
-   , fwd "early_return.fld" "c" "a: 1\nb: 2\nc: ⸨False⸩\n⟪2⟫"
-   , fwd "filter.fld" "n" "n: ⸨5⸩\nxs: [8, 4, 7, 3]\n⟪[⟪8⟫, ⟪7⟫]⟫"
-   , fwd "seq.fld" "c" "a: 1\nb: 2\nc: ⸨True⸩\nd: 4\n⟪(⟪1⟫, ⟪4⟫)⟫"
-   , fwd "doc_this.fld" "x" "x: ⸨1⸩\ny: 2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+   [ { file: "dependence/var.fld"
+     , queries:
+          [ Bwd Output (\_ -> listElement 0 select) "x: [⸨1⸩, 2]\n[⸨1⸩, 2]"
+          , Fwd (Input "x") (\_ -> listElement 1 select) "x: [1, ⸨2⸩]\n[1, ⸨2⸩]"
+          ]
+     }
+   , { file: "dependence/cond.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "b: ⟪True⟫\ny: ⸨1⸩\nz: 2\n⸨1⸩"
+          , Fwd (Input "b") (\_ -> select) "b: ⸨True⸩\ny: 1\nz: 2\n⟪1⟫"
+          , Fwd (Input "y") (\_ -> select) "b: True\ny: ⸨1⸩\nz: 2\n⸨1⸩"
+          ]
+     }
+   , { file: "dependence/match_fallthrough.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "v: ⟪Bar()⟫\nw: ⸨5⸩\n⸨5⸩"
+          ]
+     }
+   , { file: "dependence/early_return.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "a: 1\nb: ⸨2⸩\nc: ⟪False⟫\n⸨2⸩"
+          , Fwd (Input "c") (\_ -> select) "a: 1\nb: 2\nc: ⸨False⸩\n⟪2⟫"
+          ]
+     }
+   , { file: "dependence/attribute.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "p: ⟪P(⸨1⸩, 2)⟫\n⸨1⸩"
+          ]
+     }
+   , { file: "dependence/subscript.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "i: ⟪1⟫\nxs: ⟪[3, ⸨4⸩, 5]⟫\n⸨4⸩"
+          ]
+     }
+   , { file: "dependence/filter.fld"
+     , queries:
+          [ Bwd Output (\_ -> listElement 0 select) "n: ⟪5⟫\nxs: ⟪[⸨8⸩, 4, 7, 3]⟫\n[⸨8⸩, 7]"
+          , Fwd (Input "n") (\_ -> select) "n: ⸨5⸩\nxs: [8, 4, 7, 3]\n⟪[⟪8⟫, ⟪7⟫]⟫"
+          , Fwd (Input "xs") (\_ -> listElement 2 select) "n: 5\nxs: [8, 4, ⸨7⸩, 3]\n⟪[8, ⸨7⸩]⟫"
+          ]
+     }
+   , { file: "dependence/closure.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "a: ⸨1⸩\nb: ⸨2⸩\n⸨3⸩"
+          ]
+     }
+   , { file: "dependence/partial.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "a: ⸨1⸩\nb: ⸨2⸩\n⸨3⸩"
+          ]
+     }
+   , { file: "dependence/len.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "len: ⟪len⟫\nxs: ⸨[1, 2]⸩\n⸨2⸩"
+          ]
+     }
+   , { file: "dependence/dict_lookup.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "d: ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
+          ]
+     }
+   , { file: "dependence/dict_pattern.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "d: ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
+          ]
+     }
+   , { file: "dependence/seq.fld"
+     , queries:
+          [ Bwd Output (\arg -> arg cPair f_snd select) "a: 1\nb: 2\nc: ⟪True⟫\nd: ⸨4⸩\n(1, ⸨4⸩)"
+          , Fwd (Input "c") (\_ -> select) "a: 1\nb: 2\nc: ⸨True⸩\nd: 4\n⟪(⟪1⟫, ⟪4⟫)⟫"
+          ]
+     }
+   , { file: "dependence/doc_this.fld"
+     , queries:
+          [ Bwd OutputDoc (\arg -> arg cParagraph f_fragments (listElement 2 select))
+               "x: ⸨1⸩\ny: ⸨2⸩\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+          , Fwd (Input "x") (\_ -> select) "x: ⸨1⸩\ny: 2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+          ]
+     }
    , { file: "slicing/matrix/matmul.fld"
-     , on: Output
-     , δv: \arg -> arg cPair f_fst $ matrixElement 0 0 select
-     , dir: Bwd
-     , expect:
-          """leftMatrix: ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
+     , queries:
+          [ Bwd Output (\arg -> arg cPair f_fst $ matrixElement 0 0 select)
+               """leftMatrix: ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
 4, 5, 6⟫
 mat_mul: ⟪cl⟫
 rightMatrix: ⟪⸨1⸩, 2,
@@ -56,13 +105,8 @@ rightMatrix: ⟪⸨1⸩, 2,
 49, 64, 9, 12, 15,
 19, 26, 33,
 29, 40, 51)"""
-     }
-   , { file: "slicing/matrix/matmul.fld"
-     , on: Documented 0
-     , δv: \_ -> matrixElement 0 0 select
-     , dir: Bwd
-     , expect:
-          """leftMatrix: ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
+          , Bwd (Intermediate 0) (\_ -> matrixElement 0 0 select)
+               """leftMatrix: ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
 4, 5, 6⟫
 mat_mul: ⟪cl⟫
 rightMatrix: ⟪⸨1⸩, 2,
@@ -77,13 +121,8 @@ rightMatrix: ⟪⸨1⸩, 2,
 49, 64, 9, 12, 15,
 19, 26, 33,
 29, 40, 51)"""
-     }
-   , { file: "slicing/matrix/matmul.fld"
-     , on: Documented 0
-     , δv: \_ -> matrixElement 0 0 select
-     , dir: Fwd
-     , expect:
-          """leftMatrix: 1, 2, 3,
+          , Fwd (Intermediate 0) (\_ -> matrixElement 0 0 select)
+               """leftMatrix: 1, 2, 3,
 4, 5, 6
 mat_mul: cl
 rightMatrix: 1, 2,
@@ -98,13 +137,8 @@ rightMatrix: 1, 2,
 49, 64, 9, 12, 15,
 19, 26, 33,
 29, 40, 51)"""
-     }
-   , { file: "slicing/matrix/matmul.fld"
-     , on: Input "leftMatrix"
-     , δv: \_ -> matrixElement 0 0 select
-     , dir: Fwd
-     , expect:
-          """leftMatrix: ⸨1⸩, 2, 3,
+          , Fwd (Input "leftMatrix") (\_ -> matrixElement 0 0 select)
+               """leftMatrix: ⸨1⸩, 2, 3,
 4, 5, 6
 mat_mul: cl
 rightMatrix: 1, 2,
@@ -119,5 +153,6 @@ rightMatrix: 1, 2,
 49, 64, ⸨9⸩, 12, 15,
 ⸨19⸩, 26, 33,
 ⸨29⸩, 40, 51)"""
+          ]
      }
    ]

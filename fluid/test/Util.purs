@@ -138,22 +138,19 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    recordGraphSize g
    recordDepGraphSize eval.g
 
-data Dir = Bwd | Fwd
-
 -- Visible vertex carrying the selection.
 data Visible
    = Output
    | OutputDoc
    | Input String
-   | Documented Int -- index among documented vertices, in evaluation order
+   | Intermediate Int -- index among documented vertices, in evaluation order
 
-type DepSpec =
-   { file :: String
-   , on :: Visible
-   , δv :: ConstrArg -> Selector Val
-   , dir :: Dir
-   , expect :: String -- inputs, documented vertices, then output, with dependence; data ⸨ ⸩, control ⟪ ⟫
-   }
+-- Selection and expected inputs, documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫.
+data Query
+   = Bwd Visible (ConstrArg -> Selector Val) String
+   | Fwd Visible (ConstrArg -> Selector Val) String
+
+type DepSpec = { file :: String, queries :: Array Query }
 
 selected :: Val 𝔹 -> Set Pos
 selected v = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions v) # L.filter snd <#> fst)
@@ -167,36 +164,35 @@ includes msg dep_ slice =
    unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions slice) (positions dep_))) $
       throw (msg <> " misses α-graph slice:\ndependence\n" <> prettyP dep_ <> "\nα-graph\n" <> prettyP slice)
 
-depName :: DepSpec -> String
-depName { file, on, dir } = file <> ", " <> dir' <> " from " <> on'
+depName :: String -> Query -> String
+depName file = case _ of
+   Bwd on _ _ -> file <> ", bwd from " <> name on
+   Fwd on _ _ -> file <> ", fwd from " <> name on
    where
-   dir' = case dir of
-      Bwd -> "bwd"
-      Fwd -> "fwd"
-   on' = case on of
+   name = case _ of
       Output -> "output"
       OutputDoc -> "output doc"
       Input x -> x
-      Documented n -> "documented " <> show n
+      Intermediate n -> "intermediate " <> show n
 
-testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> DepSpec -> AffError m Unit
-testDep file { on, δv, dir, expect } = do
+testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
+testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
    eval <- depEval gconfig e
    let
       docs = eval.g.docs
-      p = case on of
+      vertex = case _ of
          Output -> eval.root
          OutputDoc -> definitely "output documented" (Map.lookup eval.root docs)
          Input x -> get x eval.inputs
-         Documented n -> definitely "documented" (A.index (A.fromFoldable (Map.keys docs)) n)
+         Intermediate n -> definitely "documented" (A.index (A.fromFoldable (Map.keys docs)) n)
       arg = constrArg (fieldIndex gconfig.classes)
-      selection = Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
+      selection on δv = let p = vertex on in Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
-      deps = case dir of
-         Bwd -> bwd visibleGraph selection
-         Fwd -> fwd visibleGraph selection
+      deps × expect = case query of
+         Bwd on δv expect' -> bwd visibleGraph (selection on δv) × expect'
+         Fwd on δv expect' -> fwd visibleGraph (selection on δv) × expect'
       at q = definitely "visible" (Map.lookup q deps)
       inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
       documented = Map.toUnfoldable docs <#> \(q × d) ->
