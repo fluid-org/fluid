@@ -198,6 +198,19 @@ showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
       let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
    output = if Map.member root docs then [] else [ prettyP (at root) ]
 
+selection
+   :: forall s
+    . GraphConfig
+   -> DepGraph Val s
+   -> DepEval
+   -> VertexSpec
+   -> (ConstrArg -> Selector Val)
+   -> Map Deriv (Set Pos)
+selection { classes } depGraph eval vertex δv =
+   Map.singleton p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
+   where
+   p = deriv depGraph eval vertex
+
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
@@ -205,15 +218,10 @@ testDep file query = do
    { depGraph } <- moduleStore
    eval <- depEval gconfig e
    let
-      selection vertex δv =
-         let
-            p = deriv depGraph eval vertex
-         in
-            Map.singleton p (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd vertex δv expect' -> bwd visibleGraph (selection vertex δv) × expect'
-         Fwd vertex δv expect' -> fwd visibleGraph (selection vertex δv) × expect'
+         Bwd vertex δv expect' -> bwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
@@ -261,4 +269,3 @@ testCondition testName b msg = do
       throw "Test failed" -- could improve this to accumulate test failures rather than "failing fast"
    where
    msg' = testName <> ": " <> msg
-
