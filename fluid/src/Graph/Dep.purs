@@ -56,9 +56,9 @@ sparseRel in_ = SparseRel { out, in_ }
    out = fromFoldableWith Map.union
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × Map.singleton j w)
 
-type Edges r = Map Deriv (Map Deriv r) -- target ↦ source ↦ relation
+type Edges r = Map Deriv (Map Deriv r) -- target ↦ source ↦ dependence relation
 
--- Vertices labelled by values of shape f; edges labelled by relations, parallel edges summed.
+-- Vertices labelled by values of shape f; edges labelled by dependence relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Map Deriv (f Unit)
@@ -133,7 +133,7 @@ dep g edges selected q = edges # mapWithIndex \p _ ->
       Nothing -> ws
       Just w -> foldlWithIndex (\p' ws' (SparseRel r) -> insertWith (unionWith add) p' (bwd r.in_ w) ws') ws sources
 
-   -- Transpose of a relation, applied to weights at its target positions.
+   -- Transpose of a dependence relation, applied to weights at its target positions.
    bwd :: Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
    bwd in_ w = foldl (unionWith add) Map.empty $
       mapWithIndex (\j a -> maybe Map.empty (map (a * _)) (lookup j in_)) w
