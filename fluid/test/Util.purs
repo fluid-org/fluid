@@ -168,24 +168,24 @@ includes msg dep_ slice =
 
 depName :: String -> Query -> String
 depName file = case _ of
-   Bwd vis _ _ -> file <> ", bwd from " <> name vis
-   Fwd vis _ _ -> file <> ", fwd from " <> name vis
+   Bwd p _ _ -> file <> ", bwd from " <> name p
+   Fwd p _ _ -> file <> ", fwd from " <> name p
    where
    name = case _ of
       Output -> "output"
       Input x -> x
       Intermediate n -> "intermediate " <> show n
-      Doc vis -> "doc of " <> name vis
+      Doc p -> "doc of " <> name p
 
--- Vertex designated by vis; loaded is the graph before the program ran.
+-- Vertex designated by p; loaded is the graph before the program ran.
 deriv :: forall s. DepGraph Val s -> DepEval -> Visible -> Deriv
 deriv loaded eval = case _ of
    Output -> eval.root
    Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x eval.inputs) eval.g.edges of
-      Just [ p ] | Map.member p docs -> p
+      Just [ q ] | Map.member q docs -> q
       _ -> error ("input " <> x <> " not bound to documented value")
    Intermediate n -> definitely "intermediate" (A.index intermediates n)
-   Doc vis -> definitely "documented" (Map.lookup (deriv loaded eval vis) docs)
+   Doc p -> definitely "documented" (Map.lookup (deriv loaded eval p) docs)
    where
    docs = eval.g.docs
    intermediates = A.filter (not <<< (_ `Map.member` loaded.vals)) (A.fromFoldable (Map.keys docs))
@@ -206,15 +206,15 @@ testDep file query = do
    { depGraph } <- moduleStore
    eval <- depEval gconfig e
    let
-      selection vis δv =
+      selection p δv =
          let
-            p = deriv depGraph eval vis
+            q = deriv depGraph eval p
          in
-            Map.singleton p (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)))
+            Map.singleton q (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g q)))
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd vis δv expect' -> bwd visibleGraph (selection vis δv) × expect'
-         Fwd vis δv expect' -> fwd visibleGraph (selection vis δv) × expect'
+         Bwd p δv expect' -> bwd visibleGraph (selection p δv) × expect'
+         Fwd p δv expect' -> fwd visibleGraph (selection p δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
