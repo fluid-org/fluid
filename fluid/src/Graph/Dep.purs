@@ -127,6 +127,13 @@ materialise g visible =
       bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
+-- Keep at each vertex only the positions where the predicate holds.
+mask :: forall f s. Traversable f => (f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
+mask keep g = g { edges = g.edges # mapWithIndex \q -> mapWithIndex \p (SparseRel r) -> SparseRel { in_: only q p r.in_, out: only p q r.out } }
+   where
+   kept p = selected (keep (definitely' (lookup p g.vals)))
+   only p q m = Map.filter (not <<< Map.isEmpty) (Map.filterKeys (_ `Set.member` kept q) <$> Map.filterKeys (_ `Set.member` kept p) m)
+
 -- Positions carrying true.
 selected :: forall f. Traversable f => f Boolean -> Set Pos
 selected v = Set.fromFoldable (L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v)))

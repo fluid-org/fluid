@@ -29,7 +29,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval.Dep (depEval, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph.Dep (Deriv, bwd, fwd, materialise, selected)
+import Graph.Dep (Deriv, bwd, fwd, mask, materialise, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
@@ -37,7 +37,7 @@ import Test.Util.Debug (tracing)
 import Util (type (×), Endo, absurd, definitely', error, spyWhen, (×))
 import Util.Map (insert, intersectionWith, keys, lookup, mapWithKey, restrict, toUnfoldable, values)
 import Util.Set (empty, (\\), (∈), (∪))
-import Val (class HasModuleStore, Env(..), Val(..))
+import Val (class HasModuleStore, Env(..), Val(..), dataPositions)
 
 str
    :: { output :: String -- pseudo-variable to use as name of output view
@@ -190,7 +190,8 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
             if p ∈ shown then Nothing else Just (show p × (p × Just d))
          else empty
 
-      visibleGraph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
+      unmasked = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
+      masked = mask dataPositions unmasked
 
       val :: forall a. Map Deriv (Val a) -> Deriv × Maybe Deriv -> Val a
       val m (p × d) = let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
@@ -201,18 +202,19 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
       unvals :: forall a. Dict (Deriv × Maybe Deriv) -> Dict (Val a) -> Map Deriv (Val a)
       unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
-      bwd' sel = map (_ /= Zero) <$> bwd visibleGraph (selected <$> sel)
-      fwd' sel = map (_ /= Zero) <$> fwd visibleGraph (selected <$> sel)
+      bwd' graph sel = map (_ /= Zero) <$> bwd graph (selected <$> sel)
+      fwd' graph sel = map (_ /= Zero) <$> fwd graph (selected <$> sel)
 
-      everything = map (const true) <$> visibleGraph.vals
-      inertBwd = map not <$> bwd' (unval out (val everything out))
-      inertFwd = map not <$> fwd' (Map.filterKeys (_ `elem` eval.inputs) everything)
+      -- Positions which the output does not depend on, and which do not depend on any input.
+      everything = map (const true) <$> unmasked.vals
+      inertBwd graph = map not <$> bwd' graph (unval out (val everything out))
+      inertFwd graph = map not <$> fwd' graph (Map.filterKeys (_ `elem` eval.inputs) everything)
 
       toρ :: Map Deriv (Val 𝔹) -> Env (SelState 𝔹)
-      toρ m = Env (ins <#> \p -> selState <$> val inertBwd p <*> val m p)
+      toρ m = Env (ins <#> \p -> selState <$> val (inertBwd masked) p <*> val m p)
 
       toV :: Map Deriv (Val 𝔹) -> Val (SelState 𝔹)
-      toV m = selState <$> val inertFwd out <*> val m out
+      toV m = selState <$> val (inertFwd masked) out <*> val m out
 
       toι :: Map Deriv (Val 𝔹) -> Dict (Val 𝔹)
       toι m = D.fromFoldable (A.filter (snd >>> or) (toUnfoldable (ιs <#> val m)))
@@ -227,28 +229,28 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
       linkedInputs selType ρ = ρ'' × v × toι m
          where
          ρ' = ρ <#> getSel selType
-         m = fwd' (fromρ ρ')
+         m = fwd' masked (fromρ ρ')
          v = toV m
-         ρ'' = if linking then toρ (bwd' (fromV v)) else ρ'
+         ρ'' = if linking then toρ (bwd' masked (fromV v)) else ρ'
 
       linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
       linkedOutputs selType v = ρ × v'' × toι m
          where
          v' = v <#> getSel selType
-         m = bwd' (fromV v')
+         m = bwd' masked (fromV v')
          ρ = toρ m
-         v'' = if linking then toV (fwd' (fromρ ρ)) else v'
+         v'' = if linking then toV (fwd' masked (fromρ ρ)) else v'
 
       linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
-      linkIntermediates (Env ι) = toρ (bwd' m) × toV (fwd' m) × toι m
+      linkIntermediates (Env ι) = toρ (bwd' unmasked m) × toV (fwd' unmasked m) × toι m
          where
          m = unvals ιs (map (getSel Transient >>> to𝔹) <$> ι)
 
    pure
       { spec: options
       , s
-      , ρ: Env (ins <#> \p -> (\inert -> selStates inert false false) <$> val inertBwd p)
-      , v: (\inert -> selStates inert false false) <$> val inertFwd out
+      , ρ: Env (ins <#> \p -> (\inert -> selStates inert false false) <$> val (inertBwd masked) p)
+      , v: (\inert -> selStates inert false false) <$> val (inertFwd masked) out
       , ι: empty
       , linkedOutputs
       , linkedInputs
@@ -257,7 +259,7 @@ loadFig options@{ inputs, linking, query } fluidSrc = do
       , in_views: ins $> Nothing
       , out_view: Nothing
       , intermediate_views: empty
-      , inerts: ιs <#> \p -> (&&) <$> val inertBwd p <*> val inertFwd p
+      , inerts: ιs <#> \p -> (&&) <$> val (inertBwd unmasked) p <*> val (inertFwd unmasked) p
       , fieldIndex: fieldIndex gconfig.classes
       }
 
