@@ -11,6 +11,7 @@ import Data.Foldable (and, any, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
@@ -26,8 +27,8 @@ import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
-import Eval.Dep (depEval, visible)
-import Graph.Dep (Deriv, Pos, bwd, fwd, materialise, positions, valAt)
+import Eval.Dep (DepEval, depEval, visible)
+import Graph.Dep (DepGraph, Deriv, Pos, bwd, fwd, materialise, positions, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -146,8 +147,7 @@ data Visible
    | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc Visible
 
--- Selection and expected documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫. A doc is
--- shown only if it has dependence.
+-- Selection and expected dependence, as given by showDeps: data ⸨ ⸩, control ⟪ ⟫.
 data Query
    = Bwd Visible (ConstrArg -> Selector Val) String
    | Fwd Visible (ConstrArg -> Selector Val) String
@@ -177,6 +177,28 @@ depName file = case _ of
       Intermediate n -> "intermediate " <> show n
       Doc vis -> "doc of " <> name vis
 
+-- Vertex designated by vis; loaded is the graph before the program ran.
+deriv :: forall s. DepGraph Val s -> DepEval -> Visible -> Deriv
+deriv loaded eval = case _ of
+   Output -> eval.root
+   Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x eval.inputs) eval.g.edges of
+      Just [ p ] | Map.member p docs -> p
+      _ -> error ("input " <> x <> " not bound to documented value")
+   Intermediate n -> definitely "intermediate" (A.index intermediates n)
+   Doc vis -> definitely "documented" (Map.lookup (deriv loaded eval vis) docs)
+   where
+   docs = eval.g.docs
+   intermediates = A.filter (not <<< (_ `Map.member` loaded.vals)) (A.fromFoldable (Map.keys docs))
+
+-- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
+showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
+showDeps eval deps = joinWith "\n" (documented <> output)
+   where
+   at q = definitely "visible" (Map.lookup q deps)
+   documented = Map.toUnfoldable eval.g.docs <#> \(q × d) ->
+      let Val w _ u = at q in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
+   output = if Map.member eval.root eval.g.docs then [] else [ prettyP (at eval.root) ]
+
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
@@ -184,30 +206,16 @@ testDep file query = do
    { depGraph } <- moduleStore
    eval <- depEval gconfig e
    let
-      docs = eval.g.docs
-      input x = case A.fromFoldable <<< Map.keys <$> Map.lookup (get x eval.inputs) eval.g.edges of
-         Just [ p ] | Map.member p docs -> p
-         _ -> error ("input " <> x <> " not bound to documented value")
-      intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
-      deriv = case _ of
-         Output -> eval.root
-         Input x -> input x
-         Intermediate n -> definitely "intermediate" (A.index intermediates n)
-         Doc vis -> definitely "documented" (Map.lookup (deriv vis) docs)
       selection vis δv =
          let
-            p = deriv vis
+            p = deriv depGraph eval vis
          in
             Map.singleton p (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
          Bwd vis δv expect' -> bwd visibleGraph (selection vis δv) × expect'
          Fwd vis δv expect' -> fwd visibleGraph (selection vis δv) × expect'
-      at q = definitely "visible" (Map.lookup q deps)
-      documented = Map.toUnfoldable docs <#> \(q × d) ->
-         let Val w _ u = at q in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
-      output = if Map.member eval.root docs then [] else [ prettyP (at eval.root) ]
-   withMsg "expect" $ checkPretty expect $ joinWith "\n" (documented <> output)
+   withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
