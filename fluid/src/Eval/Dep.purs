@@ -19,6 +19,8 @@ import Data.List.NonEmpty (fromList, head, snoc, toList, unsnoc) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Profunctor.Strong (first, second)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ancestors)
@@ -37,7 +39,7 @@ import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
 import Util (type (×), absurd, check, definitely, definitely', definitelyRight, error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
+import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, values, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
@@ -510,6 +512,11 @@ type DepEval =
    , inputs :: Dict Deriv
    , root :: Deriv
    }
+
+-- Inputs, root, documented vertices and their docs.
+visible :: DepEval -> Set Deriv
+visible { g, inputs, root } =
+   Set.fromFoldable (values inputs) ∪ Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
 
 depEval
    :: forall m

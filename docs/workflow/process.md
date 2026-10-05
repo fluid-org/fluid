@@ -24,12 +24,11 @@
 
 ## Principles
 
-- Write concisely: omit articles unless needed for clarity. Applies everywhere — docs, issue titles, commit messages, comments, this file.
-- Avoid comments. Add only to justify an unusual implementation. No historical, restatement-of-code, or "what changed" commentary. Same for test fixtures.
-- Comments: single line; wrap at ~110; no mini-paragraphs.
-- Avoid weasel-words and jargon: e.g. "land", "honest"/"honestly", "ceremony".
+Prose style, comments, identifiers, line width and commit granularity follow the `technical-authoring`, `coding-conventions` and `github` skills. Specific to Fluid:
+
+- Workflow docs, this file included, are telegraphic: omit articles unless needed for clarity.
+- Comments: single line; no mini-paragraphs. Same for test fixtures.
 - Before writing code: scan codebase for naming conventions and existing helpers; build from existing behaviours rather than reinventing.
-- Pause, review, and commit after every non-trivial step.
 - Minor docs, process changes, and trivial fixes can be committed directly to current milestone branch.
 
 ## Branching
@@ -100,15 +99,14 @@ No undo for GitHub Projects v2 field mutations.
 - Commits by Claude are authored by the `rolyp-claude-bot` GitHub account; no `Co-Authored-By` trailer is added (it would produce a duplicate avatar on GitHub).
 - Searchable via `git log --author=rolyp-claude-bot`.
 - Issue comments record design decisions.
-- PRs link to issues and summarise what was done.
 
 ## GitHub conventions
 
-- **Issue titles**: noun phrase describing goal. "Fluid" is redundant in titles (repo is Fluid) — omit it.
+Commits, issues, pull requests and board Status follow the `github` skill. Specific to Fluid:
+
+- **Issue titles**: "Fluid" is redundant in titles (repo is Fluid) — omit it.
 - **Issue bodies**: do not hard-wrap paragraphs; GitHub markdown flows them, hard wraps render as ragged short lines. Code fences: omit language tag rather than guess.
-- **See also footer**: when an issue references other issues or external resources, end with a `## See also` paragraph listing them as bullets. Bare `#N` links render the issue title inline.
-- **New issues**: add to [project board](https://github.com/orgs/fluid-org/projects/1) and populate **Status** (usually `Proposed` for new work) and **Aspect**. Also set Type, labels, and milestone when appropriate.
-- **Board Status**: read with `script/issue-status.sh <issue>`, set with `script/issue-status.sh <issue> <Status>` (adds the issue to the board if absent). Never `gh project item-list`, which fetches the whole board and trips the GraphQL rate limit. Closing an issue does not change its Status: set `Done` or `Rejected` explicitly.
+- **New issues**: add to [project board](https://github.com/orgs/fluid-org/projects/1) (`script/issue-status.sh <issue> <Status>` adds an absent issue) and populate **Status** (usually `Proposed` for new work) and **Aspect**. Also set Type, labels, and milestone when appropriate.
 - **Labels**: use existing labels (`implementation`, `testing`, `setup`, `documentation`).
 - **Milestones**: all issues must belong to milestone.
 - **Issue bodies**: keep checklist items updated.

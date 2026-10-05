@@ -249,7 +249,7 @@ type DepOp =
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
 fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
--- Relation of a primitive without effects, checked at the argument values.
+-- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> DepOp
 pureRel f ctrl vs = do
    _ <- orThrow (f (_.val <$> vs))
