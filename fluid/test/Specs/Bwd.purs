@@ -2,11 +2,9 @@ module Test.Specs.Bwd where
 
 import Prelude
 
-import App.Util (SelectionType(..))
-import App.Util.Selector (barSegment, dict, dictKey, dictVal, envVal, list, listElement, matrix, matrixElement, select, select', topα, (>.>))
+import App.Util.Selector (barSegment, dict, dictKey, dictVal, envVal, list, listElement, matrix, matrixElement, none, select, select', topα, (>.>))
 import DataType (cBarChart, cMultiView, cNonEmpty, cPair, f_fst, f_left, f_right, f_snd, f_stackedBars, f_value, f_views)
 import Test.Util.Suite (TestBwdSpec)
-import Util ((×))
 
 bwd_cases :: Array TestBwdSpec
 bwd_cases =
@@ -305,8 +303,8 @@ bwd_cases =
           """MultiView([BarChart("Non-renewables by country", Dimensions(275, 185), TickLabels(Default(), Default()), [StackedBar("2014", [Segment("BRA", 151.05), Segment("EGY", 159.93), Segment("IND", 1060.1799999999998), Segment("JPN", 928.82)]), StackedBar("2015", [Segment("BRA", 142.76), Segment("EGY", 170.68), Segment("IND", 1118.8899999999999), Segment("JPN", 876.0999999999999)]), StackedBar("2016", [Segment("BRA", 108.03), Segment("EGY", 174.07999999999998), Segment("IND", 1193.53), Segment("JPN", 883.3299999999999)]), StackedBar("2017", [Segment("BRA", 116.76), Segment("EGY", 181.31), Segment("IND", ⸨1236.43⸩), Segment("JPN", 875.32)]), StackedBar("2018", [Segment("BRA", 101.48), Segment("EGY", ⸨182.31⸩), Segment("IND", 1315.57), Segment("JPN", ⸨873.39⸩)])], True), ScatterPlot("Clean energy efficiency vs proportion of renewable energy capacity", [Point(0.8723185510332055, 0.4180741155728385), Point(0.383891020964826, 0.3306374135311273), Point(0.5685559399722339, 0.2651713517303818), Point(0.39179907463864283, 0.5311676111397315), Point(0.0886691179578209, ⸨0.4125357483317445⸩), Point(0.3167847396421975, 0.2767379556904734), Point(0.3129857171819161, ⸨0.20426921772653447⸩), Point(0.29687029792356306, 0.3462200657379872), Point(0.16239390265026848, 0.4128), Point(0.2115752867627615, 0.5086651868096602)], AxisLabels("Renewables/TotalEnergyCap", "Clean Capacity Factor"))])"""
      }
    , { file: "qcut.fld"
-     , bwd_expect: \_ -> (_ × Persistent)
-     , δv: \_ -> (_ × Persistent)
+     , bwd_expect: \_ -> none
+     , δv: \_ -> none
      , inputs: []
      , fwd_expect: "[([1.01, 1.05], 0.051000000000000156), ([1.07, 1.09, 1.22, 1.23, 1.24, 1.24, 1.25, 1.32, 1.32, 1.35, 1.39, 1.47, 1.57, 1.72], 0.6639999999999999), ([1.73, 1.75, 1.76, 1.83, 1.87, 1.94, 2.04, 2.14, 2.18, 2.36, 2.37, 2.38, 2.52, 2.54], 0.8464999999999998), ([2.61, 2.67], 0.09850000000000003)]"
      }

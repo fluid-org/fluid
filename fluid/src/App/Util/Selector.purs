@@ -67,8 +67,8 @@ eachElement :: SelSetter Val Val
 eachElement δv = unsafePartial $ case _ of
    Val α doc (List vs) -> Val α doc (List (T.fst <<< δv <$> vs)) × Persistent
 
-selectNone :: forall a. SetSel a
-selectNone = (_ × Persistent)
+none :: forall a. SetSel a
+none = (_ × Persistent)
 
 constrArg :: FieldIndex -> ConstrArg
 constrArg fieldIndex c f δv = unsafePartial $ case _ of

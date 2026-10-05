@@ -1,7 +1,7 @@
 module Test.Specs.LinkedInputs where
 
 import App.Util (Selector)
-import App.Util.Selector (dictVal, eachElement, envVal, listElement, select, selectNone, (>.>))
+import App.Util.Selector (dictVal, eachElement, envVal, listElement, select, none, (>.>))
 import Bind ((↦))
 import Data.Maybe (Maybe(..))
 import Test.Util (fluidSrcPaths)
@@ -70,7 +70,7 @@ linkedInputs_spec5 =
 
         , inputs: [ "nonRenewables", "renewables" ]
         , query: false
-        , ignoreInputs: selectNone
+        , ignoreInputs: none
         , linking: true
         , rowFilter: Nothing
         }

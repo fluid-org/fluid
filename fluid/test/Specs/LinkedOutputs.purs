@@ -1,14 +1,10 @@
 module Test.Specs.LinkedOutputs where
 
-import Prelude
-
-import App.Util (SelectionType(..))
-import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, selectNone, topα, (>.>), select, select')
+import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, none, topα, (>.>), select, select')
 import Data.Maybe (Maybe(..))
 import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cPoint, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
 import Test.Util (fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
-import Util ((×))
 
 linkedOutputs_spec1 :: TestLinkedOutputsSpec
 linkedOutputs_spec1 =
@@ -68,12 +64,12 @@ movingAverages_spec =
         { fluidSrcPaths
         , inputs: [ "methane" ]
         , query: false
-        , ignoreInputs: selectNone
+        , ignoreInputs: none
         , linking: true
         , rowFilter: Nothing
         }
-   , δ_out: \_ -> identity >>> (_ × Persistent) -- TODO: make this a non-trivial test
-   , out_expect: \_ -> identity >>> (_ × Persistent)
+   , δ_out: \_ -> none -- TODO: make this a non-trivial test
+   , out_expect: \_ -> none
    , inert_expect: \_ -> Nothing
    , file: "linked_outputs/moving_average.fld"
    }
@@ -84,13 +80,13 @@ linkedOutputs_cases =
           { fluidSrcPaths
           , inputs: [ "data" ]
           , query: false
-          , ignoreInputs: selectNone
+          , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
           }
      , δ_out: \arg -> arg cPair f_snd select
      , out_expect: \_ -> select
-     , inert_expect: \_ -> Just (identity >>> (_ × Persistent))
+     , inert_expect: \_ -> Just none
      , file: "linked_outputs/pairs.fld"
      }
    , { spec:
@@ -98,7 +94,7 @@ linkedOutputs_cases =
 
           , inputs: [ "data" ]
           , query: false
-          , ignoreInputs: selectNone
+          , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
           }
@@ -133,7 +129,7 @@ linkedOutputs_cases =
           { fluidSrcPaths
           , inputs: [ "xs", "n", "ys", "m" ]
           , query: false
-          , ignoreInputs: selectNone
+          , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
           }
