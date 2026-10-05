@@ -168,14 +168,14 @@ prepConfig fluidSrc = do
       n × ρ <- allocTopLevel (Map.mapMaybe _.mod loaded) imports
       inputs <- loadTopLevel imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
-      check (keys ρ == keys inputs) "top-level environment matches its derivations"
+      check (keys ρ == keys inputs) "top-level α-graph and dependence-graph environments bind the same names"
       { moduleEnvα, moduleEnv } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
          when (isJust mod) $ for_ (Map.lookup q moduleEnvα) \ρ_q -> do
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
-               ("module " <> dottedName q <> ": members match its environment")
+               ("module " <> dottedName q <> ": context and environment bind the same names")
             check (Just (keys ρ_q) == (keys <$> Map.lookup q moduleEnv))
-               ("module " <> dottedName q <> ": members match their derivations")
+               ("module " <> dottedName q <> ": α-graph and dependence-graph environments bind the same names")
       let gconfig = { n, ρ: restrict (fv e) ρ, inputs: restrict (fv e) inputs, classes }
       pure { s, e, gconfig }
 
