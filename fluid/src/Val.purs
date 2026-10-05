@@ -94,7 +94,7 @@ overChildren f = case _ of
 stripDocs :: forall a. Val a -> Val a
 stripDocs (Val α _ u) = Val α Nothing (overChildren stripDocs u)
 
--- Data positions: in a list, dictionary or matrix, those of the elements only.
+-- False at shape positions: root, keys and dimensions of a list, dictionary or matrix.
 dataPositions :: forall a. Val a -> Val Boolean
 dataPositions (Val _ _ u) = Val (not container) Nothing (overChildren dataPositions (false <$ u))
    where
