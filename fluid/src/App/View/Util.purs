@@ -134,7 +134,7 @@ type Options =
    { fluidSrcPaths :: Array Folder
    , inputs :: Array Var
    , query :: Boolean -- show documented intermediates
-   , ignoreInputs :: Selector Env -- input positions left out of linked queries; superseded by #1585
+   , ignoreInputs :: Selector Env -- input positions left out of linked queries; retire with #1585
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
