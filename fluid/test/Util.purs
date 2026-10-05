@@ -141,16 +141,16 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
-data Visible
+data VertexSpec
    = Output
    | Input String -- imported variable, documented with its name
    | Intermediate Int -- index among documented vertices of the program, in evaluation order
-   | Doc Visible
+   | Doc VertexSpec
 
 -- Selection and expected dependence, as given by showDeps: data ⸨ ⸩, control ⟪ ⟫.
 data Query
-   = Bwd Visible (ConstrArg -> Selector Val) String
-   | Fwd Visible (ConstrArg -> Selector Val) String
+   = Bwd VertexSpec (ConstrArg -> Selector Val) String
+   | Fwd VertexSpec (ConstrArg -> Selector Val) String
 
 type DepSpec = { file :: String, queries :: Array Query }
 
@@ -168,36 +168,35 @@ includes msg dep_ slice =
 
 depName :: String -> Query -> String
 depName file = case _ of
-   Bwd p _ _ -> file <> ", bwd from " <> name p
-   Fwd p _ _ -> file <> ", fwd from " <> name p
+   Bwd vertex _ _ -> file <> ", bwd from " <> name vertex
+   Fwd vertex _ _ -> file <> ", fwd from " <> name vertex
    where
    name = case _ of
       Output -> "output"
       Input x -> x
       Intermediate n -> "intermediate " <> show n
-      Doc p -> "doc of " <> name p
+      Doc vertex -> "doc of " <> name vertex
 
--- Vertex designated by p; loaded is the graph before the program ran.
-deriv :: forall s. DepGraph Val s -> DepEval -> Visible -> Deriv
-deriv loaded eval = case _ of
-   Output -> eval.root
-   Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x eval.inputs) eval.g.edges of
-      Just [ q ] | Map.member q docs -> q
+-- Vertex specified; loaded is the graph before the program ran.
+deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
+deriv loaded eval@{ g: { docs, edges }, inputs, root } = case _ of
+   Output -> root
+   Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x inputs) edges of
+      Just [ p ] | Map.member p docs -> p
       _ -> error ("input " <> x <> " not bound to documented value")
    Intermediate n -> definitely "intermediate" (A.index intermediates n)
-   Doc p -> definitely "documented" (Map.lookup (deriv loaded eval p) docs)
+   Doc vertex -> definitely "documented" (Map.lookup (deriv loaded eval vertex) docs)
    where
-   docs = eval.g.docs
    intermediates = A.filter (not <<< (_ `Map.member` loaded.vals)) (A.fromFoldable (Map.keys docs))
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
 showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
-showDeps eval deps = joinWith "\n" (documented <> output)
+showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
-   at q = definitely "visible" (Map.lookup q deps)
-   documented = Map.toUnfoldable eval.g.docs <#> \(q × d) ->
-      let Val w _ u = at q in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
-   output = if Map.member eval.root eval.g.docs then [] else [ prettyP (at eval.root) ]
+   at p = definitely "visible" (Map.lookup p deps)
+   documented = Map.toUnfoldable docs <#> \(p × d) ->
+      let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
+   output = if Map.member root docs then [] else [ prettyP (at root) ]
 
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
@@ -206,15 +205,15 @@ testDep file query = do
    { depGraph } <- moduleStore
    eval <- depEval gconfig e
    let
-      selection p δv =
+      selection vertex δv =
          let
-            q = deriv depGraph eval p
+            p = deriv depGraph eval vertex
          in
-            Map.singleton q (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g q)))
+            Map.singleton p (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd p δv expect' -> bwd visibleGraph (selection p δv) × expect'
-         Fwd p δv expect' -> fwd visibleGraph (selection p δv) × expect'
+         Bwd vertex δv expect' -> bwd visibleGraph (selection vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd visibleGraph (selection vertex δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
