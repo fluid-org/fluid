@@ -15,7 +15,7 @@ linkedOutputs_spec1 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "renewables" ]
-        , query: Nothing
+        , query: false
         , linking: true
         , rowFilter: Nothing
         }
@@ -41,7 +41,7 @@ linkedOutputs_spec2 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "nonRenewables" ]
-        , query: Nothing
+        , query: false
         , linking: true
         , rowFilter: Nothing
         }
@@ -65,7 +65,7 @@ movingAverages_spec =
    { spec:
         { fluidSrcPaths
         , inputs: [ "methane" ]
-        , query: Nothing
+        , query: false
         , linking: true
         , rowFilter: Nothing
         }
@@ -80,7 +80,7 @@ linkedOutputs_cases =
    [ { spec:
           { fluidSrcPaths
           , inputs: [ "data" ]
-          , query: Nothing
+          , query: false
           , linking: true
           , rowFilter: Nothing
           }
@@ -93,7 +93,7 @@ linkedOutputs_cases =
           { fluidSrcPaths
 
           , inputs: [ "data" ]
-          , query: Nothing
+          , query: false
           , linking: true
           , rowFilter: Nothing
           }

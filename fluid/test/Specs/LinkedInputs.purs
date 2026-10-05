@@ -11,7 +11,7 @@ linkedInputs_spec3 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "renewables", "nonRenewables" ]
-        , query: Nothing
+        , query: false
         , linking: true
         , rowFilter: Nothing
         }
@@ -32,7 +32,7 @@ linkedInputs_spec4 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "renewables", "nonRenewables" ]
-        , query: Nothing
+        , query: false
         , linking: true
         , rowFilter: Nothing
         }
@@ -62,7 +62,7 @@ linkedInputs_spec5 =
         { fluidSrcPaths
 
         , inputs: [ "nonRenewables", "renewables" ]
-        , query: Nothing
+        , query: false
         , linking: true
         , rowFilter: Nothing
         }

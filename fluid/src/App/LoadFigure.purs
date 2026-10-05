@@ -17,10 +17,8 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (message)
 import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
-import Graph (DVertex'(..))
 import Module.Web (runWebT)
 import Util (definitely, definitely', error, (×))
-import Val (Val(..), asVal)
 
 -- TODO: remove this extra type
 type JsonOptions =
@@ -35,12 +33,7 @@ optionsFromJson :: JsonOptions -> Options
 optionsFromJson spec@{ inputs, query, linking, rowFilter } =
    { fluidSrcPaths: Folder <$> spec.fluidSrcPath
    , inputs
-   , query:
-        if query then
-           Just $ asVal >=> case _ of
-              v@(Val α (Just _) _) -> Just $ DVertex (α × v)
-              _ -> Nothing
-        else Nothing
+   , query
    , linking
    , rowFilter
    }

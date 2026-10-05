@@ -127,6 +127,10 @@ materialise g visible =
       bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
+-- Positions carrying true.
+selected :: forall f. Traversable f => f Boolean -> Set Pos
+selected v = Set.fromFoldable (L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v)))
+
 -- Sparse dependence relation applied to sparse weights.
 applyRel :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
 applyRel r w = foldl (unionWith add) Map.empty $

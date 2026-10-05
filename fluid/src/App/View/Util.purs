@@ -14,12 +14,10 @@ import Data.Either (Either(..))
 import Data.Foldable (all, sequence_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe)
-import Data.Set (Set)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Effect (Effect)
 import File (Folder)
-import Graph (DVertex, Vertex, Query)
 import Lattice (𝔹, (∨))
 import SExpr as S
 import Util (type (×), Endo, check, (×))
@@ -135,7 +133,7 @@ data Filter = Everything | Interactive | Relevant
 type Options =
    { fluidSrcPaths :: Array Folder
    , inputs :: Array Var
-   , query :: Maybe (Query (Val Vertex))
+   , query :: Boolean -- show documented intermediates
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
@@ -149,14 +147,13 @@ type Fig =
    , v :: Val (SelStates 𝔹)
    , ι :: Env (SelStates 𝔹)
    , dir :: Selection Direction
-   , linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-   , linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-   , linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
+   , linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
+   , linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
+   , linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
    , in_views :: Dict (Maybe View) -- strengthen this
-   , in_roots :: Set Vertex
    , out_view :: Maybe View
    , intermediate_views :: Dict (Maybe View)
-   , inerts :: Set DVertex
+   , inerts :: Dict (Val 𝔹) -- inert positions of each intermediate
    , fieldIndex :: FieldIndex
    }
 

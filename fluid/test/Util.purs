@@ -8,7 +8,6 @@ import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
 import Data.Foldable (and, any, for_)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
 import Data.Map (Map)
@@ -22,11 +21,11 @@ import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.String (joinWith, null, trim)
-import Data.Tuple (fst, snd)
+import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
-import Graph.Dep (DepGraph, Deriv, Pos, bwd, fwd, materialise, positions, valAt)
+import Graph.Dep (DepGraph, Deriv, Pos, bwd, fwd, materialise, positions, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -151,9 +150,6 @@ data Query
    | Fwd VertexSpec (ConstrArg -> Selector Val) String
 
 type DepSpec = { file :: String, queries :: Array Query }
-
-selected :: Val 𝔹 -> Set Pos
-selected v = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions v) # L.filter snd <#> fst)
 
 nonZero :: Val DepKind -> Set Pos
 nonZero = map (_ /= Zero) >>> selected
