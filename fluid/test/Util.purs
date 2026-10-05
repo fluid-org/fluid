@@ -6,7 +6,8 @@ import App.Util (Selector, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
-import Data.Foldable (and, elem, for_)
+import Data.Array as A
+import Data.Foldable (and, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
@@ -137,12 +138,21 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    recordGraphSize g
    recordDepGraphSize eval.g
 
+data Dir = Bwd | Fwd
+
+-- Visible vertex carrying the selection.
+data Visible
+   = Output
+   | OutputDoc
+   | Input String
+   | Documented Int -- index among documented vertices, in evaluation order
+
 type DepSpec =
    { file :: String
-   , doc :: Boolean -- select on the doc of the output
+   , on :: Visible
    , δv :: ConstrArg -> Selector Val
-   , expect :: String -- dependence of selection at inputs, then documented vertices; data ⸨ ⸩, control ⟪ ⟫
-   , fwd_expect :: String -- output with its dependence on the inputs the selection depends on; "" to skip
+   , dir :: Dir
+   , expect :: String -- inputs, documented vertices, then output, with dependence; data ⸨ ⸩, control ⟪ ⟫
    }
 
 selected :: Val 𝔹 -> Set Pos
@@ -157,25 +167,42 @@ includes msg dep_ slice =
    unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions slice) (positions dep_))) $
       throw (msg <> " misses α-graph slice:\ndependence\n" <> prettyP dep_ <> "\nα-graph\n" <> prettyP slice)
 
+depName :: DepSpec -> String
+depName { file, on, dir } = file <> ", " <> dir' <> " from " <> on'
+   where
+   dir' = case dir of
+      Bwd -> "bwd"
+      Fwd -> "fwd"
+   on' = case on of
+      Output -> "output"
+      OutputDoc -> "output doc"
+      Input x -> x
+      Documented n -> "documented " <> show n
+
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> DepSpec -> AffError m Unit
-testDep file { doc, δv, expect, fwd_expect } = do
+testDep file { on, δv, dir, expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
    eval <- depEval gconfig e
    let
-      p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
-      out0 = selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)
+      docs = eval.g.docs
+      p = case on of
+         Output -> eval.root
+         OutputDoc -> definitely "output documented" (Map.lookup eval.root docs)
+         Input x -> get x eval.inputs
+         Documented n -> definitely "documented" (A.index (A.fromFoldable (Map.keys docs)) n)
+      arg = constrArg (fieldIndex gconfig.classes)
+      selection = Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
-      deps = bwd visibleGraph (Map.singleton p (selected out0))
+      deps = case dir of
+         Bwd -> bwd visibleGraph selection
+         Fwd -> fwd visibleGraph selection
       at q = definitely "visible" (Map.lookup q deps)
       inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
-      documented = Map.toUnfoldable eval.g.docs <#> \(q × d) ->
+      documented = Map.toUnfoldable docs <#> \(q × d) ->
          let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
-      deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `elem` eval.inputs) deps)
-   withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented)
-   unless (null fwd_expect)
-      $ withMsg "fwd_expect"
-      $ checkPretty fwd_expect (prettyP (definitely "visible" (Map.lookup eval.root deps')))
+      output = if Map.member eval.root docs then [] else [ prettyP (at eval.root) ]
+   withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented <> output)
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹

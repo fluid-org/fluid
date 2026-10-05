@@ -157,8 +157,8 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
 fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step ws (p × sources) =
-      foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (\w -> add' p (applyRel r.out w) ws') (lookup q ws)) ws sources
+   step ws (p × sources) = foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
+   into p ws r w = add' p (applyRel r.out w) ws
 
 -- ======================
 -- boilerplate
