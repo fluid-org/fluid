@@ -119,24 +119,32 @@ materialise g visible =
       bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
--- Weights at the positions of each visible vertex related to the selected positions of q.
-dep :: forall f t s. Traversable f => Semiring s => DepGraph f t -> Edges (SparseRel s) -> Set Pos -> Deriv -> Map Deriv (f s)
-dep g edges selected q = edges # mapWithIndex \p _ ->
-   mapPositions (\i -> fromMaybe zero (lookup p weights >>= lookup i)) (valAt g p)
-   where
-   weights :: Map Deriv (Map Pos s)
-   weights = foldr step
-      (Map.singleton q (Map.fromFoldable ((Set.toUnfoldable selected :: List Pos) <#> (_ × one))))
-      (Map.toUnfoldable edges :: List _)
+-- Sparse dependence relation applied to sparse weights.
+applyRel :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
+applyRel r w = foldl (unionWith add) Map.empty (mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w)
 
+-- Weight 1 at the selected positions.
+unitWeights :: forall s. Semiring s => Map Deriv (Set Pos) -> Map Deriv (Map Pos s)
+unitWeights = map (Set.toMap >>> map (const one))
+
+-- Weights at each visible vertex as a value, zero where absent.
+dense :: forall f t r s. Traversable f => Semiring s => DepGraph f t -> Edges r -> Map Deriv (Map Pos s) -> Map Deriv (f s)
+dense g edges ws = edges # mapWithIndex \p _ ->
+   mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i)) (valAt g p)
+
+-- Dependence of the selection on the positions of each visible vertex.
+bwd :: forall f t s. Traversable f => Semiring s => DepGraph f t -> Edges (SparseRel s) -> Map Deriv (Set Pos) -> Map Deriv (f s)
+bwd g edges selection = dense g edges (foldr step (unitWeights selection) (Map.toUnfoldable edges :: List _))
+   where
    step (p × sources) ws = case lookup p ws of
       Nothing -> ws
-      Just w -> foldlWithIndex (\p' ws' (SparseRel r) -> insertWith (unionWith add) p' (bwd r.in_ w) ws') ws sources
+      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> insertWith (unionWith add) q (applyRel r.in_ w) ws') ws sources
 
-   -- Transpose of a dependence relation, applied to weights at its target positions.
-   bwd :: Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
-   bwd in_ w = foldl (unionWith add) Map.empty $
-      mapWithIndex (\j a -> maybe Map.empty (map (a * _)) (lookup j in_)) w
+-- Dependence of the positions of each visible vertex on the selection.
+fwd :: forall f t s. Traversable f => Semiring s => DepGraph f t -> Edges (SparseRel s) -> Map Deriv (Set Pos) -> Map Deriv (f s)
+fwd g edges selection = dense g edges (foldl step (unitWeights selection) (Map.toUnfoldable edges :: List _))
+   where
+   step ws (p × sources) = foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (\w -> insertWith (unionWith add) p (applyRel r.out w) ws') (lookup q ws)) ws sources
 
 -- ======================
 -- boilerplate

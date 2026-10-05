@@ -6,7 +6,7 @@ import App.Util (Selector, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
-import Data.Foldable (and, for_)
+import Data.Foldable (and, elem, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
@@ -26,7 +26,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (depEval, visible)
-import Graph.Dep (Deriv, Pos, dep, materialise, positions, valAt)
+import Graph.Dep (Deriv, Pos, bwd, fwd, materialise, positions, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -37,7 +37,7 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
-import Util.Map (get, keys, restrict, toUnfoldable)
+import Util.Map (get, keys, restrict, toUnfoldable, values)
 import Val (class HasModuleStore, Env, Val(..), stripDocs)
 
 type TestSuite m = Array (String × m Unit)
@@ -114,15 +114,15 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
    edges <- graphBenchmark benchNames.materialise \_ -> pure (materialise eval.g (visible eval))
-   let deps = dep eval.g edges (selected (stripDocs out0)) eval.root
-   for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) -> do
-      let
-         sel_old = stripDocs (get x in_ρ)
-         sel_new = definitely "visible" (Map.lookup q deps)
-      unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
-         throw ("dependence of " <> x <> " misses α-graph slice:\ndependence\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
+   let deps = bwd eval.g edges (Map.singleton eval.root (selected (stripDocs out0)))
+   for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
+      includes ("dependence on " <> x) (definitely "visible" (Map.lookup q deps)) (stripDocs (get x in_ρ))
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (restrict inputs' in_ρ))
+   -- Likewise the forward slice from the inputs, at the output.
+   let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
+   let deps' = fwd eval.g edges (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
+   includes "dependence of output" (definitely "visible" (Map.lookup eval.root deps')) (stripDocs out1)
 
    case bwd_expect of
       Nothing -> pure unit
@@ -142,24 +142,39 @@ type DepSpec =
    , doc :: Boolean -- select on the doc of the output
    , δv :: ConstrArg -> Selector Val
    , expect :: String -- inputs, then documented vertices, with dependence of the selection, data ⸨ ⸩ and control ⟪ ⟫
+   , fwd_expect :: String -- output with its dependence on the inputs the selection depends on; "" to skip
    }
 
 selected :: Val 𝔹 -> Set Pos
 selected v = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions v) # L.filter snd <#> fst)
 
+nonZero :: Val DepKind -> Set Pos
+nonZero = map (_ /= Zero) >>> selected
+
+-- Dependence is non-zero wherever the α-graph slice is selected.
+includes :: forall m. String -> Val DepKind -> Val 𝔹 -> EffectError m Unit
+includes msg dep_ slice =
+   unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions slice) (positions dep_))) $
+      throw (msg <> " misses α-graph slice:\ndependence\n" <> prettyP dep_ <> "\nα-graph\n" <> prettyP slice)
+
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> DepSpec -> AffError m Unit
-testDep file { doc, δv, expect } = do
+testDep file { doc, δv, expect, fwd_expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
    eval <- depEval gconfig e
    let
       p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
       out0 = selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)
-      deps = dep eval.g (materialise eval.g (visible eval)) (selected out0) p
+      edges = materialise eval.g (visible eval)
+      deps = bwd eval.g edges (Map.singleton p (selected out0))
       at q = definitely "visible" (Map.lookup q deps)
       inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
       documented = Map.toUnfoldable eval.g.docs <#> \(q × d) -> let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
+      deps' = fwd eval.g edges (nonZero <$> Map.filterKeys (_ `elem` eval.inputs) deps)
    withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented)
+   unless (null fwd_expect)
+      $ withMsg "fwd_expect"
+      $ checkPretty fwd_expect (prettyP (definitely "visible" (Map.lookup eval.root deps')))
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
