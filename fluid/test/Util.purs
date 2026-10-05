@@ -102,8 +102,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    let out_dep = valAt eval.g eval.root
    unless (out_dep == stripDocs (erase outα)) $
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
-   let evalG_bwd = fst <<< (depsOf graphed).bwd
-   let evalG_op_bwd = fst <<< (depsOf graphed).fwd
+   let bwdα = fst <<< (depsOf graphed).bwd
+   let fwdα = fst <<< (depsOf graphed).fwd
    let inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
 
    let arg = constrArg (fieldIndex gconfig.classes)
@@ -111,7 +111,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
    in_ρ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
-      graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
+      graphBenchmark benchNames.bwd \_ -> pure (bwdα (report out0))
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
    visibleGraph <- graphBenchmark benchNames.materialise \_ ->
@@ -120,7 +120,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
       includes ("dependence on " <> x) (definitely "visible" (Map.lookup q deps)) (stripDocs (get x in_ρ))
 
-   out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (restrict inputs' in_ρ))
+   out1 <- graphBenchmark benchNames.fwd \_ -> pure (fwdα (restrict inputs' in_ρ))
    -- Likewise the forward slice from the inputs, at the output.
    let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
    let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
