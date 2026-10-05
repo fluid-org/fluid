@@ -141,7 +141,7 @@ type DepSpec =
    { file :: String
    , doc :: Boolean -- select on the doc of the output
    , δv :: ConstrArg -> Selector Val
-   , expect :: String -- inputs, then documented vertices, with dependence of the selection, data ⸨ ⸩ and control ⟪ ⟫
+   , expect :: String -- dependence of selection at inputs, then documented vertices; data ⸨ ⸩, control ⟪ ⟫
    , fwd_expect :: String -- output with its dependence on the inputs the selection depends on; "" to skip
    }
 
@@ -169,7 +169,8 @@ testDep file { doc, δv, expect, fwd_expect } = do
       deps = bwd visibleGraph (Map.singleton p (selected out0))
       at q = definitely "visible" (Map.lookup q deps)
       inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
-      documented = Map.toUnfoldable eval.g.docs <#> \(q × d) -> let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
+      documented = Map.toUnfoldable eval.g.docs <#> \(q × d) ->
+         let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
       deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `elem` eval.inputs) deps)
    withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented)
    unless (null fwd_expect)

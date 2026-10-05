@@ -86,8 +86,7 @@ addEdge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s =>
 addEdge p q r =
    modify_ \g -> g { edges = alter (Just <<< insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
 
--- Visible vertices labelled by their values; edge between two of them labelled by the dependence relation summed
--- over the paths through hidden vertices only.
+-- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
 type VisibleGraph (f :: Type -> Type) s =
    { vals :: Map Deriv (f Unit)
    , edges :: Edges (SparseRel s)
@@ -130,7 +129,12 @@ materialise g visible =
 
 -- Sparse dependence relation applied to sparse weights.
 applyRel :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
-applyRel r w = foldl (unionWith add) Map.empty (mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w)
+applyRel r w = foldl (unionWith add) Map.empty $
+   mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w
+
+-- Add weights at a vertex.
+add' :: forall s. Semiring s => Deriv -> Map Pos s -> Map Deriv (Map Pos s) -> Map Deriv (Map Pos s)
+add' = insertWith (unionWith add)
 
 -- Weight 1 at the selected positions.
 unitWeights :: forall s. Semiring s => Map Deriv (Set Pos) -> Map Deriv (Map Pos s)
@@ -147,13 +151,14 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
    where
    step (p × sources) ws = case lookup p ws of
       Nothing -> ws
-      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> insertWith (unionWith add) q (applyRel r.in_ w) ws') ws sources
+      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applyRel r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
 fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step ws (p × sources) = foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (\w -> insertWith (unionWith add) p (applyRel r.out w) ws') (lookup q ws)) ws sources
+   step ws (p × sources) =
+      foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (\w -> add' p (applyRel r.out w) ws') (lookup q ws)) ws sources
 
 -- ======================
 -- boilerplate
