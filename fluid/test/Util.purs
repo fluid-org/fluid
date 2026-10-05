@@ -7,14 +7,15 @@ import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
-import Data.Foldable (and, for_)
+import Data.Foldable (and, any, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
-import Control.Monad.Error.Class (class MonadError, class MonadThrow)
+import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
@@ -22,12 +23,10 @@ import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.String (joinWith, null, trim)
 import Data.Tuple (fst, snd)
-import Effect.Class (class MonadEffect)
-import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
-import Eval.Dep (depEval, visible)
-import Graph.Dep (Deriv, Pos, bwd, fwd, materialise, positions, valAt)
+import Eval.Dep (DepEval, depEval, visible)
+import Graph.Dep (DepGraph, Deriv, Pos, bwd, fwd, materialise, positions, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -37,9 +36,9 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
+import Util (type (×), AffError, EffectError, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, Env, Val(..), stripDocs)
+import Val (class HasModuleStore, Env, Val(..), moduleStore, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -102,8 +101,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    let out_dep = valAt eval.g eval.root
    unless (out_dep == stripDocs (erase outα)) $
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
-   let evalG_bwd = fst <<< (depsOf graphed).bwd
-   let evalG_op_bwd = fst <<< (depsOf graphed).fwd
+   let bwdα = fst <<< (depsOf graphed).bwd
+   let fwdα = fst <<< (depsOf graphed).fwd
    let inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
 
    let arg = constrArg (fieldIndex gconfig.classes)
@@ -111,19 +110,20 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 
    in_ρ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
-      graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
+      graphBenchmark benchNames.bwd \_ -> pure (bwdα (report out0))
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
-   visibleGraph <- graphBenchmark benchNames.materialise \_ -> pure (materialise eval.g (visible eval))
+   visibleGraph <- graphBenchmark benchNames.materialise \_ ->
+      pure (materialise eval.g (visible eval `Set.union` Set.fromFoldable (values eval.inputs)))
    let deps = bwd visibleGraph (Map.singleton eval.root (selected (stripDocs out0)))
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
-      includes ("dependence on " <> x) (definitely "visible" (Map.lookup q deps)) (stripDocs (get x in_ρ))
+      includes ("dependence on " <> x) (definitely' (Map.lookup q deps)) (stripDocs (get x in_ρ))
 
-   out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (restrict inputs' in_ρ))
+   out1 <- graphBenchmark benchNames.fwd \_ -> pure (fwdα (restrict inputs' in_ρ))
    -- Likewise the forward slice from the inputs, at the output.
    let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
    let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
-   includes "dependence of output" (definitely "visible" (Map.lookup eval.root deps')) (stripDocs out1)
+   includes "dependence of output" (definitely' (Map.lookup eval.root deps')) (stripDocs out1)
 
    case bwd_expect of
       Nothing -> pure unit
@@ -139,16 +139,16 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
-data Visible
+data VertexSpec
    = Output
-   | Input String
-   | Intermediate Int -- index among documented vertices, in evaluation order
-   | Doc Visible
+   | Input String -- imported variable, documented with its name
+   | Intermediate Int -- index among documented vertices of the program, in evaluation order
+   | Doc VertexSpec
 
--- Selection and expected inputs, documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫.
+-- Selection and expected dependence, as given by showDeps: data ⸨ ⸩, control ⟪ ⟫.
 data Query
-   = Bwd Visible (ConstrArg -> Selector Val) String
-   | Fwd Visible (ConstrArg -> Selector Val) String
+   = Bwd VertexSpec (ConstrArg -> Selector Val) String
+   | Fwd VertexSpec (ConstrArg -> Selector Val) String
 
 type DepSpec = { file :: String, queries :: Array Query }
 
@@ -166,39 +166,61 @@ includes msg dep_ slice =
 
 depName :: String -> Query -> String
 depName file = case _ of
-   Bwd on _ _ -> file <> ", bwd from " <> name on
-   Fwd on _ _ -> file <> ", fwd from " <> name on
+   Bwd vertex _ _ -> file <> ", bwd from " <> name vertex
+   Fwd vertex _ _ -> file <> ", fwd from " <> name vertex
    where
    name = case _ of
       Output -> "output"
       Input x -> x
       Intermediate n -> "intermediate " <> show n
-      Doc on -> "doc of " <> name on
+      Doc vertex -> "doc of " <> name vertex
+
+-- depGraph is the store's graph, from before the program ran.
+deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
+deriv depGraph eval@{ g: { docs, edges }, inputs, root } = case _ of
+   Output -> root
+   Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x inputs) edges of
+      Just [ p ] | Map.member p docs -> p
+      _ -> error ("input " <> x <> " not bound to documented value")
+   Intermediate n -> intermediates ! n
+   Doc vertex -> definitely' (Map.lookup (deriv depGraph eval vertex) docs)
+   where
+   intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
+
+-- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
+showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
+showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
+   where
+   at p = definitely' (Map.lookup p deps)
+   documented = Map.toUnfoldable docs <#> \(p × d) ->
+      let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
+   output = if Map.member root docs then [] else [ prettyP (at root) ]
+
+selection
+   :: forall s
+    . GraphConfig
+   -> DepGraph Val s
+   -> DepEval
+   -> VertexSpec
+   -> (ConstrArg -> Selector Val)
+   -> Map Deriv (Set Pos)
+selection { classes } depGraph eval vertex δv =
+   Map.singleton p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
+   where
+   p = deriv depGraph eval vertex
 
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
+   { depGraph } <- moduleStore
    eval <- depEval gconfig e
    let
-      docs = eval.g.docs
-      vertex = case _ of
-         Output -> eval.root
-         Input x -> get x eval.inputs
-         Intermediate n -> definitely "documented" (A.index (A.fromFoldable (Map.keys docs)) n)
-         Doc on -> definitely "documented" (Map.lookup (vertex on) docs)
-      arg = constrArg (fieldIndex gconfig.classes)
-      selection on δv = let p = vertex on in Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd on δv expect' -> bwd visibleGraph (selection on δv) × expect'
-         Fwd on δv expect' -> fwd visibleGraph (selection on δv) × expect'
-      at q = definitely "visible" (Map.lookup q deps)
-      inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
-      documented = Map.toUnfoldable docs <#> \(q × d) ->
-         let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
-      output = if Map.member eval.root docs then [] else [ prettyP (at eval.root) ]
-   withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented <> output)
+         Bwd vertex δv expect' -> bwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
+   withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
@@ -234,15 +256,3 @@ checkPretty :: forall m. String -> String -> EffectError m Unit
 checkPretty expect actual = do
    unless (trim expect `eq` actual) $
       throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> actual)
-
-testOutcome :: Boolean -> Endo String
-testOutcome b s = "\x1b[" <> (if b then "32" else "31") <> "m " <> (if b then "✔" else "✖") <> "\x1b[0m " <> s
-
-testCondition :: forall m. MonadThrow Error m => MonadEffect m => String -> Boolean -> String -> m Unit
-testCondition testName b msg = do
-   log (testOutcome b msg')
-   when (not b) $
-      throw "Test failed" -- could improve this to accumulate test failures rather than "failing fast"
-   where
-   msg' = testName <> ": " <> msg
-
