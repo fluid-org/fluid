@@ -139,7 +139,7 @@ selectionResult fig@{ dir, v, ρ, ι } =
    reportIn = spyWhen tracing.mediatingData ("Mediating inputs") (prettyP <<< erase)
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
 
--- Intermediates with dependence under either selection.
+-- Intermediates reachable from either selection.
 intermediates :: Fig -> Selection (Map Deriv (Val 𝔹)) -> Map Deriv (Val (SelStates 𝔹))
 intermediates { inertι } ιs =
    Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inertι # mapWithIndex \p inert ->
