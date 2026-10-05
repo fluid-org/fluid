@@ -15,7 +15,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
-import Control.Monad.Error.Class (class MonadError, class MonadThrow)
+import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
@@ -23,8 +23,6 @@ import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.String (joinWith, null, trim)
 import Data.Tuple (fst, snd)
-import Effect.Class (class MonadEffect)
-import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
@@ -38,7 +36,7 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
+import Util (type (×), AffError, EffectError, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, keys, restrict, toUnfoldable, values)
 import Val (class HasModuleStore, Env, Val(..), moduleStore, stripDocs)
 
@@ -258,14 +256,3 @@ checkPretty :: forall m. String -> String -> EffectError m Unit
 checkPretty expect actual = do
    unless (trim expect `eq` actual) $
       throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> actual)
-
-testOutcome :: Boolean -> Endo String
-testOutcome b s = "\x1b[" <> (if b then "32" else "31") <> "m " <> (if b then "✔" else "✖") <> "\x1b[0m " <> s
-
-testCondition :: forall m. MonadThrow Error m => MonadEffect m => String -> Boolean -> String -> m Unit
-testCondition testName b msg = do
-   log (testOutcome b msg')
-   when (not b) $
-      throw "Test failed" -- could improve this to accumulate test failures rather than "failing fast"
-   where
-   msg' = testName <> ": " <> msg
