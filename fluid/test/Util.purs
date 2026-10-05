@@ -11,6 +11,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
 import Data.Map as Map
+import Data.Set (Set)
 import Data.Set as Set
 import Control.Monad.Error.Class (class MonadError, class MonadThrow)
 import Control.Monad.Reader (class MonadReader)
@@ -24,8 +25,8 @@ import Effect.Class (class MonadEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
-import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Deriv, Edges, SparseRel, dep, materialise, positions, valAt)
+import Eval.Dep (depEval, visible)
+import Graph.Dep (Deriv, Pos, dep, materialise, positions, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -36,8 +37,8 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
-import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, Env(..), Val, stripDocs)
+import Util.Map (get, keys, restrict, toUnfoldable)
+import Val (class HasModuleStore, Env, Val(..), stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -112,10 +113,12 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
-   edges <- graphBenchmark benchNames.materialise \_ -> pure (inputEdges eval eval.root)
-   let Env ρ_dep = inputDep eval eval.root edges (stripDocs out0)
-   for_ (toUnfoldable ρ_dep :: List (String × Val DepKind)) \(x × sel_new) -> do
-      let sel_old = stripDocs (get x in_ρ)
+   edges <- graphBenchmark benchNames.materialise \_ -> pure (materialise eval.g (visible eval))
+   let deps = dep eval.g edges (selected (stripDocs out0)) eval.root
+   for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) -> do
+      let
+         sel_old = stripDocs (get x in_ρ)
+         sel_new = definitely "visible" (Map.lookup q deps)
       unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions sel_old) (positions sel_new))) $
          throw ("dependence of " <> x <> " misses α-graph slice:\ndependence\n" <> prettyP sel_new <> "\nα-graph\n" <> prettyP sel_old)
 
@@ -138,18 +141,11 @@ type DepSpec =
    { file :: String
    , doc :: Boolean -- select on the doc of the output
    , δv :: ConstrArg -> Selector Val
-   , expect :: String -- input environment with dependence of the selection, data ⸨ ⸩ and control ⟪ ⟫
+   , expect :: String -- inputs, then documented vertices, with dependence of the selection, data ⸨ ⸩ and control ⟪ ⟫
    }
 
--- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-inputEdges :: DepEval -> Deriv -> Edges (SparseRel DepKind)
-inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `Set.union` Set.singleton p)
-
-inputDep :: DepEval -> Deriv -> Edges (SparseRel DepKind) -> Val 𝔹 -> Env DepKind
-inputDep eval p edges out = Env $ eval.inputs <#> \q ->
-   dep edges q selected p (valAt eval.g q)
-   where
-   selected = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions out) # L.filter snd <#> fst)
+selected :: Val 𝔹 -> Set Pos
+selected v = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions v) # L.filter snd <#> fst)
 
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> DepSpec -> AffError m Unit
 testDep file { doc, δv, expect } = do
@@ -159,9 +155,11 @@ testDep file { doc, δv, expect } = do
    let
       p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
       out0 = selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)
-   let Env ρ = inputDep eval p (inputEdges eval p) out0
-   withMsg "expect" $ checkPretty expect $ joinWith "\n" $
-      (toUnfoldable ρ :: Array (String × Val DepKind)) <#> \(x × v) -> x <> ": " <> prettyP v
+      deps = dep eval.g (materialise eval.g (visible eval)) (selected out0) p
+      at q = definitely "visible" (Map.lookup q deps)
+      inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
+      documented = Map.toUnfoldable eval.g.docs <#> \(q × d) -> let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
+   withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented)
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹

@@ -4,7 +4,8 @@ import Prelude
 
 import Control.Apply (lift2)
 import Control.Monad.State (class MonadState, evalState, execState, gets, modify_, state)
-import Data.Foldable (foldl, sum)
+import Data.Foldable (foldl, foldr)
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.List as L
@@ -118,12 +119,24 @@ materialise g visible =
       bySource m = fromFoldableWith Map.union $
          (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
--- Weights at the positions of p related to the selected positions of q.
-dep :: forall f s. Traversable f => Semiring s => Edges (SparseRel s) -> Deriv -> Set Pos -> Deriv -> f Unit -> f s
-dep edges p selected q = mapPositions weight
+-- Weights at the positions of each visible vertex related to the selected positions of q.
+dep :: forall f t s. Traversable f => Semiring s => DepGraph f t -> Edges (SparseRel s) -> Set Pos -> Deriv -> Map Deriv (f s)
+dep g edges selected q = edges # mapWithIndex \p _ ->
+   mapPositions (\i -> fromMaybe zero (lookup p weights >>= lookup i)) (valAt g p)
    where
-   in_ = maybe Map.empty (\(SparseRel r) -> r.in_) (lookup q edges >>= lookup p)
-   weight i = sum ((Set.toUnfoldable selected :: List Pos) <#> \j -> fromMaybe zero (lookup j in_ >>= lookup i))
+   weights :: Map Deriv (Map Pos s)
+   weights = foldr step
+      (Map.singleton q (Map.fromFoldable ((Set.toUnfoldable selected :: List Pos) <#> (_ × one))))
+      (Map.toUnfoldable edges :: List _)
+
+   step (p × sources) ws = case lookup p ws of
+      Nothing -> ws
+      Just w -> foldlWithIndex (\p' ws' (SparseRel r) -> insertWith (unionWith add) p' (sourceWeights r.in_ w) ws') ws sources
+
+   -- Weights at the source positions of a relation related to the given weights at its target positions.
+   sourceWeights :: Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
+   sourceWeights in_ w = foldl (unionWith add) Map.empty $
+      mapWithIndex (\j a -> maybe Map.empty (map (a * _)) (lookup j in_)) w
 
 -- ======================
 -- boilerplate
