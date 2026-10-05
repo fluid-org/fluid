@@ -82,7 +82,7 @@ dep_cases =
      }
    , { file: "dependence/doc_this.fld"
      , queries:
-          [ Bwd OutputDoc (\arg -> arg cParagraph f_fragments (listElement 2 select))
+          [ Bwd (Doc Output) (\arg -> arg cParagraph f_fragments (listElement 2 select))
                "x: ⸨1⸩\ny: ⸨2⸩\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
           , Fwd (Input "x") (\_ -> select) "x: ⸨1⸩\ny: 2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
           ]

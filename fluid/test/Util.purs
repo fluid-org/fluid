@@ -141,9 +141,9 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 -- Visible vertex carrying the selection.
 data Visible
    = Output
-   | OutputDoc
    | Input String
    | Intermediate Int -- index among documented vertices, in evaluation order
+   | Doc Visible
 
 -- Selection and expected inputs, documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫.
 data Query
@@ -171,9 +171,9 @@ depName file = case _ of
    where
    name = case _ of
       Output -> "output"
-      OutputDoc -> "output doc"
       Input x -> x
       Intermediate n -> "intermediate " <> show n
+      Doc on -> "doc of " <> name on
 
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
@@ -184,9 +184,9 @@ testDep file query = do
       docs = eval.g.docs
       vertex = case _ of
          Output -> eval.root
-         OutputDoc -> definitely "output documented" (Map.lookup eval.root docs)
          Input x -> get x eval.inputs
          Intermediate n -> definitely "documented" (A.index (A.fromFoldable (Map.keys docs)) n)
+         Doc on -> definitely "documented" (Map.lookup (vertex on) docs)
       arg = constrArg (fieldIndex gconfig.classes)
       selection on δv = let p = vertex on in Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
