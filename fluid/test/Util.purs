@@ -177,17 +177,17 @@ depName file = case _ of
       Intermediate n -> "intermediate " <> show n
       Doc vertex -> "doc of " <> name vertex
 
--- Vertex specified; loaded is the graph before the program ran.
+-- depGraph is the store's graph, from before the program ran.
 deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
-deriv loaded eval@{ g: { docs, edges }, inputs, root } = case _ of
+deriv depGraph eval@{ g: { docs, edges }, inputs, root } = case _ of
    Output -> root
    Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x inputs) edges of
       Just [ p ] | Map.member p docs -> p
       _ -> error ("input " <> x <> " not bound to documented value")
    Intermediate n -> definitely "intermediate" (A.index intermediates n)
-   Doc vertex -> definitely "documented" (Map.lookup (deriv loaded eval vertex) docs)
+   Doc vertex -> definitely "documented" (Map.lookup (deriv depGraph eval vertex) docs)
    where
-   intermediates = A.filter (not <<< (_ `Map.member` loaded.vals)) (A.fromFoldable (Map.keys docs))
+   intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
 showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
