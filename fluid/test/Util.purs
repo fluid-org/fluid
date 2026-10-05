@@ -168,14 +168,14 @@ includes msg dep_ slice =
 
 depName :: String -> Query -> String
 depName file = case _ of
-   Bwd on _ _ -> file <> ", bwd from " <> name on
-   Fwd on _ _ -> file <> ", fwd from " <> name on
+   Bwd vis _ _ -> file <> ", bwd from " <> name vis
+   Fwd vis _ _ -> file <> ", fwd from " <> name vis
    where
    name = case _ of
       Output -> "output"
       Input x -> x
       Intermediate n -> "intermediate " <> show n
-      Doc on -> "doc of " <> name on
+      Doc vis -> "doc of " <> name vis
 
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
@@ -189,17 +189,20 @@ testDep file query = do
          Just [ p ] | Map.member p docs -> p
          _ -> error ("input " <> x <> " not bound to documented value")
       intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
-      vertex = case _ of
+      deriv = case _ of
          Output -> eval.root
          Input x -> input x
          Intermediate n -> definitely "intermediate" (A.index intermediates n)
-         Doc on -> definitely "documented" (Map.lookup (vertex on) docs)
-      arg = constrArg (fieldIndex gconfig.classes)
-      selection on δv = let p = vertex on in Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
+         Doc vis -> definitely "documented" (Map.lookup (deriv vis) docs)
+      selection vis δv =
+         let
+            p = deriv vis
+         in
+            Map.singleton p (selected (selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)))
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd on δv expect' -> bwd visibleGraph (selection on δv) × expect'
-         Fwd on δv expect' -> fwd visibleGraph (selection on δv) × expect'
+         Bwd vis δv expect' -> bwd visibleGraph (selection vis δv) × expect'
+         Fwd vis δv expect' -> fwd visibleGraph (selection vis δv) × expect'
       at q = definitely "visible" (Map.lookup q deps)
       documented = Map.toUnfoldable docs <#> \(q × d) ->
          let Val w _ u = at q in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
