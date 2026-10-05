@@ -129,6 +129,19 @@ linkedOutputs_cases =
           )
      , file: "linked_outputs/convolution.fld"
      }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "xs", "n", "ys", "m" ]
+          , query: false
+          , ignoreInputs: selectNone
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \arg -> arg cPair f_fst (listElement 0 select)
+     , out_expect: \arg -> arg cPair f_fst (listElement 0 select >.> listElement 1 select)
+     , inert_expect: \_ -> Nothing
+     , file: "linked_outputs/filter.fld"
+     }
    , linkedOutputs_spec1
    , linkedOutputs_spec2
    , movingAverages_spec
