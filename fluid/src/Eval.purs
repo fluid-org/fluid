@@ -31,6 +31,7 @@ import Effect.Exception (Error)
 import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph (class Graph, Vertex, op, selectαs, select𝔹s, showGraph, showVertices, vertices)
+import Graph.Dep (Deriv)
 import Graph.GraphImpl (GraphImpl)
 import Graph.Slice (bwdSlice)
 import Graph.WithGraph (class MonadWithGraphAlloc, new, runAllocT, runWithGraphT_spy)
@@ -52,6 +53,7 @@ import Val (class HasModuleStore, moduleStore, modifyModuleStore, BaseVal, DictR
 type GraphConfig =
    { n :: Int
    , ρ :: Env Vertex
+   , inputs :: Dict Deriv -- ρ as derivations in the module store's dependence graph
    , classes :: ClassTable
    }
 
@@ -192,8 +194,8 @@ eval doc_opt ρ e0 αs = do
                _, _ -> throw $ "Found " <> prettyP (unit <$ v) <> ", expected list, dict or matrix"
          ModMember q x -> do
             traceWhen (isJust doc_opt) $ "Discarding doc (module member " <> x <> ")"
-            { moduleEnv } <- moduleStore
-            let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
+            { moduleEnvα } <- moduleStore
+            let ρ_q = definitely "module loaded" (Map.lookup q moduleEnvα)
             withMsg "Module member" $ lookup' x ρ_q
          App e es -> do
             v <- eval Nothing ρ e αs
@@ -446,12 +448,12 @@ load
    => ModuleName
    -> m (Env Vertex)
 load q = do
-   { moduleBody, moduleEnv, ρ0 } <- moduleStore
-   case Map.lookup q moduleEnv of
+   { moduleBody, moduleEnvα, ρ0α } <- moduleStore
+   case Map.lookup q moduleEnvα of
       Just ρ_q -> pure ρ_q
       Nothing -> do
-         ρ_q <- maybe (pure empty) (\body -> eval_module ρ0 q body empty) (Map.lookup q moduleBody)
-         modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
+         ρ_q <- maybe (pure empty) (\body -> eval_module ρ0α q body empty) (Map.lookup q moduleBody)
+         modifyModuleStore (\s -> s { moduleEnvα = Map.insert q ρ_q s.moduleEnvα })
          pure ρ_q
 
 type GraphEval g s t =
@@ -510,8 +512,8 @@ graphEval
    -> m (GraphEval GraphImpl Env Val)
 graphEval { n, ρ, classes } stmt =
    withClasses classes do
-      { ρ0, moduleEnv } <- moduleStore
-      let mαs = vertices ρ0 ∪ Set.unions (vertices <$> Map.values moduleEnv)
+      { ρ0α, moduleEnvα } <- moduleStore
+      let mαs = vertices ρ0α ∪ Set.unions (vertices <$> Map.values moduleEnvα)
       _ × _ × g × outα <- flip runAllocT n do
          g × outα <- runWithGraphT_spy (asReturns <$> evalStmt Nothing ρ stmt mempty) (vertices ρ ∪ mαs)
          when checking.outputsInGraph $ check (vertices outα ⊆ vertices g) "outputs in graph"

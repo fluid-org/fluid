@@ -2,23 +2,22 @@ module Eval.Dep where
 
 import Prelude hiding (absurd, apply)
 
-import Bind (dottedName, varAnon, varThis)
+import Bind (dottedName, prefixOf, varAnon, varThis)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, fold, foldl, sum)
+import Data.Foldable (elem, fold, foldM, foldl, sum)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
-import Data.List.NonEmpty (toList) as NEL
+import Data.List.NonEmpty (fromList, head, snoc, toList, unsnoc) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
-import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
@@ -28,20 +27,21 @@ import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (GraphConfig)
-import Expr (Branch(..), Def(..), Expr(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Deriv, attachDoc, deriv, emptyGraph, zeros)
-import Lattice (class DepSemiring, Raw, ctrlWeight, erase)
+import Graph.Dep (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
+import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
+import ModuleGraph (ModuleName, implicit)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
 import Util (type (×), absurd, check, definitely, definitely', definitelyRight, error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
+import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, listElement, matrixElement, moduleStore, partialArg, partialFun, root, stripDocs, via, viaAll)
+import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, listElement, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -50,6 +50,10 @@ data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Ctrl s)
 asReturns :: forall s. Result s -> Deriv × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
+
+asAssigns :: forall s. Result s -> Dict (GVal s) × Ctrl s
+asAssigns (Assigns ρ ctrl) = ρ × ctrl
+asAssigns (Returns _) = error "Assigns expected"
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
@@ -201,8 +205,8 @@ eval inputs = case _ of
    ModMember q x -> do
       { moduleEnv } <- moduleStore
       let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
-      u <- withMsg "Module member" $ lookup' x ρ_q
-      deliver inputs.ctrl { val: stripDocs (erase u), inEdges: Nil }
+      p <- withMsg "Module member" $ lookup' x ρ_q
+      gvalAt p >>= deliver inputs.ctrl
    App e es -> do
       f <- gval <$> eval inputs e
       vs <- traverse (eval inputs >>> map gval) es
@@ -412,13 +416,7 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
       where
       ctrl' = via root f
 
-type DepEval s =
-   { g :: DepGraph Val s
-   , inputs :: Dict Deriv
-   , root :: Deriv
-   }
-
-depEval
+evalModule
    :: forall m s
     . HasClasses m
    => HasModuleStore m
@@ -426,14 +424,108 @@ depEval
    => MonadAff m
    => MonadReader FileCxt m
    => LoadFile m
+   => MonadState (DepGraph Val s) m
    => DepSemiring s
+   => Dict Deriv
+   -> ModuleName
+   -> Module
+   -> m (Dict Deriv)
+evalModule ρ0 q (Module is ss) = do
+   ρ_imp <- foldM (evalImport q) ρ0 is
+   ρ_name <- maplet "__name__" <$> deriv (Val unit Nothing (V.Lit (Str (dottedName q))))
+   ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
+   bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
+   members <- traverse (record >>> map fst) bindings
+   pure (ρ_name <+> members)
+
+-- Bind imported value members; delete bindings for names that now denote modules.
+evalImport
+   :: forall m s
+    . HasClasses m
+   => HasModuleStore m
+   => MonadError Error m
+   => MonadAff m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => MonadState (DepGraph Val s) m
+   => DepSemiring s
+   => ModuleName
+   -> Dict Deriv
+   -> Import
+   -> m (Dict Deriv)
+evalImport enclosing ρ = case _ of
+   Import q Nothing -> do
+      _ <- load q
+      loadAncestors Nothing q
+      pure (delete (NEL.head q) ρ)
+   Import q (Just xs) -> do
+      ρ_q <- load q
+      loadAncestors (Just enclosing) q
+      importsFrom q ρ_q ρ xs
+   where
+   loadAncestors bound q = case NEL.fromList (NEL.unsnoc q).init of
+      Nothing -> pure unit
+      Just q'
+         | maybe false (q' `prefixOf` _) bound -> pure unit
+         | otherwise -> void (load q') *> loadAncestors bound q'
+
+   importsFrom q ρ_q = foldM step
+      where
+      step ρ' x = case lookup x ρ_q of
+         Just p -> pure (ρ' <+> maplet x p)
+         Nothing -> do
+            { moduleBody } <- moduleStore
+            when (Map.member (NEL.snoc q x) moduleBody) (void (load (NEL.snoc q x)))
+            pure (delete x ρ')
+
+-- Members of the implicit modules loaded so far.
+implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)
+implicitMembers = moduleStore <#> \{ moduleEnv } ->
+   foldl (\ρ q -> ρ <+> findWithDefault empty q moduleEnv) empty implicit
+
+load
+   :: forall m s
+    . HasClasses m
+   => HasModuleStore m
+   => MonadError Error m
+   => MonadAff m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => MonadState (DepGraph Val s) m
+   => DepSemiring s
+   => ModuleName
+   -> m (Dict Deriv)
+load q = do
+   { moduleBody, moduleEnv } <- moduleStore
+   case Map.lookup q moduleEnv of
+      Just ρ_q -> pure ρ_q
+      Nothing -> do
+         ρ0 <- implicitMembers
+         ρ_q <- maybe (pure empty) (evalModule ρ0 q) (Map.lookup q moduleBody)
+         modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
+         pure ρ_q
+
+type DepEval =
+   { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
+   , inputs :: Dict Deriv
+   , root :: Deriv
+   }
+
+depEval
+   :: forall m
+    . HasClasses m
+   => HasModuleStore m
+   => MonadError Error m
+   => MonadAff m
+   => MonadReader FileCxt m
+   => LoadFile m
    => GraphConfig
    -> Stmt
-   -> m (DepEval s)
-depEval { ρ, classes } s =
+   -> m DepEval
+depEval { inputs, classes } s =
    withClasses classes do
-      (p × inputs) × g <- flip runStateT emptyGraph do
-         ins <- for (unwrap (erase ρ) :: Dict (Raw Val)) \v -> deriv (stripDocs v) <#> (_ × stripDocs v)
-         r <- evalStmt { ctrl: Nil, env: gval <$> ins } s
-         pure (fst (asReturns r) × (fst <$> ins))
+      { depGraph } <- moduleStore
+      p × g <- flip runStateT depGraph do
+         env <- traverse gvalAt inputs
+         fst <<< asReturns <$> evalStmt { ctrl: Nil, env } s
       pure { g, inputs, root: p }

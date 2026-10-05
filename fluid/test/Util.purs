@@ -25,9 +25,9 @@ import Effect.Class.Console (log)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval)
-import Graph.Dep (Deriv, Edges, Pos, SparseRel, dep, materialise, positions, valAt)
+import Graph.Dep (Deriv, Edges, SparseRel, dep, materialise, positions, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), Lineage, erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -96,7 +96,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
    eval <- graphBenchmark benchNames.dep \_ ->
-      depEval gconfig s' :: m (DepEval (Lineage (Deriv × Pos) DepKind))
+      depEval gconfig s'
    let out_dep = valAt eval.g eval.root
    unless (out_dep == stripDocs (erase outα)) $
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
@@ -142,10 +142,10 @@ type DepSpec =
    }
 
 -- Materialised relations from the inputs to the given vertex, with every other vertex hidden.
-inputEdges :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Edges (SparseRel DepKind)
+inputEdges :: DepEval -> Deriv -> Edges (SparseRel DepKind)
 inputEdges eval p = materialise eval.g (Set.fromFoldable (values eval.inputs) `Set.union` Set.singleton p)
 
-inputDep :: DepEval (Lineage (Deriv × Pos) DepKind) -> Deriv -> Edges (SparseRel DepKind) -> Val 𝔹 -> Env DepKind
+inputDep :: DepEval -> Deriv -> Edges (SparseRel DepKind) -> Val 𝔹 -> Env DepKind
 inputDep eval p edges out = Env $ eval.inputs <#> \q ->
    dep edges q selected p (valAt eval.g q)
    where
@@ -155,7 +155,7 @@ testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m =
 testDep file { doc, δv, expect } = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
-   eval <- depEval gconfig e :: m (DepEval (Lineage (Deriv × Pos) DepKind))
+   eval <- depEval gconfig e
    let
       p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
       out0 = selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)
