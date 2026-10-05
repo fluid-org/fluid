@@ -7,7 +7,7 @@ import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
-import Data.Foldable (and, for_)
+import Data.Foldable (and, any, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
@@ -146,7 +146,8 @@ data Visible
    | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc Visible
 
--- Selection and expected documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫.
+-- Selection and expected documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫. A doc is
+-- shown only if it has dependence.
 data Query
    = Bwd Visible (ConstrArg -> Selector Val) String
    | Fwd Visible (ConstrArg -> Selector Val) String
@@ -201,7 +202,7 @@ testDep file query = do
          Fwd on δv expect' -> fwd visibleGraph (selection on δv) × expect'
       at q = definitely "visible" (Map.lookup q deps)
       documented = Map.toUnfoldable docs <#> \(q × d) ->
-         let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
+         let Val w _ u = at q in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
       output = if Map.member eval.root docs then [] else [ prettyP (at eval.root) ]
    withMsg "expect" $ checkPretty expect $ joinWith "\n" (documented <> output)
 
