@@ -156,7 +156,7 @@ type Fig =
    , in_views :: Dict (Maybe View) -- strengthen this
    , out_view :: Maybe View
    , intermediate_views :: Map Deriv (Maybe View)
-   , inerts :: Map Deriv (Val 𝔹) -- inert positions of each intermediate
+   , inertι :: Map Deriv (Val 𝔹) -- inert positions of each intermediate
    , fieldIndex :: FieldIndex
    }
 

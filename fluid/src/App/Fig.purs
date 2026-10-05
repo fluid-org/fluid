@@ -141,8 +141,8 @@ selectionResult fig@{ dir, v, ρ, ι } =
 
 -- Intermediates with dependence under either selection.
 intermediates :: Fig -> Selection (Map Deriv (Val 𝔹)) -> Map Deriv (Val (SelStates 𝔹))
-intermediates { inerts } ιs =
-   Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inerts # mapWithIndex \p inert ->
+intermediates { inertι } ιs =
+   Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inertι # mapWithIndex \p inert ->
       selStates <$> inert <*> sel ιs.persistent p inert <*> sel ιs.transient p inert
    where
    sel ι p inert = fromMaybe (false <$ inert) (Map.lookup p ι)
@@ -264,7 +264,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       , in_views: ins $> Nothing
       , out_view: Nothing
       , intermediate_views: Map.empty
-      , inerts: ιs <#> \p -> (&&) <$> val inertBwdι p <*> val inertFwdι p
+      , inertι: ιs <#> \p -> (&&) <$> val inertBwdι p <*> val inertFwdι p
       , fieldIndex: fieldIndex gconfig.classes
       }
 
