@@ -128,7 +128,7 @@ materialise g visible =
    bySource m = fromFoldableWith Map.union $
       (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
 
--- Keep at each vertex only the positions where the predicate holds.
+-- Restrict every dependence relation to the positions where the predicate holds.
 mask :: forall f s. Traversable f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
 mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
    where
