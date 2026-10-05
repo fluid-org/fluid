@@ -86,6 +86,13 @@ addEdge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s =>
 addEdge p q r =
    modify_ \g -> g { edges = alter (Just <<< insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
 
+-- Visible vertices labelled by their values; edge between two of them labelled by the dependence relation summed
+-- over the paths through hidden vertices only.
+type VisibleGraph (f :: Type -> Type) s =
+   { vals :: Map Deriv (f Unit)
+   , edges :: Edges (SparseRel s)
+   }
+
 -- Relies on every edge running from an earlier to a later vertex in evaluation order.
 materialise
    :: forall f s
@@ -94,9 +101,11 @@ materialise
    => DepSemiring s
    => DepGraph f (Lineage (Deriv × Pos) s)
    -> Set Deriv
-   -> Edges (SparseRel s)
+   -> VisibleGraph f s
 materialise g visible =
-   (foldl step { weightsAt: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
+   { vals: Map.filterKeys (_ `Set.member` visible) g.vals
+   , edges: (foldl step { weightsAt: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
+   }
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
@@ -128,21 +137,21 @@ unitWeights :: forall s. Semiring s => Map Deriv (Set Pos) -> Map Deriv (Map Pos
 unitWeights = map (Set.toMap >>> map (const one))
 
 -- Weights at each visible vertex as a value, zero where absent.
-dense :: forall f t r s. Traversable f => Semiring s => DepGraph f t -> Edges r -> Map Deriv (Map Pos s) -> Map Deriv (f s)
-dense g edges ws = edges # mapWithIndex \p _ ->
-   mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i)) (valAt g p)
+dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Map Pos s) -> Map Deriv (f s)
+dense g ws = g.vals # mapWithIndex \p ->
+   mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i))
 
 -- Dependence of the selection on the positions of each visible vertex.
-bwd :: forall f t s. Traversable f => Semiring s => DepGraph f t -> Edges (SparseRel s) -> Map Deriv (Set Pos) -> Map Deriv (f s)
-bwd g edges selection = dense g edges (foldr step (unitWeights selection) (Map.toUnfoldable edges :: List _))
+bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
+bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step (p × sources) ws = case lookup p ws of
       Nothing -> ws
       Just w -> foldlWithIndex (\q ws' (SparseRel r) -> insertWith (unionWith add) q (applyRel r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
-fwd :: forall f t s. Traversable f => Semiring s => DepGraph f t -> Edges (SparseRel s) -> Map Deriv (Set Pos) -> Map Deriv (f s)
-fwd g edges selection = dense g edges (foldl step (unitWeights selection) (Map.toUnfoldable edges :: List _))
+fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
+fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step ws (p × sources) = foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (\w -> insertWith (unionWith add) p (applyRel r.out w) ws') (lookup q ws)) ws sources
 

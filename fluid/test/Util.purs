@@ -113,15 +113,15 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
-   edges <- graphBenchmark benchNames.materialise \_ -> pure (materialise eval.g (visible eval))
-   let deps = bwd eval.g edges (Map.singleton eval.root (selected (stripDocs out0)))
+   visibleGraph <- graphBenchmark benchNames.materialise \_ -> pure (materialise eval.g (visible eval))
+   let deps = bwd visibleGraph (Map.singleton eval.root (selected (stripDocs out0)))
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
       includes ("dependence on " <> x) (definitely "visible" (Map.lookup q deps)) (stripDocs (get x in_ρ))
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (evalG_op_bwd (restrict inputs' in_ρ))
    -- Likewise the forward slice from the inputs, at the output.
    let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
-   let deps' = fwd eval.g edges (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
+   let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
    includes "dependence of output" (definitely "visible" (Map.lookup eval.root deps')) (stripDocs out1)
 
    case bwd_expect of
@@ -165,12 +165,12 @@ testDep file { doc, δv, expect, fwd_expect } = do
    let
       p = if doc then definitely "output documented" (Map.lookup eval.root eval.g.docs) else eval.root
       out0 = selectOn δv (constrArg (fieldIndex gconfig.classes)) (valAt eval.g p)
-      edges = materialise eval.g (visible eval)
-      deps = bwd eval.g edges (Map.singleton p (selected out0))
+      visibleGraph = materialise eval.g (visible eval)
+      deps = bwd visibleGraph (Map.singleton p (selected out0))
       at q = definitely "visible" (Map.lookup q deps)
       inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
       documented = Map.toUnfoldable eval.g.docs <#> \(q × d) -> let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
-      deps' = fwd eval.g edges (nonZero <$> Map.filterKeys (_ `elem` eval.inputs) deps)
+      deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `elem` eval.inputs) deps)
    withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented)
    unless (null fwd_expect)
       $ withMsg "fwd_expect"
