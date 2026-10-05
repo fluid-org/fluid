@@ -131,11 +131,11 @@ dep g edges selected q = edges # mapWithIndex \p _ ->
 
    step (p × sources) ws = case lookup p ws of
       Nothing -> ws
-      Just w -> foldlWithIndex (\p' ws' (SparseRel r) -> insertWith (unionWith add) p' (sourceWeights r.in_ w) ws') ws sources
+      Just w -> foldlWithIndex (\p' ws' (SparseRel r) -> insertWith (unionWith add) p' (bwd r.in_ w) ws') ws sources
 
-   -- Weights at the source positions of a relation related to the given weights at its target positions.
-   sourceWeights :: Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
-   sourceWeights in_ w = foldl (unionWith add) Map.empty $
+   -- Transpose of a relation, applied to weights at its target positions.
+   bwd :: Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
+   bwd in_ w = foldl (unionWith add) Map.empty $
       mapWithIndex (\j a -> maybe Map.empty (map (a * _)) (lookup j in_)) w
 
 -- ======================
