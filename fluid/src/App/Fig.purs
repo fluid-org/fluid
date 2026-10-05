@@ -15,6 +15,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Array as A
 import Data.Foldable (elem, or)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
@@ -22,9 +23,8 @@ import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
 import Data.Set as Set
 import Data.Traversable (for_, sequence_)
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (Tuple(..), fst)
 import Dict (Dict)
-import Dict (fromFoldable) as D
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -36,8 +36,8 @@ import Module (prepConfig)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
 import Util (type (×), Endo, absurd, definitely', error, spyWhen, (×))
-import Util.Map (insert, intersectionWith, keys, lookup, mapWithKey, restrict, toUnfoldable, values)
-import Util.Set (empty, (\\), (∈), (∪))
+import Util.Map (insert, intersectionWith, lookup, mapWithKey, restrict, values)
+import Util.Set ((\\), (∈), (∪))
 import Val (class HasModuleStore, Env(..), Val(..), dataPositions)
 
 str
@@ -78,24 +78,24 @@ setInputView x δvw fig = fig
    { in_views = insert x (lookup x fig.in_views # join <#> δvw) fig.in_views
    }
 
-selectIntermediate :: String -> Selector Val -> Endo Fig
-selectIntermediate α δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
+selectIntermediate :: Deriv -> Selector Val -> Endo Fig
+selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
-   ι' × selType = envVal α δv ι
+   ι' × selType = first (\u -> Map.insert p u ι) (δv (definitely' (Map.lookup p ι)))
    ρ' × v' × dir' × ι_final = case selType of
       Transient | dir.transient /= Intermediates -> ρ × v × dir { transient = Intermediates } × ι'
       Transient -> ρ × v × dir × ι'
       _ -> ρ × v × dir × ι
 
-setIntermediateView :: String -> ViewSetter Fig View
-setIntermediateView α δvw fig = fig
-   { intermediate_views = insert α (lookup α fig.intermediate_views # join <#> δvw) fig.intermediate_views
+setIntermediateView :: Deriv -> ViewSetter Fig View
+setIntermediateView p δvw fig = fig
+   { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views
    }
 
 type SelectionResult =
    { v :: Val (SelStates 𝕊)
    , ρ :: Env (SelStates 𝕊)
-   , ι :: Env (SelStates 𝔹)
+   , ι :: Map Deriv (Val (SelStates 𝔹))
    }
 
 selectionResult :: Fig -> SelectionResult
@@ -140,12 +140,12 @@ selectionResult fig@{ dir, v, ρ, ι } =
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
 
 -- Intermediates with dependence under either selection.
-intermediates :: Fig -> Selection (Dict (Val 𝔹)) -> Env (SelStates 𝔹)
+intermediates :: Fig -> Selection (Map Deriv (Val 𝔹)) -> Map Deriv (Val (SelStates 𝔹))
 intermediates { inerts } ιs =
-   Env $ restrict (keys ιs.persistent ∪ keys ιs.transient) inerts # mapWithKey \α inert ->
-      selStates <$> inert <*> sel ιs.persistent α inert <*> sel ιs.transient α inert
+   Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inerts # mapWithIndex \p inert ->
+      selStates <$> inert <*> sel ιs.persistent p inert <*> sel ιs.transient p inert
    where
-   sel ι α inert = fromMaybe (false <$ inert) (lookup α ι)
+   sel ι p inert = fromMaybe (false <$ inert) (Map.lookup p ι)
 
 drawFig :: HTMLId -> Fig -> Effect Unit
 drawFig divId fig = do
@@ -154,10 +154,10 @@ drawFig divId fig = do
    sequence_ $ flip mapWithKey in_views \x view ->
       drawView arg { divId: divId <> "-" <> str.input, suffix: x, view } (selectInput x >>> redraw)
 
-   for_ unused \α -> rootSelect ("#" <> prefix <> "-" <> α) >>= remove
-   sequence_ $ flip mapWithKey (unwrap ι) \α v ->
-      drawView arg { divId: prefix, suffix: α, view: view' options str.intermediate (map to𝕊 <$> v) }
-         (selectIntermediate α >>> redraw)
+   for_ unused \p -> rootSelect ("#" <> prefix <> "-" <> show p) >>= remove
+   sequence_ $ ι # mapWithIndex \p v ->
+      drawView arg { divId: prefix, suffix: show p, view: view' options str.intermediate (map to𝕊 <$> v) }
+         (selectIntermediate p >>> redraw)
    where
    arg = constrArg fig.fieldIndex
    options = { fieldIndex: fig.fieldIndex, rowFilter: fig.spec.rowFilter }
@@ -165,7 +165,7 @@ drawFig divId fig = do
    out_view = view' options str.output v
    in_views = ρ # \(Env ρ) -> mapWithKey (view' options) ρ
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
-   unused = keys fig.ι \\ keys ι
+   unused = Map.keys fig.ι \\ Map.keys ι
    prefix = divId <> "-" <> str.intermediate
 
 drawFile :: File × String -> Effect Unit
@@ -186,10 +186,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       out = root × Map.lookup root docs
       ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definition q >>= (_ `Map.lookup` docs))
       shown = Set.fromFoldable (A.cons root (A.mapMaybe definition (A.fromFoldable (values (fst <$> ins)))))
-      ιs =
-         if query then D.fromFoldable $ (Map.toUnfoldable docs :: Array _) # A.mapMaybe \(p × d) ->
-            if p ∈ shown then Nothing else Just (show p × (p × Just d))
-         else empty
+      ιs = if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs) else Map.empty
 
       unmasked = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
 
@@ -224,8 +221,8 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       toV :: Map Deriv (Val 𝔹) -> Val (SelState 𝔹)
       toV m = selState <$> val inertV out <*> val m out
 
-      toι :: Map Deriv (Val 𝔹) -> Dict (Val 𝔹)
-      toι m = D.fromFoldable (A.filter (snd >>> or) (toUnfoldable (ιs <#> val m)))
+      toι :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹)
+      toι m = Map.filter or (ιs <#> val m)
 
       fromρ :: Env (SelState 𝔹) -> Map Deriv (Val 𝔹)
       fromρ (Env ρ) = unvals ins (map to𝔹 <$> ρ)
@@ -233,7 +230,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       fromV :: Val (SelState 𝔹) -> Map Deriv (Val 𝔹)
       fromV v = unval out (to𝔹 <$> v)
 
-      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
+      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
       linkedInputs selType ρ = ρ'' × v × toι m
          where
          ρ' = ρ <#> getSel selType
@@ -241,7 +238,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
          v = toV m
          ρ'' = if linking then toρ (bwd' masked (fromV v)) else ρ'
 
-      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
+      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
       linkedOutputs selType v = ρ × v'' × toι m
          where
          v' = v <#> getSel selType
@@ -249,24 +246,24 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
          ρ = toρ m
          v'' = if linking then toV (fwd' masked (fromρ ρ)) else v'
 
-      linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
-      linkIntermediates (Env ι) = toρ (bwd' unmasked m) × toV (fwd' unmasked m) × toι m
+      linkIntermediates :: Map Deriv (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
+      linkIntermediates ι = toρ (bwd' unmasked m) × toV (fwd' unmasked m) × toι m
          where
-         m = unvals ιs (map (getSel Transient >>> to𝔹) <$> ι)
+         m = Map.unions (Map.intersectionWith unval ιs (map (getSel Transient >>> to𝔹) <$> ι))
 
    pure
       { spec: options
       , s
       , ρ: Env (ins <#> \p -> (\inert -> selStates inert false false) <$> val inertρ p)
       , v: (\inert -> selStates inert false false) <$> val inertV out
-      , ι: empty
+      , ι: Map.empty
       , linkedOutputs
       , linkedInputs
       , linkIntermediates
       , dir: { persistent: LinkedOutputs, transient: LinkedOutputs }
       , in_views: ins $> Nothing
       , out_view: Nothing
-      , intermediate_views: empty
+      , intermediate_views: Map.empty
       , inerts: ιs <#> \p -> (&&) <$> val inertBwdι p <*> val inertFwdι p
       , fieldIndex: fieldIndex gconfig.classes
       }

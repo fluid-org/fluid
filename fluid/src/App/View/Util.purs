@@ -13,11 +13,13 @@ import Data.Argonaut.Decode.Decoders (decodeString)
 import Data.Either (Either(..))
 import Data.Foldable (all, sequence_)
 import Data.FunctorWithIndex (mapWithIndex)
+import Data.Map (Map)
 import Data.Maybe (Maybe)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Effect (Effect)
 import File (Folder)
+import Graph.Dep (Deriv)
 import Lattice (𝔹, (∨))
 import SExpr as S
 import Util (type (×), Endo, check, (×))
@@ -146,15 +148,15 @@ type Fig =
    , s :: S.Stmt
    , ρ :: Env (SelStates 𝔹)
    , v :: Val (SelStates 𝔹)
-   , ι :: Env (SelStates 𝔹)
+   , ι :: Map Deriv (Val (SelStates 𝔹))
    , dir :: Selection Direction
-   , linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
-   , linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
-   , linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Dict (Val 𝔹)
+   , linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
+   , linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
+   , linkIntermediates :: Map Deriv (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
    , in_views :: Dict (Maybe View) -- strengthen this
    , out_view :: Maybe View
-   , intermediate_views :: Dict (Maybe View)
-   , inerts :: Dict (Val 𝔹) -- inert positions of each intermediate
+   , intermediate_views :: Map Deriv (Maybe View)
+   , inerts :: Map Deriv (Val 𝔹) -- inert positions of each intermediate
    , fieldIndex :: FieldIndex
    }
 
