@@ -1,3 +1,3 @@
-a = 1
-b = 2
-c = False
+a = @doc("a") 1
+b = @doc("b") 2
+c = @doc("c") False

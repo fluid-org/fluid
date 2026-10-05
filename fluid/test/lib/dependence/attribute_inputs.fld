@@ -5,4 +5,4 @@ class P:
    x: int
    y: int
 
-p = P(1, 2)
+p = @doc("p") P(1, 2)

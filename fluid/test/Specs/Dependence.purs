@@ -10,90 +10,93 @@ dep_cases :: Array DepSpec
 dep_cases =
    [ { file: "dependence/var.fld"
      , queries:
-          [ Bwd Output (\_ -> listElement 0 select) "x: [⸨1⸩, 2]\n[⸨1⸩, 2]"
-          , Fwd (Input "x") (\_ -> listElement 1 select) "x: [1, ⸨2⸩]\n[1, ⸨2⸩]"
+          [ Bwd Output (\_ -> listElement 0 select) "@doc(\"x\") [⸨1⸩, 2]\n[⸨1⸩, 2]"
+          , Fwd (Input "x") (\_ -> listElement 1 select) "@doc(\"x\") [1, ⸨2⸩]\n[1, ⸨2⸩]"
           ]
      }
    , { file: "dependence/cond.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "b: ⟪True⟫\ny: ⸨1⸩\nz: 2\n⸨1⸩"
-          , Fwd (Input "b") (\_ -> select) "b: ⸨True⸩\ny: 1\nz: 2\n⟪1⟫"
-          , Fwd (Input "y") (\_ -> select) "b: True\ny: ⸨1⸩\nz: 2\n⸨1⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"b\") ⟪True⟫\n@doc(\"y\") ⸨1⸩\n@doc(\"z\") 2\n⸨1⸩"
+          , Fwd (Input "b") (\_ -> select) "@doc(\"b\") ⸨True⸩\n@doc(\"y\") 1\n@doc(\"z\") 2\n⟪1⟫"
+          , Fwd (Input "y") (\_ -> select) "@doc(\"b\") True\n@doc(\"y\") ⸨1⸩\n@doc(\"z\") 2\n⸨1⸩"
           ]
      }
    , { file: "dependence/match_fallthrough.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "v: ⟪Bar()⟫\nw: ⸨5⸩\n⸨5⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"v\") ⟪Bar()⟫\n@doc(\"w\") ⸨5⸩\n⸨5⸩"
           ]
      }
    , { file: "dependence/early_return.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "a: 1\nb: ⸨2⸩\nc: ⟪False⟫\n⸨2⸩"
-          , Fwd (Input "c") (\_ -> select) "a: 1\nb: 2\nc: ⸨False⸩\n⟪2⟫"
+          [ Bwd Output (\_ -> select) "@doc(\"a\") 1\n@doc(\"b\") ⸨2⸩\n@doc(\"c\") ⟪False⟫\n⸨2⸩"
+          , Fwd (Input "c") (\_ -> select) "@doc(\"a\") 1\n@doc(\"b\") 2\n@doc(\"c\") ⸨False⸩\n⟪2⟫"
           ]
      }
    , { file: "dependence/attribute.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "p: ⟪P(⸨1⸩, 2)⟫\n⸨1⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"p\") ⟪P(⸨1⸩, 2)⟫\n⸨1⸩"
           ]
      }
    , { file: "dependence/subscript.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "i: ⟪1⟫\nxs: ⟪[3, ⸨4⸩, 5]⟫\n⸨4⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"i\") ⟪1⟫\n@doc(\"xs\") ⟪[3, ⸨4⸩, 5]⟫\n⸨4⸩"
           ]
      }
    , { file: "dependence/filter.fld"
      , queries:
-          [ Bwd Output (\_ -> listElement 0 select) "n: ⟪5⟫\nxs: ⟪[⸨8⸩, 4, 7, 3]⟫\n[⸨8⸩, 7]"
-          , Fwd (Input "n") (\_ -> select) "n: ⸨5⸩\nxs: [8, 4, 7, 3]\n⟪[⟪8⟫, ⟪7⟫]⟫"
-          , Fwd (Input "xs") (\_ -> listElement 2 select) "n: 5\nxs: [8, 4, ⸨7⸩, 3]\n⟪[8, ⸨7⸩]⟫"
+          [ Bwd Output (\_ -> listElement 0 select) "@doc(\"n\") ⟪5⟫\n@doc(\"xs\") ⟪[⸨8⸩, 4, 7, 3]⟫\n[⸨8⸩, 7]"
+          , Fwd (Input "n") (\_ -> select) "@doc(\"n\") ⸨5⸩\n@doc(\"xs\") [8, 4, 7, 3]\n⟪[⟪8⟫, ⟪7⟫]⟫"
+          , Fwd (Input "xs") (\_ -> listElement 2 select)
+               "@doc(\"n\") 5\n@doc(\"xs\") [8, 4, ⸨7⸩, 3]\n⟪[8, ⸨7⸩]⟫"
           ]
      }
    , { file: "dependence/closure.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "a: ⸨1⸩\nb: ⸨2⸩\n⸨3⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"a\") ⸨1⸩\n@doc(\"b\") ⸨2⸩\n⸨3⸩"
           ]
      }
    , { file: "dependence/partial.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "a: ⸨1⸩\nb: ⸨2⸩\n⸨3⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"a\") ⸨1⸩\n@doc(\"b\") ⸨2⸩\n⸨3⸩"
           ]
      }
    , { file: "dependence/len.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "len: ⟪len⟫\nxs: ⸨[1, 2]⸩\n⸨2⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"xs\") ⸨[1, 2]⸩\n⸨2⸩"
           ]
      }
    , { file: "dependence/dict_lookup.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "d: ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"d\") ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
           ]
      }
    , { file: "dependence/dict_pattern.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "d: ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
+          [ Bwd Output (\_ -> select) "@doc(\"d\") ⟪{⟪\"a\"⟫: ⸨1⸩, \"b\": 2}⟫\n⸨1⸩"
           ]
      }
    , { file: "dependence/seq.fld"
      , queries:
-          [ Bwd Output (\arg -> arg cPair f_snd select) "a: 1\nb: 2\nc: ⟪True⟫\nd: ⸨4⸩\n(1, ⸨4⸩)"
-          , Fwd (Input "c") (\_ -> select) "a: 1\nb: 2\nc: ⸨True⸩\nd: 4\n⟪(⟪1⟫, ⟪4⟫)⟫"
+          [ Bwd Output (\arg -> arg cPair f_snd select)
+               "@doc(\"a\") 1\n@doc(\"b\") 2\n@doc(\"c\") ⟪True⟫\n@doc(\"d\") ⸨4⸩\n(1, ⸨4⸩)"
+          , Fwd (Input "c") (\_ -> select)
+               "@doc(\"a\") 1\n@doc(\"b\") 2\n@doc(\"c\") ⸨True⸩\n@doc(\"d\") 4\n⟪(⟪1⟫, ⟪4⟫)⟫"
           ]
      }
    , { file: "dependence/doc_this.fld"
      , queries:
           [ Bwd (Doc Output) (\arg -> arg cParagraph f_fragments (listElement 2 select))
-               "x: ⸨1⸩\ny: ⸨2⸩\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
-          , Fwd (Input "x") (\_ -> select) "x: ⸨1⸩\ny: 2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+               "@doc(\"x\") ⸨1⸩\n@doc(\"y\") ⸨2⸩\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+          , Fwd (Input "x") (\_ -> select)
+               "@doc(\"x\") ⸨1⸩\n@doc(\"y\") 2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
           ]
      }
    , { file: "slicing/matrix/matmul.fld"
      , queries:
           [ Bwd Output (\arg -> arg cPair f_fst $ matrixElement 0 0 select)
-               """leftMatrix: ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
+               """@doc("leftMatrix") ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
 4, 5, 6⟫
-mat_mul: ⟪cl⟫
-rightMatrix: ⟪⸨1⸩, 2,
+@doc("rightMatrix") ⟪⸨1⸩, 2,
 ⸨3⸩, 4,
 ⸨5⸩, 6⟫
 @doc(Paragraph(["Intermediate", "matrix"])) ⸨22⸩, 28,
@@ -106,10 +109,9 @@ rightMatrix: ⟪⸨1⸩, 2,
 19, 26, 33,
 29, 40, 51)"""
           , Bwd (Intermediate 0) (\_ -> matrixElement 0 0 select)
-               """leftMatrix: ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
+               """@doc("leftMatrix") ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
 4, 5, 6⟫
-mat_mul: ⟪cl⟫
-rightMatrix: ⟪⸨1⸩, 2,
+@doc("rightMatrix") ⟪⸨1⸩, 2,
 ⸨3⸩, 4,
 ⸨5⸩, 6⟫
 @doc(Paragraph(["Intermediate", "matrix"])) ⸨22⸩, 28,
@@ -122,10 +124,9 @@ rightMatrix: ⟪⸨1⸩, 2,
 19, 26, 33,
 29, 40, 51)"""
           , Fwd (Intermediate 0) (\_ -> matrixElement 0 0 select)
-               """leftMatrix: 1, 2, 3,
+               """@doc("leftMatrix") 1, 2, 3,
 4, 5, 6
-mat_mul: cl
-rightMatrix: 1, 2,
+@doc("rightMatrix") 1, 2,
 3, 4,
 5, 6
 @doc(Paragraph(["Intermediate", "matrix"])) ⸨22⸩, 28,
@@ -138,10 +139,9 @@ rightMatrix: 1, 2,
 19, 26, 33,
 29, 40, 51)"""
           , Fwd (Input "leftMatrix") (\_ -> matrixElement 0 0 select)
-               """leftMatrix: ⸨1⸩, 2, 3,
+               """@doc("leftMatrix") ⸨1⸩, 2, 3,
 4, 5, 6
-mat_mul: cl
-rightMatrix: 1, 2,
+@doc("rightMatrix") 1, 2,
 3, 4,
 5, 6
 @doc(Paragraph(["Intermediate", "matrix"])) ⸨22⸩, ⸨28⸩,

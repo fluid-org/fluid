@@ -39,7 +39,7 @@ import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
 import Util (type (×), absurd, check, definitely, definitely', definitelyRight, error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, values, (<+>))
+import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
@@ -513,10 +513,9 @@ type DepEval =
    , root :: Deriv
    }
 
--- Inputs, root, documented vertices and their docs.
+-- Documented vertices, their docs and the root.
 visible :: DepEval -> Set Deriv
-visible { g, inputs, root } =
-   Set.fromFoldable (values inputs) ∪ Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
+visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
 
 depEval
    :: forall m

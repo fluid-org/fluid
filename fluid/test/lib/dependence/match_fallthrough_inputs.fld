@@ -8,5 +8,5 @@ class Foo:
 class Bar:
    pass
 
-v = Bar()
-w = 5
+v = @doc("v") Bar()
+w = @doc("w") 5

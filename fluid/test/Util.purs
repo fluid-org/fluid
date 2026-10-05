@@ -37,9 +37,9 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, log', spyWhen, throw, throwLeft, withMsg, (×))
+import Util (type (×), AffError, EffectError, Endo, Thunk, check, definitely, error, log', spyWhen, throw, throwLeft, withMsg, (×))
 import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, Env, Val(..), stripDocs)
+import Val (class HasModuleStore, Env, Val(..), moduleStore, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -114,7 +114,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       graphBenchmark benchNames.bwd \_ -> pure (evalG_bwd (report out0))
 
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
-   visibleGraph <- graphBenchmark benchNames.materialise \_ -> pure (materialise eval.g (visible eval))
+   visibleGraph <- graphBenchmark benchNames.materialise \_ ->
+      pure (materialise eval.g (visible eval `Set.union` Set.fromFoldable (values eval.inputs)))
    let deps = bwd visibleGraph (Map.singleton eval.root (selected (stripDocs out0)))
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
       includes ("dependence on " <> x) (definitely "visible" (Map.lookup q deps)) (stripDocs (get x in_ρ))
@@ -141,11 +142,11 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 -- Visible vertex carrying the selection.
 data Visible
    = Output
-   | Input String
-   | Intermediate Int -- index among documented vertices, in evaluation order
+   | Input String -- documented vertex bound to the variable
+   | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc Visible
 
--- Selection and expected inputs, documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫.
+-- Selection and expected documented vertices, then output, with dependence: data ⸨ ⸩, control ⟪ ⟫.
 data Query
    = Bwd Visible (ConstrArg -> Selector Val) String
    | Fwd Visible (ConstrArg -> Selector Val) String
@@ -179,13 +180,18 @@ testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m =
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, gconfig } <- prepConfig fluidSrc
+   { depGraph } <- moduleStore
    eval <- depEval gconfig e
    let
       docs = eval.g.docs
+      input x = case A.fromFoldable <<< Map.keys <$> Map.lookup (get x eval.inputs) eval.g.edges of
+         Just [ p ] | Map.member p docs -> p
+         _ -> error ("input " <> x <> " not bound to documented value")
+      intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
       vertex = case _ of
          Output -> eval.root
-         Input x -> get x eval.inputs
-         Intermediate n -> definitely "documented" (A.index (A.fromFoldable (Map.keys docs)) n)
+         Input x -> input x
+         Intermediate n -> definitely "intermediate" (A.index intermediates n)
          Doc on -> definitely "documented" (Map.lookup (vertex on) docs)
       arg = constrArg (fieldIndex gconfig.classes)
       selection on δv = let p = vertex on in Map.singleton p (selected (selectOn δv arg (valAt eval.g p)))
@@ -194,11 +200,10 @@ testDep file query = do
          Bwd on δv expect' -> bwd visibleGraph (selection on δv) × expect'
          Fwd on δv expect' -> fwd visibleGraph (selection on δv) × expect'
       at q = definitely "visible" (Map.lookup q deps)
-      inputs = toUnfoldable eval.inputs <#> \(x × q) -> x <> ": " <> prettyP (at q)
       documented = Map.toUnfoldable docs <#> \(q × d) ->
          let Val w _ u = at q in prettyP (Val w (Just (at d)) u)
       output = if Map.member eval.root docs then [] else [ prettyP (at eval.root) ]
-   withMsg "expect" $ checkPretty expect $ joinWith "\n" (inputs <> documented <> output)
+   withMsg "expect" $ checkPretty expect $ joinWith "\n" (documented <> output)
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
