@@ -11,7 +11,7 @@ import Control.Monad.Reader (class MonadReader, ReaderT)
 import Control.Monad.State (class MonadState, StateT, gets)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
-import Data.Array (zipWith, (!!)) as A
+import Data.Array (cons, fromFoldable, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
@@ -26,6 +26,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Profunctor.Strong (second)
 import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
+import Data.Tuple (Tuple(..))
 import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
@@ -33,7 +34,7 @@ import Effect.Exception (Error)
 import Expr (Def, Module, fv)
 import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
-import Graph.Dep (DepGraph, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
+import Graph.Dep (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
 import Graph.Dep (Deriv, Pos) as Dep
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
@@ -152,6 +153,22 @@ unitSection (Val _ _ u) = Val one Nothing case u of
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
+
+-- Vertex with the vertex of its doc, if any.
+type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
+
+withDoc :: forall f s. DepGraph f s -> Dep.Deriv -> DerivWithDoc
+withDoc g p = p × Map.lookup p g.docs
+
+-- Value at a vertex, with the value of its doc.
+val :: forall a. Labelling (Val a) -> DerivWithDoc -> Val a
+val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
+
+unval :: forall a. DerivWithDoc -> Val a -> Labelling (Val a)
+unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
+
+unvals :: forall a. Dict DerivWithDoc -> Dict (Val a) -> Labelling (Val a)
+unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
 -- Value of a derivation already in the graph.
 gvalAt :: forall m s. MonadState (DepGraph Val s) m => Dep.Deriv -> m (GVal s)

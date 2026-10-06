@@ -23,8 +23,7 @@ import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for_, sequence_)
-import Data.Tuple (Tuple(..), fst)
-import Dict (Dict)
+import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -36,9 +35,9 @@ import Module (prepConfig)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
 import Util (type (×), Endo, spyWhen, (×))
-import Util.Map (get, insert, intersectionWith, lookup, mapWithKey, restrict, values)
+import Util.Map (get, insert, lookup, mapWithKey, restrict, values)
 import Util.Set ((\\), (∈), (∪))
-import Val (class HasModuleStore, Env(..), Val(..), dataPositions)
+import Val (class HasModuleStore, Env(..), Val, dataPositions, unval, unvals, val, withDoc)
 
 str
    :: { output :: String -- pseudo-variable to use as name of output view
@@ -145,17 +144,6 @@ drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
 -- Vertex shown as one value with the vertex of its doc, if any.
-type DerivWithDoc = Deriv × Maybe Deriv
-
-val :: forall a. Labelling (Val a) -> DerivWithDoc -> Val a
-val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
-
-unval :: forall a. DerivWithDoc -> Val a -> Labelling (Val a)
-unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
-
-unvals :: forall a. Dict DerivWithDoc -> Dict (Val a) -> Labelling (Val a)
-unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
-
 -- Vertex of a top-level variable ↦ vertex of its defining expression.
 definedBy :: forall s. DepGraph Val s -> Deriv -> Maybe Deriv
 definedBy g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
@@ -173,7 +161,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    config@{ s } <- prepConfig fluidSrc
    eval@{ g: g@{ docs }, root } <- depEval config.inputs config.classes config.e
    let
-      out = root × Map.lookup root docs
+      out = withDoc g root
       ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definedBy g q >>= (_ `Map.lookup` docs))
       shown = Set.fromFoldable (A.cons root (A.mapMaybe (definedBy g) (A.fromFoldable (values (fst <$> ins)))))
       ιs =

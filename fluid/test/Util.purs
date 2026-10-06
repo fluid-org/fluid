@@ -32,7 +32,7 @@ import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
 import Literal (Literal(..))
-import Val (class HasModuleStore, BaseVal(..), Val(..), moduleStore)
+import Val (class HasModuleStore, BaseVal(..), Val(..), moduleStore, val, withDoc)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -60,10 +60,9 @@ testProperties
    -> String
    -> AffError m Unit
 testProperties { e, inputs, classes } expect = do
-   eval@{ g: g@{ docs }, root } <- benchmark "Dep" \_ ->
+   eval@{ g, root } <- benchmark "Dep" \_ ->
       depEval inputs classes e
-   let Val _ _ u = valAt g root
-   withMsg "fwd_expect" $ checkPretty expect (prettyP (Val unit (valAt g <$> Map.lookup root docs) u))
+   withMsg "fwd_expect" $ checkPretty expect (prettyP (val g.vals (withDoc g root)))
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
@@ -109,7 +108,7 @@ showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
    dep p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
-      let Val w _ u = dep p in prettyP (Val w (if any (_ /= Zero) (dep d) then Just (dep d) else Nothing) u)
+      prettyP (val deps (p × if any (_ /= Zero) (dep d) then Just d else Nothing))
    output = if Map.member root docs then [] else [ prettyP (dep root) ]
 
 selection
