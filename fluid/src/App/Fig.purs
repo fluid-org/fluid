@@ -156,10 +156,10 @@ unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u)
 unvals :: forall a. Dict WithDoc -> Dict (Val a) -> Labelling (Val a)
 unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
--- Documented vertex defining an environment entry.
-definition :: forall s. DepGraph Val s -> Deriv -> Maybe Deriv
-definition g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
-   Just [ p ] | Map.member p g.docs -> Just p
+-- Vertex of a top-level variable ↦ vertex of its defining expression.
+definedBy :: forall s. DepGraph Val s -> Deriv -> Maybe Deriv
+definedBy g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
+   Just [ p ] -> Just p
    _ -> Nothing
 
 -- Queries over Boolean selections.
@@ -174,8 +174,8 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    eval@{ g: g@{ docs }, root } <- depEval gconfig e
    let
       out = root × Map.lookup root docs
-      ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definition g q >>= (_ `Map.lookup` docs))
-      shown = Set.fromFoldable (A.cons root (A.mapMaybe (definition g) (A.fromFoldable (values (fst <$> ins)))))
+      ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definedBy g q >>= (_ `Map.lookup` docs))
+      shown = Set.fromFoldable (A.cons root (A.mapMaybe (definedBy g) (A.fromFoldable (values (fst <$> ins)))))
       ιs =
          if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs)
          else Map.empty
