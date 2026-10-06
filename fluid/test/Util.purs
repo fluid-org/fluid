@@ -142,7 +142,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 data VertexSpec
    = Output
    | Input String -- vertex documented with the name
-   | Intermediate Int -- index among documented vertices of the program, in evaluation order
+   | Intermediate Int -- n-th documented vertex created by evaluating the program, counting in evaluation order
    | Doc VertexSpec
 
 -- Selection and expected dependence, as given by showDeps: data ⸨ ⸩, control ⟪ ⟫.
@@ -172,7 +172,7 @@ depName file = case _ of
       Intermediate n -> "intermediate " <> show n
       Doc vertex -> "doc of " <> name vertex
 
--- depGraph is the store's graph, from before the program ran.
+-- depGraph holds the vertices created by loading the modules, before the program ran.
 deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
 deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
