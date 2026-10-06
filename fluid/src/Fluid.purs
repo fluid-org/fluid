@@ -105,7 +105,7 @@ commandParser :: Parser Command
 commandParser = subparser
    ( command "evaluate" (info commands.evaluate (progDesc "Evaluate a file"))
         <> command "parse" (info commands.parse (progDesc "Parse a file"))
-        <> command "check" (info commands.check (progDesc "Check and run files, reporting each as <code> <file>[: <message>], with code 0 if accepted, 1 if rejected by the parser, 3 if ill-formed, 5 if evaluation fails; exit with the largest code"))
+        <> command "check" (info commands.check (progDesc "Check and run files, reporting each as <code> <file>[: <message>] with the exit codes of a pure-py-spec checker, and exit with the largest code"))
         <> command "manifest" (info commands.manifest (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
@@ -163,26 +163,30 @@ writeManifests root@(Folder dir) = do
       where
       segments = split (Pattern "/") path
 
+-- Exit codes of a checker for the pure-py-spec test runner (`run-all.py --checker`); evaluation failure is Fluid's own.
+exitCode :: { accepted :: Int, prohibited :: Int, illFormed :: Int, evaluationFailed :: Int }
+exitCode = { accepted: 0, prohibited: 1, illFormed: 3, evaluationFailed: 5 }
+
 check :: Array Folder -> Boolean -> String -> Aff (Int × Maybe String)
 check fluidSrcPaths asModule fileName =
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       if asModule then
          case parseModule fluidSrc of
-            Left err -> rejected 1 err
+            Left err -> rejected exitCode.prohibited err
             Right _ -> try (prepModule q) >>= case _ of
-               Left err -> rejected 3 (message err)
+               Left err -> rejected exitCode.illFormed (message err)
                Right { modules, classes } -> try (withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil))) >>= case _ of
-                  Left err -> rejected 5 (message err)
-                  Right _ -> pure (0 × Nothing)
+                  Left err -> rejected exitCode.evaluationFailed (message err)
+                  Right _ -> pure (exitCode.accepted × Nothing)
       else
          case parseProgram fluidSrc of
-            Left err -> rejected 1 err
+            Left err -> rejected exitCode.prohibited err
             Right _ -> try (prepConfig fluidSrc) >>= case _ of
-               Left err -> rejected 3 (message err)
+               Left err -> rejected exitCode.illFormed (message err)
                Right { e, inputs, classes } -> try (depEval inputs classes e) >>= case _ of
-                  Left err -> rejected 5 (message err)
-                  Right _ -> pure (0 × Nothing)
+                  Left err -> rejected exitCode.evaluationFailed (message err)
+                  Right _ -> pure (exitCode.accepted × Nothing)
    where
    rejected code msg = pure (code × Just (fromMaybe msg (Array.head (split (Pattern "\n") msg))))
    -- module name of the file, relative to its root
