@@ -191,7 +191,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       masked = boolean $ queries $ graph # mask \p v ->
          maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
 
-      -- Positions which the output doesn't depend on, and which don't depend on any input.
+      -- Positions which the output does not depend on, and which do not depend on any input.
       inertBwd { bwd } = map not <$> bwd (unval out (val everything out))
       inertFwd { fwd } = map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
       inertρ = inertBwd masked
