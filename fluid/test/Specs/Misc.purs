@@ -13,13 +13,15 @@ misc_cases =
    , { file: "custom_infix.fld", fwd_expect: "True" }
    , { file: "dicts.fld"
      , fwd_expect:
-          """{
-  "d": {},
-  "e": {"a": 5, "ab": 6},
-  "e_ab": 6,
-  "f": {"a": 6, "ab": 7},
-  "g": {"a": 5}
-}"""
+          """
+          {
+            "d": {},
+            "e": {"a": 5, "ab": 6},
+            "e_ab": 6,
+            "f": {"a": 6, "ab": 7},
+            "g": {"a": 5}
+          }
+          """
      }
    , { file: "div_mod_quot_rem.fld"
      , fwd_expect: "[[1, -2, -2, 1], [2, -1, 1, -2], [1, -1, -1, 1], [2, 2, -2, -2]]"

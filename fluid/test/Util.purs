@@ -7,7 +7,7 @@ import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
-import Data.Foldable (and, any, for_)
+import Data.Foldable (and, any, for_, minimum)
 import Data.List (List)
 import Data.List as L
 import Data.Map as Map
@@ -18,8 +18,10 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.String (joinWith, trim)
+import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) as S
+import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
@@ -224,7 +226,7 @@ selectOn δv arg v = fst (δv arg (const unselected <$> (map (const top) v :: Va
 -- Result at this position, printed with its persistent selections, must match; leave it unselected.
 at :: forall f. Functor f => Pretty (f 𝔹) => String -> SetSel (f (SelStates 𝔹))
 at expected v =
-   assertWith ("at:\nExpected\n" <> expected <> "\nReceived\n" <> actual) (trim expected == actual) (botOf <$> v) × Persistent
+   assertWith ("at:\nExpected\n" <> expected <> "\nReceived\n" <> actual) (dedent expected == actual) (botOf <$> v) × Persistent
    where
    actual = prettyP (getPersistent <$> v)
 
@@ -261,7 +263,15 @@ testPretty s = do
    unless (s == s') $
       throw ("parse/prettyP round trip:\nOriginal\n" <> prettyP s <> "\nNew\n" <> prettyP s')
 
+-- Drop surrounding blank lines and common indentation, so that an expectation can be indented with the code.
+dedent :: String -> String
+dedent s = joinWith "\n" (S.drop indent <$> lines)
+   where
+   lines = A.dropWhile blank (A.reverse (A.dropWhile blank (A.reverse (S.split (S.Pattern "\n") s))))
+   blank = trim >>> S.null
+   indent = fromMaybe 0 (minimum (S.length <<< S.takeWhile (_ == S.codePointFromChar ' ') <$> A.filter (not <<< blank) lines))
+
 checkPretty :: forall m. String -> String -> EffectError m Unit
 checkPretty expect actual = do
-   unless (trim expect `eq` actual) $
+   unless (dedent expect `eq` actual) $
       throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> actual)

@@ -12,13 +12,15 @@ comments_cases =
      }
    , { file: "comments/dicts.fld"
      , fwd_expect:
-          """@doc(Paragraph(["We", "can", "have", "a", "docComment", "before", "a", "dict!"])) {
-  "d": {},
-  "e": {"a": 5, "ab": 6},
-  "e_ab": 6,
-  "f": {"a": 6, "ab": 7},
-  "g": {"a": 5}
-}"""
+          """
+          @doc(Paragraph(["We", "can", "have", "a", "docComment", "before", "a", "dict!"])) {
+            "d": {},
+            "e": {"a": 5, "ab": 6},
+            "e_ab": 6,
+            "f": {"a": 6, "ab": 7},
+            "g": {"a": 5}
+          }
+          """
      }
    , { file: "comments/int.fld"
      , fwd_expect: """@doc(Paragraph(["Comment", "on", "1"])) 1"""
