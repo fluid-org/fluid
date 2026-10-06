@@ -191,6 +191,9 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
          maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
 
       -- Positions which the output does not depend on, and which do not depend on any input.
+      inert
+         :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
+         -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
       inert { fwd, bwd } =
          { bwd: map not <$> bwd (unval out (val everything out))
          , fwd: map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
