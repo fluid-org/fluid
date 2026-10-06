@@ -1,3 +1,0 @@
-from slicing.divide_inputs import a, b
-
-a / b

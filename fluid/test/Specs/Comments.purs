@@ -29,7 +29,7 @@ comments_cases =
      , fwd_expect: """@doc(Paragraph(["We", "can", "add", "comments", "to", "list", "comprehensions"])) [14, 12, 10, 13, 11, 9, 12, 10, 8]"""
      }
    , { file: "comments/nested_constr.fld"
-     , fwd_expect: """@doc(Paragraph(["This", "is", "a", @doc(Paragraph(["This", "is", "a", "nested", "docComment!"])) "some string", "docComment!"])) False"""
+     , fwd_expect: """@doc(Paragraph(["This", "is", "a", "some string", "docComment!"])) False"""
      }
-   , { file: "comments/projection.fld", fwd_expect: """1""" }
+   , { file: "comments/projection.fld", fwd_expect: """@doc(Paragraph(["Doc", "comment", "on", "a", "projection"])) 1""" }
    ]

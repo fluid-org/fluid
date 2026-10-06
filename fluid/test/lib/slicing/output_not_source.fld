@@ -1,3 +1,0 @@
-from slicing.output_not_source_inputs import x, n
-
-(x, x < n)

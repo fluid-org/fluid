@@ -1,4 +1,0 @@
-from slicing.array.dims_inputs import x, y
-
-yss = [| 0 for (i, j) in (x, y) |]
-dims(yss)

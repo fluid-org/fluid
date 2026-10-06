@@ -1,0 +1,7 @@
+n = @doc("n") 5
+xs = @doc("xs") [8, 4, 7, 3]
+
+def filter(p, xs):
+  return [x for x in xs if p(x)]
+
+filter(lambda x: n < x, xs)

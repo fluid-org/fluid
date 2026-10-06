@@ -1,0 +1,4 @@
+d1 = @doc("d1") { "a": 5, "b": 6 }
+d2 = @doc("d2") { "c": 7 }
+
+d1 |dict_disjointUnion| d2

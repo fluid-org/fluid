@@ -25,10 +25,10 @@ import Lattice (class BoundedJoinSemilattice, bot, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (type (+), type (×), absurd, definitely', error, orThrow, singleton, (×))
+import Util (type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Op, Val(..), pureRel, val)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Val(..), pureRel)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -145,12 +145,7 @@ unary id f =
    id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, op: unsafePartial op', depOp: pureRel (unsafePartial depRel) }
-
-   op' :: Partial => Op
-   op' doc_opt (Val α _ v : Nil) = do
-      x <- orThrow (f.i.unpack v)
-      val doc_opt (singleton α) (f.o.pack (f.fwd x))
+   op = ForeignOp' { arity: 1, depOp: pureRel (unsafePartial depRel) }
 
    depRel :: forall a. Partial => List (Val a) -> Either String (Val a)
    depRel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))

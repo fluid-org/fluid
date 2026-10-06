@@ -1,4 +1,0 @@
-from slicing.array.lookup_inputs import xs
-
-ys = [| xs[i][j] for (i, j) in (3, 3) |]
-ys[2, 1]

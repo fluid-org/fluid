@@ -1,0 +1,5 @@
+from fluid.matrix import zero, convolve
+from dependence.convolution.filter.gaussian import filter
+from dependence.convolution.test_image import inputImage
+
+convolve(inputImage, filter, zero)

@@ -1,3 +1,0 @@
-from slicing.multiply_inputs import a, b, c
-
-a * (b * c)

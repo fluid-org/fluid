@@ -1,0 +1,8 @@
+n = @doc("n") 2
+
+def f({ "fst": x, "snd": [] }):
+  return x
+def f({ "fst": _, "snd": ys }):
+  return ys[0]
+
+{ "a": f({ "snd": [], "fst": n }) }

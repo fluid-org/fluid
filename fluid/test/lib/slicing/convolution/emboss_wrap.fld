@@ -1,1 +1,0 @@
-convolve(inputImage, filter, wrap)

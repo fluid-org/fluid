@@ -19,9 +19,8 @@ import Effect (Effect)
 import Effect.Aff (Aff, Error, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log, logShow)
-import Eval (graphEval)
+import Eval.Dep (depEval)
 import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, withRoots)
-import Lattice (erase)
 import Module (prepConfig)
 import Module.Node (runNodeT)
 import Node.Encoding (Encoding(..))
@@ -31,6 +30,7 @@ import Options.Applicative.Builder (info)
 import Parse (parseProgram)
 import Pretty (prettyP)
 import Util (Endo)
+import Graph.Dep (valAt)
 import Val (Val)
 
 data EvalArgs = EvalArgs
@@ -112,9 +112,9 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = srcPaths local fluidSrcPath
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
-      { e, gconfig } <- prepConfig fluidSrc
-      { outα } <- graphEval gconfig e
-      pure (erase outα)
+      { e, inputs, classes } <- prepConfig fluidSrc
+      { g, root } <- depEval inputs classes e
+      pure (valAt g root)
 
 -- Manifest for dir and for each subdirectory with .fld files beneath it
 writeManifests :: Folder -> Aff Unit

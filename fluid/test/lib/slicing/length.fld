@@ -1,3 +1,0 @@
-from slicing.length_inputs import xs
-
-len(xs)

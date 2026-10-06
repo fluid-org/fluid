@@ -1,0 +1,4 @@
+e = @doc("e") { "a": 5, "a" + "b": 6 }
+f = @doc("f") { "ab": 12 }
+
+dict_difference(e, f)

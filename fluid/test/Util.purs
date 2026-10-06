@@ -3,16 +3,12 @@ module Test.Util where
 import Prelude hiding (absurd, compare)
 
 import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
-import App.Util.Selector (ConstrArg, constrArg, none, sel𝔹)
-import DataType (class HasClasses, fieldIndex)
-import Data.Array (null) as Array
+import App.Util.Selector (ConstrArg, constrArg)
+import DataType (class HasClasses, ClassTable, fieldIndex)
 import Data.Array as A
-import Data.Foldable (and, any, for_, minimum)
-import Data.List (List)
-import Data.List as L
+import Data.Foldable (any, minimum)
 import Data.Map as Map
 import Data.Set (Set)
-import Data.Set as Set
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
@@ -24,64 +20,35 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
-import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, positions, selected, valAt)
+import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, erase, 𝔹, (≽))
-import Module (prepConfig)
+import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
+import Module (Config, prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
-import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
-import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
-import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Thunk, assertWith, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
-import Util.Map (get, keys, maplet, restrict, toUnfoldable, values)
+import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
+import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
+import Util.Map (get, maplet)
 import Literal (Literal(..))
-import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
+import Val (class HasModuleStore, BaseVal(..), Val(..), moduleStore, val, withDoc)
 
 type TestSuite m = Array (String × m Unit)
-
-data SelectionSpec
-   = Evaluation String -- printed output
-   | Selection
-        { δv :: ConstrArg -> Selector Val
-        , bwd_expect :: ConstrArg -> Selector Env
-        , inputs :: Array String -- data inputs to slice forward through; [] = all (no restriction)
-        }
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "lib", Folder "test/lib" ]
 
-test ∷ forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> SelectionSpec -> Int × Boolean -> AffError m BenchRow
-test file spec (n × _) = do
+test ∷ forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> String -> Int × Boolean -> AffError m BenchRow
+test file expect (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
-   { s, e, gconfig } <- prepConfig fluidSrc
-   testPretty s
-   _ × res <- runWriterT (replicateM n (testProperties s e gconfig spec))
+   config <- prepConfig fluidSrc
+   testPretty config.s
+   _ × res <- runWriterT (replicateM n (testProperties config expect))
    pure $ res `divRow` n
 
-graphBenchmark :: forall m a. MonadWriter BenchRow m => String -> Thunk (m a) -> EffectError m a
-graphBenchmark name = benchmark ("G" <> "-" <> name)
-
-benchNames
-   :: { eval :: String
-      , dep :: String
-      , materialise :: String
-      , bwd :: String
-      , fwd :: String
-      }
-
-benchNames =
-   { eval: "Eval"
-   , dep: "Dep"
-   , materialise: "Materialise"
-   , bwd: "Demands"
-   , fwd: "DemBy"
-   }
-
+-- Printed output of the program, with the doc of its root vertex, if any.
 testProperties
    :: forall m
     . HasClasses m
@@ -89,55 +56,13 @@ testProperties
    => MonadReader FileCxt m
    => LoadFile m
    => MonadWriter BenchRow m
-   => SE.Stmt
-   -> Expr.Stmt
-   -> GraphConfig
-   -> SelectionSpec
+   => Config
+   -> String
    -> AffError m Unit
-testProperties _ s' gconfig spec = do
-
-   graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
-      graphEval gconfig s'
-   eval <- graphBenchmark benchNames.dep \_ ->
-      depEval gconfig s'
-   let out_dep = valAt eval.g eval.root
-   unless (out_dep == stripDocs (erase outα)) $
-      throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
-   let bwdα = fst <<< (depsOf graphed).bwd
-   let fwdα = fst <<< (depsOf graphed).fwd
-   let
-      δv × inputs = case spec of
-         Evaluation _ -> (\_ -> none) × []
-         Selection sel -> sel.δv × sel.inputs
-      inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
-      arg = constrArg (fieldIndex gconfig.classes)
-      out0 = selectOn δv arg outα
-
-   in_ρ <- do
-      let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
-      graphBenchmark benchNames.bwd \_ -> pure (bwdα (report out0))
-
-   -- Dependence of the output selection includes the α-graph's backward slice, input by input.
-   visibleGraph <- graphBenchmark benchNames.materialise \_ ->
-      pure (materialise eval.g (visible eval `Set.union` Set.fromFoldable (values eval.inputs)))
-   let deps = bwd visibleGraph (maplet eval.root (selected (stripDocs out0)))
-   for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
-      includes ("dependence on " <> x) (get q deps) (stripDocs (get x in_ρ))
-
-   out1 <- graphBenchmark benchNames.fwd \_ -> pure (fwdα (restrict inputs' in_ρ))
-   -- Likewise the forward slice from the inputs, at the output.
-   let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
-   let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
-   includes "dependence of output" (get eval.root deps') (stripDocs out1)
-
-   case spec of
-      Evaluation expect -> withMsg "fwd_expect" $ checkPretty expect (prettyP out1)
-      Selection { bwd_expect } -> do
-         let expected = sel𝔹 (bwd_expect arg) in_ρ
-         unless (in_ρ ≽ expected) $
-            throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
-
-   recordGraphSize g
+testProperties { e, inputs, classes } expect = do
+   eval@{ g, root } <- benchmark "Dep" \_ ->
+      depEval inputs classes e
+   withMsg "fwd_expect" $ checkPretty expect (prettyP (val g.vals (withDoc g root)))
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
@@ -153,15 +78,6 @@ data Query
    | Fwd VertexSpec (ConstrArg -> Selector Val) String
 
 type DepSpec = { file :: String, queries :: Array Query }
-
-nonZero :: Val DepKind -> Set Pos
-nonZero = map (_ /= Zero) >>> selected
-
--- Dependence is non-zero wherever the α-graph slice is selected.
-includes :: forall m. String -> Val DepKind -> Val 𝔹 -> EffectError m Unit
-includes msg dep_ slice =
-   unless (and (L.zipWith (\b w -> not b || w /= Zero) (positions slice) (positions dep_))) $
-      throw (msg <> " misses α-graph slice:\ndependence\n" <> prettyP dep_ <> "\nα-graph\n" <> prettyP slice)
 
 depName :: String -> Query -> String
 depName file = case _ of
@@ -192,18 +108,18 @@ showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
    dep p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
-      let Val w _ u = dep p in prettyP (Val w (if any (_ /= Zero) (dep d) then Just (dep d) else Nothing) u)
+      prettyP (val deps (p × if any (_ /= Zero) (dep d) then Just d else Nothing))
    output = if Map.member root docs then [] else [ prettyP (dep root) ]
 
 selection
    :: forall s
-    . GraphConfig
+    . ClassTable
    -> DepGraph Val s
    -> DepEval
    -> VertexSpec
    -> (ConstrArg -> Selector Val)
    -> Labelling (Set Pos)
-selection { classes } depGraph eval vertex δv =
+selection classes depGraph eval vertex δv =
    maplet p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
    where
    p = deriv depGraph eval vertex
@@ -211,14 +127,14 @@ selection { classes } depGraph eval vertex δv =
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
-   { e, gconfig } <- prepConfig fluidSrc
+   { e, inputs, classes } <- prepConfig fluidSrc
    { depGraph } <- moduleStore
-   eval <- depEval gconfig e
+   eval <- depEval inputs classes e
    let
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd vertex δv expect' -> bwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
-         Fwd vertex δv expect' -> fwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
+         Bwd vertex δv expect' -> bwd visibleGraph (selection classes depGraph eval vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd visibleGraph (selection classes depGraph eval vertex δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.

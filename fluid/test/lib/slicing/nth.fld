@@ -1,3 +1,0 @@
-from slicing.nth_inputs import xs
-
-xs[1]

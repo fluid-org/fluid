@@ -16,7 +16,6 @@ import Data.Tuple (snd)
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
-import Graph (class Graph, size)
 import Graph.Dep (DepGraph)
 import Util (type (×), EffectError, Thunk, debug, force, (×), singleton)
 
@@ -77,10 +76,6 @@ benchmark' name m = do
    t × x <- time m
    tell (BenchRow $ Map.singleton name (singleton t))
    pure x
-
-recordGraphSize :: forall g m. Graph g => MonadWriter BenchRow m => g -> m Unit
-recordGraphSize g =
-   tell (BenchRow $ Map.singleton "Graph-Nodes" (singleton $ toNumber $ size g))
 
 recordDepGraphSize :: forall f s m. MonadWriter BenchRow m => DepGraph f s -> m Unit
 recordDepGraphSize g =

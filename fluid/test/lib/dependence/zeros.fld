@@ -1,0 +1,6 @@
+xs = @doc("xs") [1, 2]
+
+def zeros(xs):
+  return [0 for _ in xs]
+
+zeros(xs)

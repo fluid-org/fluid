@@ -1,0 +1,19 @@
+k = @doc("k") 6
+tree = @doc("tree") NonEmpty(
+    NonEmpty(Empty(), (3, "USA"), Empty()),
+    (4, "China"),
+    NonEmpty(NonEmpty(Empty(), (6, "Germany"), Empty()), (7, "UK"), Empty())
+  )
+
+def lookup(k, Empty()):
+  return None
+def lookup(k, NonEmpty(t1, (key, val), t2)):
+  match compare(k, key):
+    case LT():
+      return lookup(k, t1)
+    case EQ():
+      return val
+    case GT():
+      return lookup(k, t2)
+
+lookup(k, tree)
