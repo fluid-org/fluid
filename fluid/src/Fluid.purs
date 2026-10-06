@@ -163,7 +163,7 @@ writeManifests root@(Folder dir) = do
       where
       segments = split (Pattern "/") path
 
--- Exit codes of checker for pure-py-spec test runner (`run-all.py --checker`); evaluation failure Fluid's own.
+-- Exit codes of checker for pure-py-spec test runner (`run-all.py --checker`); evaluationFailed is not part of that protocol.
 exitCode :: { accepted :: Int, prohibited :: Int, illFormed :: Int, evaluationFailed :: Int }
 exitCode = { accepted: 0, prohibited: 1, illFormed: 3, evaluationFailed: 5 }
 
