@@ -150,7 +150,7 @@ bwd_cases =
      , bwd_expect: \_ -> envVal "n" select
      , δv: \_ -> select
      , inputs: []
-     , fwd_expect: ""
+     , fwd_expect: """{"a": ⸨2⸩}"""
      }
    , { file: "matrix_update.fld"
      , bwd_expect: \_ -> envVal "pair" select

@@ -19,7 +19,7 @@ import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
-import Data.String (joinWith, null, trim)
+import Data.String (joinWith, trim)
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
@@ -130,9 +130,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
          let expected = sel𝔹 (sel arg) in_ρ
          unless (in_ρ ≽ expected) $
             throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
-   unless (null fwd_expect) do
-      let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
-      withMsg "fwd_expect" $ checkPretty fwd_expect (prettyP (report out1))
+   let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
+   withMsg "fwd_expect" $ checkPretty fwd_expect (prettyP (report out1))
 
    recordGraphSize g
    recordDepGraphSize eval.g
