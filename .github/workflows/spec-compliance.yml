@@ -2,7 +2,7 @@ name: spec-compliance
 
 on:
   workflow_run:
-    workflows: [deploy]
+    workflows: [build]
     types: [completed]
   workflow_dispatch:
 

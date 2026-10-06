@@ -1,0 +1,50 @@
+name: test
+
+on: [workflow_call]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+    - name: enable-glob
+      run: |
+        shopt -s extglob nullglob globstar
+      if: runner.os == 'Linux'
+    - name: cache PureScript dependencies
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-spago-${{ hashFiles('**/*.dhall') }}
+        path: fluid/.spago
+    - name: hash source file list
+      id: sources
+      run: echo "hash=$(git ls-files fluid/src fluid/test fluid/config | sort | shasum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - name: cache compiler output
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-output-${{ hashFiles('**/*.dhall') }}-${{ steps.sources.outputs.hash }}
+        path: fluid/output
+    - name: configure NPM authentication
+      run: |
+        echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+    - name: test
+      run: |
+        yarn install
+        set -x -e
+        yarn workspace @fluid-org/fluid tidy
+        yarn workspace @fluid-org/fluid build-test
+    - name: test-website
+      run: |
+        ./script/test-website-all.sh
+    # Validate packaging only; publishing is manual (build-publish.sh runs these scripts first)
+    - name: test-package
+      run: |
+        fluid/script/build-package.sh && fluid/script/test-package.sh
