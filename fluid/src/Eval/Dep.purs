@@ -17,7 +17,7 @@ import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (fromList, head, snoc, toList, unsnoc) as NEL
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
@@ -38,11 +38,11 @@ import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, intPair, string, unop, unopRel, unpack)
 import Util (type (×), absurd, check, definitely, definitely', definitelyRight, error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
+import Util.Map (delete, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, listElement, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, listElement, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -197,8 +197,8 @@ eval inputs = case _ of
       subscript v v' select consumed =
          deliver (inputs.ctrl <> via consumed v <> via sum v') { val: select v.val, inEdges: via select v }
    ModMember q x -> do
-      { moduleEnv } <- moduleStore
-      let ρ_q = definitely "module loaded" (Map.lookup q moduleEnv)
+      { modules } <- moduleStore
+      let ρ_q = definitely "module loaded" (Map.lookup q modules >>= loadedEnv)
       p <- withMsg "Module member" $ lookup' x ρ_q
       gvalAt p >>= deliver inputs.ctrl
    App e es -> do
@@ -426,14 +426,14 @@ evalImport enclosing ρ = case _ of
       step ρ' x = case lookup x ρ_q of
          Just p -> pure (ρ' <+> maplet x p)
          Nothing -> do
-            { moduleBody } <- moduleStore
-            when (Map.member (NEL.snoc q x) moduleBody) (void (load (NEL.snoc q x)))
+            { modules } <- moduleStore
+            when (Map.member (NEL.snoc q x) modules) (void (load (NEL.snoc q x)))
             pure (delete x ρ')
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)
-implicitMembers = moduleStore <#> \{ moduleEnv } ->
-   foldl (\ρ q -> ρ <+> findWithDefault empty q moduleEnv) empty implicit
+implicitMembers = moduleStore <#> \{ modules } ->
+   foldl (\ρ q -> ρ <+> fromMaybe empty (Map.lookup q modules >>= loadedEnv)) empty implicit
 
 load
    :: forall m s
@@ -441,13 +441,15 @@ load
    => ModuleName
    -> m (Dict Deriv)
 load q = do
-   { moduleBody, moduleEnv } <- moduleStore
-   case Map.lookup q moduleEnv of
-      Just ρ_q -> pure ρ_q
-      Nothing -> do
+   { modules } <- moduleStore
+   case Map.lookup q modules of
+      Just (Loaded ρ_q) -> pure ρ_q
+      state -> do
          ρ0 <- implicitMembers
-         ρ_q <- maybe (pure empty) (evalModule ρ0 q) (Map.lookup q moduleBody)
-         modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
+         ρ_q <- case state of
+            Just (Parsed body) -> evalModule ρ0 q body
+            _ -> pure empty
+         modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules })
          pure ρ_q
 
 type DepEval =

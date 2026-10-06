@@ -105,14 +105,20 @@ instance Highlightable a => Highlightable (a × b) where
 
 instance (Ann a, BoundedLattice b) => Ann (a × b)
 
+-- Module parsed but not yet loaded, or loaded with its members as vertices in depGraph.
+data ModuleState = Parsed Module | Loaded (Dict Dep.Deriv)
+
+loadedEnv :: ModuleState -> Maybe (Dict Dep.Deriv)
+loadedEnv (Parsed _) = Nothing
+loadedEnv (Loaded ρ) = Just ρ
+
 type ModuleStore =
-   { moduleBody :: Map ModuleName Module
+   { modules :: Map ModuleName ModuleState
    , depGraph :: DepGraph Val (Lineage (Dep.Deriv × Dep.Pos) DepKind)
-   , moduleEnv :: Map ModuleName (Dict Dep.Deriv) -- members as derivations in depGraph
    }
 
 emptyModuleStore :: ModuleStore
-emptyModuleStore = { moduleBody: Map.empty, depGraph: emptyGraph, moduleEnv: Map.empty }
+emptyModuleStore = { modules: Map.empty, depGraph: emptyGraph }
 
 class Monad m <= HasModuleStore m where
    moduleStore :: m ModuleStore

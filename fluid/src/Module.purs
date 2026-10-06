@@ -35,7 +35,7 @@ import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, Env(..), Val(..))
+import Val (class HasModuleStore, ModuleState(..), moduleStore, modifyModuleStore, loadedEnv, Env(..), Val(..))
 import Val (BaseVal(..)) as V
 
 type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
@@ -105,10 +105,10 @@ loadTopLevel
    => Map ModuleName Module
    -> List S.Import
    -> m (Dict Deriv)
-loadTopLevel moduleBody imports = do
+loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
-      predefined' <- traverse (\(_ × Env ρ) -> traverse deriv ρ) predefined
-      modifyModuleStore (_ { moduleBody = moduleBody, moduleEnv = predefined' })
+      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse deriv ρ) predefined
+      modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
       ρ1 <- foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
@@ -135,9 +135,9 @@ prepConfig fluidSrc = do
    withClasses classes do
       inputs <- loadTopLevel (Map.mapMaybe _.mod loaded) imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
-      { moduleEnv } <- moduleStore
+      { modules } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
-         when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q ->
+         when (isJust mod) $ for_ (Map.lookup q modules >>= loadedEnv) \ρ_q ->
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
