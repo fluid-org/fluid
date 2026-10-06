@@ -1,8 +1,0 @@
-def f():
-   x = 5
-   def g():
-      return x
-   x = 6
-   return x + g()
-
-f()

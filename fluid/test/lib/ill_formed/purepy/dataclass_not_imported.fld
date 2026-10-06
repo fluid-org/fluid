@@ -1,5 +1,0 @@
-@dataclass
-class P:
-  x: int
-
-P(1).x

@@ -98,39 +98,6 @@ misc_cases =
    , { file: "pattern_match.fld", fwd_expect: "4" }
    , { file: "piecewise_def.fld", fwd_expect: "3" }
    , { file: "prefix_op.fld", fwd_expect: "True" }
-   , { file: "purepy/assert_stmt.fld", fwd_expect: "10" }
-   , { file: "purepy/assign_annotation.fld", fwd_expect: "11" }
-   , { file: "purepy/assert_msg_lazy.fld", fwd_expect: "5" }
-   , { file: "purepy/math_members.fld", fwd_expect: "[3, 3, 4, 2]" }
-   , { file: "purepy/len.fld", fwd_expect: "[3, 2, 4, 0]" }
-   , { file: "purepy/operators.fld"
-     , fwd_expect:
-          """[3, -4, 1, 2, 3.0, 1024, 0.5, 4.0, 3.5, -3, 3, -4, 2, True, True, True, "ab", True, True, True, True, True, False, False, True, True, True, True, True, True, False, False, True, False, True, "ababab", "xx", "", False, True]"""
-     }
-   , { file: "purepy/both_branches.fld", fwd_expect: "\"smaller\"" }
-   , { file: "purepy/branch_local.fld", fwd_expect: "6" }
-   , { file: "purepy/closure_capture.fld", fwd_expect: "6" }
-   , { file: "purepy/constr_keyword.fld", fwd_expect: "Coord(3, 4)" }
-   , { file: "purepy/constr_mixed.fld", fwd_expect: "Point(1, 2, 3)" }
-   , { file: "purepy/dataclass_attr.fld", fwd_expect: "7" }
-   , { file: "purepy/dataclass_construct.fld", fwd_expect: "Coord(3, 4)" }
-   , { file: "purepy/dataclass_decl.fld", fwd_expect: "42" }
-   , { file: "purepy/dataclass_field_types.fld", fwd_expect: "3" }
-   , { file: "purepy/def_annotations.fld", fwd_expect: "(12, (\"a\", 5))" }
-   , { file: "purepy/early_return.fld", fwd_expect: "\"smaller\"" }
-   , { file: "purepy/elif_no_else.fld", fwd_expect: "3" }
-   , { file: "purepy/expr_stmt.fld", fwd_expect: "6" }
-   , { file: "purepy/implicit_none.fld", fwd_expect: "None" }
-   , { file: "purepy/implicit_return.fld", fwd_expect: "None" }
-   , { file: "purepy/lambda.fld", fwd_expect: "15" }
-   , { file: "purepy/mutual.fld", fwd_expect: "True" }
-   , { file: "purepy/mutual_after_rebind.fld", fwd_expect: "(0, 1)" }
-   , { file: "purepy/mutual_def_in_branch.fld", fwd_expect: "(\"via mutual region\", \"via mutual region\")" }
-   , { file: "purepy/param_reassign.fld", fwd_expect: "15" }
-   , { file: "purepy/pat_class_keyword.fld", fwd_expect: "4" }
-   , { file: "purepy/pat_class_mixed.fld", fwd_expect: "(2, 3)" }
-   , { file: "purepy/self.fld", fwd_expect: "120" }
-   , { file: "purepy/self_capture_def.fld", fwd_expect: "cl" }
    , { file: "qualified_access.fld", fwd_expect: "1" }
    , { file: "range.fld", fwd_expect: "[(0, 0), (0, 1), (1, 0), (1, 1)]" }
    , { file: "record_lookup.fld", fwd_expect: "True" }

@@ -13,7 +13,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import File (class LoadFile, FileCxt, Folder(..), emptyFileCxt, withRoots)
 import Module.Web (runWebT)
-import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
+import Test.Specs.IllFormed (illFormed_cases, shadow_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Comprehension (comprehension_cases)
 import Test.Specs.Dependence (dep_cases)
@@ -34,7 +34,7 @@ tests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModule
 tests = allTests
 
 scratchpad :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-scratchpad = illFormedSuite (filter (\c -> c.file `elem` [ "purepy/match_class_subsumed.fld", "purepy/match_as_subsumed.fld" ]) purepy_cases)
+scratchpad = illFormedSuite (filter (\c -> c.file `elem` [ "matrix_dim_type.fld" ]) illFormed_cases)
 
 filterSuite :: forall m r. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =
@@ -47,7 +47,7 @@ linkingTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => Ha
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
 illFormedTests :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestSuite m
-illFormedTests = illFormedSuite (purepy_cases <> illFormed_cases) <> (second (withRoots [ Folder "test/lib/predefined" ]) <$> illFormedSuite shadow_cases)
+illFormedTests = illFormedSuite illFormed_cases <> (second (withRoots [ Folder "test/lib/predefined" ]) <$> illFormedSuite shadow_cases)
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)

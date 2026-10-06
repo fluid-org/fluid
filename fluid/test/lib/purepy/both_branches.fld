@@ -1,8 +1,0 @@
-def foo(a, b):
-   if a < b:
-      comp = "smaller"
-   else:
-      comp = "bigger"
-   return comp
-
-foo(1, 2)

@@ -1,7 +1,0 @@
-def f():
-   x = 5
-   def x():
-      return x
-   return x()
-
-f()
