@@ -1,4 +1,4 @@
-from dependence.dict_pattern_inputs import d
+d = @doc("d") {"a": 1, "b": 2}
 
 match d:
    case {"a": x}:

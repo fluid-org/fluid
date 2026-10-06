@@ -1,0 +1,3 @@
+from linked_outputs.filter_data import xs, n, ys, m
+
+([x for x in xs if x > n], [y for y in ys if y > m])

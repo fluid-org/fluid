@@ -1,17 +1,23 @@
 module Test.Specs.LinkedInputs where
 
-import App.Util.Selector (dictVal, envVal, listElement, select, (>.>))
+import App.Util (Selector)
+import App.Util.Selector (dictVal, eachElement, envVal, listElement, select, none, (>.>))
 import Bind ((↦))
 import Data.Maybe (Maybe(..))
 import Test.Util (fluidSrcPaths)
 import Test.Util.Suite (TestLinkedInputsSpec)
+import Val (Val)
+
+yearAndCountry :: Selector Val
+yearAndCountry = eachElement (dictVal "year" select >.> dictVal "country" select)
 
 linkedInputs_spec3 :: TestLinkedInputsSpec
 linkedInputs_spec3 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "renewables", "nonRenewables" ]
-        , query: Nothing
+        , query: false
+        , ignoreInputs: envVal "renewables" yearAndCountry >.> envVal "nonRenewables" yearAndCountry
         , linking: true
         , rowFilter: Nothing
         }
@@ -32,7 +38,8 @@ linkedInputs_spec4 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "renewables", "nonRenewables" ]
-        , query: Nothing
+        , query: false
+        , ignoreInputs: envVal "renewables" yearAndCountry >.> envVal "nonRenewables" yearAndCountry
         , linking: true
         , rowFilter: Nothing
         }
@@ -62,7 +69,8 @@ linkedInputs_spec5 =
         { fluidSrcPaths
 
         , inputs: [ "nonRenewables", "renewables" ]
-        , query: Nothing
+        , query: false
+        , ignoreInputs: none
         , linking: true
         , rowFilter: Nothing
         }

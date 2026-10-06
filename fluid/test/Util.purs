@@ -8,10 +8,8 @@ import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
 import Data.Foldable (and, any, for_)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List)
 import Data.List as L
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
@@ -22,11 +20,11 @@ import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
 import Data.Maybe (Maybe(..))
 import Data.String (joinWith, null, trim)
-import Data.Tuple (fst, snd)
+import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
-import Graph.Dep (DepGraph, Deriv, Pos, bwd, fwd, materialise, positions, valAt)
+import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, positions, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -36,9 +34,10 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
-import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, Env, Val(..), moduleStore, stripDocs)
+import Util (type (×), AffError, EffectError, Thunk, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
+import Util.Map (get, keys, maplet, restrict, toUnfoldable, values)
+import Literal (Literal(..))
+import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -115,15 +114,15 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
    visibleGraph <- graphBenchmark benchNames.materialise \_ ->
       pure (materialise eval.g (visible eval `Set.union` Set.fromFoldable (values eval.inputs)))
-   let deps = bwd visibleGraph (Map.singleton eval.root (selected (stripDocs out0)))
+   let deps = bwd visibleGraph (maplet eval.root (selected (stripDocs out0)))
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
-      includes ("dependence on " <> x) (definitely' (Map.lookup q deps)) (stripDocs (get x in_ρ))
+      includes ("dependence on " <> x) (get q deps) (stripDocs (get x in_ρ))
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (fwdα (restrict inputs' in_ρ))
    -- Likewise the forward slice from the inputs, at the output.
    let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
    let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
-   includes "dependence of output" (definitely' (Map.lookup eval.root deps')) (stripDocs out1)
+   includes "dependence of output" (get eval.root deps') (stripDocs out1)
 
    case bwd_expect of
       Nothing -> pure unit
@@ -141,7 +140,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 -- Visible vertex carrying the selection.
 data VertexSpec
    = Output
-   | Input String -- imported variable, documented with its name
+   | Input String -- vertex documented with the name
    | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc VertexSpec
 
@@ -151,9 +150,6 @@ data Query
    | Fwd VertexSpec (ConstrArg -> Selector Val) String
 
 type DepSpec = { file :: String, queries :: Array Query }
-
-selected :: Val 𝔹 -> Set Pos
-selected v = Set.fromFoldable (mapWithIndex (\j b -> j × b) (positions v) # L.filter snd <#> fst)
 
 nonZero :: Val DepKind -> Set Pos
 nonZero = map (_ /= Zero) >>> selected
@@ -175,23 +171,23 @@ depName file = case _ of
       Intermediate n -> "intermediate " <> show n
       Doc vertex -> "doc of " <> name vertex
 
--- depGraph is the store's graph, from before the program ran.
+-- depGraph holds the vertices created by loading the modules, before the program ran.
 deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
-deriv depGraph eval@{ g: { docs, edges }, inputs, root } = case _ of
+deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
-   Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x inputs) edges of
-      Just [ p ] | Map.member p docs -> p
-      _ -> error ("input " <> x <> " not bound to documented value")
+   Input x -> case A.filter (\(_ × d) -> valAt g d == Val unit Nothing (Lit (Str x))) (Map.toUnfoldable docs) of
+      [ p × _ ] -> p
+      _ -> error ("no vertex documented " <> show x)
    Intermediate n -> intermediates ! n
-   Doc vertex -> definitely' (Map.lookup (deriv depGraph eval vertex) docs)
+   Doc vertex -> get (deriv depGraph eval vertex) docs
    where
    intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
-showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
+showDeps :: DepEval -> Labelling (Val DepKind) -> String
 showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
-   at p = definitely' (Map.lookup p deps)
+   at p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
       let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
    output = if Map.member root docs then [] else [ prettyP (at root) ]
@@ -203,9 +199,9 @@ selection
    -> DepEval
    -> VertexSpec
    -> (ConstrArg -> Selector Val)
-   -> Map Deriv (Set Pos)
+   -> Labelling (Set Pos)
 selection { classes } depGraph eval vertex δv =
-   Map.singleton p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
+   maplet p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
    where
    p = deriv depGraph eval vertex
 

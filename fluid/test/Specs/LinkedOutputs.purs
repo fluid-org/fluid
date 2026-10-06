@@ -1,21 +1,18 @@
 module Test.Specs.LinkedOutputs where
 
-import Prelude
-
-import App.Util (SelectionType(..))
-import App.Util.Selector (barSegment, listElement, matrixDims, matrixElement, topα, (>.>), select, select')
+import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, none, topα, (>.>), select, select')
 import Data.Maybe (Maybe(..))
 import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cPoint, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
 import Test.Util (fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
-import Util ((×))
 
 linkedOutputs_spec1 :: TestLinkedOutputsSpec
 linkedOutputs_spec1 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "renewables" ]
-        , query: Nothing
+        , query: false
+        , ignoreInputs: envVal "renewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
         , linking: true
         , rowFilter: Nothing
         }
@@ -41,7 +38,8 @@ linkedOutputs_spec2 =
    { spec:
         { fluidSrcPaths
         , inputs: [ "nonRenewables" ]
-        , query: Nothing
+        , query: false
+        , ignoreInputs: envVal "nonRenewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
         , linking: true
         , rowFilter: Nothing
         }
@@ -65,12 +63,13 @@ movingAverages_spec =
    { spec:
         { fluidSrcPaths
         , inputs: [ "methane" ]
-        , query: Nothing
+        , query: false
+        , ignoreInputs: none
         , linking: true
         , rowFilter: Nothing
         }
-   , δ_out: \_ -> identity >>> (_ × Persistent) -- TODO: make this a non-trivial test
-   , out_expect: \_ -> identity >>> (_ × Persistent)
+   , δ_out: \_ -> none -- TODO: make this a non-trivial test
+   , out_expect: \_ -> none
    , inert_expect: \_ -> Nothing
    , file: "linked_outputs/moving_average.fld"
    }
@@ -80,20 +79,22 @@ linkedOutputs_cases =
    [ { spec:
           { fluidSrcPaths
           , inputs: [ "data" ]
-          , query: Nothing
+          , query: false
+          , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
           }
      , δ_out: \arg -> arg cPair f_snd select
      , out_expect: \_ -> select
-     , inert_expect: \_ -> Just (identity >>> (_ × Persistent))
+     , inert_expect: \_ -> Just none
      , file: "linked_outputs/pairs.fld"
      }
    , { spec:
           { fluidSrcPaths
 
           , inputs: [ "data" ]
-          , query: Nothing
+          , query: false
+          , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
           }
@@ -123,6 +124,19 @@ linkedOutputs_cases =
                >.> arg cPair f_snd (topα select' >.> matrixDims select')
           )
      , file: "linked_outputs/convolution.fld"
+     }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "xs", "n", "ys", "m" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \arg -> arg cPair f_fst (listElement 0 select)
+     , out_expect: \arg -> arg cPair f_fst (listElement 0 select >.> listElement 1 select)
+     , inert_expect: \_ -> Nothing
+     , file: "linked_outputs/filter.fld"
      }
    , linkedOutputs_spec1
    , linkedOutputs_spec2

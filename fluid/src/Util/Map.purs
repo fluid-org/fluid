@@ -15,7 +15,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import Util (type (×), Endo, assert, definitely, error, orElse, (×))
 import Util.Set (class Set, (∈), size)
-import Data.Map (Map, lookup) as M
+import Data.Map as M
 import Data.Set as DSet
 
 -- Generalises Map but also supports a fixed key type, like Dict. Doesn't support transforming element type.
@@ -46,6 +46,17 @@ instance Map (Object a) String a where
    delete = Object.delete
    insert = Object.insert
    toUnfoldable = Object.toAscUnfoldable
+
+instance Ord k => Map (M.Map k v) k v where
+   maplet = M.singleton
+   keys = M.keys
+   values = M.values
+   filterKeys = M.filterKeys
+   unionWith = M.unionWith
+   lookup = M.lookup
+   delete = M.delete
+   insert = M.insert
+   toUnfoldable = M.toUnfoldable
 
 instance MapF Object String where
    intersectionWith = intersectionWith_Object

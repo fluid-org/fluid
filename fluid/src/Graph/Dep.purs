@@ -17,7 +17,8 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), definitely', (×))
+import Util (type (×), (×))
+import Util.Map (get, maplet)
 
 newtype Deriv = Deriv Int
 
@@ -54,15 +55,16 @@ sparseRel :: forall s. Map Pos (Map Pos s) -> SparseRel s
 sparseRel in_ = SparseRel { out, in_ }
    where
    out = fromFoldableWith Map.union
-      (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × Map.singleton j w)
+      (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
-type Edges r = Map Deriv (Map Deriv r) -- target ↦ source ↦ dependence relation
+type Labelling a = Map Deriv a
+type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
 
 -- Vertices labelled by values of shape f; edges labelled by dependence relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
-   , vals :: Map Deriv (f Unit)
-   , docs :: Map Deriv Deriv -- vertex ↦ vertex of its doc
+   , vals :: Labelling (f Unit)
+   , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
    , edges :: Edges (Rel (f s) (f s))
    }
 
@@ -70,7 +72,7 @@ emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
-valAt g p = definitely' (lookup p g.vals)
+valAt g p = get p g.vals
 
 deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
 deriv v = do
@@ -88,11 +90,11 @@ addEdge p q r =
 
 -- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
 type VisibleGraph (f :: Type -> Type) s =
-   { vals :: Map Deriv (f Unit)
+   { vals :: Labelling (f Unit)
    , edges :: Edges (SparseRel s)
    }
 
--- Relies on every edge running from an earlier to a later vertex in evaluation order.
+-- Relies on edges running from earlier to later vertices in evaluation order.
 materialise
    :: forall f s
     . Traversable f
@@ -108,24 +110,42 @@ materialise g visible =
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
-         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × Map.singleton (p × i) one)) v) weightsAt
-         , rels: Map.insert p (sparseRel <$> edgesInto) rels
+         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
+         , rels: Map.insert p (sparseRel <$> maybe Map.empty edgesInto weights) rels
          }
-      else { weightsAt: Map.insert p weights weightsAt, rels }
+      else { weightsAt: maybe weightsAt (\w -> Map.insert p w weightsAt) weights, rels }
       where
+      -- Weights at p; Nothing if p doesn't depend on any visible vertex.
       weights = foldl
-         (\acc (q × r) -> maybe acc (\x -> acc `plus` r x) (lookup q weightsAt))
-         (zeros v)
+         (\acc (q × r) -> maybe acc (\x -> Just (maybe (r x) (_ `plus` r x) acc)) (lookup q weightsAt))
+         Nothing
          (maybe Nil Map.toUnfoldable (lookup p g.edges))
 
-      -- Edges into p from each visible vertex, read off the lineage at every position of p.
-      edgesInto :: Map Deriv (Map Pos (Map Pos s))
-      edgesInto = foldl (unionWith Map.union) Map.empty $
-         mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions weights)
+   -- Edges into a vertex from each visible vertex, read off the lineage at every position.
+   edgesInto :: f (Lineage (Deriv × Pos) s) -> Labelling (Map Pos (Map Pos s))
+   edgesInto ws = foldl (unionWith Map.union) Map.empty $
+      mapWithIndex (\j (Lineage (_ × m)) -> maplet j <$> bySource m) (positions ws)
 
-      bySource :: Map (Deriv × Pos) s -> Map Deriv (Map Pos s)
-      bySource m = fromFoldableWith Map.union $
-         (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
+   bySource :: Map (Deriv × Pos) s -> Labelling (Map Pos s)
+   bySource m = fromFoldableWith Map.union $
+      (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × maplet i w
+
+-- Restrict every dependence relation to the positions where the predicate holds.
+mask :: forall f s. Traversable f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
+mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
+   where
+   kept = mapWithIndex (\p -> keep p >>> selected) g.vals
+   rel q p (SparseRel r) = SparseRel { in_: only ks_q ks_p r.in_, out: only ks_p ks_q r.out }
+      where
+      ks_q = get q kept
+      ks_p = get p kept
+   only ks ks' m = Map.filter (not <<< Map.isEmpty) $
+      Map.filterKeys (_ `Set.member` ks') <$> Map.filterKeys (_ `Set.member` ks) m
+
+-- Positions carrying true.
+selected :: forall f. Traversable f => f Boolean -> Set Pos
+selected v = Set.fromFoldable $
+   L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v))
 
 -- Sparse dependence relation applied to sparse weights.
 applyRel :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
@@ -133,20 +153,29 @@ applyRel r w = foldl (unionWith add) Map.empty $
    mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w
 
 -- Add weights at a vertex.
-add' :: forall s. Semiring s => Deriv -> Map Pos s -> Map Deriv (Map Pos s) -> Map Deriv (Map Pos s)
+add' :: forall s. Semiring s => Deriv -> Map Pos s -> Labelling (Map Pos s) -> Labelling (Map Pos s)
 add' = insertWith (unionWith add)
 
 -- Weight 1 at the selected positions.
-unitWeights :: forall s. Semiring s => Map Deriv (Set Pos) -> Map Deriv (Map Pos s)
+unitWeights :: forall s. Semiring s => Labelling (Set Pos) -> Labelling (Map Pos s)
 unitWeights = map (Set.toMap >>> map (const one))
 
 -- Weights at each visible vertex as a value, zero where absent.
-dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Map Pos s) -> Map Deriv (f s)
+dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Map Pos s) -> Labelling (f s)
 dense g ws = g.vals # mapWithIndex \p ->
    mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i))
 
+-- Forward and backward queries, each the transpose of the other.
+type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
+
+dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
+dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
+
+queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Pos)) (Labelling (f s))
+queries g = { fwd: fwd g, bwd: bwd g }
+
 -- Dependence of the selection on the positions of each visible vertex.
-bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
+bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step (p × sources) ws = case lookup p ws of
@@ -154,11 +183,11 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
       Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applyRel r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
-fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
+fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step ws (p × sources) = foldlWithIndex (\q ws' (SparseRel r) -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
-   into p ws r w = add' p (applyRel r.out w) ws
+   step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
+   into p ws (SparseRel r) w = add' p (applyRel r.out w) ws
 
 -- ======================
 -- boilerplate

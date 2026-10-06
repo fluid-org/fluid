@@ -3,41 +3,42 @@ module App.Fig where
 import Prelude hiding (absurd, compare)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
-import App.Util (SelState(..), SelStates(..), Selection, SelectionType(..), Selector, 𝕊, getSel, selState, selStates, to𝔹, to𝕊, primary, primaryOrSecondary)
-import App.Util.Selector (constrArg, envVal, ViewSetter)
+import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
+import App.Util.Selector (constrArg, envVal, sel𝔹, ViewSetter)
 import App.View (view')
 import App.View.Util (Direction(..), Fig, Options, HTMLId, View, drawView)
 import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
 import DataType (class HasClasses, fieldIndex)
+import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Array as A
+import Data.Foldable (elem, or)
+import Data.FunctorWithIndex (mapWithIndex)
+import Data.Map as Map
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
-import Data.Array as Array
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for_, sequence_)
-import Data.Tuple (fst, snd)
+import Data.Tuple (Tuple(..), fst)
 import Dict (Dict)
-import Dict (fromFoldable) as D
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (ConjugatePair, depsOf, graphEval, withOp)
+import Eval.Dep (depEval, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph (class Graph, DVertex, DVertex', Vertex(..), VertexData, dvertices, runQuery, selectαs, select𝔹s, vertexData, vertices)
-import Graph.GraphImpl (GraphImpl)
-import Graph.Slice (bwdSlice)
-import Lattice (𝔹, botOf, erase, topOf)
+import Graph.Dep (ConjugatePair, DepGraph, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
+import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
-import Util (type (×), Endo, absurd, error, spyWhen, (×), (∩))
-import Util.Map (filterKeys, insert, keys, lookup, mapWithKey, restrict)
-import Util.Set (empty, (\\), (∈), (∪))
-import Val (class HasModuleStore, Env(..), Val(..), asVal)
+import Util (type (×), Endo, spyWhen, (×))
+import Util.Map (get, insert, intersectionWith, lookup, mapWithKey, restrict, values)
+import Util.Set ((\\), (∈), (∪))
+import Val (class HasModuleStore, Env(..), Val(..), dataPositions)
 
 str
    :: { output :: String -- pseudo-variable to use as name of output view
@@ -77,205 +78,179 @@ setInputView x δvw fig = fig
    { in_views = insert x (lookup x fig.in_views # join <#> δvw) fig.in_views
    }
 
-selectIntermediate :: Vertex -> Selector Val -> Endo Fig
-selectIntermediate (Vertex α) δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
+selectIntermediate :: Deriv -> Selector Val -> Endo Fig
+selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
-   ι' × selType = envVal α δv ι
+   ι' × selType = first (\u -> Map.insert p u ι) (δv (get p ι))
    ρ' × v' × dir' × ι_final = case selType of
       Transient | dir.transient /= Intermediates -> ρ × v × dir { transient = Intermediates } × ι'
       Transient -> ρ × v × dir × ι'
       _ -> ρ × v × dir × ι
 
-setIntermediateView :: Vertex -> ViewSetter Fig View
-setIntermediateView (Vertex α) δvw fig = fig
-   { intermediate_views = insert α (lookup α fig.intermediate_views # join <#> δvw) fig.intermediate_views
-   }
-
-rebuildι :: Set DVertex -> Selection (Set DVertex) -> Dict (Val Vertex) -> Env (SelStates 𝔹)
-rebuildι inerts αs ι =
-   Env $ D.fromFoldable $ setSels <$> vs_inert <*> vs_selected
-   where
-   -- Consolidate with analogous calculation with ρInert etc in loadFig?
-   vs_inert = ι <#> \v -> select𝔹s v inerts
-   vs_selected = ι <#> \v@(Val α _ _) -> α × { persistent: select𝔹s v αs.persistent, transient: select𝔹s v αs.transient }
-
-   setSels :: Val 𝔹 -> Vertex × Selection (Val 𝔹) -> String × Val (SelStates 𝔹)
-   setSels inert (Vertex α × v) = α × (selStates <$> inert <*> v.persistent <*> v.transient)
+setIntermediateView :: Deriv -> ViewSetter Fig View
+setIntermediateView p δvw fig =
+   fig { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
 
 type SelectionResult =
    { v :: Val (SelStates 𝕊)
    , ρ :: Env (SelStates 𝕊)
-   , ι :: Env (SelStates 𝔹)
+   , ι :: Labelling (Val (SelStates 𝔹))
    }
 
+-- Query in the given direction, with the selection primary and what it reaches secondary.
+queryResult :: Fig -> SelectionType -> Direction -> Env (SelState 𝕊) × Val (SelState 𝕊) × Labelling (Val 𝔹)
+queryResult fig@{ v, ρ, ι } selType = case _ of
+   LinkedOutputs -> fig.linkedOutputs selType v # first primary >>> (second <<< first) (primaryOrSecondary selType v)
+   LinkedInputs -> fig.linkedInputs selType ρ # first (primaryOrSecondary selType ρ) >>> second (first primary)
+   Intermediates -> fig.linkIntermediates ι # first primary >>> second (first primary)
+
 selectionResult :: Fig -> SelectionResult
-selectionResult fig@{ dir, v, ρ, ι } =
-   { v: reportOut v', ρ: reportIn ρ', ι: ι' }
+selectionResult fig@{ dir } =
+   { v: reportOut (pairSel <$> v1 <*> v2)
+   , ρ: reportIn (pairSel <$> ρ1 <*> ρ2)
+   , ι: intermediates fig { persistent: ιs, transient: ιs' }
+   }
    where
-   as𝕊v :: forall a b. SelectionType -> a × Val (SelState 𝔹) × b -> a × Val (SelState 𝕊) × b
-   as𝕊v selType = (second <<< first) $ primaryOrSecondary selType v
-
-   to𝕊v :: forall a b. a × Val (SelState 𝔹) × b -> a × (Val (SelState 𝕊)) × b
-   to𝕊v = second (first primary)
-
-   as𝕊ρ :: forall a. SelectionType -> Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
-   as𝕊ρ selType = first $ primaryOrSecondary selType ρ
-
-   to𝕊ρ :: forall a. Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
-   to𝕊ρ = first primary
-
-   ρ1 × v1 × αs =
-      case dir.persistent of
-         LinkedOutputs -> to𝕊ρ $ as𝕊v Persistent $ fig.linkedOutputs Persistent v
-         LinkedInputs -> to𝕊v $ as𝕊ρ Persistent $ fig.linkedInputs Persistent ρ
-         Intermediates -> error absurd
-   ρ2 × v2 × αs' =
-      case dir.transient of
-         LinkedOutputs -> to𝕊ρ $ as𝕊v Transient $ fig.linkedOutputs Transient v
-         LinkedInputs -> to𝕊v $ as𝕊ρ Transient $ fig.linkedInputs Transient ρ
-         Intermediates -> to𝕊ρ $ to𝕊v $ fig.linkIntermediates ι
-
-   ι' = intermediates fig { persistent: αs, transient: αs' }
-
-   splice :: forall a. SelState a -> SelState a -> SelStates a
-   splice Inert _ = SelStates Inert
-   splice _ Inert = SelStates Inert
-   splice (Reactive persistent) (Reactive transient) =
-      SelStates (Reactive { persistent, transient })
-
-   v' = splice <$> v1 <*> v2
-   ρ' = splice <$> ρ1 <*> ρ2
-
+   ρ1 × v1 × ιs = queryResult fig Persistent dir.persistent
+   ρ2 × v2 × ιs' = queryResult fig Transient dir.transient
    reportIn = spyWhen tracing.mediatingData ("Mediating inputs") (prettyP <<< erase)
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
 
-intermediates :: Fig -> Selection (Set DVertex) -> Env (SelStates 𝔹)
-intermediates { spec, in_roots, inerts } αs =
-   flip (maybe empty) spec.query findIntermediates
+-- Intermediates reachable from either selection.
+intermediates :: Fig -> Selection (Labelling (Val 𝔹)) -> Labelling (Val (SelStates 𝔹))
+intermediates { inertι } ιs =
+   Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inertι # mapWithIndex \p inert ->
+      selStates <$> inert <*> sel ιs.persistent p inert <*> sel ιs.transient p inert
    where
-   findIntermediates :: (VertexData -> Maybe (DVertex' (Val Vertex))) -> Env (SelStates Boolean)
-   findIntermediates query = rebuildι inerts αs
-      $ filterKeys (\α -> not (Vertex α ∈ in_roots))
-      $ runQuery query (αs.persistent ∪ αs.transient)
+   sel ι p inert = fromMaybe (false <$ inert) (Map.lookup p ι)
 
 drawFig :: HTMLId -> Fig -> Effect Unit
 drawFig divId fig = do
-   drawView arg { divId, suffix: str.output, view: out_view } (selectOutput >>> redraw)
-
-   sequence_ $ flip mapWithKey in_views \x view ->
-      drawView arg { divId: divId <> "-" <> str.input, suffix: x, view } (selectInput x >>> redraw)
-
-   for_ unused \α -> rootSelect ("#" <> prefix <> "-" <> α) >>= remove
-   sequence_ $ flip mapWithKey (unwrap ι) \α v ->
-      drawView arg { divId: prefix, suffix: α, view: view' options str.intermediate (map to𝕊 <$> v) }
-         (selectIntermediate (Vertex α) >>> redraw)
+   drawView arg { divId, suffix: str.output, view: view' options str.output v } (selectOutput >>> redraw)
+   sequence_ $ unwrap ρ # mapWithKey \x u ->
+      drawView arg { divId: divId <> "-" <> str.input, suffix: x, view: view' options x u } (selectInput x >>> redraw)
+   for_ (Map.keys fig.ι \\ Map.keys ι) \p -> rootSelect ("#" <> prefix <> "-" <> show p) >>= remove
+   sequence_ $ ι # mapWithIndex \p u ->
+      drawView arg { divId: prefix, suffix: show p, view: view' options str.intermediate (map to𝕊 <$> u) }
+         (selectIntermediate p >>> redraw)
    where
+   { v, ρ, ι } = selectionResult fig
    arg = constrArg fig.fieldIndex
    options = { fieldIndex: fig.fieldIndex, rowFilter: fig.spec.rowFilter }
-   { v, ρ, ι } = selectionResult fig
-   out_view = view' options str.output v
-   in_views = ρ # \(Env ρ) -> mapWithKey (view' options) ρ
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
-   unused = keys fig.ι \\ keys ι
    prefix = divId <> "-" <> str.intermediate
 
 drawFile :: File × String -> Effect Unit
 drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
-type IO a = { ρ :: Env a, v :: Val a }
+-- Vertex shown as one value with the vertex of its doc, if any.
+type DerivWithDoc = Deriv × Maybe Deriv
 
-lift
-   :: forall f f' g
-    . Apply f
-   => Apply f'
-   => f (𝔹 -> SelState 𝔹)
-   -> (f' 𝔹 -> f 𝔹 × g)
-   -> f' (SelState 𝔹)
-   -> f (SelState 𝔹) × g
-lift selState_f f v = first (apply selState_f) (f (v <#> to𝔹))
+val :: forall a. Labelling (Val a) -> DerivWithDoc -> Val a
+val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
+
+unval :: forall a. DerivWithDoc -> Val a -> Labelling (Val a)
+unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
+
+unvals :: forall a. Dict DerivWithDoc -> Dict (Val a) -> Labelling (Val a)
+unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
+
+-- Vertex of a top-level variable ↦ vertex of its defining expression.
+definedBy :: forall s. DepGraph Val s -> Deriv -> Maybe Deriv
+definedBy g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
+   Just [ p ] -> Just p
+   _ -> Nothing
+
+-- Queries over Boolean selections.
+boolean
+   :: ConjugatePair (Labelling (Set Pos)) (Labelling (Val DepKind))
+   -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
+boolean = dimap (map selected) (map (map (_ /= Zero)))
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
-loadFig options@{ inputs, linking } fluidSrc = do
+loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    { s, e, gconfig } <- prepConfig fluidSrc
-   eval@({ inα: ρα, outα, g: g0 }) <- graphEval gconfig e
+   eval@{ g: g@{ docs }, root } <- depEval gconfig e
    let
-      opEval = withOp eval
-      inputs' = Set.fromFoldable inputs
-      Env ρ_restricted = restrict inputs' ρα
-      in_roots = Set.fromFoldable $ (\(Val α _ _) -> α) <$> ρ_restricted
+      out = root × Map.lookup root docs
+      ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definedBy g q >>= (_ `Map.lookup` docs))
+      shown = Set.fromFoldable (A.cons root (A.mapMaybe (definedBy g) (A.fromFoldable (values (fst <$> ins)))))
+      ιs =
+         if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs)
+         else Map.empty
 
-      deps = depsOf eval
+      graph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
+      everything = map (const true) <$> graph.vals
+      nothing = map (const false) <$> graph.vals
+      ignored = unvals ins (unwrap (sel𝔹 ignoreInputs (Env (ins <#> val everything))))
 
-      io :: ConjugatePair GraphImpl Env Val
-      io =
-         { fwd: deps.fwd
-         , bwd: \v -> first (restrict inputs') (deps.bwd v)
+      -- Over the graph as it is, and restricted to data positions less the ignored ones.
+      unmasked = boolean (queries graph)
+      masked = boolean $ queries $ graph # mask \p v ->
+         maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
+
+      -- Positions which the output does not depend on, and which do not depend on any input.
+      inert
+         :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
+         -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
+      inert { fwd, bwd } =
+         { bwd: map not <$> bwd (unval out (val everything out))
+         , fwd: map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
          }
+      inertMasked = inert masked
+      inertUnmasked = inert unmasked
 
-      in_views = const Nothing <$> ρ_restricted
-      unselected = { ρ: botOf ρα, v: botOf outα } :: IO 𝔹
+      toρ :: Labelling (Val 𝔹) -> Env (SelState 𝔹)
+      toρ m = Env (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
 
-      inertBwd = vertices g0 \\ (vertices $ snd $ io.bwd $ topOf outα)
-      inertFwd = vertices g0 \\ (vertices $ snd $ deps.fwd (topOf ρα))
+      toV :: Labelling (Val 𝔹) -> Val (SelState 𝔹)
+      toV m = selState <$> val inertMasked.fwd out <*> val m out
 
-      inert = { ρ: select𝔹s ρα inertBwd, v: select𝔹s outα inertFwd } :: IO 𝔹
-      inert' = { ρ: selState <$> inert.ρ, v: selState <$> inert.v } :: IO (𝔹 -> SelState 𝔹)
+      toι :: Labelling (Val 𝔹) -> Labelling (Val 𝔹)
+      toι m = Map.filter or (ιs <#> val m)
 
-      demands :: Val (SelState 𝔹) -> Env (SelState 𝔹) × GraphImpl
-      demands = lift inert'.ρ io.bwd
+      fromρ :: Env (SelState 𝔹) -> Labelling (Val 𝔹)
+      fromρ (Env ρ) = unvals ins (map to𝔹 <$> ρ)
 
-      demandedBy :: Env (SelState 𝔹) -> Val (SelState 𝔹) × GraphImpl
-      demandedBy = lift inert'.v io.fwd
+      fromV :: Val (SelState 𝔹) -> Labelling (Val 𝔹)
+      fromV v = unval out (to𝔹 <$> v)
 
-      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-      linkedInputs selType ρ = ρ'' × v × vertices g
+      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+      linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
          where
-         ρ' = ρ <#> getSel selType
-         v × g = demandedBy ρ'
-         ρ'' = if linking then fst (demands v) else ρ'
+         sel = ρ <#> projSel selType
+         deps = masked.fwd (fromρ sel)
+         v = toV deps
 
-      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-      linkedOutputs selType v = ρ × v'' × vertices g
+      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+      linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
          where
-         v' = v <#> getSel selType
-         ρ × g = demands v'
-         v'' = if linking then fst (demandedBy ρ) else v'
+         sel = v <#> projSel selType
+         deps = masked.bwd (fromV sel)
+         ρ = toρ deps
 
-      linkIntermediates :: Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Set DVertex
-      linkIntermediates ι =
-         let
-            ια = Env $ ιfromαs g0 (keys ι) :: Env Vertex
-            ι' = ι <#> getSel Transient >>> to𝔹
-            αs = selectαs ι' ια
-            v = inert'.v <*> select𝔹s outα (vertices $ bwdSlice (αs × opEval.g))
-            ρ = inert'.ρ <*> select𝔹s ρα (vertices $ bwdSlice (αs × eval.g))
-         in
-            ρ × v × (dvertices g0 αs)
+      linkIntermediates :: Labelling (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+      linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
+         where
+         sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
 
    pure
       { spec: options
       , s
-      , ρ: selStates <$> inert.ρ <*> unselected.ρ <*> unselected.ρ
-      , v: selStates <$> inert.v <*> unselected.v <*> unselected.v
-      , ι: empty
+      , ρ: pairSel <$> toρ nothing <*> toρ nothing
+      , v: pairSel <$> toV nothing <*> toV nothing
+      , ι: Map.empty
       , linkedOutputs
       , linkedInputs
       , linkIntermediates
       , dir: { persistent: LinkedOutputs, transient: LinkedOutputs }
-      , in_views
+      , in_views: ins $> Nothing
       , out_view: Nothing
-      , intermediate_views: empty
-      , in_roots
-      , inerts: inertFwd ∩ inertBwd
+      , intermediate_views: Map.empty
+      , inertι: ιs <#> \p -> (&&) <$> val inertUnmasked.bwd p <*> val inertUnmasked.fwd p
       , fieldIndex: fieldIndex gconfig.classes
       }
-
-ιfromαs :: forall g. Graph g => g -> Set String -> Dict (Val Vertex)
-ιfromαs g = D.fromFoldable
-   <<< Array.mapMaybe
-      (\α -> (α × _) <$> (asVal $ vertexData g (Vertex α)))
-   <<< Set.toUnfoldable
 
 codeMirrorDiv :: Endo String
 codeMirrorDiv = ("codemirror-" <> _)

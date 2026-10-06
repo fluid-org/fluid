@@ -3,44 +3,44 @@ module App.LoadFigure where
 import Prelude hiding (absurd)
 
 import App.Fig (drawFig, drawFile, loadFig)
+import App.Util.Selector (dictVal, eachElement, envVal, select, none, (>.>))
 import App.View.Util (Filter, Options)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError)
 import Data.Array (head, last)
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
+import Data.Foldable (foldr)
+import Data.Maybe (Maybe(..), maybe)
 import Data.String (split, Pattern(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (message)
+import Foreign.Object (Object)
+import Foreign.Object as Object
 import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
-import Graph (DVertex'(..))
 import Module.Web (runWebT)
 import Util (definitely, definitely', error, (×))
-import Val (Val(..), asVal)
 
 -- TODO: remove this extra type
 type JsonOptions =
    { fluidSrcPath :: Array String
    , inputs :: Array String
    , query :: Boolean
+   , ignoreInputs :: Maybe (Object (Array String)) -- input ↦ columns
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
 
 optionsFromJson :: JsonOptions -> Options
-optionsFromJson spec@{ inputs, query, linking, rowFilter } =
+optionsFromJson spec@{ inputs, query, ignoreInputs, linking, rowFilter } =
    { fluidSrcPaths: Folder <$> spec.fluidSrcPath
    , inputs
-   , query:
-        if query then
-           Just $ asVal >=> case _ of
-              v@(Val α (Just _) _) -> Just $ DVertex (α × v)
-              _ -> Nothing
-        else Nothing
+   , query
+   , ignoreInputs: foldr (>.>) none $ (maybe [] Object.toUnfoldable ignoreInputs) <#> \(x × ks) ->
+        envVal x (eachElement (foldr (>.>) none (ks <#> \k -> dictVal k select)))
    , linking
    , rowFilter
    }

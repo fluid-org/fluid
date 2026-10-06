@@ -91,10 +91,16 @@ isInert :: forall a. SelStates a -> 𝔹
 isInert (SelStates Inert) = true
 isInert (SelStates (Reactive _)) = false
 
-getSel :: forall a. SelectionType -> SelStates a -> SelState a
-getSel selType s = unwrap s <#> case selType of
+projSel :: forall a. SelectionType -> SelStates a -> SelState a
+projSel selType s = unwrap s <#> case selType of
    Persistent -> _.persistent
    Transient -> _.transient
+
+-- Persistent and transient states into one; inert if either is.
+pairSel :: forall a. SelState a -> SelState a -> SelStates a
+pairSel Inert _ = SelStates Inert
+pairSel _ Inert = SelStates Inert
+pairSel (Reactive persistent) (Reactive transient) = SelStates (Reactive { persistent, transient })
 
 getPersistent :: forall a. BoundedJoinSemilattice a => SelStates a -> a
 getPersistent (SelStates Inert) = bot
@@ -153,7 +159,7 @@ primary :: forall f. Apply f => f (SelState 𝔹) -> f (SelState 𝕊)
 primary x = (to𝕊 <$> _) <$> x
 
 primaryOrSecondary :: forall f. Apply f => SelectionType -> f (SelStates 𝔹) -> f (SelState 𝔹) -> f (SelState 𝕊)
-primaryOrSecondary selType x x' = lift2 as𝕊 <$> (getSel selType <$> x) <*> x'
+primaryOrSecondary selType x x' = lift2 as𝕊 <$> (projSel selType <$> x) <*> x'
 
 unselected :: SelStates 𝔹
 unselected = SelStates $ Reactive { persistent: false, transient: false }

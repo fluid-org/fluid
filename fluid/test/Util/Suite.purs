@@ -3,8 +3,8 @@ module Test.Util.Suite where
 import Prelude
 
 import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
-import App.Util (SelectionType(..), Selector, isInert, isPersistent, isTransient, selStates)
-import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
+import App.Util (Selector, isInert, isPersistent, isTransient, selStates)
+import App.Util.Selector (ConstrArg, constrArg, none, sel𝔹)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import DataType (class HasClasses)
@@ -65,7 +65,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) { δv: \_ -> identity >>> (_ × Persistent), fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
+      test (File file) { δv: \_ -> none, fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
 
 depSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query

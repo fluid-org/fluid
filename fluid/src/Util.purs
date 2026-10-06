@@ -351,6 +351,9 @@ instance IsEmpty (Set a) where
 instance IsEmpty (Object a) where
    isEmpty = Object.isEmpty
 
+instance IsEmpty (Map k v) where
+   isEmpty = M.isEmpty
+
 -- Foldable.length returns an arbitrary semiring which is a bit too general
 class Length (f :: Type -> Type) where
    length :: forall a. f a -> Int

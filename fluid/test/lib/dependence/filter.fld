@@ -1,3 +1,4 @@
-from dependence.filter_inputs import n, xs
+n = @doc("n") 5
+xs = @doc("xs") [8, 4, 7, 3]
 
 [x for x in xs if x > n]

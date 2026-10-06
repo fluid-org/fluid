@@ -76,16 +76,31 @@ asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else N
 root :: forall a. Val a -> a
 root (Val α _ _) = α
 
+overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
+overChildren _ (Lit ℓ) = Lit ℓ
+overChildren f (Constr c vs) = Constr c (f <$> vs)
+overChildren f (List vs) = List (f <$> vs)
+overChildren f (Dictionary (DictRep d)) = Dictionary (DictRep (map f <$> d))
+overChildren f (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (map f) vss × i × j))
+overChildren f (Fun φ) = Fun (overFun φ)
+   where
+   overFun (Closure (Env ρ) ds d) = Closure (Env (f <$> ρ)) ds d
+   overFun (Partial φ' vs) = Partial (overFun φ') (f <$> vs)
+   overFun φ' = φ'
+
 -- Docs are vertices in the dependence graph; retire with the α-graph.
 stripDocs :: forall a. Val a -> Val a
-stripDocs (Val α _ u) = Val α Nothing case u of
-   Constr c vs -> Constr c (stripDocs <$> vs)
-   List vs -> List (stripDocs <$> vs)
-   Dictionary (DictRep d) -> Dictionary (DictRep (map stripDocs <$> d))
-   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map stripDocs) vss × i × j))
-   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (stripDocs <$> ρ)) ds d)
-   Fun (Partial φ vs) -> Fun (Partial φ (stripDocs <$> vs))
-   _ -> u
+stripDocs (Val α _ u) = Val α Nothing (overChildren stripDocs u)
+
+-- False at shape positions: root, keys and dimensions of a list, dictionary or matrix.
+dataPositions :: forall a. Val a -> Val Boolean
+dataPositions (Val _ _ u) = Val (not container) Nothing (overChildren dataPositions (false <$ u))
+   where
+   container = case u of
+      List _ -> true
+      Dictionary _ -> true
+      Matrix _ -> true
+      _ -> false
 
 data Fun a
    = Closure (Env a) (Dict Def) Def

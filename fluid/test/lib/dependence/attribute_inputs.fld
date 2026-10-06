@@ -1,8 +1,0 @@
-from dataclasses import dataclass
-
-@dataclass
-class P:
-   x: int
-   y: int
-
-p = @doc("p") P(1, 2)

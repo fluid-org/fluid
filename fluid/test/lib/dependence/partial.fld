@@ -1,4 +1,5 @@
-from dependence.partial_inputs import a, b
+a = @doc("a") 1
+b = @doc("b") 2
 
 def add(x, y):
    return x + y

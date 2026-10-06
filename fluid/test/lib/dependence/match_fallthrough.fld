@@ -1,4 +1,15 @@
-from dependence.match_fallthrough_inputs import Foo, v, w
+from dataclasses import dataclass
+
+@dataclass
+class Foo:
+   pass
+
+@dataclass
+class Bar:
+   pass
+
+v = @doc("v") Bar()
+w = @doc("w") 5
 
 match v:
    case Foo():
