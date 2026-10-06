@@ -22,7 +22,7 @@ import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (𝔹)
 import Module (prepConfig)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
-import Test.Util (DepSpec, SelectionSpec(..), TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
+import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
 import Val (class HasModuleStore, Val, Env)
@@ -33,13 +33,6 @@ type BenchSuite m = Int × Boolean -> Array (String × m BenchRow)
 type TestSpec =
    { file :: String
    , fwd_expect :: String
-   }
-
-type TestBwdSpec =
-   { file :: String
-   , bwd_expect :: ConstrArg -> Selector Env
-   , δv :: ConstrArg -> Selector Val
-   , inputs :: Array String
    }
 
 type TestLinkedOutputsSpec =
@@ -64,19 +57,10 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) (Evaluation fwd_expect) (n × is_bench)
+      test (File file) fwd_expect (n × is_bench)
 
 depSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query
-
-bwdSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestBwdSpec -> BenchSuite m
-bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) >>> show) &&& asTest)
-   where
-   folder = Folder "slicing"
-
-   asTest :: TestBwdSpec -> m BenchRow
-   asTest { file, bwd_expect, δv, inputs } = do
-      test (folder </> File file) (Selection { δv, bwd_expect, inputs }) (n × is_bench)
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)

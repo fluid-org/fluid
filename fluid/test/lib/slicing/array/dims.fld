@@ -1,4 +1,5 @@
-from slicing.array.dims_inputs import x, y
+x = @doc("x") 3
+y = @doc("y") 3
 
 yss = [| 0 for (i, j) in (x, y) |]
 dims(yss)

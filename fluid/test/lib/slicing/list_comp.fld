@@ -1,4 +1,11 @@
-from slicing.list_comp_inputs import data, types
+data = @doc("data") [
+  { "year": 2013, "country": "China", "energyType": "Bio", "output": 6.2 },
+  { "year": 2013, "country": "China", "energyType": "Hydro", "output": 260 },
+  { "year": 2013, "country": "China", "energyType": "Solar", "output": 19.9 },
+  { "year": 2013, "country": "China", "energyType": "Wind", "output": 91 }
+]
+
+types = @doc("types") ["Bio", "Hydro", "Solar", "Wind"]
 
 [ row["output"] for type in types
   for row in data if row["energyType"] == type

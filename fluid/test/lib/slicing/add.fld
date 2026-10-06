@@ -1,3 +1,5 @@
-from slicing.add_inputs import a, b, c
+a = @doc("a") 5
+b = @doc("b") 0
+c = @doc("c") 3
 
 a + (b + c)

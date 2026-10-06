@@ -1,4 +1,4 @@
-from slicing.dict.match_inputs import n
+n = @doc("n") 2
 
 def f({ "fst": x, "snd": [] }):
   return x

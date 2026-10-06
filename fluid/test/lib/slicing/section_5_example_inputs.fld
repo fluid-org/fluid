@@ -1,4 +1,4 @@
-data = [
+data = @doc("data") [
   { "energyType": "Bio", "output": 6.2 },
   { "energyType": "Hydro", "output": 260 },
   { "energyType": "Solar", "output": 19.9 },
@@ -6,4 +6,4 @@ data = [
   { "energyType": "Geo", "output": 14.4 }
 ]
 
-types = ["Hydro", "Solar", "Geo"]
+types = @doc("types") ["Hydro", "Solar", "Geo"]

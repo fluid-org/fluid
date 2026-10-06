@@ -13,7 +13,6 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import File (class LoadFile, FileCxt, Folder(..), emptyFileCxt, withRoots)
 import Module.Web (runWebT)
-import Test.Specs.Bwd (bwd_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases, shadow_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Comprehension (comprehension_cases)
@@ -25,7 +24,7 @@ import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, bwdSuite, depSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, depSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
@@ -59,6 +58,5 @@ benchmarks =
    , suite misc_cases
    , suite comments_cases
    , suite paragraph_cases
-   , bwdSuite bwd_cases
    , suite graphics_cases
    ]

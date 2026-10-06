@@ -29,6 +29,10 @@ misc_cases =
    , { file: "elif.fld", fwd_expect: """["much more", "more", "less", "much less"]""" }
    , { file: "factorial.fld", fwd_expect: "40320" }
    , { file: "filter.fld", fwd_expect: "[8, 7]" }
+   , { file: "slicing/qcut.fld"
+     , fwd_expect:
+          """[([1.01, 1.05], 0.051000000000000156), ([1.07, 1.09, 1.22, 1.23, 1.24, 1.24, 1.25, 1.32, 1.32, 1.35, 1.39, 1.47, 1.57, 1.72], 0.6639999999999999), ([1.73, 1.75, 1.76, 1.83, 1.87, 1.94, 2.04, 2.14, 2.18, 2.36, 2.37, 2.38, 2.52, 2.54], 0.8464999999999998), ([2.61, 2.67], 0.09850000000000003)]"""
+     }
    , { file: "first_class_constr.fld", fwd_expect: "[[10], [12], [20]]" }
    , { file: "flatten.fld"
      , fwd_expect: """[(3, "simon"), (4, "john"), (6, "sarah"), (7, "claire")]"""

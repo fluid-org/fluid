@@ -1,3 +1,4 @@
-from slicing.divide_inputs import a, b
+a = @doc("a") 362
+b = @doc("b") 9
 
 a / b

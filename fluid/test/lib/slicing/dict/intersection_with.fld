@@ -1,3 +1,4 @@
-from slicing.dict.intersection_with_inputs import d1, d2
+d1 = @doc("d1") { "a": 5, "b": 6, "c": 3 }
+d2 = @doc("d2") { "b": -6, "c": 7 }
 
 dict_intersectionWith(lambda n, m: (n + m) * 2, d1, d2)

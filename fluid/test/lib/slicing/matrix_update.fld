@@ -1,4 +1,4 @@
-from slicing.matrix_update_inputs import pair
+pair = @doc("pair") 4000
 
 image_ = [
   [15, 13, 6, 9, 16],

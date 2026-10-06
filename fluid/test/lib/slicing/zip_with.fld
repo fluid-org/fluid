@@ -1,4 +1,5 @@
-from slicing.zip_with_inputs import xs, ys
+xs = @doc("xs") [2, 3, 4]
+ys = @doc("ys") [3, 4, 5, 6]
 
 def zip_with(op, xs, ys):
   return [op(xs[i], ys[i]) for i in range(0, min(len(xs), len(ys)))]
