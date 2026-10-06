@@ -136,6 +136,45 @@ linkedOutputs_cases =
      , inert_expect: \_ -> Nothing
      , file: "linked_outputs/filter.fld"
      }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "types", "data" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \_ -> listElement 1 select
+     , out_expect: \_ -> at "[⸨88⸩, ⸨6⸩, ⸨4⸩]"
+     , inert_expect: \_ -> Nothing
+     , file: "slicing/section_5_example.fld"
+     }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "seq1", "seq2" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \_ -> listElement 1 select
+     , out_expect: \_ -> at "[⸨(⸨0⸩, ⸨0⸩)⸩, ⸨(⸨1⸩, ⸨1⸩)⸩, ⸨(⸨1⸩, ⸨2⸩)⸩, ⸨(⸨2⸩, ⸨3⸩)⸩, ⸨(⸨3⸩, ⸨4⸩)⸩, ⸨(⸨4⸩, ⸨5⸩)⸩, ⸨(⸨4⸩, ⸨6⸩)⸩]"
+     , inert_expect: \_ -> Nothing
+     , file: "slicing/dtw/compute_dtw.fld"
+     }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "x", "n" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \arg -> arg cPair f_snd select
+     , out_expect: \_ -> at "(⸨3⸩, ⸨True⸩)"
+     , inert_expect: \_ -> Nothing
+     , file: "slicing/output_not_source.fld"
+     }
    , linkedOutputs_spec1
    , linkedOutputs_spec2
    , movingAverages_spec

@@ -43,7 +43,7 @@ type TestSuite m = Array (String × m Unit)
 
 type SelectionSpec =
    { δv :: ConstrArg -> Selector Val
-   , fwd_expect :: String -- prettyprinted value after bwd then fwd round-trip
+   , fwd_expect :: Maybe String -- printed output, for tests with no selection
    , bwd_expect :: Maybe (ConstrArg -> Selector Env) -- Nothing for tests that don't perturb output
    , inputs :: Array String -- data inputs to slice forward through; [] = all (no restriction)
    }
@@ -130,8 +130,8 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
          let expected = sel𝔹 (sel arg) in_ρ
          unless (in_ρ ≽ expected) $
             throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
-   let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
-   withMsg "fwd_expect" $ checkPretty fwd_expect (prettyP (report out1))
+   for_ fwd_expect \expect ->
+      withMsg "fwd_expect" $ checkPretty expect (prettyP out1)
 
    recordGraphSize g
    recordDepGraphSize eval.g

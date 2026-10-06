@@ -39,7 +39,6 @@ type TestBwdSpec =
    { file :: String
    , bwd_expect :: ConstrArg -> Selector Env
    , δv :: ConstrArg -> Selector Val
-   , fwd_expect :: String
    , inputs :: Array String
    }
 
@@ -65,7 +64,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) { δv: \_ -> none, fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
+      test (File file) { δv: \_ -> none, fwd_expect: Just fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
 
 depSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query
@@ -76,8 +75,8 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
    folder = Folder "slicing"
 
    asTest :: TestBwdSpec -> m BenchRow
-   asTest { file, bwd_expect, δv, fwd_expect, inputs } = do
-      test (folder </> File file) { δv, fwd_expect, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
+   asTest { file, bwd_expect, δv, inputs } = do
+      test (folder </> File file) { δv, fwd_expect: Nothing, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)
