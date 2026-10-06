@@ -142,7 +142,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 data VertexSpec
    = Output
    | Input String -- vertex documented with the name
-   | Intermediate Int -- n-th documented vertex created by evaluating the program, counting in evaluation order
+   | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc VertexSpec
 
 -- Selection and expected dependence, as given by showDeps: data ⸨ ⸩, control ⟪ ⟫.
