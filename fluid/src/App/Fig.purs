@@ -3,7 +3,7 @@ module App.Fig where
 import Prelude hiding (absurd, compare)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
-import App.Util (SelState(..), SelStates(..), Selection, SelectionType(..), Selector, 𝕊, getSel, selState, selStates, to𝔹, to𝕊, primary, primaryOrSecondary)
+import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
 import App.Util.Selector (constrArg, envVal, sel𝔹, ViewSetter)
 import App.View (view')
 import App.View.Util (Direction(..), Fig, Options, HTMLId, View, drawView)
@@ -35,7 +35,7 @@ import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
-import Util (type (×), Endo, absurd, definitely', error, spyWhen, (×))
+import Util (type (×), Endo, definitely', spyWhen, (×))
 import Util.Map (insert, intersectionWith, lookup, mapWithKey, restrict, values)
 import Util.Set ((\\), (∈), (∪))
 import Val (class HasModuleStore, Env(..), Val(..), dataPositions)
@@ -97,44 +97,22 @@ type SelectionResult =
    , ι :: Map Deriv (Val (SelStates 𝔹))
    }
 
+-- Query in the given direction, with the selection primary and what it reaches secondary.
+queryResult :: Fig -> SelectionType -> Direction -> Env (SelState 𝕊) × Val (SelState 𝕊) × Map Deriv (Val 𝔹)
+queryResult fig@{ v, ρ, ι } selType = case _ of
+   LinkedOutputs -> fig.linkedOutputs selType v # first primary >>> (second <<< first) (primaryOrSecondary selType v)
+   LinkedInputs -> fig.linkedInputs selType ρ # first (primaryOrSecondary selType ρ) >>> second (first primary)
+   Intermediates -> fig.linkIntermediates ι # first primary >>> second (first primary)
+
 selectionResult :: Fig -> SelectionResult
-selectionResult fig@{ dir, v, ρ, ι } =
-   { v: reportOut v', ρ: reportIn ρ', ι: ι' }
+selectionResult fig@{ dir } =
+   { v: reportOut (pairSel <$> v1 <*> v2)
+   , ρ: reportIn (pairSel <$> ρ1 <*> ρ2)
+   , ι: intermediates fig { persistent: ιs, transient: ιs' }
+   }
    where
-   as𝕊v :: forall a b. SelectionType -> a × Val (SelState 𝔹) × b -> a × Val (SelState 𝕊) × b
-   as𝕊v selType = (second <<< first) $ primaryOrSecondary selType v
-
-   to𝕊v :: forall a b. a × Val (SelState 𝔹) × b -> a × (Val (SelState 𝕊)) × b
-   to𝕊v = second (first primary)
-
-   as𝕊ρ :: forall a. SelectionType -> Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
-   as𝕊ρ selType = first $ primaryOrSecondary selType ρ
-
-   to𝕊ρ :: forall a. Env (SelState 𝔹) × a -> Env (SelState 𝕊) × a
-   to𝕊ρ = first primary
-
-   ρ1 × v1 × αs =
-      case dir.persistent of
-         LinkedOutputs -> to𝕊ρ $ as𝕊v Persistent $ fig.linkedOutputs Persistent v
-         LinkedInputs -> to𝕊v $ as𝕊ρ Persistent $ fig.linkedInputs Persistent ρ
-         Intermediates -> error absurd
-   ρ2 × v2 × αs' =
-      case dir.transient of
-         LinkedOutputs -> to𝕊ρ $ as𝕊v Transient $ fig.linkedOutputs Transient v
-         LinkedInputs -> to𝕊v $ as𝕊ρ Transient $ fig.linkedInputs Transient ρ
-         Intermediates -> to𝕊ρ $ to𝕊v $ fig.linkIntermediates ι
-
-   ι' = intermediates fig { persistent: αs, transient: αs' }
-
-   splice :: forall a. SelState a -> SelState a -> SelStates a
-   splice Inert _ = SelStates Inert
-   splice _ Inert = SelStates Inert
-   splice (Reactive persistent) (Reactive transient) =
-      SelStates (Reactive { persistent, transient })
-
-   v' = splice <$> v1 <*> v2
-   ρ' = splice <$> ρ1 <*> ρ2
-
+   ρ1 × v1 × ιs = queryResult fig Persistent dir.persistent
+   ρ2 × v2 × ιs' = queryResult fig Transient dir.transient
    reportIn = spyWhen tracing.mediatingData ("Mediating inputs") (prettyP <<< erase)
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
 
@@ -239,21 +217,21 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
       linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
          where
-         sel = ρ <#> getSel selType
+         sel = ρ <#> projSel selType
          deps = masked.fwd (fromρ sel)
          v = toV deps
 
       linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
       linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
          where
-         sel = v <#> getSel selType
+         sel = v <#> projSel selType
          deps = masked.bwd (fromV sel)
          ρ = toρ deps
 
       linkIntermediates :: Map Deriv (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
       linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
          where
-         sel = Map.unions (Map.intersectionWith unval ιs (map (getSel Transient >>> to𝔹) <$> ι))
+         sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
 
    pure
       { spec: options
