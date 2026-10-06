@@ -163,8 +163,8 @@ writeManifests root@(Folder dir) = do
       where
       segments = split (Pattern "/") path
 
--- accepted, prohibited and illFormed: exit codes required of checker by pure-py-spec test runner. evaluationFailed:
--- Fluid addition, for file that checks but fails to run.
+-- Exit codes required of checker by pure-py-spec test runner, plus evaluationFailed for file that checks but fails
+-- to run.
 exitCode :: { accepted :: Int, prohibited :: Int, illFormed :: Int, evaluationFailed :: Int }
 exitCode = { accepted: 0, prohibited: 1, illFormed: 3, evaluationFailed: 5 }
 
