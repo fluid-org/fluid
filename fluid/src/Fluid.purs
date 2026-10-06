@@ -25,7 +25,7 @@ import Effect.Class.Console (log, logShow)
 import Eval.Dep (depEval)
 import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, modulePath, withClasses, withRoots)
 import Module (loadTopLevel, prepConfig, prepModule)
-import Module.Node (runNodeT)
+import Module.Node (NodeT, runNodeT)
 import Node.Encoding (Encoding(..))
 import Node.FS.Aff (writeTextFile)
 import Node.Process (exit')
@@ -172,22 +172,21 @@ check fluidSrcPaths asModule fileName =
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       if asModule then
-         case parseModule fluidSrc of
-            Left err -> rejected exitCode.prohibited err
-            Right _ -> try (prepModule q) >>= case _ of
-               Left err -> rejected exitCode.illFormed (message err)
-               Right { modules, classes } -> try (withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil))) >>= case _ of
-                  Left err -> rejected exitCode.evaluationFailed (message err)
-                  Right _ -> pure (exitCode.accepted × Nothing)
+         stages (void (parseModule fluidSrc)) (prepModule q) \{ modules, classes } ->
+            withClasses classes (void (loadTopLevel modules (S.Import q Nothing : Nil)))
       else
-         case parseProgram fluidSrc of
-            Left err -> rejected exitCode.prohibited err
-            Right _ -> try (prepConfig fluidSrc) >>= case _ of
-               Left err -> rejected exitCode.illFormed (message err)
-               Right { e, inputs, classes } -> try (depEval inputs classes e) >>= case _ of
-                  Left err -> rejected exitCode.evaluationFailed (message err)
-                  Right _ -> pure (exitCode.accepted × Nothing)
+         stages (void (parseProgram fluidSrc)) (prepConfig fluidSrc) \{ e, inputs, classes } ->
+            void (depEval inputs classes e)
    where
+   -- parse, then check, then run, stopping at the first failure with its code and message
+   stages :: forall a. Either String Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
+   stages parsed prepare run = case parsed of
+      Left err -> rejected exitCode.prohibited err
+      Right _ -> try prepare >>= case _ of
+         Left err -> rejected exitCode.illFormed (message err)
+         Right prepared -> try (run prepared) >>= case _ of
+            Left err -> rejected exitCode.evaluationFailed (message err)
+            Right _ -> pure (exitCode.accepted × Nothing)
    rejected code msg = pure (code × Just (fromMaybe msg (Array.head (split (Pattern "\n") msg))))
    -- module name of the file, relative to its root
    q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (definitely "source file" (modulePath (File fileName)))))
