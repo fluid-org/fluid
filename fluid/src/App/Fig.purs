@@ -88,9 +88,8 @@ selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ',
       _ -> ρ × v × dir × ι
 
 setIntermediateView :: Deriv -> ViewSetter Fig View
-setIntermediateView p δvw fig = fig
-   { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
-   }
+setIntermediateView p δvw fig =
+   fig { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
 
 type SelectionResult =
    { v :: Val (SelStates 𝕊)
