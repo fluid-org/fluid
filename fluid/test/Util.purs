@@ -2,7 +2,7 @@ module Test.Util where
 
 import Prelude hiding (absurd, compare)
 
-import App.Util (Selector, getPersistent, unselected)
+import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
@@ -26,7 +26,7 @@ import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
 import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, positions, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -34,7 +34,7 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Thunk, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
+import Util (type (×), AffError, EffectError, Thunk, assertWith, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, keys, maplet, restrict, toUnfoldable, values)
 import Literal (Literal(..))
 import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
@@ -186,10 +186,10 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
 showDeps :: DepEval -> Labelling (Val DepKind) -> String
 showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
-   at p = get p deps
+   dep p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
-      let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
-   output = if Map.member root docs then [] else [ prettyP (at root) ]
+      let Val w _ u = dep p in prettyP (Val w (if any (_ /= Zero) (dep d) then Just (dep d) else Nothing) u)
+   output = if Map.member root docs then [] else [ prettyP (dep root) ]
 
 selection
    :: forall s
@@ -220,6 +220,20 @@ testDep file query = do
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
 selectOn δv arg v = fst (δv arg (const unselected <$> (map (const top) v :: Val 𝔹))) <#> getPersistent
+
+-- Result at this position, printed with its persistent selections, must match; leave it unselected.
+at :: forall f. Functor f => Pretty (f 𝔹) => String -> SetSel (f (SelStates 𝔹))
+at expected v =
+   assertWith ("at:\nExpected\n" <> expected <> "\nReceived\n" <> actual) (trim expected == actual) (botOf <$> v) × Persistent
+   where
+   actual = prettyP (getPersistent <$> v)
+
+-- Expectation applied to the selection must cancel it.
+checkSelection :: forall m f. MonadError Error m => Functor f => Eq (f (SelStates 𝔹)) => Pretty (f (SelStates 𝔹)) => Selector f -> f (SelStates 𝔹) -> m Unit
+checkSelection expect v =
+   check (residual == (botOf <$> v)) ("selection differs from expectation at:\n" <> prettyP residual)
+   where
+   residual = fst (expect v)
 
 checkEq
    :: forall m a
