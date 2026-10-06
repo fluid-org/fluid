@@ -3,8 +3,8 @@ module Test.Util.Suite where
 import Prelude
 
 import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
-import App.Util (Selector, isInert, isPersistent, isTransient, selStates)
-import App.Util.Selector (ConstrArg, constrArg, none, sel𝔹)
+import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
+import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import DataType (class HasClasses)
@@ -12,17 +12,17 @@ import Control.Monad.Error.Class (class MonadError, catchError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
 import Data.Profunctor.Strong ((&&&))
-import Data.Tuple (fst, uncurry)
+import Data.Tuple (uncurry)
 import Effect.Aff (Error, message)
 import Eval (graphEval)
 import Effect.Aff.Class (class MonadAff)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
-import Lattice (botOf)
+import Lattice (𝔹)
 import Module (prepConfig)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
-import Test.Util (DepSpec, TestSuite, checkEq, depName, fluidSrcPaths, test, testDep)
+import Test.Util (DepSpec, SelectionSpec(..), TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
 import Val (class HasModuleStore, Val, Env)
@@ -39,7 +39,6 @@ type TestBwdSpec =
    { file :: String
    , bwd_expect :: ConstrArg -> Selector Env
    , δv :: ConstrArg -> Selector Val
-   , fwd_expect :: String
    , inputs :: Array String
    }
 
@@ -65,7 +64,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) { δv: \_ -> none, fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
+      test (File file) (Evaluation fwd_expect) (n × is_bench)
 
 depSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query
@@ -76,8 +75,11 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
    folder = Folder "slicing"
 
    asTest :: TestBwdSpec -> m BenchRow
-   asTest { file, bwd_expect, δv, fwd_expect, inputs } = do
-      test (folder </> File file) { δv, fwd_expect, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
+   asTest { file, bwd_expect, δv, inputs } = do
+      test (folder </> File file) (Selection { δv, bwd_expect, inputs }) (n × is_bench)
+
+selected :: SelStates 𝕊 -> SelStates 𝔹
+selected s = selStates (isInert s) (isPersistent s) (isTransient s)
 
 linkedOutputsTest :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
@@ -87,7 +89,7 @@ linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
    let fig = selectOutput (δ_out arg) fig0
    v <- logTimeWhen timing.selectionResult file \_ ->
       pure (selectionResult fig).v
-   checkEq "selected" "expected" (selStates <$> (isInert <$> v) <*> (isPersistent <$> v) <*> (isTransient <$> v)) (fst $ out_expect arg (botOf <$> v))
+   checkSelection (out_expect arg) (selected <$> v)
    for_ (inert_expect arg) \sel -> checkEq "inert" "inert_expect" (isInert <$> v) (sel𝔹 sel v)
    pure fig
 
@@ -100,7 +102,7 @@ linkedInputsTest { spec, δ_in, in_expect, file } = do
    fig <- loadFig spec fluidSrc <#> uncurry selectInput δ_in
    ρ <- logTimeWhen timing.selectionResult file \_ ->
       pure (selectionResult fig).ρ
-   checkEq "selected" "expected" (selStates <$> (isInert <$> ρ) <*> (isPersistent <$> ρ) <*> (isTransient <$> ρ)) (fst $ in_expect (botOf <$> ρ))
+   checkSelection in_expect (selected <$> ρ)
    pure fig
 
 linkedInputsSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestLinkedInputsSpec -> Array (String × m Unit)

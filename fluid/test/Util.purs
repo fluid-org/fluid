@@ -2,12 +2,12 @@ module Test.Util where
 
 import Prelude hiding (absurd, compare)
 
-import App.Util (Selector, getPersistent, unselected)
-import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
+import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
+import App.Util.Selector (ConstrArg, constrArg, none, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
-import Data.Foldable (and, any, for_)
+import Data.Foldable (and, any, for_, minimum)
 import Data.List (List)
 import Data.List as L
 import Data.Map as Map
@@ -18,15 +18,17 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.Writer.Class (class MonadWriter)
 import Control.Monad.Writer.Trans (runWriterT)
 import Data.List.Lazy (replicateM)
-import Data.Maybe (Maybe(..))
-import Data.String (joinWith, null, trim)
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.String (joinWith, trim)
+import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) as S
+import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
 import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, positions, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
+import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, erase, 𝔹, (≽))
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
@@ -34,19 +36,20 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Thunk, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
+import Util (type (×), AffError, EffectError, Thunk, assertWith, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, keys, maplet, restrict, toUnfoldable, values)
 import Literal (Literal(..))
 import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
-type SelectionSpec =
-   { δv :: ConstrArg -> Selector Val
-   , fwd_expect :: String -- prettyprinted value after bwd then fwd round-trip
-   , bwd_expect :: Maybe (ConstrArg -> Selector Env) -- Nothing for tests that don't perturb output
-   , inputs :: Array String -- data inputs to slice forward through; [] = all (no restriction)
-   }
+data SelectionSpec
+   = Evaluation String -- printed output
+   | Selection
+        { δv :: ConstrArg -> Selector Val
+        , bwd_expect :: ConstrArg -> Selector Env
+        , inputs :: Array String -- data inputs to slice forward through; [] = all (no restriction)
+        }
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "lib", Folder "test/lib" ]
@@ -91,7 +94,7 @@ testProperties
    -> GraphConfig
    -> SelectionSpec
    -> AffError m Unit
-testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
+testProperties _ s' gconfig spec = do
 
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
@@ -102,10 +105,13 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let bwdα = fst <<< (depsOf graphed).bwd
    let fwdα = fst <<< (depsOf graphed).fwd
-   let inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
-
-   let arg = constrArg (fieldIndex gconfig.classes)
-   let out0 = selectOn δv arg outα
+   let
+      δv × inputs = case spec of
+         Evaluation _ -> (\_ -> none) × []
+         Selection sel -> sel.δv × sel.inputs
+      inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
+      arg = constrArg (fieldIndex gconfig.classes)
+      out0 = selectOn δv arg outα
 
    in_ρ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
@@ -124,15 +130,12 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
    includes "dependence of output" (get eval.root deps') (stripDocs out1)
 
-   case bwd_expect of
-      Nothing -> pure unit
-      Just sel -> do
-         let expected = sel𝔹 (sel arg) in_ρ
+   case spec of
+      Evaluation expect -> withMsg "fwd_expect" $ checkPretty expect (prettyP out1)
+      Selection { bwd_expect } -> do
+         let expected = sel𝔹 (bwd_expect arg) in_ρ
          unless (in_ρ ≽ expected) $
             throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
-   unless (null fwd_expect) do
-      let report = spyWhen tracing.fwdAfterBwd "fwd ⚬ bwd" prettyP
-      withMsg "fwd_expect" $ checkPretty fwd_expect (prettyP (report out1))
 
    recordGraphSize g
    recordDepGraphSize eval.g
@@ -187,10 +190,10 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
 showDeps :: DepEval -> Labelling (Val DepKind) -> String
 showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
-   at p = get p deps
+   dep p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
-      let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
-   output = if Map.member root docs then [] else [ prettyP (at root) ]
+      let Val w _ u = dep p in prettyP (Val w (if any (_ /= Zero) (dep d) then Just (dep d) else Nothing) u)
+   output = if Map.member root docs then [] else [ prettyP (dep root) ]
 
 selection
    :: forall s
@@ -222,6 +225,21 @@ testDep file query = do
 selectOn :: forall a. (ConstrArg -> Selector Val) -> ConstrArg -> Val a -> Val 𝔹
 selectOn δv arg v = fst (δv arg (const unselected <$> (map (const top) v :: Val 𝔹))) <#> getPersistent
 
+-- Result at this position, printed with its persistent selections, must match; leave it unselected.
+at :: forall f. Functor f => Pretty (f 𝔹) => String -> SetSel (f (SelStates 𝔹))
+at expected v =
+   assertWith ("at:\nExpected\n" <> expected' <> "\nReceived\n" <> actual) (expected' == actual) (botOf <$> v) × Persistent
+   where
+   expected' = dedent expected
+   actual = prettyP (getPersistent <$> v)
+
+-- Expectation applied to the selection must cancel it.
+checkSelection :: forall m f. MonadError Error m => Functor f => Eq (f (SelStates 𝔹)) => Pretty (f (SelStates 𝔹)) => Selector f -> f (SelStates 𝔹) -> m Unit
+checkSelection expect v =
+   check (residual == (botOf <$> v)) ("selection differs from expectation at:\n" <> prettyP residual)
+   where
+   residual = fst (expect v)
+
 checkEq
    :: forall m a
     . BotOf a a
@@ -248,7 +266,17 @@ testPretty s = do
    unless (s == s') $
       throw ("parse/prettyP round trip:\nOriginal\n" <> prettyP s <> "\nNew\n" <> prettyP s')
 
+-- Drop surrounding blank lines and common indentation, so that an expectation can be indented with the code.
+dedent :: String -> String
+dedent s = joinWith "\n" (S.drop indent <$> lines)
+   where
+   lines = A.dropWhile blank (A.reverse (A.dropWhile blank (A.reverse (S.split (S.Pattern "\n") s))))
+   blank = trim >>> S.null
+   indent = fromMaybe 0 (minimum (S.length <<< S.takeWhile (_ == S.codePointFromChar ' ') <$> A.filter (not <<< blank) lines))
+
 checkPretty :: forall m. String -> String -> EffectError m Unit
 checkPretty expect actual = do
-   unless (trim expect `eq` actual) $
-      throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> actual)
+   unless (expect' `eq` actual) $
+      throw ("checkPretty:\nExpected\n" <> expect' <> "\nReceived\n" <> actual)
+   where
+   expect' = dedent expect

@@ -3,7 +3,7 @@ module Test.Specs.LinkedOutputs where
 import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, none, topα, (>.>), select, select')
 import Data.Maybe (Maybe(..))
 import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cPoint, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
-import Test.Util (fluidSrcPaths)
+import Test.Util (at, fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
 
 linkedOutputs_spec1 :: TestLinkedOutputsSpec
@@ -101,22 +101,24 @@ linkedOutputs_cases =
      , δ_out: \arg -> arg cPair f_fst (matrixElement 1 1 select)
      , out_expect: \arg ->
           arg cPair f_fst
-             ( matrixElement 1 0 select
-                  >.> matrixElement 1 1 select
-                  >.> matrixElement 1 2 select
-                  >.> matrixElement 1 3 select
-                  >.> matrixElement 1 4 select
+             ( at
+                  """
+                  18, 15, 10, 10, 17,
+                  ⸨14⸩, ⸨9⸩, ⸨13⸩, ⸨9⸩, ⸨12⸩,
+                  12, 13, 19, 13, 5,
+                  10, 9, 6, 8, 17,
+                  6, 11, 15, 7, 8
+                  """
              )
              >.> arg cPair f_snd
-                ( matrixElement 0 0 select
-                     >.> matrixElement 0 1 select
-                     >.> matrixElement 0 2 select
-                     >.> matrixElement 1 0 select
-                     >.> matrixElement 1 1 select
-                     >.> matrixElement 1 2 select
-                     >.> matrixElement 2 0 select
-                     >.> matrixElement 2 1 select
-                     >.> matrixElement 2 2 select
+                ( at
+                     """
+                     ⸨18⸩, ⸨12⸩, ⸨13⸩, 9, 19,
+                     ⸨20⸩, ⸨11⸩, ⸨24⸩, 9, 14,
+                     ⸨15⸩, ⸨13⸩, ⸨20⸩, 11, 14,
+                     7, 15, 15, 8, 20,
+                     3, 10, 12, 3, 11
+                     """
                 )
      , inert_expect: \arg -> Just
           ( topα select'
@@ -134,9 +136,48 @@ linkedOutputs_cases =
           , rowFilter: Nothing
           }
      , δ_out: \arg -> arg cPair f_fst (listElement 0 select)
-     , out_expect: \arg -> arg cPair f_fst (listElement 0 select >.> listElement 1 select)
+     , out_expect: \_ -> at "([⸨8⸩, ⸨7⸩], [6, 9])"
      , inert_expect: \_ -> Nothing
      , file: "linked_outputs/filter.fld"
+     }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "types", "data" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \_ -> listElement 1 select
+     , out_expect: \_ -> at "[⸨88⸩, ⸨6⸩, ⸨4⸩]"
+     , inert_expect: \_ -> Nothing
+     , file: "slicing/section_5_example.fld"
+     }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "seq1", "seq2" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \_ -> listElement 1 select
+     , out_expect: \_ -> at "[⸨(⸨0⸩, ⸨0⸩)⸩, ⸨(⸨1⸩, ⸨1⸩)⸩, ⸨(⸨1⸩, ⸨2⸩)⸩, ⸨(⸨2⸩, ⸨3⸩)⸩, ⸨(⸨3⸩, ⸨4⸩)⸩, ⸨(⸨4⸩, ⸨5⸩)⸩, ⸨(⸨4⸩, ⸨6⸩)⸩]"
+     , inert_expect: \_ -> Nothing
+     , file: "slicing/dtw/compute_dtw.fld"
+     }
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "x", "n" ]
+          , query: false
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Nothing
+          }
+     , δ_out: \arg -> arg cPair f_snd select
+     , out_expect: \_ -> at "(⸨3⸩, ⸨True⸩)"
+     , inert_expect: \_ -> Nothing
+     , file: "slicing/output_not_source.fld"
      }
    , linkedOutputs_spec1
    , linkedOutputs_spec2

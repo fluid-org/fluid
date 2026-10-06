@@ -28,7 +28,6 @@ type Setter b a = SetSel a -> SetSel b
 type ViewSetter f g = Endo g -> Endo f -- Only used in unexercised view setters
 type ViewSelSetter a = a -> SelSetter Val Val
 
--- Both of these functions could be reimplemented with const instead of neg
 select :: forall f a. Neg a => Functor f => SetSel (f (SelStates a))
 select b = (setSel <$> b) × Persistent
    where
