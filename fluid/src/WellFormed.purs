@@ -43,7 +43,7 @@ import Util.Set ((\\), (∪))
 -- Predefined modules and program (under __main__) have no body
 type LoadedModule = { cxt :: Cxt, mod :: Maybe E.Module }
 
--- Modules loaded so far, over the parsed modules.
+-- Modules loaded so far, over parsed modules.
 type LoadM = StateT (Map.Map ModuleName LoadedModule) (ReaderT (Map.Map ModuleName S.Module) (Either String))
 
 runLoadM :: forall a. LoadM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> Either String (a × Map.Map ModuleName LoadedModule)
@@ -67,7 +67,7 @@ checkProgram mods predefined imports s =
       modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
       pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
--- Module q and the modules it imports, as the spec checks a module.
+-- Module q and modules it imports, as spec checks module.
 checkModule :: Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> ModuleName -> Either String (Map.Map ModuleName LoadedModule)
 checkModule mods predefined q = snd <$> runLoadM (loadModule q) mods predefined
 

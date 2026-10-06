@@ -48,7 +48,7 @@ data CheckArgs = CheckArgs
    { local :: Boolean
    , fileNames :: NonEmptyList String
    , fluidSrcPaths :: Array Folder
-   , asModule :: Boolean -- check each file as a module rather than a program
+   , asModule :: Boolean -- check each file as module rather than program
    }
 
 data Command = Evaluate EvalArgs | Parse_ EvalArgs | Check CheckArgs | Manifest (NonEmptyList String)
@@ -163,7 +163,7 @@ writeManifests root@(Folder dir) = do
       where
       segments = split (Pattern "/") path
 
--- Exit codes of a checker for the pure-py-spec test runner (`run-all.py --checker`); evaluation failure is Fluid's own.
+-- Exit codes of checker for pure-py-spec test runner (`run-all.py --checker`); evaluation failure Fluid's own.
 exitCode :: { accepted :: Int, prohibited :: Int, illFormed :: Int, evaluationFailed :: Int }
 exitCode = { accepted: 0, prohibited: 1, illFormed: 3, evaluationFailed: 5 }
 
@@ -178,10 +178,10 @@ check fluidSrcPaths asModule fileName =
          stages (void (parseProgram fluidSrc)) (prepConfig fluidSrc) \{ e, inputs, classes } ->
             void (depEval inputs classes e)
    where
-   -- module name of the file, relative to its root
+   -- module name of file, relative to its root
    q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (definitely "source file" (modulePath (File fileName)))))
 
--- Parse, then check, then run, stopping at the first failure with its code and the first line of its message.
+-- Parse, check, run; stop at first failure with its code and first line of its message.
 stages :: forall a. Either String Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
 stages parsed prepare run = case parsed of
    Left err -> rejected exitCode.prohibited err

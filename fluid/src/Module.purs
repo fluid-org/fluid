@@ -142,7 +142,7 @@ prepConfig fluidSrc = do
                ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
 
--- Modules reachable from q, checked and ready to load, with their class table; q is checked as a module, not a program.
+-- Modules reachable from q, checked and ready to load, with class table; q checked as module, not program.
 prepModule
    :: forall m
     . MonadAff m

@@ -106,11 +106,11 @@ infixr 5 prependFolder as </>
 extensions :: Array String
 extensions = [ ".fld", ".py" ]
 
--- Files that may hold the body of the module at the given path, in order of preference.
+-- Files that may hold module body at given path, in order of preference.
 moduleFiles :: String -> Array File
 moduleFiles path = File <$> [ path <> ".fld", path <> ".py", path <> "/__init__.py" ]
 
--- Module name of a source file, as a path.
+-- Module name of source file, as path.
 modulePath :: File -> Maybe String
 modulePath (File path) = oneOf ((\ext -> stripSuffix (Pattern ext) path) <$> extensions) <#> \p ->
    fromMaybe p (stripSuffix (Pattern "/__init__") p)
@@ -141,7 +141,7 @@ loadFile :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadRea
 loadFile folders file =
    loadFileMaybe folders file >>= orElse ("File not found in any path: " <> show (searchPaths folders file))
 
--- Source of the module at the given path.
+-- Source of module at given path.
 loadModuleSource :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadReader FileCxt m => Array Folder -> String -> m (Maybe String)
 loadModuleSource folders path = findMapM (loadFileMaybe folders) (moduleFiles path)
    where
