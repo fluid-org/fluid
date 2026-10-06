@@ -237,25 +237,23 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       fromV v = unval out (to𝔹 <$> v)
 
       linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
-      linkedInputs selType ρ = ρ'' × v × toι m
+      linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
          where
-         ρ' = ρ <#> getSel selType
-         m = masked.fwd (fromρ ρ')
-         v = toV m
-         ρ'' = if linking then toρ (masked.bwd (fromV v)) else ρ'
+         sel = ρ <#> getSel selType
+         deps = masked.fwd (fromρ sel)
+         v = toV deps
 
       linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
-      linkedOutputs selType v = ρ × v'' × toι m
+      linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
          where
-         v' = v <#> getSel selType
-         m = masked.bwd (fromV v')
-         ρ = toρ m
-         v'' = if linking then toV (masked.fwd (fromρ ρ)) else v'
+         sel = v <#> getSel selType
+         deps = masked.bwd (fromV sel)
+         ρ = toρ deps
 
       linkIntermediates :: Map Deriv (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
-      linkIntermediates ι = toρ (unmasked.bwd m) × toV (unmasked.fwd m) × toι m
+      linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
          where
-         m = Map.unions (Map.intersectionWith unval ιs (map (getSel Transient >>> to𝔹) <$> ι))
+         sel = Map.unions (Map.intersectionWith unval ιs (map (getSel Transient >>> to𝔹) <$> ι))
 
    pure
       { spec: options
