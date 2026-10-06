@@ -444,13 +444,12 @@ load q = do
    { modules } <- moduleStore
    case Map.lookup q modules of
       Just (Loaded ρ_q) -> pure ρ_q
-      state -> do
+      Just (Parsed body) -> do
          ρ0 <- implicitMembers
-         ρ_q <- case state of
-            Just (Parsed body) -> evalModule ρ0 q body
-            _ -> pure empty
-         modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules })
-         pure ρ_q
+         evalModule ρ0 q body >>= loaded
+      Nothing -> loaded empty
+   where
+   loaded ρ_q = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules }) $> ρ_q
 
 type DepEval =
    { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
