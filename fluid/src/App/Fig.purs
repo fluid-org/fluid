@@ -21,6 +21,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
+import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for_, sequence_)
 import Data.Tuple (Tuple(..), fst)
@@ -30,13 +31,13 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval.Dep (depEval, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph.Dep (ConjugatePair, DepGraph, Deriv, mask, materialise, queries, selected)
+import Graph.Dep (ConjugatePair, DepGraph, Deriv, Pos, dimap, mask, materialise, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
-import Util (type (×), Endo, definitely', spyWhen, (×))
-import Util.Map (insert, intersectionWith, lookup, mapWithKey, restrict, values)
+import Util (type (×), Endo, spyWhen, (×))
+import Util.Map (get, insert, intersectionWith, lookup, mapWithKey, restrict, values)
 import Util.Set ((\\), (∈), (∪))
 import Val (class HasModuleStore, Env(..), Val(..), dataPositions)
 
@@ -81,7 +82,7 @@ setInputView x δvw fig = fig
 selectIntermediate :: Deriv -> Selector Val -> Endo Fig
 selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
-   ι' × selType = first (\u -> Map.insert p u ι) (δv (definitely' (Map.lookup p ι)))
+   ι' × selType = first (\u -> Map.insert p u ι) (δv (get p ι))
    ρ' × v' × dir' × ι_final = case selType of
       Transient | dir.transient /= Intermediates -> ρ × v × dir { transient = Intermediates } × ι'
       Transient -> ρ × v × dir × ι'
@@ -148,7 +149,7 @@ drawFile (File fileName × src) =
 type WithDoc = Deriv × Maybe Deriv
 
 val :: forall a. Map Deriv (Val a) -> WithDoc -> Val a
-val m (p × d) = let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
+val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
 
 unval :: forall a. WithDoc -> Val a -> Map Deriv (Val a)
 unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
@@ -164,11 +165,9 @@ definition g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
 
 -- Queries over Boolean selections.
 boolean
-   :: ConjugatePair Val DepKind
-   -> { fwd :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹), bwd :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹) }
-boolean { fwd, bwd } = { fwd: nonZero fwd, bwd: nonZero bwd }
-   where
-   nonZero q sel = map (_ /= Zero) <$> q (selected <$> sel)
+   :: ConjugatePair (Map Deriv (Set Pos)) (Map Deriv (Val DepKind))
+   -> ConjugatePair (Map Deriv (Val 𝔹)) (Map Deriv (Val 𝔹))
+boolean = dimap (map selected) (map (map (_ /= Zero)))
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do

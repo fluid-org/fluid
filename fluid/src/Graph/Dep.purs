@@ -17,8 +17,8 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), definitely', (×))
-import Util.Map (maplet)
+import Util (type (×), (×))
+import Util.Map (get, maplet)
 
 newtype Deriv = Deriv Int
 
@@ -71,7 +71,7 @@ emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
-valAt g p = definitely' (lookup p g.vals)
+valAt g p = get p g.vals
 
 deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
 deriv v = do
@@ -136,8 +136,8 @@ mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
    kept = mapWithIndex (\p -> keep p >>> selected) g.vals
    rel q p (SparseRel r) = SparseRel { in_: only ks_q ks_p r.in_, out: only ks_p ks_q r.out }
       where
-      ks_q = definitely' (lookup q kept)
-      ks_p = definitely' (lookup p kept)
+      ks_q = get q kept
+      ks_p = get p kept
    only ks ks' m = Map.filter (not <<< Map.isEmpty) $
       Map.filterKeys (_ `Set.member` ks') <$> Map.filterKeys (_ `Set.member` ks) m
 
@@ -164,13 +164,13 @@ dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deri
 dense g ws = g.vals # mapWithIndex \p ->
    mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i))
 
--- Each the transpose of the other.
-type ConjugatePair (f :: Type -> Type) s =
-   { fwd :: Map Deriv (Set Pos) -> Map Deriv (f s)
-   , bwd :: Map Deriv (Set Pos) -> Map Deriv (f s)
-   }
+-- Forward and backward queries, each the transpose of the other.
+type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
 
-queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair f s
+dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
+dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
+
+queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair (Map Deriv (Set Pos)) (Map Deriv (f s))
 queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Dependence of the selection on the positions of each visible vertex.

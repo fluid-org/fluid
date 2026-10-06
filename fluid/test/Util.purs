@@ -35,7 +35,7 @@ import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
-import Util (type (×), AffError, EffectError, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
+import Util (type (×), AffError, EffectError, Thunk, check, error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, keys, maplet, restrict, toUnfoldable, values)
 import Literal (Literal(..))
 import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
@@ -117,13 +117,13 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       pure (materialise eval.g (visible eval `Set.union` Set.fromFoldable (values eval.inputs)))
    let deps = bwd visibleGraph (maplet eval.root (selected (stripDocs out0)))
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
-      includes ("dependence on " <> x) (definitely' (Map.lookup q deps)) (stripDocs (get x in_ρ))
+      includes ("dependence on " <> x) (get q deps) (stripDocs (get x in_ρ))
 
    out1 <- graphBenchmark benchNames.fwd \_ -> pure (fwdα (restrict inputs' in_ρ))
    -- Likewise the forward slice from the inputs, at the output.
    let from = Set.fromFoldable (values (restrict inputs' eval.inputs))
    let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
-   includes "dependence of output" (definitely' (Map.lookup eval.root deps')) (stripDocs out1)
+   includes "dependence of output" (get eval.root deps') (stripDocs out1)
 
    case bwd_expect of
       Nothing -> pure unit
@@ -180,7 +180,7 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
       [ p × _ ] -> p
       _ -> error ("no vertex documented " <> show x)
    Intermediate n -> intermediates ! n
-   Doc vertex -> definitely' (Map.lookup (deriv depGraph eval vertex) docs)
+   Doc vertex -> get (deriv depGraph eval vertex) docs
    where
    intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
 
@@ -188,7 +188,7 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
 showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
 showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
-   at p = definitely' (Map.lookup p deps)
+   at p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
       let Val w _ u = at p in prettyP (Val w (if any (_ /= Zero) (at d) then Just (at d) else Nothing) u)
    output = if Map.member root docs then [] else [ prettyP (at root) ]
