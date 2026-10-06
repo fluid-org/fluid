@@ -10,7 +10,6 @@ import Data.Array as A
 import Data.Foldable (and, any, for_)
 import Data.List (List)
 import Data.List as L
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
@@ -25,7 +24,7 @@ import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (GraphConfig, graphEval, depsOf)
 import Eval.Dep (DepEval, depEval, visible)
-import Graph.Dep (DepGraph, Deriv, Pos, bwd, fwd, materialise, positions, selected, valAt)
+import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, positions, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), erase, 𝔹, (≽))
 import Module (prepConfig)
@@ -185,7 +184,7 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
-showDeps :: DepEval -> Map Deriv (Val DepKind) -> String
+showDeps :: DepEval -> Labelling (Val DepKind) -> String
 showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
    at p = get p deps
@@ -200,7 +199,7 @@ selection
    -> DepEval
    -> VertexSpec
    -> (ConstrArg -> Selector Val)
-   -> Map Deriv (Set Pos)
+   -> Labelling (Set Pos)
 selection { classes } depGraph eval vertex δv =
    maplet p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
    where

@@ -57,13 +57,14 @@ sparseRel in_ = SparseRel { out, in_ }
    out = fromFoldableWith Map.union
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
-type Edges r = Map Deriv (Map Deriv r) -- target ↦ source ↦ dependence relation
+type Labelling a = Map Deriv a
+type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
 
 -- Vertices labelled by values of shape f; edges labelled by dependence relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
-   , vals :: Map Deriv (f Unit)
-   , docs :: Map Deriv Deriv -- vertex ↦ vertex of its doc
+   , vals :: Labelling (f Unit)
+   , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
    , edges :: Edges (Rel (f s) (f s))
    }
 
@@ -89,7 +90,7 @@ addEdge p q r =
 
 -- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
 type VisibleGraph (f :: Type -> Type) s =
-   { vals :: Map Deriv (f Unit)
+   { vals :: Labelling (f Unit)
    , edges :: Edges (SparseRel s)
    }
 
@@ -121,11 +122,11 @@ materialise g visible =
          (maybe Nil Map.toUnfoldable (lookup p g.edges))
 
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.
-   edgesInto :: f (Lineage (Deriv × Pos) s) -> Map Deriv (Map Pos (Map Pos s))
+   edgesInto :: f (Lineage (Deriv × Pos) s) -> Labelling (Map Pos (Map Pos s))
    edgesInto ws = foldl (unionWith Map.union) Map.empty $
       mapWithIndex (\j (Lineage (_ × m)) -> maplet j <$> bySource m) (positions ws)
 
-   bySource :: Map (Deriv × Pos) s -> Map Deriv (Map Pos s)
+   bySource :: Map (Deriv × Pos) s -> Labelling (Map Pos s)
    bySource m = fromFoldableWith Map.union $
       (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × maplet i w
 
@@ -152,15 +153,15 @@ applyRel r w = foldl (unionWith add) Map.empty $
    mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w
 
 -- Add weights at a vertex.
-add' :: forall s. Semiring s => Deriv -> Map Pos s -> Map Deriv (Map Pos s) -> Map Deriv (Map Pos s)
+add' :: forall s. Semiring s => Deriv -> Map Pos s -> Labelling (Map Pos s) -> Labelling (Map Pos s)
 add' = insertWith (unionWith add)
 
 -- Weight 1 at the selected positions.
-unitWeights :: forall s. Semiring s => Map Deriv (Set Pos) -> Map Deriv (Map Pos s)
+unitWeights :: forall s. Semiring s => Labelling (Set Pos) -> Labelling (Map Pos s)
 unitWeights = map (Set.toMap >>> map (const one))
 
 -- Weights at each visible vertex as a value, zero where absent.
-dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Map Pos s) -> Map Deriv (f s)
+dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Map Pos s) -> Labelling (f s)
 dense g ws = g.vals # mapWithIndex \p ->
    mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i))
 
@@ -170,11 +171,11 @@ type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
 dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
 dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
 
-queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair (Map Deriv (Set Pos)) (Map Deriv (f s))
+queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Pos)) (Labelling (f s))
 queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Dependence of the selection on the positions of each visible vertex.
-bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
+bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step (p × sources) ws = case lookup p ws of
@@ -182,7 +183,7 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
       Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applyRel r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
-fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
+fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources

@@ -16,7 +16,6 @@ import Control.Monad.Reader (class MonadReader)
 import Data.Array as A
 import Data.Foldable (elem, or)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
@@ -31,7 +30,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval.Dep (depEval, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph.Dep (ConjugatePair, DepGraph, Deriv, Pos, dimap, mask, materialise, queries, selected)
+import Graph.Dep (ConjugatePair, DepGraph, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
@@ -95,11 +94,11 @@ setIntermediateView p δvw fig =
 type SelectionResult =
    { v :: Val (SelStates 𝕊)
    , ρ :: Env (SelStates 𝕊)
-   , ι :: Map Deriv (Val (SelStates 𝔹))
+   , ι :: Labelling (Val (SelStates 𝔹))
    }
 
 -- Query in the given direction, with the selection primary and what it reaches secondary.
-queryResult :: Fig -> SelectionType -> Direction -> Env (SelState 𝕊) × Val (SelState 𝕊) × Map Deriv (Val 𝔹)
+queryResult :: Fig -> SelectionType -> Direction -> Env (SelState 𝕊) × Val (SelState 𝕊) × Labelling (Val 𝔹)
 queryResult fig@{ v, ρ, ι } selType = case _ of
    LinkedOutputs -> fig.linkedOutputs selType v # first primary >>> (second <<< first) (primaryOrSecondary selType v)
    LinkedInputs -> fig.linkedInputs selType ρ # first (primaryOrSecondary selType ρ) >>> second (first primary)
@@ -118,7 +117,7 @@ selectionResult fig@{ dir } =
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
 
 -- Intermediates reachable from either selection.
-intermediates :: Fig -> Selection (Map Deriv (Val 𝔹)) -> Map Deriv (Val (SelStates 𝔹))
+intermediates :: Fig -> Selection (Labelling (Val 𝔹)) -> Labelling (Val (SelStates 𝔹))
 intermediates { inertι } ιs =
    Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inertι # mapWithIndex \p inert ->
       selStates <$> inert <*> sel ιs.persistent p inert <*> sel ιs.transient p inert
@@ -148,13 +147,13 @@ drawFile (File fileName × src) =
 -- Vertex shown as one value with the vertex of its doc, if any.
 type WithDoc = Deriv × Maybe Deriv
 
-val :: forall a. Map Deriv (Val a) -> WithDoc -> Val a
+val :: forall a. Labelling (Val a) -> WithDoc -> Val a
 val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
 
-unval :: forall a. WithDoc -> Val a -> Map Deriv (Val a)
+unval :: forall a. WithDoc -> Val a -> Labelling (Val a)
 unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
 
-unvals :: forall a. Dict WithDoc -> Dict (Val a) -> Map Deriv (Val a)
+unvals :: forall a. Dict WithDoc -> Dict (Val a) -> Labelling (Val a)
 unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
 -- Documented vertex defining an environment entry.
@@ -165,8 +164,8 @@ definition g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
 
 -- Queries over Boolean selections.
 boolean
-   :: ConjugatePair (Map Deriv (Set Pos)) (Map Deriv (Val DepKind))
-   -> ConjugatePair (Map Deriv (Val 𝔹)) (Map Deriv (Val 𝔹))
+   :: ConjugatePair (Labelling (Set Pos)) (Labelling (Val DepKind))
+   -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
@@ -198,36 +197,36 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       inertMasked = inert masked
       inertUnmasked = inert unmasked
 
-      toρ :: Map Deriv (Val 𝔹) -> Env (SelState 𝔹)
+      toρ :: Labelling (Val 𝔹) -> Env (SelState 𝔹)
       toρ m = Env (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
 
-      toV :: Map Deriv (Val 𝔹) -> Val (SelState 𝔹)
+      toV :: Labelling (Val 𝔹) -> Val (SelState 𝔹)
       toV m = selState <$> val inertMasked.fwd out <*> val m out
 
-      toι :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹)
+      toι :: Labelling (Val 𝔹) -> Labelling (Val 𝔹)
       toι m = Map.filter or (ιs <#> val m)
 
-      fromρ :: Env (SelState 𝔹) -> Map Deriv (Val 𝔹)
+      fromρ :: Env (SelState 𝔹) -> Labelling (Val 𝔹)
       fromρ (Env ρ) = unvals ins (map to𝔹 <$> ρ)
 
-      fromV :: Val (SelState 𝔹) -> Map Deriv (Val 𝔹)
+      fromV :: Val (SelState 𝔹) -> Labelling (Val 𝔹)
       fromV v = unval out (to𝔹 <$> v)
 
-      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
+      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
       linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
          where
          sel = ρ <#> projSel selType
          deps = masked.fwd (fromρ sel)
          v = toV deps
 
-      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
+      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
       linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
          where
          sel = v <#> projSel selType
          deps = masked.bwd (fromV sel)
          ρ = toρ deps
 
-      linkIntermediates :: Map Deriv (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
+      linkIntermediates :: Labelling (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
       linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
          where
          sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
