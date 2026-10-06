@@ -182,6 +182,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
 
       graph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
       everything = map (const true) <$> graph.vals
+      nothing = map (const false) <$> graph.vals
       ignored = unvals ins (unwrap (sel𝔹 ignoreInputs (Env (ins <#> val everything))))
 
       -- Over the graph as it is, and restricted to data positions less the ignored ones.
@@ -234,8 +235,8 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    pure
       { spec: options
       , s
-      , ρ: Env (ins <#> \p -> (\b -> selStates b false false) <$> val inertMasked.bwd p)
-      , v: (\b -> selStates b false false) <$> val inertMasked.fwd out
+      , ρ: pairSel <$> toρ nothing <*> toρ nothing
+      , v: pairSel <$> toV nothing <*> toV nothing
       , ι: Map.empty
       , linkedOutputs
       , linkedInputs
