@@ -33,6 +33,7 @@
     "build-publish": "./script/build-publish.sh",
     "build-strict": "./script/build-strict.sh",
     "build-test": "./script/build-test.sh",
+    "spec-compliance": "node ./script/spec-compliance.mjs",
     "bundle-fluid": "./script/bundle-fluid.sh",
     "fluid": "node ./dist/fluid/shared/fluid.mjs",
     "test": "./script/test.sh",

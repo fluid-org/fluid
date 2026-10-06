@@ -31,7 +31,7 @@ import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
 import DefiniteAssignment (Cxt, Entry(..), erase)
 import Primitive.Defs (predefined)
-import WellFormed (LoadedModule, checkProgram, mainModule)
+import WellFormed (LoadedModule, checkModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
@@ -141,6 +141,20 @@ prepConfig fluidSrc = do
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
+
+-- Modules reachable from q, checked and ready to load, with their class table; q is checked as a module, not a program.
+prepModule
+   :: forall m
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => ModuleName
+   -> m { modules :: Map ModuleName Module, classes :: ClassTable }
+prepModule q = do
+   mods <- parseModules (S.Import q Nothing : Nil)
+   loaded <- orThrow (checkModule mods (fst <$> predefined) q)
+   pure { modules: Map.mapMaybe _.mod loaded, classes: classTable (_.cxt <$> loaded) }
 
 parseModules
    :: forall m

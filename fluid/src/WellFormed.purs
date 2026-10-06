@@ -4,6 +4,7 @@ import Prelude
 
 import Bind (Bind, Name, Var, dottedName, prefixOf, properPrefixOf, varThis, (↦))
 import Control.Monad.Error.Class (throwError)
+import Control.Monad.Reader (ReaderT, ask, mapReaderT, runReaderT)
 import Control.Monad.State (StateT, get, mapStateT, modify_, runStateT)
 import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
@@ -42,10 +43,12 @@ import Util.Set ((\\), (∪))
 -- Predefined modules and program (under __main__) have no body
 type LoadedModule = { cxt :: Cxt, mod :: Maybe E.Module }
 
-type LoadM = StateT (Map.Map ModuleName LoadedModule) (Either String)
+-- Modules loaded so far, over the parsed modules.
+type LoadM = StateT (Map.Map ModuleName LoadedModule) (ReaderT (Map.Map ModuleName S.Module) (Either String))
 
--- Load each module on demand as its import is checked. The recursion has no
--- cycle guard; it terminates because the dependency graph is acyclic.
+runLoadM :: forall a. LoadM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> Either String (a × Map.Map ModuleName LoadedModule)
+runLoadM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
+
 checkProgram
    :: Map.Map ModuleName S.Module
    -> Map.Map ModuleName Cxt
@@ -53,77 +56,83 @@ checkProgram
    -> S.Stmt
    -> Either String { cxt :: VarCxt, s :: E.Stmt, loaded :: Map.Map ModuleName LoadedModule }
 checkProgram mods predefined imports s =
-   runStateT program (predefined <#> \cxt -> { cxt, mod: Nothing }) <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
+   runLoadM program mods predefined <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
    where
    program :: LoadM (VarCxt × E.Stmt)
    program = do
       _ × cxt_imp <- checkImports mainModule imports
       -- Unlike a module (checkStatements), the program may return: a top-level return yields
       -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
-      decls × _ × s' <- lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s)
+      decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
       modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
       pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
-   -- Member context of module q; memoised.
-   loadModule :: ModuleName -> LoadM Cxt
-   loadModule q = get >>= \loaded -> case Map.lookup q loaded of
-      Just { cxt } -> pure cxt
-      Nothing -> mapStateT (lmap (_ <> "\nChecking module " <> dottedName q)) do
-         mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
-         importCxt × cxt_imp <- checkImports q is
-         δ × mod' <- lift (checkStatements q cxt_imp mod)
-         let subs = submodules (Map.keys mods) q
-         let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
-         when (not Set.isEmpty clash)
-            $ throwError
-            $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
-         let cxt = subs `Map.union` δ
-         modify_ (Map.insert q { cxt, mod: Just mod' })
-         pure cxt
+-- Module q and the modules it imports, as the spec checks a module.
+checkModule :: Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> ModuleName -> Either String (Map.Map ModuleName LoadedModule)
+checkModule mods predefined q = snd <$> runLoadM (loadModule q) mods predefined
 
-   checkImports :: ModuleName -> List S.Import -> LoadM (Cxt × Cxt)
-   checkImports enclosing is = do
-      implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (implicitFor enclosing)
-      importCxt <- foldM (\acc i -> (acc `extendCxtWith` _) <$> importBindings enclosing i) Map.empty is
-      pure (importCxt × (implicitCxt `extendCxtWith` importCxt))
-
-   -- Bindings contributed by one import of the enclosing module.
-   importBindings :: ModuleName -> S.Import -> LoadM Cxt
-   importBindings enclosing (S.Import q Nothing) = do
-      when (enclosing `properPrefixOf` q)
+-- Member context of module q, loaded on demand as its import is checked; memoised. The recursion has no
+-- cycle guard; it terminates because the dependency graph is acyclic.
+loadModule :: ModuleName -> LoadM Cxt
+loadModule q = get >>= \loaded -> case Map.lookup q loaded of
+   Just { cxt } -> pure cxt
+   Nothing -> mapStateT (mapReaderT (lmap (_ <> "\nChecking module " <> dottedName q))) do
+      mods <- lift ask
+      mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
+      importCxt × cxt_imp <- checkImports q is
+      δ × mod' <- lift (lift (checkStatements q cxt_imp mod))
+      let subs = submodules (Map.keys mods) q
+      let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
+      when (not Set.isEmpty clash)
          $ throwError
-         $ "Module " <> dottedName enclosing <> " cannot import its own descendant " <> dottedName q
-      θ <- ModLoaded q <$> loadModule q
-      Map.singleton (NEL.head q) <$> loadsTo Nothing q θ
-   importBindings enclosing (S.Import q (Just xs)) = do
-      cxt <- loadModule q
-      _ <- loadsTo (Just enclosing) q (ModLoaded q cxt) -- loads q's ancestors; contributes no bindings
-      importedMembers q cxt xs
+         $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
+      let cxt = subs `Map.union` δ
+      modify_ (Map.insert q { cxt, mod: Just mod' })
+      pure cxt
 
-   -- Wrap the reference for module q in loaded references for its proper
-   -- prefixes, loading each; prefixes of the bound (the enclosing module,
-   -- for a from-import) are exempt.
-   loadsTo :: Maybe ModuleName -> ModuleName -> Entry -> LoadM Entry
-   loadsTo bound q θ = case NEL.fromList init of
-      Nothing -> pure θ
-      Just q'
-         | maybe false (q' `prefixOf` _) bound -> pure θ
-         | otherwise -> do
-              cxt <- loadModule q'
-              loadsTo bound q' (ModLoaded q' (cxt `extendCxtWith` Map.singleton x θ))
-      where
-      { init, last: x } = NEL.unsnoc q
+checkImports :: ModuleName -> List S.Import -> LoadM (Cxt × Cxt)
+checkImports enclosing is = do
+   implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (implicitFor enclosing)
+   importCxt <- foldM (\acc i -> (acc `extendCxtWith` _) <$> importBindings enclosing i) Map.empty is
+   pure (importCxt × (implicitCxt `extendCxtWith` importCxt))
 
-   -- Bindings for names imported from module q with member context cxt.
-   importedMembers :: ModuleName -> Cxt -> List Var -> LoadM Cxt
-   importedMembers _ _ Nil = pure Map.empty
-   importedMembers q cxt (x : xs) = do
-      othersCxt <- importedMembers q cxt xs
-      case Map.lookup x cxt of
-         Just (Mod q') -> loadModule q' <#> \cxt' -> Map.insert x (ModLoaded q' cxt') othersCxt
-         Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
-         Just θ -> pure (Map.insert x θ othersCxt)
-         Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
+-- Bindings contributed by one import of the enclosing module.
+importBindings :: ModuleName -> S.Import -> LoadM Cxt
+importBindings enclosing (S.Import q Nothing) = do
+   when (enclosing `properPrefixOf` q)
+      $ throwError
+      $ "Module " <> dottedName enclosing <> " cannot import its own descendant " <> dottedName q
+   θ <- ModLoaded q <$> loadModule q
+   Map.singleton (NEL.head q) <$> loadsTo Nothing q θ
+importBindings enclosing (S.Import q (Just xs)) = do
+   cxt <- loadModule q
+   _ <- loadsTo (Just enclosing) q (ModLoaded q cxt) -- loads q's ancestors; contributes no bindings
+   importedMembers q cxt xs
+
+-- Wrap the reference for module q in loaded references for its proper
+-- prefixes, loading each; prefixes of the bound (the enclosing module,
+-- for a from-import) are exempt.
+loadsTo :: Maybe ModuleName -> ModuleName -> Entry -> LoadM Entry
+loadsTo bound q θ = case NEL.fromList init of
+   Nothing -> pure θ
+   Just q'
+      | maybe false (q' `prefixOf` _) bound -> pure θ
+      | otherwise -> do
+           cxt <- loadModule q'
+           loadsTo bound q' (ModLoaded q' (cxt `extendCxtWith` Map.singleton x θ))
+   where
+   { init, last: x } = NEL.unsnoc q
+
+-- Bindings for names imported from module q with member context cxt.
+importedMembers :: ModuleName -> Cxt -> List Var -> LoadM Cxt
+importedMembers _ _ Nil = pure Map.empty
+importedMembers q cxt (x : xs) = do
+   othersCxt <- importedMembers q cxt xs
+   case Map.lookup x cxt of
+      Just (Mod q') -> loadModule q' <#> \cxt' -> Map.insert x (ModLoaded q' cxt') othersCxt
+      Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
+      Just θ -> pure (Map.insert x θ othersCxt)
+      Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
 
 -- Stubs for the immediate submodules of q in the module table.
 submodules :: Set ModuleName -> ModuleName -> Cxt
