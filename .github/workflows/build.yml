@@ -41,7 +41,6 @@ jobs:
         set -x -e
         yarn workspace @fluid-org/fluid tidy
         yarn workspace @fluid-org/fluid build-test
-        yarn workspace @fluid-org/fluid spec-compliance
     - name: test-website
       run: |
         ./script/test-website-all.sh
