@@ -112,8 +112,8 @@ evaluate (EvalArgs { local, fileName, fluidSrcPath }) = do
    let fluidSrcPaths = srcPaths local fluidSrcPath
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
-      { e, gconfig } <- prepConfig fluidSrc
-      { g, root } <- depEval gconfig e
+      { e, inputs, classes } <- prepConfig fluidSrc
+      { g, root } <- depEval inputs classes e
       pure (valAt g root)
 
 -- Manifest for dir and for each subdirectory with .fld files beneath it

@@ -21,7 +21,7 @@ import DataType (class HasClasses, ClassTable)
 import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval.Dep (GraphConfig, evalImport, implicitMembers, load) as Dep
+import Eval.Dep (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
@@ -38,7 +38,7 @@ import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
 import Val (class HasModuleStore, moduleStore, modifyModuleStore, Env(..), Val(..))
 import Val (BaseVal(..)) as V
 
-type Config = { s :: S.Stmt, e :: Stmt, gconfig :: Dep.GraphConfig }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
 
 isModule :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => ModuleName -> m Boolean
 isModule q = do
@@ -140,7 +140,7 @@ prepConfig fluidSrc = do
          when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q ->
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": context and environment bind the same names")
-      pure { s, e, gconfig: { inputs: restrict (fv e) inputs, classes } }
+      pure { s, e, inputs: restrict (fv e) inputs, classes }
 
 parseModules
    :: forall m

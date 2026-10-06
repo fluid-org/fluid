@@ -115,5 +115,5 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
 
    run :: String -> m Unit
    run fluidSrc = do
-      { e, gconfig } <- prepConfig fluidSrc
-      void $ depEval gconfig e
+      { e, inputs, classes } <- prepConfig fluidSrc
+      void $ depEval inputs classes e

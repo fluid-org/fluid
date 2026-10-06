@@ -4,7 +4,7 @@ import Prelude hiding (absurd, compare)
 
 import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
 import App.Util.Selector (ConstrArg, constrArg)
-import DataType (class HasClasses, fieldIndex)
+import DataType (class HasClasses, ClassTable, fieldIndex)
 import Data.Array as A
 import Data.Foldable (any, minimum)
 import Data.Map as Map
@@ -20,14 +20,13 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval.Dep (DepEval, GraphConfig, depEval, visible)
+import Eval.Dep (DepEval, depEval, visible)
 import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
-import Module (prepConfig)
+import Module (Config, prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
-import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
@@ -44,9 +43,9 @@ test ∷ forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => 
 test file expect (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
-   { s, e, gconfig } <- prepConfig fluidSrc
-   testPretty s
-   _ × res <- runWriterT (replicateM n (testProperties s e gconfig expect))
+   config <- prepConfig fluidSrc
+   testPretty config.s
+   _ × res <- runWriterT (replicateM n (testProperties config expect))
    pure $ res `divRow` n
 
 -- Printed output of the program, with the doc of its root vertex, if any.
@@ -57,14 +56,12 @@ testProperties
    => MonadReader FileCxt m
    => LoadFile m
    => MonadWriter BenchRow m
-   => SE.Stmt
-   -> Expr.Stmt
-   -> GraphConfig
+   => Config
    -> String
    -> AffError m Unit
-testProperties _ s' gconfig expect = do
+testProperties { e, inputs, classes } expect = do
    eval@{ g: g@{ docs }, root } <- benchmark "Dep" \_ ->
-      depEval gconfig s'
+      depEval inputs classes e
    let Val _ _ u = valAt g root
    withMsg "fwd_expect" $ checkPretty expect (prettyP (Val unit (valAt g <$> Map.lookup root docs) u))
    recordDepGraphSize eval.g
@@ -117,13 +114,13 @@ showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
 
 selection
    :: forall s
-    . GraphConfig
+    . ClassTable
    -> DepGraph Val s
    -> DepEval
    -> VertexSpec
    -> (ConstrArg -> Selector Val)
    -> Labelling (Set Pos)
-selection { classes } depGraph eval vertex δv =
+selection classes depGraph eval vertex δv =
    maplet p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
    where
    p = deriv depGraph eval vertex
@@ -131,14 +128,14 @@ selection { classes } depGraph eval vertex δv =
 testDep :: forall m. HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => File -> Query -> AffError m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
-   { e, gconfig } <- prepConfig fluidSrc
+   { e, inputs, classes } <- prepConfig fluidSrc
    { depGraph } <- moduleStore
-   eval <- depEval gconfig e
+   eval <- depEval inputs classes e
    let
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of
-         Bwd vertex δv expect' -> bwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
-         Fwd vertex δv expect' -> fwd visibleGraph (selection gconfig depGraph eval vertex δv) × expect'
+         Bwd vertex δv expect' -> bwd visibleGraph (selection classes depGraph eval vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd visibleGraph (selection classes depGraph eval vertex δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.

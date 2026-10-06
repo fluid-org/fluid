@@ -450,12 +450,6 @@ load q = do
          modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
          pure ρ_q
 
--- Top-level environment, as vertices of the module store's dependence graph, and class table of a program.
-type GraphConfig =
-   { inputs :: Dict Deriv
-   , classes :: ClassTable
-   }
-
 type DepEval =
    { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
    , inputs :: Dict Deriv
@@ -474,10 +468,11 @@ depEval
    => MonadAff m
    => MonadReader FileCxt m
    => LoadFile m
-   => GraphConfig
+   => Dict Deriv -- top-level environment, as vertices of the module store's dependence graph
+   -> ClassTable
    -> Stmt
    -> m DepEval
-depEval { inputs, classes } s =
+depEval inputs classes s =
    withClasses classes do
       { depGraph } <- moduleStore
       p × g <- flip runStateT depGraph do

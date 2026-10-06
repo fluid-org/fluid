@@ -170,8 +170,8 @@ boolean = dimap (map selected) (map (map (_ /= Zero)))
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
-   { s, e, gconfig } <- prepConfig fluidSrc
-   eval@{ g: g@{ docs }, root } <- depEval gconfig e
+   config@{ s } <- prepConfig fluidSrc
+   eval@{ g: g@{ docs }, root } <- depEval config.inputs config.classes config.e
    let
       out = root × Map.lookup root docs
       ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definedBy g q >>= (_ `Map.lookup` docs))
@@ -249,7 +249,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       , out_view: Nothing
       , intermediate_views: Map.empty
       , inertι: ιs <#> \p -> (&&) <$> val inertUnmasked.bwd p <*> val inertUnmasked.fwd p
-      , fieldIndex: fieldIndex gconfig.classes
+      , fieldIndex: fieldIndex config.classes
       }
 
 codeMirrorDiv :: Endo String
