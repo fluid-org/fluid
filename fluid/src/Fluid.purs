@@ -7,7 +7,7 @@ import Data.Argonaut.Core (stringifyWithIndent)
 import Data.Argonaut.Encode (encodeJson)
 import Data.Array (filter)
 import Data.Array as Array
-import Data.Foldable (for_)
+import Data.Foldable (foldl, for_)
 import Data.List.Types (NonEmptyList)
 import Data.Set as Set
 import Data.Either (Either(..))
@@ -20,9 +20,10 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff (Aff, Error, message, runAff_, try)
 import Effect.Class (liftEffect)
+import Data.Traversable (for)
 import Effect.Class.Console (log, logShow)
 import Eval.Dep (depEval)
-import File (File(..), Folder(..), emptyFileCxt, fluidExtension, loadFile, loadManifest, withClasses, withRoots)
+import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, modulePath, withClasses, withRoots)
 import Module (loadTopLevel, prepConfig, prepModule)
 import Module.Node (runNodeT)
 import Node.Encoding (Encoding(..))
@@ -33,7 +34,7 @@ import Options.Applicative.Builder (info)
 import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
 import SExpr (Import(..)) as S
-import Util (Endo, definitely)
+import Util (type (×), Endo, definitely, (×))
 import Graph.Dep (valAt)
 import Val (Val)
 
@@ -41,10 +42,16 @@ data EvalArgs = EvalArgs
    { local :: Boolean
    , fileName :: String
    , fluidSrcPaths :: Array Folder
-   , asModule :: Boolean -- check the file as a module rather than a program
    }
 
-data Command = Evaluate EvalArgs | Parse_ EvalArgs | Check EvalArgs | Manifest (NonEmptyList String)
+data CheckArgs = CheckArgs
+   { local :: Boolean
+   , fileNames :: NonEmptyList String
+   , fluidSrcPaths :: Array Folder
+   , asModule :: Boolean -- check each file as a module rather than a program
+   }
+
+data Command = Evaluate EvalArgs | Parse_ EvalArgs | Check CheckArgs | Manifest (NonEmptyList String)
 
 between :: forall a. Pattern -> Pattern -> Endo (String -> Either String a)
 between p1 p2 f s =
@@ -65,13 +72,23 @@ parseImports' open close = between open close $ \s -> do
 parseLocal :: Parser Boolean
 parseLocal = switch (long "local" <> short 'l' <> help "Are you running fluid as a library?")
 
+parseSrcPaths :: Parser (Array Folder)
+parseSrcPaths = Array.fromFoldable <$> some (Folder <$> strOption (long "fluid-src-path" <> short 'p' <> help "A path containing program or library files"))
+
 parseEvaluate :: Parser EvalArgs
 parseEvaluate = ado
    local <- parseLocal
    fileName <- strOption (long "file" <> short 'f' <> help "The file to parse")
-   fluidSrcPaths <- Array.fromFoldable <$> some (Folder <$> strOption (long "fluid-src-path" <> short 'p' <> help "A path containing program or library files"))
-   asModule <- switch (long "module" <> short 'm' <> help "Check the file as a module rather than a program")
-   in EvalArgs { local, fileName, fluidSrcPaths, asModule }
+   fluidSrcPaths <- parseSrcPaths
+   in EvalArgs { local, fileName, fluidSrcPaths }
+
+parseCheck :: Parser CheckArgs
+parseCheck = ado
+   local <- parseLocal
+   fileNames <- some (strOption (long "file" <> short 'f' <> help "A file to check"))
+   fluidSrcPaths <- parseSrcPaths
+   asModule <- switch (long "module" <> short 'm' <> help "Check each file as a module rather than a program")
+   in CheckArgs { local, fileNames, fluidSrcPaths, asModule }
 
 parseManifest :: Parser (NonEmptyList String)
 parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write manifests under"))
@@ -80,7 +97,7 @@ commands :: { evaluate :: Parser Command, parse :: Parser Command, check :: Pars
 commands =
    { evaluate: Evaluate <$> parseEvaluate
    , parse: Parse_ <$> parseEvaluate
-   , check: Check <$> parseEvaluate
+   , check: Check <$> parseCheck
    , manifest: Manifest <$> parseManifest
    }
 
@@ -88,7 +105,7 @@ commandParser :: Parser Command
 commandParser = subparser
    ( command "evaluate" (info commands.evaluate (progDesc "Evaluate a file"))
         <> command "parse" (info commands.parse (progDesc "Parse a file"))
-        <> command "check" (info commands.check (progDesc "Check and run a file; exit 1 if rejected by the parser, 3 if ill-formed, 5 if evaluation fails"))
+        <> command "check" (info commands.check (progDesc "Check and run files, reporting each as <code> <file>[: <message>], with code 0 if accepted, 1 if rejected by the parser, 3 if ill-formed, 5 if evaluation fails; exit with the largest code"))
         <> command "manifest" (info commands.manifest (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
@@ -99,7 +116,12 @@ dispatchCommand (Evaluate p) = do
 dispatchCommand (Parse_ p) = do
    r <- parse p
    log r
-dispatchCommand (Check p) = check p >>= liftEffect <<< exit'
+dispatchCommand (Check (CheckArgs { local, fileNames, fluidSrcPaths, asModule })) = do
+   codes <- for fileNames \fileName -> do
+      code × msg <- check (srcPaths local fluidSrcPaths) asModule fileName
+      log (show code <> " " <> fileName <> maybe "" (": " <> _) msg)
+      pure code
+   liftEffect (exit' (foldl max 0 codes))
 dispatchCommand (Manifest dirs) = for_ dirs (writeManifests <<< Folder)
 
 main :: Effect Unit
@@ -141,10 +163,8 @@ writeManifests root@(Folder dir) = do
       where
       segments = split (Pattern "/") path
 
--- Exit code for the stage at which the program is rejected, if any: 1 syntax, 3 well-formedness, 5 evaluation.
-check :: EvalArgs -> Aff Int
-check (EvalArgs { local, fileName, fluidSrcPaths: roots, asModule }) = do
-   let fluidSrcPaths = srcPaths local roots
+check :: Array Folder -> Boolean -> String -> Aff (Int × Maybe String)
+check fluidSrcPaths asModule fileName =
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       if asModule then
@@ -154,7 +174,7 @@ check (EvalArgs { local, fileName, fluidSrcPaths: roots, asModule }) = do
                Left err -> rejected 3 (message err)
                Right { modules, classes } -> try (withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil))) >>= case _ of
                   Left err -> rejected 5 (message err)
-                  Right _ -> pure 0
+                  Right _ -> pure (0 × Nothing)
       else
          case parseProgram fluidSrc of
             Left err -> rejected 1 err
@@ -162,11 +182,11 @@ check (EvalArgs { local, fileName, fluidSrcPaths: roots, asModule }) = do
                Left err -> rejected 3 (message err)
                Right { e, inputs, classes } -> try (depEval inputs classes e) >>= case _ of
                   Left err -> rejected 5 (message err)
-                  Right _ -> pure 0
+                  Right _ -> pure (0 × Nothing)
    where
-   rejected code msg = log msg $> code
+   rejected code msg = pure (code × Just (fromMaybe msg (Array.head (split (Pattern "\n") msg))))
    -- module name of the file, relative to its root
-   q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (fromMaybe fileName (stripSuffix (Pattern fluidExtension) fileName))))
+   q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (definitely "source file" (modulePath (File fileName)))))
 
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPaths: roots }) = do

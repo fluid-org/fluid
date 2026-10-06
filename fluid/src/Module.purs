@@ -24,7 +24,7 @@ import Effect.Exception (Error)
 import Eval.Dep (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
-import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
+import File (class LoadFile, File(..), FileCxt(..), hasDirectory, loadModuleSource, withClasses)
 import Graph.Dep (Deriv, deriv, emptyGraph)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
@@ -43,7 +43,7 @@ type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTa
 isModule :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => ModuleName -> m Boolean
 isModule q = do
    FileCxt { fluidSrcPaths } <- ask
-   loadFileMaybe fluidSrcPaths (File (pathName q <> fluidExtension)) >>= case _ of
+   loadModuleSource fluidSrcPaths (pathName q) >>= case _ of
       Just _ -> pure true
       Nothing -> hasDirectory fluidSrcPaths (File (pathName q))
 
@@ -200,8 +200,7 @@ parseModules imports = do
    parseAndCollect :: ModuleName -> m (S.Module × List ModuleName × List ModuleName)
    parseAndCollect path = do
       FileCxt { fluidSrcPaths } <- ask
-      let file = File (pathName path <> fluidExtension)
-      loadFileMaybe fluidSrcPaths file >>= case _ of
+      loadModuleSource fluidSrcPaths (pathName path) >>= case _ of
          Just src -> do
             mod × _ <- throwLeft <#> withMsg ("Loading module " <> dottedName path) $ parseModule src
             deps <- case mod of S.Module is _ -> traverse (importDeps path) is
@@ -210,4 +209,4 @@ parseModules imports = do
             pure $ mod × edges × toLoad
          Nothing -> hasDirectory fluidSrcPaths (File (pathName path)) >>= case _ of
             true -> pure (S.Module Nil Nil × Nil × Nil)
-            false -> loadFile fluidSrcPaths file *> pure (S.Module Nil Nil × Nil × Nil)
+            false -> throw ("Module not found in any path: " <> dottedName path)

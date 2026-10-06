@@ -8,6 +8,7 @@ import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, ru
 import Control.Monad.State (StateT, evalStateT, get, modify_)
 import Data.Array (concat)
 import Data.Either (Either(..), either)
+import Data.Foldable (any)
 import Data.Maybe (Maybe(..), isJust, maybe)
 import Data.Set as Set
 import Data.String (Pattern(..), stripSuffix)
@@ -18,7 +19,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect)
 import Effect.Exception (Error)
-import File (class LoadFile, File(..), FileCxt(..), Folder(..), fluidExtension)
+import File (class LoadFile, File(..), FileCxt(..), Folder(..), extensions)
 import Node.Encoding (Encoding(..))
 import Node.FS.Aff (readTextFile, readdir, stat)
 import Node.FS.Stats (isDirectory, isFile)
@@ -43,7 +44,7 @@ instance Monad m => LoadFile (NodeT m) where
             let path = maybe entry (_ <> "/" <> entry) dir
             stats <- stat (root <> "/" <> path)
             if isDirectory stats then files (Just path)
-            else pure (if isJust (stripSuffix (Pattern fluidExtension) entry) then [ File path ] else [])
+            else pure (if any (\ext -> isJust (stripSuffix (Pattern ext) entry)) extensions then [ File path ] else [])
 
 newtype NodeT m a = NodeT (ReaderT FileCxt (StateT ModuleStore m) a)
 
