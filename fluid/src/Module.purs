@@ -31,7 +31,7 @@ import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
 import DefiniteAssignment (Cxt, Entry(..), erase)
 import Primitive.Defs (predefined)
-import WellFormed (LoadedModule, checkModule, checkProgram, mainModule)
+import WellFormed (LoadM, LoadedModule, checkProgram, loadModule, mainModule, runLoadM)
 import SExpr as S
 import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
@@ -129,11 +129,9 @@ prepConfig
    -> m Config
 prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   mods <- parseModules imports
-   { cxt: cxt_wf, s: e, loaded } <- orThrow (checkProgram mods (fst <$> predefined) imports s)
-   let classes = classTable (_.cxt <$> loaded)
+   { result: cxt_wf × e, modules: mods, loaded, classes } <- prepModules imports (checkProgram imports s)
    withClasses classes do
-      inputs <- loadTopLevel (Map.mapMaybe _.mod loaded) imports
+      inputs <- loadTopLevel mods imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
       { modules } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
@@ -142,7 +140,22 @@ prepConfig fluidSrc = do
                ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
 
--- Modules reachable from q, checked and ready to load, with class table; q checked as module, not program.
+-- Modules reachable through imports, parsed and checked by given action, with class table.
+prepModules
+   :: forall m a
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => List S.Import
+   -> LoadM a
+   -> m { result :: a, modules :: Map ModuleName Module, loaded :: Map ModuleName LoadedModule, classes :: ClassTable }
+prepModules imports action = do
+   mods <- parseModules imports
+   result × loaded <- orThrow (runLoadM action mods (fst <$> predefined))
+   pure { result, modules: Map.mapMaybe _.mod loaded, loaded, classes: classTable (_.cxt <$> loaded) }
+
+-- Module q checked as module, not program, with modules it imports.
 prepModule
    :: forall m
     . MonadAff m
@@ -151,10 +164,7 @@ prepModule
    => LoadFile m
    => ModuleName
    -> m { modules :: Map ModuleName Module, classes :: ClassTable }
-prepModule q = do
-   mods <- parseModules (S.Import q Nothing : Nil)
-   loaded <- orThrow (checkModule mods (fst <$> predefined) q)
-   pure { modules: Map.mapMaybe _.mod loaded, classes: classTable (_.cxt <$> loaded) }
+prepModule q = prepModules (S.Import q Nothing : Nil) (loadModule q) <#> \{ modules, classes } -> { modules, classes }
 
 parseModules
    :: forall m

@@ -49,27 +49,14 @@ type LoadM = StateT (Map.Map ModuleName LoadedModule) (ReaderT (Map.Map ModuleNa
 runLoadM :: forall a. LoadM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> Either String (a × Map.Map ModuleName LoadedModule)
 runLoadM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
 
-checkProgram
-   :: Map.Map ModuleName S.Module
-   -> Map.Map ModuleName Cxt
-   -> List S.Import
-   -> S.Stmt
-   -> Either String { cxt :: VarCxt, s :: E.Stmt, loaded :: Map.Map ModuleName LoadedModule }
-checkProgram mods predefined imports s =
-   runLoadM program mods predefined <#> \((cxt × s') × loaded) -> { cxt, s: s', loaded }
-   where
-   program :: LoadM (VarCxt × E.Stmt)
-   program = do
-      _ × cxt_imp <- checkImports mainModule imports
-      -- Unlike a module (checkStatements), the program may return: a top-level return yields
-      -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
-      decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
-      modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
-      pure (Map.insert "__name__" true (erase cxt_imp) × s')
-
--- Module q and modules it imports, as spec checks module.
-checkModule :: Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> ModuleName -> Either String (Map.Map ModuleName LoadedModule)
-checkModule mods predefined q = snd <$> runLoadM (loadModule q) mods predefined
+checkProgram :: List S.Import -> S.Stmt -> LoadM (VarCxt × E.Stmt)
+checkProgram imports s = do
+   _ × cxt_imp <- checkImports mainModule imports
+   -- Unlike a module (checkStatements), the program may return: a top-level return yields
+   -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
+   decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
+   modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
+   pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
 -- Member context of module q, loaded on demand as its import is checked; memoised. The recursion has no
 -- cycle guard; it terminates because the dependency graph is acyclic.
