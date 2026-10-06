@@ -23,9 +23,15 @@ jobs:
       uses: actions/cache@v4
       with:
         key: ${{ runner.os }}-spago-${{ hashFiles('**/*.dhall') }}
-        path: |
-          fluid/.spago
-          fluid/output
+        path: fluid/.spago
+    - name: hash source file list
+      id: sources
+      run: echo "hash=$(git ls-files fluid/src fluid/test fluid/config | sort | shasum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - name: cache compiler output
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-output-${{ hashFiles('**/*.dhall') }}-${{ steps.sources.outputs.hash }}
+        path: fluid/output
     - name: configure NPM authentication
       run: |
         echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
