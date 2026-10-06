@@ -93,7 +93,7 @@ type VisibleGraph (f :: Type -> Type) s =
    , edges :: Edges (SparseRel s)
    }
 
--- Relies on every edge running from an earlier to a later vertex in evaluation order.
+-- Relies on edges running from earlier to later vertices in evaluation order.
 materialise
    :: forall f s
     . Traversable f
