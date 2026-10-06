@@ -228,8 +228,9 @@ selectOn δv arg v = fst (δv arg (const unselected <$> (map (const top) v :: Va
 -- Result at this position, printed with its persistent selections, must match; leave it unselected.
 at :: forall f. Functor f => Pretty (f 𝔹) => String -> SetSel (f (SelStates 𝔹))
 at expected v =
-   assertWith ("at:\nExpected\n" <> expected <> "\nReceived\n" <> actual) (dedent expected == actual) (botOf <$> v) × Persistent
+   assertWith ("at:\nExpected\n" <> expected' <> "\nReceived\n" <> actual) (expected' == actual) (botOf <$> v) × Persistent
    where
+   expected' = dedent expected
    actual = prettyP (getPersistent <$> v)
 
 -- Expectation applied to the selection must cancel it.
@@ -275,5 +276,7 @@ dedent s = joinWith "\n" (S.drop indent <$> lines)
 
 checkPretty :: forall m. String -> String -> EffectError m Unit
 checkPretty expect actual = do
-   unless (dedent expect `eq` actual) $
-      throw ("checkPretty:\nExpected\n" <> expect <> "\nReceived\n" <> actual)
+   unless (expect' `eq` actual) $
+      throw ("checkPretty:\nExpected\n" <> expect' <> "\nReceived\n" <> actual)
+   where
+   expect' = dedent expect
