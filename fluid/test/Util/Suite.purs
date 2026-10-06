@@ -4,7 +4,7 @@ import Prelude
 
 import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
 import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
-import App.Util.Selector (ConstrArg, constrArg, none, sel𝔹)
+import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import DataType (class HasClasses)
@@ -12,7 +12,7 @@ import Control.Monad.Error.Class (class MonadError, catchError)
 import Control.Monad.Reader (class MonadReader)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (uncurry)
 import Effect.Aff (Error, message)
@@ -22,7 +22,7 @@ import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (𝔹)
 import Module (prepConfig)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
-import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
+import Test.Util (DepSpec, SelectionSpec(..), TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
 import Val (class HasModuleStore, Val, Env)
@@ -64,7 +64,7 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
-      test (File file) { δv: \_ -> none, fwd_expect: Just fwd_expect, bwd_expect: Nothing, inputs: [] } (n × is_bench)
+      test (File file) (Evaluation fwd_expect) (n × is_bench)
 
 depSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query
@@ -76,7 +76,7 @@ bwdSuite specs (n × is_bench) = specs <#> ((_.file >>> File >>> (folder </> _) 
 
    asTest :: TestBwdSpec -> m BenchRow
    asTest { file, bwd_expect, δv, inputs } = do
-      test (folder </> File file) { δv, fwd_expect: Nothing, bwd_expect: Just bwd_expect, inputs } (n × is_bench)
+      test (folder </> File file) (Selection { δv, bwd_expect, inputs }) (n × is_bench)
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)

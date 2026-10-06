@@ -3,7 +3,7 @@ module Test.Util where
 import Prelude hiding (absurd, compare)
 
 import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
-import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
+import App.Util.Selector (ConstrArg, constrArg, none, sel𝔹)
 import DataType (class HasClasses, fieldIndex)
 import Data.Array (null) as Array
 import Data.Array as A
@@ -43,12 +43,13 @@ import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripD
 
 type TestSuite m = Array (String × m Unit)
 
-type SelectionSpec =
-   { δv :: ConstrArg -> Selector Val
-   , fwd_expect :: Maybe String -- printed output, for tests with no selection
-   , bwd_expect :: Maybe (ConstrArg -> Selector Env) -- Nothing for tests that don't perturb output
-   , inputs :: Array String -- data inputs to slice forward through; [] = all (no restriction)
-   }
+data SelectionSpec
+   = Evaluation String -- printed output
+   | Selection
+        { δv :: ConstrArg -> Selector Val
+        , bwd_expect :: ConstrArg -> Selector Env
+        , inputs :: Array String -- data inputs to slice forward through; [] = all (no restriction)
+        }
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "lib", Folder "test/lib" ]
@@ -93,7 +94,7 @@ testProperties
    -> GraphConfig
    -> SelectionSpec
    -> AffError m Unit
-testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
+testProperties _ s' gconfig spec = do
 
    graphed@{ g, outα } <- graphBenchmark benchNames.eval \_ ->
       graphEval gconfig s'
@@ -104,10 +105,13 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
       throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
    let bwdα = fst <<< (depsOf graphed).bwd
    let fwdα = fst <<< (depsOf graphed).fwd
-   let inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
-
-   let arg = constrArg (fieldIndex gconfig.classes)
-   let out0 = selectOn δv arg outα
+   let
+      δv × inputs = case spec of
+         Evaluation _ -> (\_ -> none) × []
+         Selection sel -> sel.δv × sel.inputs
+      inputs' = if Array.null inputs then keys (erase graphed.inα) else Set.fromFoldable inputs
+      arg = constrArg (fieldIndex gconfig.classes)
+      out0 = selectOn δv arg outα
 
    in_ρ <- do
       let report = spyWhen tracing.bwdSelection "Selection for bwd" prettyP
@@ -126,14 +130,12 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    let deps' = fwd visibleGraph (nonZero <$> Map.filterKeys (_ `Set.member` from) deps)
    includes "dependence of output" (get eval.root deps') (stripDocs out1)
 
-   case bwd_expect of
-      Nothing -> pure unit
-      Just sel -> do
-         let expected = sel𝔹 (sel arg) in_ρ
+   case spec of
+      Evaluation expect -> withMsg "fwd_expect" $ checkPretty expect (prettyP out1)
+      Selection { bwd_expect } -> do
+         let expected = sel𝔹 (bwd_expect arg) in_ρ
          unless (in_ρ ≽ expected) $
             throw ("bwd_expect mismatch:\nactual in_ρ\n" <> prettyP in_ρ <> "\nexpected (sel𝔹)\n" <> prettyP expected)
-   for_ fwd_expect \expect ->
-      withMsg "fwd_expect" $ checkPretty expect (prettyP out1)
 
    recordGraphSize g
    recordDepGraphSize eval.g
