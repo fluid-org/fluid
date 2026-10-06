@@ -37,7 +37,8 @@ import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, rec
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, keys, restrict, toUnfoldable, values)
-import Val (class HasModuleStore, Env, Val(..), moduleStore, stripDocs)
+import Literal (Literal(..))
+import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -140,7 +141,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
 -- Visible vertex carrying the selection.
 data VertexSpec
    = Output
-   | Input String -- imported variable, documented with its name
+   | Input String -- vertex documented with the name
    | Intermediate Int -- index among documented vertices of the program, in evaluation order
    | Doc VertexSpec
 
@@ -173,11 +174,11 @@ depName file = case _ of
 
 -- depGraph is the store's graph, from before the program ran.
 deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
-deriv depGraph eval@{ g: { docs, edges }, inputs, root } = case _ of
+deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
-   Input x -> case A.fromFoldable <<< Map.keys <$> Map.lookup (get x inputs) edges of
-      Just [ p ] | Map.member p docs -> p
-      _ -> error ("input " <> x <> " not bound to documented value")
+   Input x -> case A.filter (\(_ × d) -> valAt g d == Val unit Nothing (Lit (Str x))) (Map.toUnfoldable docs) of
+      [ p × _ ] -> p
+      _ -> error ("no vertex documented " <> show x)
    Intermediate n -> intermediates ! n
    Doc vertex -> definitely' (Map.lookup (deriv depGraph eval vertex) docs)
    where

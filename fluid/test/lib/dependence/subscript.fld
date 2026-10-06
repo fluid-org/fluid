@@ -1,3 +1,4 @@
-from dependence.subscript_inputs import i, xs
+i = @doc("i") 1
+xs = @doc("xs") [3, 4, 5]
 
 xs[i]

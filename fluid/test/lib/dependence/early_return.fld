@@ -1,4 +1,6 @@
-from dependence.early_return_inputs import a, b, c
+a = @doc("a") 1
+b = @doc("b") 2
+c = @doc("c") False
 
 def f(c, a, b):
    if c:

@@ -1,3 +1,5 @@
-from dependence.cond_inputs import b, y, z
+b = @doc("b") True
+y = @doc("y") 1
+z = @doc("z") 2
 
 y if b else z

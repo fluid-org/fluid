@@ -163,6 +163,15 @@ dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deri
 dense g ws = g.vals # mapWithIndex \p ->
    mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i))
 
+-- Each the transpose of the other.
+type ConjugatePair (f :: Type -> Type) s =
+   { fwd :: Map Deriv (Set Pos) -> Map Deriv (f s)
+   , bwd :: Map Deriv (Set Pos) -> Map Deriv (f s)
+   }
+
+queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair f s
+queries g = { fwd: fwd g, bwd: bwd g }
+
 -- Dependence of the selection on the positions of each visible vertex.
 bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Map Deriv (Set Pos) -> Map Deriv (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))

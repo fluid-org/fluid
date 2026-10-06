@@ -30,7 +30,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval.Dep (depEval, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph.Dep (Deriv, bwd, fwd, mask, materialise, selected)
+import Graph.Dep (Deriv, mask, materialise, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
@@ -89,7 +89,7 @@ selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ',
 
 setIntermediateView :: Deriv -> ViewSetter Fig View
 setIntermediateView p δvw fig = fig
-   { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views
+   { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
    }
 
 type SelectionResult =
@@ -186,30 +186,37 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       out = root × Map.lookup root docs
       ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definition q >>= (_ `Map.lookup` docs))
       shown = Set.fromFoldable (A.cons root (A.mapMaybe definition (A.fromFoldable (values (fst <$> ins)))))
-      ιs = if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs) else Map.empty
+      ιs =
+         if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs)
+         else Map.empty
 
-      unmasked = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
+      graph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
 
       val :: forall a. Map Deriv (Val a) -> Deriv × Maybe Deriv -> Val a
-      val m (p × d) = let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
+      val m (p × d) =
+         let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
 
       unval :: forall a. Deriv × Maybe Deriv -> Val a -> Map Deriv (Val a)
-      unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
+      unval (p × d) (Val α doc u) =
+         Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
 
       unvals :: forall a. Dict (Deriv × Maybe Deriv) -> Dict (Val a) -> Map Deriv (Val a)
       unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
-      everything = map (const true) <$> unmasked.vals
+      everything = map (const true) <$> graph.vals
       ignored = unvals ins (unwrap (sel𝔹 ignoreInputs (Env (ins <#> val everything))))
-      masked = unmasked # mask \p v ->
+
+      -- Boolean dependence, over the graph as it is and restricted to data positions less the ignored ones.
+      boolean { fwd, bwd } = { fwd: nonZero fwd, bwd: nonZero bwd }
+         where
+         nonZero q sel = map (_ /= Zero) <$> q (selected <$> sel)
+      unmasked = boolean (queries graph)
+      masked = boolean $ queries $ graph # mask \p v ->
          maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
 
-      bwd' graph sel = map (_ /= Zero) <$> bwd graph (selected <$> sel)
-      fwd' graph sel = map (_ /= Zero) <$> fwd graph (selected <$> sel)
-
       -- Positions which the output does not depend on, and which do not depend on any input.
-      inertBwd graph = map not <$> bwd' graph (unval out (val everything out))
-      inertFwd graph = map not <$> fwd' graph (Map.filterKeys (_ `elem` eval.inputs) everything)
+      inertBwd { bwd } = map not <$> bwd (unval out (val everything out))
+      inertFwd { fwd } = map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
       inertρ = inertBwd masked
       inertV = inertFwd masked
       inertBwdι = inertBwd unmasked
@@ -234,20 +241,20 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       linkedInputs selType ρ = ρ'' × v × toι m
          where
          ρ' = ρ <#> getSel selType
-         m = fwd' masked (fromρ ρ')
+         m = masked.fwd (fromρ ρ')
          v = toV m
-         ρ'' = if linking then toρ (bwd' masked (fromV v)) else ρ'
+         ρ'' = if linking then toρ (masked.bwd (fromV v)) else ρ'
 
       linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
       linkedOutputs selType v = ρ × v'' × toι m
          where
          v' = v <#> getSel selType
-         m = bwd' masked (fromV v')
+         m = masked.bwd (fromV v')
          ρ = toρ m
-         v'' = if linking then toV (fwd' masked (fromρ ρ)) else v'
+         v'' = if linking then toV (masked.fwd (fromρ ρ)) else v'
 
       linkIntermediates :: Map Deriv (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Map Deriv (Val 𝔹)
-      linkIntermediates ι = toρ (bwd' unmasked m) × toV (fwd' unmasked m) × toι m
+      linkIntermediates ι = toρ (unmasked.bwd m) × toV (unmasked.fwd m) × toι m
          where
          m = Map.unions (Map.intersectionWith unval ιs (map (getSel Transient >>> to𝔹) <$> ι))
 

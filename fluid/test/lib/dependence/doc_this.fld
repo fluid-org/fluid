@@ -1,4 +1,6 @@
 import fluid.view
-from dependence.doc_this_inputs import x, y
+
+x = @doc("x") 1
+y = @doc("y") 2
 
 @doc(f"""Sum is {this}""") x + y
