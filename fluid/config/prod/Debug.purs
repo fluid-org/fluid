@@ -8,8 +8,5 @@ tracing = tracingDefaults
 checking :: CheckingConfig
 checking = checkingDefaults
 
-testing :: TestingConfig
-testing = testingDefaults
-
 timing :: TimingConfig
 timing = timingDefaults

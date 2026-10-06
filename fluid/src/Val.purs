@@ -11,7 +11,7 @@ import Control.Monad.Reader (class MonadReader, ReaderT)
 import Control.Monad.State (class MonadState, StateT, gets)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
-import Data.Array (concat, zipWith, (!!)) as A
+import Data.Array (zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
@@ -21,8 +21,8 @@ import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
 import Data.Either (Either)
 import Data.Maybe (Maybe(..))
-import Data.Newtype (class Newtype, unwrap)
-import Data.Set (Set, unions)
+import Data.Newtype (class Newtype)
+import Data.Set (Set)
 import Data.Set as Set
 import Data.Profunctor.Strong (second)
 import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
@@ -33,15 +33,11 @@ import Effect.Exception (Error)
 import Expr (Def, Module, fv)
 import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
-import Foreign.Object (foldMap)
-import Graph (class TypeName, class Vertices, DVertex'(..), Vertex(..), VertexData, pack, typeName, unpack, vertices)
 import Graph.Dep (DepGraph, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
 import Graph.Dep (Deriv, Pos) as Dep
-import Graph.WithGraph (class MonadWithGraphAlloc, new)
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
-import Unsafe.Coerce (unsafeCoerce)
 import Util (class IsEmpty, type (×), Endo, absurd, definitely, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
@@ -67,12 +63,6 @@ data BaseVal a
    | Matrix (MatrixRep a)
    | Fun (Fun a)
 
-val :: forall m. MonadWithGraphAlloc m => Maybe (Val Vertex) -> Set Vertex -> BaseVal Vertex -> m (Val Vertex)
-val doc_opt = new (flip Val doc_opt)
-
-asVal :: VertexData -> Maybe (Val Vertex)
-asVal e = if unpack typeName e == "Val" then Just (unpack unsafeCoerce e) else Nothing
-
 root :: forall a. Val a -> a
 root (Val α _ _) = α
 
@@ -87,10 +77,6 @@ overChildren f (Fun φ) = Fun (overFun φ)
    overFun (Closure (Env ρ) ds d) = Closure (Env (f <$> ρ)) ds d
    overFun (Partial φ' vs) = Partial (overFun φ') (f <$> vs)
    overFun φ' = φ'
-
--- Docs are vertices in the dependence graph; retire with the α-graph.
-stripDocs :: forall a. Val a -> Val a
-stripDocs (Val α _ u) = Val α Nothing (overChildren stripDocs u)
 
 -- False at shape positions: root, keys and dimensions of a list, dictionary or matrix.
 dataPositions :: forall a. Val a -> Val Boolean
@@ -119,15 +105,13 @@ instance Highlightable a => Highlightable (a × b) where
 instance (Ann a, BoundedLattice b) => Ann (a × b)
 
 type ModuleStore =
-   { ρ0α :: Env Vertex -- members of the implicit modules
-   , moduleBody :: Map ModuleName Module
-   , moduleEnvα :: Map ModuleName (Env Vertex)
+   { moduleBody :: Map ModuleName Module
    , depGraph :: DepGraph Val (Lineage (Dep.Deriv × Dep.Pos) DepKind)
    , moduleEnv :: Map ModuleName (Dict Dep.Deriv) -- members as derivations in depGraph
    }
 
 emptyModuleStore :: ModuleStore
-emptyModuleStore = { ρ0α: empty, moduleBody: Map.empty, moduleEnvα: Map.empty, depGraph: emptyGraph, moduleEnv: Map.empty }
+emptyModuleStore = { moduleBody: Map.empty, depGraph: emptyGraph, moduleEnv: Map.empty }
 
 class Monad m <= HasModuleStore m where
    moduleStore :: m ModuleStore
@@ -148,19 +132,6 @@ instance (Monad m, HasModuleStore m) => HasModuleStore (ExceptT e m) where
 instance (Monad m, HasModuleStore m, Monoid w) => HasModuleStore (WriterT w m) where
    moduleStore = lift moduleStore
    modifyModuleStore = lift <<< modifyModuleStore
-
-type Op =
-   forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadWithGraphAlloc m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => Maybe (Val Vertex) -- optional doc context
-   -> List (Val Vertex)
-   -> m (Val Vertex)
 
 type InEdges s = List (Dep.Deriv × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
@@ -272,7 +243,6 @@ pureRel f ctrl vs = do
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
-   , op :: Op
    , depOp :: DepOp
    }
 
@@ -326,7 +296,6 @@ forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
 
 -- Wrap internal representations to provide foldable/traversable instances.
 newtype DictRep a = DictRep (Dict (a × Val a))
-newtype DictKey a = DictKey (String × a)
 newtype MatrixDim a = MatrixDim (Int × a)
 newtype MatrixRep a = MatrixRep (Array2 (Val a) × MatrixDim a × MatrixDim a)
 type Array2 a = Array (Array a)
@@ -393,9 +362,6 @@ instance Highlightable DepKind where
    highlightIf Zero = identity
    highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
    highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
-
-instance Highlightable Vertex where
-   highlightIf (Vertex α) = \doc -> doc <> text "_" <> text ("⟨" <> α <> "⟩")
 
 -- ======================
 -- boilerplate
@@ -556,47 +522,3 @@ derive instance Eq a => Eq (Fun a)
 derive instance Eq a => Eq (Env a)
 
 derive instance Newtype (Env a) _
-
-instance TypeName (Val a) where
-   typeName _ = "Val"
-
-instance TypeName (MatrixDim a) where
-   typeName _ = "MatrixDim"
-
-instance TypeName (DictKey a) where
-   typeName _ = "DictKey"
-
-instance Vertices (Val Vertex) where
-   vertices v@(Val α _ v') = singleton (DVertex (α × pack v)) ∪ vertices v'
-
-instance Vertices (BaseVal Vertex) where
-   vertices (Lit _) = empty
-   vertices (Constr _ vs) = unions (vertices <$> vs)
-   vertices (List vs) = unions (vertices <$> vs)
-   vertices (Dictionary d) = vertices d
-   vertices (Matrix m) = vertices m
-   vertices (Fun f) = vertices f
-
-instance Vertices (DictRep Vertex) where
-   vertices (DictRep d) = foldMap (\k (α × v) -> vertices (DictKey (k × α)) ∪ vertices v) (unwrap d)
-
-instance Vertices (DictKey Vertex) where
-   vertices dk@(DictKey (_ × α)) = singleton (DVertex (α × pack dk))
-
-instance Vertices (MatrixRep Vertex) where
-   vertices (MatrixRep (vss × i × j)) =
-      unions (A.concat (map vertices <$> vss))
-         ∪ vertices i
-         ∪ vertices j
-
-instance Vertices (MatrixDim Vertex) where
-   vertices md@(MatrixDim (_ × α)) = singleton (DVertex (α × pack md))
-
-instance Vertices (Fun Vertex) where
-   vertices (Closure ρ _ _) = vertices ρ
-   vertices (Prim _) = empty
-   vertices (Type _) = empty
-   vertices (Partial φ vs) = vertices φ ∪ unions (vertices <$> vs)
-
-instance Vertices (Env Vertex) where
-   vertices (Env ρ) = unions (vertices <$> values ρ)

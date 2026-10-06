@@ -20,21 +20,20 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval (GraphConfig, graphEval)
-import Eval.Dep (DepEval, depEval, visible)
+import Eval.Dep (DepEval, GraphConfig, depEval, visible)
 import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
-import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, erase, 𝔹)
+import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (prepConfig)
 import Parse (parseProgram)
 import Pretty (class Pretty, compare, prettyP)
 import Expr (Stmt) as Expr
 import SExpr (Stmt) as SE
-import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
-import Util (type (×), AffError, EffectError, Thunk, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
+import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
+import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
 import Literal (Literal(..))
-import Val (class HasModuleStore, BaseVal(..), Val(..), moduleStore, stripDocs)
+import Val (class HasModuleStore, BaseVal(..), Val(..), moduleStore)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -50,26 +49,7 @@ test file expect (n × _) = do
    _ × res <- runWriterT (replicateM n (testProperties s e gconfig expect))
    pure $ res `divRow` n
 
-graphBenchmark :: forall m a. MonadWriter BenchRow m => String -> Thunk (m a) -> EffectError m a
-graphBenchmark name = benchmark ("G" <> "-" <> name)
-
-benchNames
-   :: { eval :: String
-      , dep :: String
-      , materialise :: String
-      , bwd :: String
-      , fwd :: String
-      }
-
-benchNames =
-   { eval: "Eval"
-   , dep: "Dep"
-   , materialise: "Materialise"
-   , bwd: "Demands"
-   , fwd: "DemBy"
-   }
-
--- Printed output of the program, with evaluation on the α-graph and the dependence graph agreeing.
+-- Printed output of the program, with the doc of its root vertex, if any.
 testProperties
    :: forall m
     . HasClasses m
@@ -83,15 +63,10 @@ testProperties
    -> String
    -> AffError m Unit
 testProperties _ s' gconfig expect = do
-   { g, outα } <- graphBenchmark benchNames.eval \_ ->
-      graphEval gconfig s'
-   eval <- graphBenchmark benchNames.dep \_ ->
+   eval@{ g: g@{ docs }, root } <- benchmark "Dep" \_ ->
       depEval gconfig s'
-   let out_dep = valAt eval.g eval.root
-   unless (out_dep == stripDocs (erase outα)) $
-      throw ("depEval mismatch:\nactual\n" <> prettyP out_dep <> "\nexpected\n" <> prettyP (erase outα))
-   withMsg "fwd_expect" $ checkPretty expect (prettyP (erase outα))
-   recordGraphSize g
+   let Val _ _ u = valAt g root
+   withMsg "fwd_expect" $ checkPretty expect (prettyP (Val unit (valAt g <$> Map.lookup root docs) u))
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.

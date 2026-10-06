@@ -28,7 +28,6 @@ import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkAr
 import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import Graph.Dep (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
@@ -506,6 +505,12 @@ load q = do
          ρ_q <- maybe (pure empty) (evalModule ρ0 q) (Map.lookup q moduleBody)
          modifyModuleStore (\s -> s { moduleEnv = Map.insert q ρ_q s.moduleEnv })
          pure ρ_q
+
+-- Top-level environment, as vertices of the module store's dependence graph, and class table of a program.
+type GraphConfig =
+   { inputs :: Dict Deriv
+   , classes :: ClassTable
+   }
 
 type DepEval =
    { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)

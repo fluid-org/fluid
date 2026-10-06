@@ -16,20 +16,16 @@ import Data.Maybe (Maybe(..), isJust)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
-import Data.Tuple (fst, snd)
+import Data.Tuple (fst)
 import DataType (class HasClasses, ClassTable)
 import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (GraphConfig, evalImport, load)
-import Eval.Dep (evalImport, implicitMembers, load) as Dep
+import Eval.Dep (GraphConfig, evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
-import Graph (Vertex, vertices)
 import Graph.Dep (Deriv, deriv, emptyGraph)
-import Graph.GraphImpl (GraphImpl)
-import Graph.WithGraph (AllocT, alloc, runAllocT, runWithGraphT_spy)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
@@ -39,10 +35,10 @@ import WellFormed (LoadedModule, checkProgram, mainModule)
 import SExpr as S
 import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
-import Val (class HasModuleStore, moduleStore, modifyModuleStore, val, Env(..), Val(..))
+import Val (class HasModuleStore, moduleStore, modifyModuleStore, Env(..), Val(..))
 import Val (BaseVal(..)) as V
 
-type Config = { s :: S.Stmt, e :: Stmt, gconfig :: GraphConfig }
+type Config = { s :: S.Stmt, e :: Stmt, gconfig :: Dep.GraphConfig }
 
 isModule :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => ModuleName -> m Boolean
 isModule q = do
@@ -97,35 +93,6 @@ classTable modCxt =
       Class cls -> Just cls
       _ -> Nothing
 
-allocTopLevel
-   :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadAff m
-   => MonadError Error m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => Map ModuleName Module
-   -> List S.Import
-   -> m (Int × Env Vertex)
-allocTopLevel mods imports = do
-   n × _ × ρ <- flip runAllocT 0 do
-      predefined' <- traverse (alloc <<< snd) predefined
-      let αs = Set.unions (vertices <$> Map.values predefined')
-      _ × ρ <-
-         runWithGraphT_spy
-            ( do
-                 modifyModuleStore (_ { moduleBody = mods, moduleEnvα = predefined' })
-                 for_ implicit \q -> load q >>= \ρ_q -> modifyModuleStore (\s -> s { ρ0α = s.ρ0α <+> ρ_q })
-                 { ρ0α } <- moduleStore
-                 ρ1 <- foldM (\ρ (S.Import q f) -> evalImport mainModule ρ (E.Import q f)) ρ0α imports
-                 vName <- val Nothing Set.empty (V.Lit (Str "__main__"))
-                 pure (ρ1 <+> maplet "__name__" vName)
-            )
-            αs :: AllocT m (GraphImpl × _)
-      pure ρ
-   pure (n × ρ)
-
 -- Load modules into a new dependence graph, kept in the store; return the top-level environment as a vertex per variable.
 loadTopLevel
    :: forall m
@@ -135,12 +102,13 @@ loadTopLevel
    => MonadError Error m
    => MonadReader FileCxt m
    => LoadFile m
-   => List S.Import
+   => Map ModuleName Module
+   -> List S.Import
    -> m (Dict Deriv)
-loadTopLevel imports = do
+loadTopLevel mods imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- traverse (\(_ × Env ρ) -> traverse deriv ρ) predefined
-      modifyModuleStore (_ { moduleEnv = predefined' })
+      modifyModuleStore (_ { moduleBody = mods, moduleEnv = predefined' })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
       ρ1 <- foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
@@ -165,19 +133,14 @@ prepConfig fluidSrc = do
    { cxt: cxt_wf, s: e, loaded } <- orThrow (checkProgram mods (fst <$> predefined) imports s)
    let classes = classTable (_.cxt <$> loaded)
    withClasses classes do
-      n × ρ <- allocTopLevel (Map.mapMaybe _.mod loaded) imports
-      inputs <- loadTopLevel imports
-      check (Map.keys cxt_wf == Set.fromFoldable (keys ρ)) "reduced context matches top-level environment"
-      check (keys ρ == keys inputs) "top-level α-graph and dependence-graph environments bind the same names"
-      { moduleEnvα, moduleEnv } <- moduleStore
+      inputs <- loadTopLevel (Map.mapMaybe _.mod loaded) imports
+      check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
+      { moduleEnv } <- moduleStore
       for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
-         when (isJust mod) $ for_ (Map.lookup q moduleEnvα) \ρ_q -> do
+         when (isJust mod) $ for_ (Map.lookup q moduleEnv) \ρ_q ->
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": context and environment bind the same names")
-            check (Just (keys ρ_q) == (keys <$> Map.lookup q moduleEnv))
-               ("module " <> dottedName q <> ": α-graph and dependence-graph environments bind the same names")
-      let gconfig = { n, ρ: restrict (fv e) ρ, inputs: restrict (fv e) inputs, classes }
-      pure { s, e, gconfig }
+      pure { s, e, gconfig: { inputs: restrict (fv e) inputs, classes } }
 
 parseModules
    :: forall m

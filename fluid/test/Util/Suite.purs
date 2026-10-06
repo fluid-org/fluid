@@ -16,7 +16,7 @@ import Data.Maybe (Maybe)
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (uncurry)
 import Effect.Aff (Error, message)
-import Eval (graphEval)
+import Eval.Dep (depEval)
 import Effect.Aff.Class (class MonadAff)
 import File (class LoadFile, File(..), FileCxt, Folder(..), loadFile, (</>))
 import Lattice (𝔹)
@@ -116,4 +116,4 @@ illFormedSuite specs = specs <#> (_.file &&& asTest)
    run :: String -> m Unit
    run fluidSrc = do
       { e, gconfig } <- prepConfig fluidSrc
-      void $ graphEval gconfig e
+      void $ depEval gconfig e
