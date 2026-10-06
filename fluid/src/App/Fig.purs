@@ -126,23 +126,18 @@ intermediates { inertι } ιs =
 
 drawFig :: HTMLId -> Fig -> Effect Unit
 drawFig divId fig = do
-   drawView arg { divId, suffix: str.output, view: out_view } (selectOutput >>> redraw)
-
-   sequence_ $ flip mapWithKey in_views \x view ->
-      drawView arg { divId: divId <> "-" <> str.input, suffix: x, view } (selectInput x >>> redraw)
-
-   for_ unused \p -> rootSelect ("#" <> prefix <> "-" <> show p) >>= remove
-   sequence_ $ ι # mapWithIndex \p v ->
-      drawView arg { divId: prefix, suffix: show p, view: view' options str.intermediate (map to𝕊 <$> v) }
+   drawView arg { divId, suffix: str.output, view: view' options str.output v } (selectOutput >>> redraw)
+   sequence_ $ unwrap ρ # mapWithKey \x u ->
+      drawView arg { divId: divId <> "-" <> str.input, suffix: x, view: view' options x u } (selectInput x >>> redraw)
+   for_ (Map.keys fig.ι \\ Map.keys ι) \p -> rootSelect ("#" <> prefix <> "-" <> show p) >>= remove
+   sequence_ $ ι # mapWithIndex \p u ->
+      drawView arg { divId: prefix, suffix: show p, view: view' options str.intermediate (map to𝕊 <$> u) }
          (selectIntermediate p >>> redraw)
    where
+   { v, ρ, ι } = selectionResult fig
    arg = constrArg fig.fieldIndex
    options = { fieldIndex: fig.fieldIndex, rowFilter: fig.spec.rowFilter }
-   { v, ρ, ι } = selectionResult fig
-   out_view = view' options str.output v
-   in_views = ρ # \(Env ρ) -> mapWithKey (view' options) ρ
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
-   unused = Map.keys fig.ι \\ Map.keys ι
    prefix = divId <> "-" <> str.intermediate
 
 drawFile :: File × String -> Effect Unit
