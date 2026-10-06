@@ -30,7 +30,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval.Dep (depEval, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph.Dep (Deriv, mask, materialise, queries, selected)
+import Graph.Dep (ConjugatePair, DepGraph, Deriv, mask, materialise, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
@@ -144,61 +144,66 @@ drawFile :: File × String -> Effect Unit
 drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
+-- Vertex shown as one value with the vertex of its doc, if any.
+type WithDoc = Deriv × Maybe Deriv
+
+val :: forall a. Map Deriv (Val a) -> WithDoc -> Val a
+val m (p × d) = let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
+
+unval :: forall a. WithDoc -> Val a -> Map Deriv (Val a)
+unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
+
+unvals :: forall a. Dict WithDoc -> Dict (Val a) -> Map Deriv (Val a)
+unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
+
+-- Documented vertex defining an environment entry.
+definition :: forall s. DepGraph Val s -> Deriv -> Maybe Deriv
+definition g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
+   Just [ p ] | Map.member p g.docs -> Just p
+   _ -> Nothing
+
+-- Queries over Boolean selections.
+boolean
+   :: ConjugatePair Val DepKind
+   -> { fwd :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹), bwd :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹) }
+boolean { fwd, bwd } = { fwd: nonZero fwd, bwd: nonZero bwd }
+   where
+   nonZero q sel = map (_ /= Zero) <$> q (selected <$> sel)
+
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    { s, e, gconfig } <- prepConfig fluidSrc
    eval@{ g: g@{ docs }, root } <- depEval gconfig e
    let
-      -- Documented vertex defining an environment entry.
-      definition q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
-         Just [ p ] | Map.member p docs -> Just p
-         _ -> Nothing
-
-      -- Vertices shown as one value: a vertex and its doc.
       out = root × Map.lookup root docs
-      ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definition q >>= (_ `Map.lookup` docs))
-      shown = Set.fromFoldable (A.cons root (A.mapMaybe definition (A.fromFoldable (values (fst <$> ins)))))
+      ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definition g q >>= (_ `Map.lookup` docs))
+      shown = Set.fromFoldable (A.cons root (A.mapMaybe (definition g) (A.fromFoldable (values (fst <$> ins)))))
       ιs =
          if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs)
          else Map.empty
 
       graph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
-
-      val :: forall a. Map Deriv (Val a) -> Deriv × Maybe Deriv -> Val a
-      val m (p × d) =
-         let Val α _ u = definitely' (Map.lookup p m) in Val α (d <#> \d' -> definitely' (Map.lookup d' m)) u
-
-      unval :: forall a. Deriv × Maybe Deriv -> Val a -> Map Deriv (Val a)
-      unval (p × d) (Val α doc u) =
-         Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
-
-      unvals :: forall a. Dict (Deriv × Maybe Deriv) -> Dict (Val a) -> Map Deriv (Val a)
-      unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
-
       everything = map (const true) <$> graph.vals
       ignored = unvals ins (unwrap (sel𝔹 ignoreInputs (Env (ins <#> val everything))))
 
-      -- Boolean dependence, over the graph as it is and restricted to data positions less the ignored ones.
-      boolean { fwd, bwd } = { fwd: nonZero fwd, bwd: nonZero bwd }
-         where
-         nonZero q sel = map (_ /= Zero) <$> q (selected <$> sel)
+      -- Over the graph as it is, and restricted to data positions less the ignored ones.
       unmasked = boolean (queries graph)
       masked = boolean $ queries $ graph # mask \p v ->
          maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
 
       -- Positions which the output does not depend on, and which do not depend on any input.
-      inertBwd { bwd } = map not <$> bwd (unval out (val everything out))
-      inertFwd { fwd } = map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
-      inertρ = inertBwd masked
-      inertV = inertFwd masked
-      inertBwdι = inertBwd unmasked
-      inertFwdι = inertFwd unmasked
+      inert { fwd, bwd } =
+         { bwd: map not <$> bwd (unval out (val everything out))
+         , fwd: map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
+         }
+      inertMasked = inert masked
+      inertUnmasked = inert unmasked
 
       toρ :: Map Deriv (Val 𝔹) -> Env (SelState 𝔹)
-      toρ m = Env (ins <#> \p -> selState <$> val inertρ p <*> val m p)
+      toρ m = Env (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
 
       toV :: Map Deriv (Val 𝔹) -> Val (SelState 𝔹)
-      toV m = selState <$> val inertV out <*> val m out
+      toV m = selState <$> val inertMasked.fwd out <*> val m out
 
       toι :: Map Deriv (Val 𝔹) -> Map Deriv (Val 𝔹)
       toι m = Map.filter or (ιs <#> val m)
@@ -231,8 +236,8 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    pure
       { spec: options
       , s
-      , ρ: Env (ins <#> \p -> (\inert -> selStates inert false false) <$> val inertρ p)
-      , v: (\inert -> selStates inert false false) <$> val inertV out
+      , ρ: Env (ins <#> \p -> (\b -> selStates b false false) <$> val inertMasked.bwd p)
+      , v: (\b -> selStates b false false) <$> val inertMasked.fwd out
       , ι: Map.empty
       , linkedOutputs
       , linkedInputs
@@ -241,7 +246,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       , in_views: ins $> Nothing
       , out_view: Nothing
       , intermediate_views: Map.empty
-      , inertι: ιs <#> \p -> (&&) <$> val inertBwdι p <*> val inertFwdι p
+      , inertι: ιs <#> \p -> (&&) <$> val inertUnmasked.bwd p <*> val inertUnmasked.fwd p
       , fieldIndex: fieldIndex gconfig.classes
       }
 
