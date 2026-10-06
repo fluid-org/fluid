@@ -216,16 +216,35 @@ dictionary ctrl kvs =
    mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
    mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> root key × v))
 
+-- Monad in which a program is evaluated into a dependence graph with weights in s.
+class
+   ( HasClasses m
+   , HasModuleStore m
+   , MonadError Error m
+   , MonadAff m
+   , MonadReader FileCxt m
+   , LoadFile m
+   , MonadState (DepGraph Val s) m
+   , DepSemiring s
+   ) <=
+   MonadEval s m
+   | m -> s
+
+instance
+   ( HasClasses m
+   , HasModuleStore m
+   , MonadError Error m
+   , MonadAff m
+   , MonadReader FileCxt m
+   , LoadFile m
+   , MonadState (DepGraph Val s) m
+   , DepSemiring s
+   ) =>
+   MonadEval s m
+
 type DepOp =
    forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Ctrl s
    -> List (GVal s)
    -> m (Dep.Deriv × Raw Val)

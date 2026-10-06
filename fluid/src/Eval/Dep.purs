@@ -5,7 +5,7 @@ import Prelude hiding (absurd, apply)
 import Bind (dottedName, prefixOf, varAnon, varThis)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Reader (class MonadReader)
-import Control.Monad.State (class MonadState, runStateT)
+import Control.Monad.State (runStateT)
 import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (elem, fold, foldM, foldl, sum)
@@ -42,7 +42,7 @@ import Util.Map (delete, findWithDefault, get, lookup, lookup', mapWithKey, mapl
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, listElement, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, listElement, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -120,14 +120,7 @@ closeDefs inputs ds = ds <#> \d ->
 
 eval
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Inputs s
    -> Expr
    -> m (Deriv × Raw Val)
@@ -255,14 +248,7 @@ eval inputs = case _ of
 -- Condition as a Boolean; its root is the control input for what follows.
 condition
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Inputs s
    -> Expr
    -> m { holds :: Boolean, ctrl :: Ctrl s, value :: Deriv × Raw Val }
@@ -275,14 +261,7 @@ condition inputs e = do
 -- short by a failed guard or an element that does not match.
 qualifiers
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Inputs s
    -> List Qualifier
    -> m (List (Inputs s) × Ctrl s)
@@ -309,14 +288,7 @@ qualifiers inputs (Decl p e : gs) = do
 
 evalStmt
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Inputs s
    -> Stmt
    -> m (Result s)
@@ -363,14 +335,7 @@ evalStmt inputs = case _ of
 -- Fewer arguments than the arity is a partial application; more applies the result to the rest.
 apply
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Ctrl s
    -> GVal s
    -> List (GVal s)
@@ -419,14 +384,7 @@ apply ctrl f@{ val: Val _ _ u } vs = case u of
 
 evalModule
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => Dict Deriv
    -> ModuleName
    -> Module
@@ -442,14 +400,7 @@ evalModule ρ0 q (Module is ss) = do
 -- Bind imported value members; delete bindings for names that now denote modules.
 evalImport
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => ModuleName
    -> Dict Deriv
    -> Import
@@ -486,14 +437,7 @@ implicitMembers = moduleStore <#> \{ moduleEnv } ->
 
 load
    :: forall m s
-    . HasClasses m
-   => HasModuleStore m
-   => MonadError Error m
-   => MonadAff m
-   => MonadReader FileCxt m
-   => LoadFile m
-   => MonadState (DepGraph Val s) m
-   => DepSemiring s
+    . MonadEval s m
    => ModuleName
    -> m (Dict Deriv)
 load q = do
