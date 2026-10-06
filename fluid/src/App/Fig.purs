@@ -145,15 +145,15 @@ drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
 -- Vertex shown as one value with the vertex of its doc, if any.
-type WithDoc = Deriv × Maybe Deriv
+type DerivWithDoc = Deriv × Maybe Deriv
 
-val :: forall a. Labelling (Val a) -> WithDoc -> Val a
+val :: forall a. Labelling (Val a) -> DerivWithDoc -> Val a
 val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
 
-unval :: forall a. WithDoc -> Val a -> Labelling (Val a)
+unval :: forall a. DerivWithDoc -> Val a -> Labelling (Val a)
 unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
 
-unvals :: forall a. Dict WithDoc -> Dict (Val a) -> Labelling (Val a)
+unvals :: forall a. Dict DerivWithDoc -> Dict (Val a) -> Labelling (Val a)
 unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
 
 -- Vertex of a top-level variable ↦ vertex of its defining expression.
