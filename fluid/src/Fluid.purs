@@ -178,18 +178,20 @@ check fluidSrcPaths asModule fileName =
          stages (void (parseProgram fluidSrc)) (prepConfig fluidSrc) \{ e, inputs, classes } ->
             void (depEval inputs classes e)
    where
-   -- parse, then check, then run, stopping at the first failure with its code and message
-   stages :: forall a. Either String Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
-   stages parsed prepare run = case parsed of
-      Left err -> rejected exitCode.prohibited err
-      Right _ -> try prepare >>= case _ of
-         Left err -> rejected exitCode.illFormed (message err)
-         Right prepared -> try (run prepared) >>= case _ of
-            Left err -> rejected exitCode.evaluationFailed (message err)
-            Right _ -> pure (exitCode.accepted × Nothing)
-   rejected code msg = pure (code × Just (fromMaybe msg (Array.head (split (Pattern "\n") msg))))
    -- module name of the file, relative to its root
    q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (definitely "source file" (modulePath (File fileName)))))
+
+-- Parse, then check, then run, stopping at the first failure with its code and the first line of its message.
+stages :: forall a. Either String Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
+stages parsed prepare run = case parsed of
+   Left err -> rejected exitCode.prohibited err
+   Right _ -> try prepare >>= case _ of
+      Left err -> rejected exitCode.illFormed (message err)
+      Right prepared -> try (run prepared) >>= case _ of
+         Left err -> rejected exitCode.evaluationFailed (message err)
+         Right _ -> pure (exitCode.accepted × Nothing)
+   where
+   rejected code msg = pure (code × Just (fromMaybe msg (Array.head (split (Pattern "\n") msg))))
 
 parse :: EvalArgs -> Aff String
 parse (EvalArgs { local, fileName, fluidSrcPaths: roots }) = do
