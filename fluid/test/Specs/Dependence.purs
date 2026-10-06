@@ -87,7 +87,7 @@ dep_cases =
           , Fwd (Input "x") (\_ -> select) "⸨1⸩\n2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
           ]
      }
-   , { file: "slicing/matrix/matmul.fld"
+   , { file: "dependence/matrix/matmul.fld"
      , queries:
           [ Bwd Output (\arg -> arg cPair f_fst $ matrixElement 0 0 select)
                """
@@ -159,52 +159,52 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/add.fld"
+   , { file: "dependence/add.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⸨5⸩\n⸨0⸩\n⸨3⸩\n⸨8⸩"
           ]
      }
-   , { file: "slicing/divide.fld"
+   , { file: "dependence/divide.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⸨362⸩\n⸨9⸩\n⸨40.22222222222222⸩"
           ]
      }
-   , { file: "slicing/multiply.fld"
+   , { file: "dependence/multiply.fld"
      , queries:
           [ Bwd Output (\_ -> select) "5\n⸨0⸩\n3\n⸨0⸩"
           ]
      }
-   , { file: "slicing/nth.fld"
+   , { file: "dependence/nth.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⟪[3, ⸨4⸩, 5]⟫\n⸨4⸩"
           ]
      }
-   , { file: "slicing/length.fld"
+   , { file: "dependence/length.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⸨[1, 2, 3, 4, 5]⸩\n⸨5⸩"
           ]
      }
-   , { file: "slicing/output_not_source.fld"
+   , { file: "dependence/output_not_source.fld"
      , queries:
           [ Bwd Output (\arg -> arg cPair f_snd select) "⸨3⸩\n⸨5⸩\n(3, ⸨True⸩)"
           ]
      }
-   , { file: "slicing/array/lookup.fld"
+   , { file: "dependence/array/lookup.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⟪[[1, 4, 8], [3, 2, 17], ⟪[0, ⸨14⸩, 6]⟫]⟫\n⸨14⸩"
           ]
      }
-   , { file: "slicing/array/dims.fld"
+   , { file: "dependence/array/dims.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⸨3⸩\n⸨3⸩\n⸨(⸨3⸩, ⸨3⸩)⸩"
           ]
      }
-   , { file: "slicing/filter.fld"
+   , { file: "dependence/filter_lambda.fld"
      , queries:
           [ Bwd Output (\_ -> list select') "⟪5⟫\n⟪[⟪8⟫, ⟪4⟫, ⟪7⟫, ⟪3⟫]⟫\n⸨[8, 7]⸩"
           ]
      }
-   , { file: "slicing/list_comp.fld"
+   , { file: "dependence/list_comp.fld"
      , queries:
           [ Bwd Output (\_ -> list select')
                """
@@ -224,27 +224,27 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/map.fld"
+   , { file: "dependence/map.fld"
      , queries:
           [ Bwd Output (\_ -> list select') "⟪[3, 4]⟫\n⸨[5, 6]⸩"
           ]
      }
-   , { file: "slicing/intersperse.fld"
+   , { file: "dependence/intersperse.fld"
      , queries:
           [ Bwd Output (\_ -> list select') "⟪[1, 2, 3]⟫\n0\n⸨[1, 0, 2, 0, 3]⸩"
           ]
      }
-   , { file: "slicing/zeros.fld"
+   , { file: "dependence/zeros.fld"
      , queries:
           [ Bwd Output (\_ -> list select') "⟪[1, 2]⟫\n⸨[0, 0]⸩"
           ]
      }
-   , { file: "slicing/zip_with.fld"
+   , { file: "dependence/zip_with.fld"
      , queries:
           [ Bwd Output (\_ -> listElement 1 select') "⟪[2, ⸨3⸩, 4]⟫\n⟪[3, ⸨4⸩, 5, 6]⟫\n[13, ⸨25⸩, 41]"
           ]
      }
-   , { file: "slicing/section_5_example.fld"
+   , { file: "dependence/section_5_example.fld"
      , queries:
           [ Bwd Output (\_ -> list select')
                """
@@ -260,7 +260,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/section_5_example.fld"
+   , { file: "dependence/section_5_example.fld"
      , queries:
           [ Bwd Output (\_ -> listElement 1 select)
                """
@@ -276,47 +276,47 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/dict/get.fld"
+   , { file: "dependence/dict/get.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⟪{\"a\": 5, ⟪\"ab\"⟫: ⟪{\"fst\": 6, ⟪\"snd\"⟫: ⸨0⸩}⟫}⟫\n⟪\"a\"⟫\n⸨0⸩"
           ]
      }
-   , { file: "slicing/dict/create.fld"
+   , { file: "dependence/dict/create.fld"
      , queries:
           [ Bwd Output (\_ -> dictKey "ab" select') "\"a\"\n⸨\"a\"⸩\n⸨\"b\"⸩\n{\"a\": 5, ⸨\"ab\"⸩: 6}"
           ]
      }
-   , { file: "slicing/dict/difference.fld"
+   , { file: "dependence/dict/difference.fld"
      , queries:
           [ Bwd Output (\_ -> dict select') "⸨{\"a\": 5, \"ab\": 6}⸩\n⸨{\"ab\": 12}⸩\n⸨{\"a\": 5}⸩"
           ]
      }
-   , { file: "slicing/dict/disjoint_union.fld"
+   , { file: "dependence/dict/disjoint_union.fld"
      , queries:
           [ Bwd Output (\_ -> dictKey "a" select' >.> dictVal "c" select) "{⸨\"a\"⸩: 5, \"b\": 6}\n{\"c\": ⸨7⸩}\n{⸨\"a\"⸩: 5, \"b\": 6, \"c\": ⸨7⸩}"
           ]
      }
-   , { file: "slicing/dict/foldl_with_index.fld"
+   , { file: "dependence/dict/foldl_with_index.fld"
      , queries:
           [ Bwd Output (\_ -> select) "{\"a\": ⟪[5, 6]⟫, \"b\": ⟪[⸨0⸩, 10]⟫, \"c\": ⟪[3, 4]⟫}\n⸨0⸩"
           ]
      }
-   , { file: "slicing/dict/intersection_with.fld"
+   , { file: "dependence/dict/intersection_with.fld"
      , queries:
           [ Bwd Output (\_ -> dictVal "b" select >.> dictVal "c" select) "{\"a\": 5, \"b\": ⸨6⸩, \"c\": ⸨3⸩}\n{\"b\": ⸨-6⸩, \"c\": ⸨7⸩}\n{\"b\": ⸨0⸩, \"c\": ⸨20⸩}"
           ]
      }
-   , { file: "slicing/dict/map.fld"
+   , { file: "dependence/dict/map.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⟪{⟪\"a\"⟫: ⟪[⸨5⸩, 6]⟫, ⟪\"b\"⟫: ⟪[⸨9⸩, 10]⟫, \"c\": [3, 4]}⟫\n⟪{\"c\": []}⟫\n⸨20⸩"
           ]
      }
-   , { file: "slicing/dict/match.fld"
+   , { file: "dependence/dict/match.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⸨2⸩\n⸨{⸨\"a\"⸩: ⸨2⸩}⸩"
           ]
      }
-   , { file: "slicing/matrix_update.fld"
+   , { file: "dependence/matrix_update.fld"
      , queries:
           [ Bwd Output (\_ -> matrixElement 1 1 select)
                """
@@ -329,7 +329,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/convolution/edge_detect.fld"
+   , { file: "dependence/convolution/edge_detect.fld"
      , queries:
           [ Bwd Output (\_ -> matrixElement 0 0 select)
                """
@@ -349,7 +349,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/convolution/emboss.fld"
+   , { file: "dependence/convolution/emboss.fld"
      , queries:
           [ Bwd Output (\_ -> matrixElement 0 0 select)
                """
@@ -369,7 +369,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/convolution/gaussian.fld"
+   , { file: "dependence/convolution/gaussian.fld"
      , queries:
           [ Bwd Output (\_ -> matrixElement 0 0 select)
                """
@@ -389,7 +389,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/dtw/compute_dtw.fld"
+   , { file: "dependence/dtw/compute_dtw.fld"
      , queries:
           [ Bwd Output (\_ -> listElement 1 select)
                """
@@ -400,7 +400,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/dtw/average_series.fld"
+   , { file: "dependence/dtw/average_series.fld"
      , queries:
           [ Bwd Output (\_ -> listElement 2 select)
                """
@@ -411,7 +411,7 @@ dep_cases =
                """
           ]
      }
-   , { file: "slicing/lookup.fld"
+   , { file: "dependence/lookup.fld"
      , queries:
           [ Bwd Output (\_ -> select')
                """

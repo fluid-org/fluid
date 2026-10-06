@@ -105,10 +105,10 @@ loadTopLevel
    => Map ModuleName Module
    -> List S.Import
    -> m (Dict Deriv)
-loadTopLevel mods imports = do
+loadTopLevel moduleBody imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- traverse (\(_ × Env ρ) -> traverse deriv ρ) predefined
-      modifyModuleStore (_ { moduleBody = mods, moduleEnv = predefined' })
+      modifyModuleStore (_ { moduleBody = moduleBody, moduleEnv = predefined' })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
       ρ1 <- foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports

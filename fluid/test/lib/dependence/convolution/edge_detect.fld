@@ -1,0 +1,5 @@
+from fluid.matrix import extend, convolve
+from dependence.convolution.filter.edge_detect import filter
+from dependence.convolution.test_image import inputImage
+
+convolve(inputImage, filter, extend)

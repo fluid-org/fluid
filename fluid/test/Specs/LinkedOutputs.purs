@@ -30,7 +30,7 @@ linkedOutputs_spec1 =
                    )
               )
    , inert_expect: \_ -> Nothing
-   , file: "slicing/linked_outputs/bar_chart_line_chart.fld"
+   , file: "linked_outputs/bar_chart_line_chart.fld"
    }
 
 linkedOutputs_spec2 :: TestLinkedOutputsSpec
@@ -55,7 +55,7 @@ linkedOutputs_spec2 =
                    )
               )
    , inert_expect: \_ -> Nothing
-   , file: "slicing/linked_outputs/stacked_bar_scatter_plot.fld"
+   , file: "linked_outputs/stacked_bar_scatter_plot.fld"
    }
 
 movingAverages_spec :: TestLinkedOutputsSpec
@@ -151,7 +151,7 @@ linkedOutputs_cases =
      , δ_out: \_ -> listElement 1 select
      , out_expect: \_ -> at "[⸨88⸩, ⸨6⸩, ⸨4⸩]"
      , inert_expect: \_ -> Nothing
-     , file: "slicing/section_5_example.fld"
+     , file: "dependence/section_5_example.fld"
      }
    , { spec:
           { fluidSrcPaths
@@ -164,7 +164,7 @@ linkedOutputs_cases =
      , δ_out: \_ -> listElement 1 select
      , out_expect: \_ -> at "[⸨(⸨0⸩, ⸨0⸩)⸩, ⸨(⸨1⸩, ⸨1⸩)⸩, ⸨(⸨1⸩, ⸨2⸩)⸩, ⸨(⸨2⸩, ⸨3⸩)⸩, ⸨(⸨3⸩, ⸨4⸩)⸩, ⸨(⸨4⸩, ⸨5⸩)⸩, ⸨(⸨4⸩, ⸨6⸩)⸩]"
      , inert_expect: \_ -> Nothing
-     , file: "slicing/dtw/compute_dtw.fld"
+     , file: "dependence/dtw/compute_dtw.fld"
      }
    , { spec:
           { fluidSrcPaths
@@ -177,7 +177,7 @@ linkedOutputs_cases =
      , δ_out: \arg -> arg cPair f_snd select
      , out_expect: \_ -> at "(⸨3⸩, ⸨True⸩)"
      , inert_expect: \_ -> Nothing
-     , file: "slicing/output_not_source.fld"
+     , file: "dependence/output_not_source.fld"
      }
    , linkedOutputs_spec1
    , linkedOutputs_spec2
