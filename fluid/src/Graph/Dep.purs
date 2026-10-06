@@ -114,7 +114,7 @@ materialise g visible =
          }
       else { weightsAt: maybe weightsAt (\w -> Map.insert p w weightsAt) weights, rels }
       where
-      -- Weights at p; Nothing if p does not depend on any visible vertex.
+      -- Weights at p; Nothing if p doesn't depend on any visible vertex.
       weights = foldl
          (\acc (q × r) -> maybe acc (\x -> Just (maybe (r x) (_ `plus` r x) acc)) (lookup q weightsAt))
          Nothing
