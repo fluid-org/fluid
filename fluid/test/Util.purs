@@ -36,7 +36,7 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordGraphSize)
 import Test.Util.Debug (tracing)
 import Util (type (×), AffError, EffectError, Thunk, check, definitely', error, log', spyWhen, throw, throwLeft, withMsg, (!), (×))
-import Util.Map (get, keys, restrict, toUnfoldable, values)
+import Util.Map (get, keys, maplet, restrict, toUnfoldable, values)
 import Literal (Literal(..))
 import Val (class HasModuleStore, BaseVal(..), Env, Val(..), moduleStore, stripDocs)
 
@@ -115,7 +115,7 @@ testProperties _ s' gconfig { δv, bwd_expect, fwd_expect, inputs } = do
    -- Dependence of the output selection includes the α-graph's backward slice, input by input.
    visibleGraph <- graphBenchmark benchNames.materialise \_ ->
       pure (materialise eval.g (visible eval `Set.union` Set.fromFoldable (values eval.inputs)))
-   let deps = bwd visibleGraph (Map.singleton eval.root (selected (stripDocs out0)))
+   let deps = bwd visibleGraph (maplet eval.root (selected (stripDocs out0)))
    for_ (toUnfoldable eval.inputs :: List (String × Deriv)) \(x × q) ->
       includes ("dependence on " <> x) (definitely' (Map.lookup q deps)) (stripDocs (get x in_ρ))
 
@@ -202,7 +202,7 @@ selection
    -> (ConstrArg -> Selector Val)
    -> Map Deriv (Set Pos)
 selection { classes } depGraph eval vertex δv =
-   Map.singleton p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
+   maplet p (selected (selectOn δv (constrArg (fieldIndex classes)) (valAt eval.g p)))
    where
    p = deriv depGraph eval vertex
 

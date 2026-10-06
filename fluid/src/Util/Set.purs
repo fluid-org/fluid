@@ -3,6 +3,8 @@ module Util.Set where
 import Prelude hiding (append)
 
 import Data.Foldable (class Foldable, foldl)
+import Data.Map (Map)
+import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
 import Foreign.Object (Object)
@@ -29,6 +31,14 @@ instance Ord a => Set (Set a) a where
    difference = Set.difference
    member = Set.member
    union = Set.union
+
+instance Ord k => Set (Map k v) k where
+   empty = Map.empty
+   filter = Map.filterKeys
+   size = Map.size
+   difference = Map.difference
+   member = Map.member
+   union = Map.union
 
 instance Set (Object a) String where
    empty = Object.empty

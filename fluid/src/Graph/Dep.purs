@@ -18,6 +18,7 @@ import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
 import Util (type (×), definitely', (×))
+import Util.Map (maplet)
 
 newtype Deriv = Deriv Int
 
@@ -54,7 +55,7 @@ sparseRel :: forall s. Map Pos (Map Pos s) -> SparseRel s
 sparseRel in_ = SparseRel { out, in_ }
    where
    out = fromFoldableWith Map.union
-      (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × Map.singleton j w)
+      (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
 type Edges r = Map Deriv (Map Deriv r) -- target ↦ source ↦ dependence relation
 
@@ -108,7 +109,7 @@ materialise g visible =
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
-         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × Map.singleton (p × i) one)) v) weightsAt
+         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
          , rels: Map.insert p (sparseRel <$> maybe Map.empty edgesInto weights) rels
          }
       else { weightsAt: maybe weightsAt (\w -> Map.insert p w weightsAt) weights, rels }
@@ -122,11 +123,11 @@ materialise g visible =
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.
    edgesInto :: f (Lineage (Deriv × Pos) s) -> Map Deriv (Map Pos (Map Pos s))
    edgesInto ws = foldl (unionWith Map.union) Map.empty $
-      mapWithIndex (\j (Lineage (_ × m)) -> Map.singleton j <$> bySource m) (positions ws)
+      mapWithIndex (\j (Lineage (_ × m)) -> maplet j <$> bySource m) (positions ws)
 
    bySource :: Map (Deriv × Pos) s -> Map Deriv (Map Pos s)
    bySource m = fromFoldableWith Map.union $
-      (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × Map.singleton i w
+      (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × maplet i w
 
 -- Restrict every dependence relation to the positions where the predicate holds.
 mask :: forall f s. Traversable f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
