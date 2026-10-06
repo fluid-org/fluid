@@ -141,7 +141,7 @@ loadFile :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadRea
 loadFile folders file =
    loadFileMaybe folders file >>= orElse ("File not found in any path: " <> show (searchPaths folders file))
 
--- Source of the module at the given path, if any file holds it.
+-- Source of the module at the given path, from the first of its files found.
 loadModuleSource :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadReader FileCxt m => Array Folder -> String -> m (Maybe String)
 loadModuleSource folders path = findMapM (loadFileMaybe folders) (moduleFiles path)
    where
