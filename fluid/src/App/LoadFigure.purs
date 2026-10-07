@@ -11,7 +11,7 @@ import Data.Argonaut.Decode.Error (JsonDecodeError)
 import Data.Array (head, last)
 import Data.Either (Either(..))
 import Data.Foldable (foldr)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe, maybe)
 import Data.String (split, Pattern(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_, runAff_)
@@ -22,7 +22,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Module.Web (runWebT)
-import Util (error, orElse, (×))
+import Util (error, orElse, whenever, (×))
 
 -- TODO: remove this extra type
 type JsonOptions =
@@ -70,8 +70,7 @@ foreign import figureFailed :: String -> String -> Effect Unit
 loadCode :: String -> Effect Unit
 loadCode file = launchAff_ do
    fluidSrc <- loadFileFromPath (File file) >>= orElse ("File not found: " <> file)
-   filename <- orElse ("Empty file name: " <> file) do
-      splitPath <- last (split (Pattern "/") file)
-      filename_ <- head (split (Pattern ".") splitPath)
-      if filename_ == "" then Nothing else pure filename_
+   filename <- orElse ("Empty file name: " <> file) (nonEmpty =<< head <<< split (Pattern ".") =<< last (split (Pattern "/") file))
    liftEffect $ drawFile (File filename × fluidSrc)
+   where
+   nonEmpty s = whenever (s /= "") s

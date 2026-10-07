@@ -59,9 +59,7 @@ checkArity c n classes = do
 type FieldIndex = Name -> FieldName -> Int
 
 fieldIndex :: ClassTable -> Name -> FieldName -> Int
-fieldIndex classes c field = definitely' do
-   fs <- fieldsOf classes (dottedName c)
-   elemIndex field fs
+fieldIndex classes c field = definitely' (elemIndex field =<< fieldsOf classes (dottedName c))
 
 view :: Name
 view = NE.NonEmptyList ("fluid" :| "view" : Nil)

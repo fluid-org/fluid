@@ -343,9 +343,7 @@ newtype MatrixRep a = MatrixRep (Array2 (Val a) × MatrixDim a × MatrixDim a)
 type Array2 a = Array (Array a)
 
 matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
-matrixGet i j (MatrixRep (vss × _ × _)) = definitely' $ do
-   us <- vss A.!! i
-   us A.!! j
+matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
 
 matrixElement :: forall a. Int -> Int -> Val a -> Val a
 matrixElement i j (Val _ _ (Matrix r)) = matrixGet i j r
