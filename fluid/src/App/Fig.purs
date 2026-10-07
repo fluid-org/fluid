@@ -5,8 +5,8 @@ import Prelude hiding (absurd, compare)
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
 import App.Util.Selector (constrArg, envVal, sel𝔹, ViewSetter)
-import App.View (view')
-import App.View.DocView (drawView)
+import App.View (viewWithDoc)
+import App.View.ViewWithDoc (drawView)
 import App.View.Util (Direction(..), Fig, Options, HTMLId, QueryResult, View)
 import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
@@ -126,12 +126,12 @@ intermediates { inertι } ιs =
 
 drawFig :: HTMLId -> Fig -> Effect Unit
 drawFig divId fig = do
-   drawView arg { divId, suffix: str.output, view: view' options str.output v } (selectOutput >>> redraw)
+   drawView arg { divId, suffix: str.output, view: viewWithDoc options str.output v } (selectOutput >>> redraw)
    sequence_ $ unwrap ρ # mapWithKey \x u ->
-      drawView arg { divId: divId <> "-" <> str.input, suffix: x, view: view' options x u } (selectInput x >>> redraw)
+      drawView arg { divId: divId <> "-" <> str.input, suffix: x, view: viewWithDoc options x u } (selectInput x >>> redraw)
    for_ (Map.keys fig.ι \\ Map.keys ι) \p -> rootSelect ("#" <> prefix <> "-" <> show p) >>= remove
    sequence_ $ ι # mapWithIndex \p u ->
-      drawView arg { divId: prefix, suffix: show p, view: view' options str.intermediate (map to𝕊 <$> u) }
+      drawView arg { divId: prefix, suffix: show p, view: viewWithDoc options str.intermediate (map to𝕊 <$> u) }
          (selectIntermediate p >>> redraw)
    where
    { v, ρ, ι } = selectionResult fig
