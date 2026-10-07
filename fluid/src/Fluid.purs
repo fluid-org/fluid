@@ -134,7 +134,7 @@ callback = case _ of
    Left err -> logShow err *> exit' 1
    Right _ -> pure unit
 
--- Plus installed library when running locally.
+-- Add installed library when running as library.
 srcPaths :: Boolean -> Array Folder -> Array Folder
 srcPaths local fluidSrcPaths = fluidSrcPaths <> if local then [ Folder "node_modules/@fluid-org/fluid/dist/fluid/lib" ] else []
 
