@@ -42,7 +42,7 @@ import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -146,8 +146,7 @@ dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) =
-      pure (Val α Nothing (Tuple [ Val β1 Nothing (Lit (Int i)), Val β2 Nothing (Lit (Int j)) ]))
+   depRel (Val α _ (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α Nothing (Tuple [ i, j ]))
    depRel _ = Left "Matrix expected"
 
 matrixUpdate :: ForeignOp

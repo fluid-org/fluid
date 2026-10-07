@@ -156,8 +156,7 @@ unitSection (Val _ _ u) = Val one Nothing case u of
    List vs -> List (unitSection <$> vs)
    Tuple vs -> Tuple (unitSection <$> vs)
    Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
-   Matrix (MatrixRep (vss × MatrixDim (i × _) × MatrixDim (j × _))) ->
-      Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
+   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
    Fun φ -> Fun (zeros φ)
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
@@ -341,12 +340,16 @@ forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
 
 -- Wrap internal representations to provide foldable/traversable instances.
 newtype DictRep a = DictRep (Dict (a × Val a))
-newtype MatrixDim a = MatrixDim (Int × a)
-newtype MatrixRep a = MatrixRep (Array2 (Val a) × MatrixDim a × MatrixDim a)
+-- Elements with row and column counts, as int values.
+newtype MatrixRep a = MatrixRep (Array2 (Val a) × Val a × Val a)
 type Array2 a = Array (Array a)
 
 matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
 matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
+
+dimension :: forall a. Val a -> Int
+dimension (Val _ _ (Lit (Int n))) = n
+dimension _ = error absurd
 
 matrixElement :: forall a. Int -> Int -> Val a -> Val a
 matrixElement i j (Val _ _ (Matrix r)) = matrixGet i j r
@@ -422,17 +425,14 @@ instance Highlightable DepKind where
 -- ======================
 derive instance Functor DictRep
 derive instance Functor MatrixRep
-derive instance Functor MatrixDim
 derive instance Functor Val
 derive instance Functor Env
 derive instance Functor Fun
 derive instance Functor BaseVal
-derive instance Traversable MatrixDim
 derive instance Traversable Val
 derive instance Traversable BaseVal
 derive instance Traversable Fun
 derive instance Traversable Env
-derive instance Foldable MatrixDim
 derive instance Foldable Val
 derive instance Foldable BaseVal
 derive instance Foldable Fun
@@ -469,9 +469,6 @@ instance Apply MatrixRep where
    apply (MatrixRep (fvss × fn × fm)) (MatrixRep (vss × n × m)) =
       MatrixRep $ (A.zipWith (A.zipWith (<*>)) fvss vss) × (fn <*> n) × (fm <*> m)
 
-instance Apply MatrixDim where
-   apply (MatrixDim (n × fnα)) (MatrixDim (n' × nα)) = MatrixDim ((n ≜ n') × (fnα nα))
-
 instance Apply Env where
    apply (Env fρ) (Env ρ) = Env (((<*>) <$> fρ) <*> ρ)
 
@@ -485,7 +482,7 @@ instance Traversable DictRep where
    sequence = sequenceDefault
 
 instance Foldable MatrixRep where
-   foldl f acc (MatrixRep (vss × MatrixDim (_ × βi) × MatrixDim (_ × βj))) = foldl (foldl (foldl f)) (acc `f` βi `f` βj) vss
+   foldl f acc (MatrixRep (vss × i × j)) = foldl (foldl (foldl f)) (foldl f (foldl f acc i) j) vss
    foldr f = foldrDefault f
    foldMap f = foldMapDefaultL f
 
@@ -502,9 +499,6 @@ instance JoinSemilattice a => JoinSemilattice (DictRep a) where
 instance JoinSemilattice a => JoinSemilattice (MatrixRep a) where
    join (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
       MatrixRep ((vss ∨ vss') × ((i ∨ i') × (j ∨ j')))
-
-instance JoinSemilattice a => JoinSemilattice (MatrixDim a) where
-   join (MatrixDim (i × α)) (MatrixDim (i' × α')) = MatrixDim ((i ≜ i') × (α ∨ α'))
 
 instance JoinSemilattice a => JoinSemilattice (Val a) where
    join (Val α doc u) (Val α' doc' v) = Val (α ∨ α') (doc ∨ doc') (u ∨ v)
@@ -544,9 +538,6 @@ instance BoundedJoinSemilattice a => Expandable (MatrixRep a) (Raw MatrixRep) wh
    expand (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
       MatrixRep (expand vss vss' × expand i i' × expand j j')
 
-instance BoundedJoinSemilattice a => Expandable (MatrixDim a) (Raw MatrixDim) where
-   expand (MatrixDim (i × α)) (MatrixDim (i' × _)) = MatrixDim ((i ≜ i') × α)
-
 instance BoundedJoinSemilattice a => Expandable (Val a) (Raw Val) where
    expand (Val α doc u) (Val _ doc' v) = Val α (expand doc doc') (expand u v)
 
@@ -574,7 +565,6 @@ derive instance Eq a => Eq (Val a)
 derive instance Eq a => Eq (BaseVal a)
 derive instance Eq a => Eq (DictRep a)
 derive instance Eq a => Eq (MatrixRep a)
-derive instance Eq a => Eq (MatrixDim a)
 derive instance Eq a => Eq (Fun a)
 derive instance Eq a => Eq (Env a)
 

@@ -14,7 +14,7 @@ import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, error, unsafeUpdateAt, (!), (×))
 import Util.Map (get, insert, update)
 import Util.Set ((∈))
-import Val (BaseVal(..), DictRep(..), Env, MatrixDim(..), MatrixRep(..), Val(..), matrixGet, matrixPut)
+import Val (BaseVal(..), DictRep(..), Env, MatrixRep(..), Val(..), matrixGet, matrixPut)
 
 type SelSetter f g = Setter (f (SelStates 𝔹)) (g (SelStates 𝔹))
 
@@ -94,11 +94,11 @@ matrix δα = unsafePartial $ case _ of
 
 matrixDims :: Setter (Val (SelStates 𝔹)) 𝔹
 matrixDims δα = unsafePartial $ case _ of
-   Val α doc (Matrix (MatrixRep (vss × MatrixDim (i × βi) × MatrixDim (j × βj)))) ->
-      Val α doc (Matrix (MatrixRep (vss × MatrixDim (i × βi') × MatrixDim (j × βj')))) × s
+   Val α doc (Matrix (MatrixRep (vss × i × j))) ->
+      Val α doc (Matrix (MatrixRep (vss × i' × j'))) × s
       where
-      βi' × _ = persist δα βi
-      βj' × s = persist δα βj
+      i' × _ = topα δα i
+      j' × s = topα δα j
 
 -- Flip only the outer Val annotation, regardless of payload (closure, etc.).
 topα :: Setter (Val (SelStates 𝔹)) 𝔹
