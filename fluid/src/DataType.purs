@@ -59,7 +59,7 @@ checkArity c n classes = do
 type FieldIndex = Name -> FieldName -> Int
 
 fieldIndex :: ClassTable -> Name -> FieldName -> Int
-fieldIndex classes c field = definitely "field declared for class" do
+fieldIndex classes c field = definitely ("Field " <> field <> " not declared for class " <> dottedName c) do
    fs <- fieldsOf classes (dottedName c)
    elemIndex field fs
 

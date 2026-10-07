@@ -124,7 +124,7 @@ loadJson =
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
 loadJsonFile path = do
-   str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
+   str <- definitely ("File not found: " <> path) <$> loadFileFromPath (File path)
    case parseJson str of
       Left err -> throw ("Failed to parse JSON: " <> show err)
       Right json -> pure json

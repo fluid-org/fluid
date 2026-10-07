@@ -40,7 +40,7 @@ varThis = "this" :: Var -- bound to the documented value within a doc
 
 -- Discrete partial order for variables.
 mustGeq :: Var -> Var -> Var
-mustGeq x y = definitely "greater" (whenever (x == y) x)
+mustGeq x y = definitely "Not greater" (whenever (x == y) x)
 
 type Bind a = Var × a
 

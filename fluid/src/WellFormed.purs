@@ -419,7 +419,7 @@ positionaliseKw cls c n xbs = do
    let provided = fst <$> xbs
    when (sort provided /= sort remaining) $ throwError $
       "Class " <> NEL.last c <> " keyword fields mismatch: expected " <> show remaining <> ", got " <> show provided
-   pure $ remaining <#> \f -> definitely "keyword argument for field" (snd <$> find (\(k ↦ _) -> k == f) xbs)
+   pure $ remaining <#> \f -> definitely ("No keyword argument for field " <> f) (snd <$> find (\(k ↦ _) -> k == f) xbs)
 
 -- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
 param :: Int -> Var

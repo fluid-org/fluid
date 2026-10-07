@@ -180,7 +180,7 @@ check fluidSrcPaths asModule fileName =
             void (depEval inputs classes e)
    where
    -- module name of file, relative to its root
-   q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (definitely "source file" (modulePath (File fileName)))))
+   q = definitely "Empty module name" (NEL.fromFoldable (split (Pattern "/") (definitely ("Not a source file: " <> fileName) (modulePath (File fileName)))))
 
 -- Parse, check, run; stop at first failure with its code and first line of its message.
 stages :: forall a. MayFail Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
