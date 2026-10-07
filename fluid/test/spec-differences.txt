@@ -1,5 +1,5 @@
 test/module-level/excluded/dynamic/eq_bool_number.py (check: exit 5, expected [0]: 5 eq_bool_number.py: Cannot compare True with 1)
-test/module-level/excluded/dynamic/eq_nan_container.py (check: exit 5, expected [0]: 5 eq_nan_container.py: Cannot compare nan)
+test/module-level/excluded/dynamic/eq_nan_container.py (check: exit 5, expected [0]: 5 eq_nan_container.py: Cannot compare nan with nan in container)
 test/module-level/excluded/static/and_non_bool.py (check: exit 5, expected [3]: 5 and_non_bool.py: Found 1, expected bool)
 test/module-level/excluded/static/and_right_non_bool.py (check: exit 0, expected [3]: 0 and_right_non_bool.py)
 test/module-level/excluded/static/annotation_bare_generic.py (check: exit 1, expected [3]: 1 annotation_bare_generic.py: ParseError on line 5, column 10:)

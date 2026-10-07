@@ -277,7 +277,7 @@ unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp (Val α _ u) (Val β _ u') = case u, u' of
-   Lit (Float r), Lit (Float r') | N.isNaN r || N.isNaN r' -> Left "Cannot compare nan"
+   Lit (Float r), Lit (Float r') | N.isNaN r && N.isNaN r' -> Left "Cannot compare nan with nan in container"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
    Lit (Bool _), Lit (Int _) -> undefined
    Lit (Bool _), Lit (Float _) -> undefined

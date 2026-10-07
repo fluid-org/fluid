@@ -29,6 +29,7 @@ illFormed_cases =
    , { file: "reexport_import_alias.fld", expected_error: "Cannot import name attr_lib from module alias_mid" }
    , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }
    , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module clash_pkg: sub\nChecking module clash_pkg" }
+   , { file: "eq_nan_container.fld", expected_error: "Cannot compare nan with nan in container\nIn ==" }
    , { file: "matrix_dim_type.fld", expected_error: "Found \"a\", expected int" }
    , { file: "submodule_self_import.fld", expected_error: "import cycle: ssi.b -> ssi.b" }
    , { file: "subscript_matrix_out_of_range.fld", expected_error: "Index (2, 0) out of range" }
