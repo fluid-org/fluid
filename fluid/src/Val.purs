@@ -43,7 +43,7 @@ import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
-data Val a = Val a (Maybe (Val a)) (BaseVal a)
+data Val a = Val a (BaseVal a)
 
 data Result a = Returns (Val a) | Assigns (Env a) (Set.Set a)
 
@@ -65,7 +65,7 @@ data BaseVal a
    | Fun (Fun a)
 
 root :: forall a. Val a -> a
-root (Val α _ _) = α
+root (Val α _) = α
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
@@ -82,7 +82,7 @@ overChildren f (Fun φ) = Fun (overFun φ)
 
 -- False at shape positions: root, keys and dimensions of a list, tuple, dictionary or matrix.
 dataPositions :: forall a. Val a -> Val Boolean
-dataPositions (Val _ _ u) = Val (not container) Nothing (overChildren dataPositions (false <$ u))
+dataPositions (Val _ u) = Val (not container) (overChildren dataPositions (false <$ u))
    where
    container = case u of
       List _ -> true
@@ -150,7 +150,7 @@ type Ctrl s = List (Dep.Deriv × Rel (Val s) s)
 
 -- Weight 1 at every position except beneath the root of a closure.
 unitSection :: forall s. Semiring s => Raw Val -> Val s
-unitSection (Val _ _ u) = Val one Nothing case u of
+unitSection (Val _ u) = Val one case u of
    Lit ℓ -> Lit ℓ
    Constr c vs -> Constr c (unitSection <$> vs)
    List vs -> List (unitSection <$> vs)
@@ -168,15 +168,20 @@ type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
 withDoc :: forall f s. DepGraph f s -> Dep.Deriv -> DerivWithDoc
 withDoc g p = p × Map.lookup p g.docs
 
+-- Value with its doc, as shown in a figure.
+newtype ValWithDoc a = ValWithDoc { val :: Val a, doc :: Maybe (Val a) }
+
+newtype EnvWithDocs a = EnvWithDocs (Dict (ValWithDoc a))
+
 -- Value at a vertex, with the value of its doc.
-val :: forall a. Labelling (Val a) -> DerivWithDoc -> Val a
-val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
+val :: forall a. Labelling (Val a) -> DerivWithDoc -> ValWithDoc a
+val m (p × d) = ValWithDoc { val: get p m, doc: flip get m <$> d }
 
-unval :: forall a. DerivWithDoc -> Val a -> Labelling (Val a)
-unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable ((×) <$> d <*> doc)))
+unval :: forall a. DerivWithDoc -> ValWithDoc a -> Labelling (Val a)
+unval (p × d) (ValWithDoc { val: v, doc }) = Map.fromFoldable (A.cons (p × v) (A.fromFoldable ((×) <$> d <*> doc)))
 
-unvals :: forall a. Dict DerivWithDoc -> Dict (Val a) -> Labelling (Val a)
-unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
+unvals :: forall a. Dict DerivWithDoc -> EnvWithDocs a -> Labelling (Val a)
+unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 
 -- Value of a derivation already in the graph.
 gvalAt :: forall m s. MonadState (DepGraph Val s) m => Dep.Deriv -> m (GVal s)
@@ -200,7 +205,7 @@ withCtrl ctrl section v =
 
 -- Constructed value: root depends on control at weight c.
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-constructed ctrl v@{ val: Val _ _ u } = withCtrl ctrl (Val one Nothing (zeros u)) v
+constructed ctrl v@{ val: Val _ u } = withCtrl ctrl (Val one (zeros u)) v
 
 record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
 record { val: v, inEdges } = do
@@ -225,7 +230,7 @@ constructWith
    -> t (GVal s)
    -> m (Dep.Deriv × Raw Val)
 constructWith ctrl mk vs =
-   construct ctrl { val: Val unit Nothing (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero Nothing) vs }
+   construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
@@ -348,53 +353,53 @@ matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
 matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
 
 dimension :: forall a. Val a -> Int
-dimension (Val _ _ (Lit (Int n))) = n
+dimension (Val _ (Lit (Int n))) = n
 dimension _ = error absurd
 
 matrixElement :: forall a. Int -> Int -> Val a -> Val a
-matrixElement i j (Val _ _ (Matrix r)) = matrixGet i j r
+matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
 matrixElement _ _ _ = error absurd
 
 field :: forall a. Int -> Val a -> Val a
-field i (Val _ _ (Constr _ vs)) = definitely' (vs L.!! i)
+field i (Val _ (Constr _ vs)) = definitely' (vs L.!! i)
 field _ _ = error absurd
 
 -- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary.
 element :: forall a. Int -> Val a -> Val a
-element i (Val _ _ (List vs)) = definitely' (vs A.!! i)
-element i (Val _ _ (Tuple vs)) = definitely' (vs A.!! i)
-element i (Val α _ (Lit (Str s))) = Val α Nothing (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
-element i (Val _ _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β Nothing (Lit (Str k))
+element i (Val _ (List vs)) = definitely' (vs A.!! i)
+element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
+element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
+element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
 element _ _ = error absurd
 
 elementCount :: forall a. Val a -> Maybe Int
-elementCount (Val _ _ (List vs)) = Just (A.length vs)
-elementCount (Val _ _ (Tuple vs)) = Just (A.length vs)
-elementCount (Val _ _ (Lit (Str s))) = Just (S.length s)
-elementCount (Val _ _ (Dictionary (DictRep d))) = Just (size d)
+elementCount (Val _ (List vs)) = Just (A.length vs)
+elementCount (Val _ (Tuple vs)) = Just (A.length vs)
+elementCount (Val _ (Lit (Str s))) = Just (S.length s)
+elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
 elementCount _ = Nothing
 
 dictEntries :: forall a. Val a -> Dict (a × Val a)
-dictEntries (Val _ _ (Dictionary (DictRep d))) = d
+dictEntries (Val _ (Dictionary (DictRep d))) = d
 dictEntries _ = error absurd
 
 dictEntry :: forall a. String -> Val a -> a × Val a
 dictEntry k = dictEntries >>> get k
 
 fun :: forall a. Val a -> Fun a
-fun (Val _ _ (Fun φ)) = φ
+fun (Val _ (Fun φ)) = φ
 fun _ = error absurd
 
 closureEnv :: forall a. Val a -> Env a
-closureEnv (Val _ _ (Fun (Closure ρ _ _))) = ρ
+closureEnv (Val _ (Fun (Closure ρ _ _))) = ρ
 closureEnv _ = error absurd
 
 partialFun :: forall a. Val a -> Val a
-partialFun (Val α doc (Fun (Partial φ _))) = Val α doc (Fun φ)
+partialFun (Val α (Fun (Partial φ _))) = Val α (Fun φ)
 partialFun _ = error absurd
 
 partialArg :: forall a. Int -> Val a -> Val a
-partialArg i (Val _ _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
+partialArg i (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 partialArg _ _ = error absurd
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
@@ -427,21 +432,31 @@ derive instance Functor DictRep
 derive instance Functor MatrixRep
 derive instance Functor Val
 derive instance Functor Env
+derive instance Functor ValWithDoc
+derive instance Functor EnvWithDocs
 derive instance Functor Fun
 derive instance Functor BaseVal
 derive instance Traversable Val
 derive instance Traversable BaseVal
 derive instance Traversable Fun
 derive instance Traversable Env
+derive instance Traversable ValWithDoc
+derive instance Traversable EnvWithDocs
 derive instance Foldable Val
 derive instance Foldable BaseVal
 derive instance Foldable Fun
 derive instance Foldable Env
+derive instance Foldable ValWithDoc
+derive instance Foldable EnvWithDocs
 
 instance Apply Val where
-   apply (Val fα Nothing fv) (Val α Nothing v) = Val (fα α) Nothing (fv <*> v)
-   apply (Val fα (Just fdoc) fv) (Val α (Just doc) v) = Val (fα α) (Just (fdoc <*> doc)) (fv <*> v)
-   apply _ _ = shapeMismatch unit
+   apply (Val fα fv) (Val α v) = Val (fα α) (fv <*> v)
+
+instance Apply ValWithDoc where
+   apply (ValWithDoc f) (ValWithDoc v) = ValWithDoc { val: f.val <*> v.val, doc: lift2 (<*>) f.doc v.doc }
+
+instance Apply EnvWithDocs where
+   apply (EnvWithDocs fρ) (EnvWithDocs ρ) = EnvWithDocs (((<*>) <$> fρ) <*> ρ)
 
 instance Apply BaseVal where
    apply (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
@@ -501,7 +516,7 @@ instance JoinSemilattice a => JoinSemilattice (MatrixRep a) where
       MatrixRep ((vss ∨ vss') × ((i ∨ i') × (j ∨ j')))
 
 instance JoinSemilattice a => JoinSemilattice (Val a) where
-   join (Val α doc u) (Val α' doc' v) = Val (α ∨ α') (doc ∨ doc') (u ∨ v)
+   join (Val α u) (Val α' v) = Val (α ∨ α') (u ∨ v)
 
 -- Not equivalent to sequence (join <$> x <*> y) because Dict.join only requires compatibility
 -- whereas Dict.apply requires domains to be equal.
@@ -528,6 +543,9 @@ instance JoinSemilattice a => JoinSemilattice (Env a) where
 instance MeetSemilattice a => MeetSemilattice (Val a) where
    meet = lift2 (∧)
 
+instance MeetSemilattice a => MeetSemilattice (ValWithDoc a) where
+   meet = lift2 (∧)
+
 instance MeetSemilattice a => MeetSemilattice (Env a) where
    meet = lift2 (∧)
 
@@ -539,7 +557,7 @@ instance BoundedJoinSemilattice a => Expandable (MatrixRep a) (Raw MatrixRep) wh
       MatrixRep (expand vss vss' × expand i i' × expand j j')
 
 instance BoundedJoinSemilattice a => Expandable (Val a) (Raw Val) where
-   expand (Val α doc u) (Val _ doc' v) = Val α (expand doc doc') (expand u v)
+   expand (Val α u) (Val _ v) = Val α (expand u v)
 
 instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
@@ -562,6 +580,8 @@ instance BoundedJoinSemilattice a => Expandable (Env a) (Raw Env) where
    expand (Env ρ) (Env ρ') = Env (expand ρ ρ')
 
 derive instance Eq a => Eq (Val a)
+derive newtype instance Eq a => Eq (ValWithDoc a)
+derive newtype instance Eq a => Eq (EnvWithDocs a)
 derive instance Eq a => Eq (BaseVal a)
 derive instance Eq a => Eq (DictRep a)
 derive instance Eq a => Eq (MatrixRep a)
@@ -569,3 +589,5 @@ derive instance Eq a => Eq (Fun a)
 derive instance Eq a => Eq (Env a)
 
 derive instance Newtype (Env a) _
+derive instance Newtype (ValWithDoc a) _
+derive instance Newtype (EnvWithDocs a) _

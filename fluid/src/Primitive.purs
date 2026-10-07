@@ -10,7 +10,6 @@ import Data.Int as Int
 import Data.Array (replicate)
 import Data.Array as A
 import Data.List (List(..), concat, fromFoldable, (:))
-import Data.Maybe (Maybe(..))
 import Data.Number as N
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
@@ -37,14 +36,14 @@ type ToFrom d a =
    }
 
 unpack :: forall d a. ToFrom d a -> Val a -> MayFail (d × a)
-unpack toFrom (Val α _ v) = toFrom.unpack v <#> (_ × α)
+unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
 
 -- For values whose shape is known.
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
 unpack' toFrom = unpack toFrom >>> either error identity
 
 pack :: forall d a. ToFrom d a -> d × a -> Val a
-pack toFrom (v × α) = Val α Nothing (toFrom.pack v)
+pack toFrom (v × α) = Val α (toFrom.pack v)
 
 typeMismatch :: forall a. BaseVal a -> String -> String
 typeMismatch v typeName = "Found " <> prettyP (erase v) <> ", expected " <> typeName
@@ -133,13 +132,13 @@ type Unary i o a =
 
 unary :: forall i o a'. BoundedJoinSemilattice a' => String -> (forall a. Unary i o a) -> Bind (Val a')
 unary id f =
-   id × Val bot Nothing (Fun (Prim (ForeignOp (id × op))))
+   id × Val bot (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
    op = ForeignOp' { arity: 1, depOp: pureRel (unsafePartial depRel) }
 
    depRel :: forall a. Partial => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
+   depRel (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b
@@ -157,10 +156,10 @@ union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
 binopRel :: forall a. Ord a => Semiring a => Binop -> Val a -> Val a -> MayFail (Val a)
-binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
+binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 
 unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> MayFail (Val a)
-unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
+unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 
 binop :: forall a. Ord a => Binop -> Val a -> Val a -> MayFail (BaseVal a × Set a)
 binop Eq v v'
@@ -171,17 +170,17 @@ binop Ne v v'
    | otherwise = first (Lit <<< Bool <<< not) <$> eqOp v v'
 binop In v v' = first (Lit <<< Bool) <$> contains v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
-binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) =
+binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
-binop Add (Val α _ (List vs)) (Val β _ (List vs')) =
+binop Add (Val α (List vs)) (Val β (List vs')) =
    pure (List (vs <> vs') × Set.fromFoldable [ α, β ])
-binop Add (Val α _ (Tuple vs)) (Val β _ (Tuple vs')) =
+binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) =
    pure (Tuple (vs <> vs') × Set.fromFoldable [ α, β ])
-binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w α n β)
-binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w β n α)
-binop Mul (Val α _ (List vs)) (Val β _ (Lit (Int n))) = pure (repeatList vs α n β)
-binop Mul (Val α _ (Lit (Int n))) (Val β _ (List vs)) = pure (repeatList vs β n α)
-binop op (Val α _ u) (Val β _ u') = do
+binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
+binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
+binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
+binop Mul (Val α (Lit (Int n))) (Val β (List vs)) = pure (repeatList vs β n α)
+binop op (Val α u) (Val β u') = do
    x <- operand u
    y <- operand u'
    case op of
@@ -243,11 +242,11 @@ binop op (Val α _ u) (Val β _ u') = do
 type Operand = Int + Number + String
 
 bothNan :: forall a. Val a -> Val a -> Boolean
-bothNan (Val _ _ (Lit (Float r))) (Val _ _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
+bothNan (Val _ (Lit (Float r))) (Val _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
 bothNan _ _ = false
 
 vertices2 :: forall a. Ord a => Val a -> Val a -> Set a
-vertices2 (Val α _ _) (Val β _ _) = Set.fromFoldable [ α, β ]
+vertices2 (Val α _) (Val β _) = Set.fromFoldable [ α, β ]
 
 repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
 repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
@@ -260,16 +259,16 @@ repeatList vs α n β = List (A.concat (replicate n vs)) × deps
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
 unop :: forall a. Ord a => Unop -> Val a -> MayFail (BaseVal a × Set a)
-unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
-unop Not (Val _ _ u) = Left (typeMismatch u "bool")
-unop Neg (Val α _ (Lit (Int n))) = pure (Lit (Int (negate n)) × Set.singleton α)
-unop Neg (Val α _ (Lit (Float r))) = pure (Lit (Float (negate r)) × Set.singleton α)
-unop Pos (Val α _ u@(Lit (Int _))) = pure (u × Set.singleton α)
-unop Pos (Val α _ u@(Lit (Float _))) = pure (u × Set.singleton α)
-unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
+unop Not (Val α (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
+unop Not (Val _ u) = Left (typeMismatch u "bool")
+unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × Set.singleton α)
+unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × Set.singleton α)
+unop Pos (Val α u@(Lit (Int _))) = pure (u × Set.singleton α)
+unop Pos (Val α u@(Lit (Float _))) = pure (u × Set.singleton α)
+unop _ (Val _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
-eqOp (Val α _ u) (Val β _ u') = case u, u' of
+eqOp (Val α u) (Val β u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r && N.isNaN r' -> Left "Cannot compare nan with nan in container"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
    Lit (Bool _), Lit (Int _) -> undefined
@@ -329,7 +328,7 @@ eqElems αs (v : vs) (v' : vs') = do
 eqElems αs _ _ = pure (false × αs)
 
 contains :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
-contains (Val α _ u') v@(Val β _ u) = case u', u of
+contains (Val α u') v@(Val β u) = case u', u of
    List vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
    Tuple vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])

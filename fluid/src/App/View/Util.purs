@@ -24,7 +24,7 @@ import SExpr as S
 import Util (type (×), Endo, check, (×))
 import Util.Map (toUnfoldable, values)
 import Util.Set (size)
-import Val (Env, Val)
+import Val (EnvWithDocs, Val, ValWithDoc)
 import Web.Event.Event (Event, EventType(..))
 import Web.Event.EventTarget (eventListener)
 
@@ -135,7 +135,7 @@ type Options =
    { fluidSrcPaths :: Array Folder
    , inputs :: Array Var
    , query :: Boolean -- show documented intermediates
-   , ignoreInputs :: Selector Env -- input positions left out of linked queries; retire with #1585
+   , ignoreInputs :: Selector EnvWithDocs -- input positions left out of linked queries; retire with #1585
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
@@ -145,19 +145,22 @@ data Direction = LinkedInputs | LinkedOutputs | Intermediates
 type Fig =
    { spec :: Options
    , s :: S.Stmt
-   , ρ :: Env (SelStates 𝔹)
-   , v :: Val (SelStates 𝔹)
-   , ι :: Labelling (Val (SelStates 𝔹))
+   , ρ :: EnvWithDocs (SelStates 𝔹)
+   , v :: ValWithDoc (SelStates 𝔹)
+   , ι :: Labelling (ValWithDoc (SelStates 𝔹))
    , dir :: Selection Direction
-   , linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
-   , linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
-   , linkIntermediates :: Labelling (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+   , linkedInputs :: SelectionType -> EnvWithDocs (SelStates 𝔹) -> QueryResult
+   , linkedOutputs :: SelectionType -> ValWithDoc (SelStates 𝔹) -> QueryResult
+   , linkIntermediates :: Labelling (ValWithDoc (SelStates 𝔹)) -> QueryResult
    , in_views :: Dict (Maybe View) -- strengthen this
    , out_view :: Maybe View
    , intermediate_views :: Labelling (Maybe View)
-   , inertι :: Labelling (Val 𝔹) -- inert positions of each intermediate
+   , inertι :: Labelling (ValWithDoc 𝔹) -- inert positions of each intermediate
    , fieldIndex :: FieldIndex
    }
+
+-- Inputs, output and intermediates reached by a query.
+type QueryResult = EnvWithDocs (SelState 𝔹) × ValWithDoc (SelState 𝔹) × Labelling (ValWithDoc 𝔹)
 
 -- ======================
 -- boilerplate

@@ -30,18 +30,18 @@ import Primitive (boolean, int, string, typeError)
 import Primitive (unpack') as P
 import Util (type (×), error, (!), (×))
 import Util.Map (mapWithKey)
-import Val (BaseVal(..), DictRep(..), Val(..))
+import Val (BaseVal(..), DictRep(..), Val(..), ValWithDoc(..))
 
 type ViewOptions = { fieldIndex :: FieldIndex, rowFilter :: Maybe Filter }
 
 -- TODO: merge with 'view' below.
-view' :: ViewOptions -> String -> Val (SelStates 𝕊) -> View
-view' options title v@(Val _ v_opt _) =
-   pack $ DocView { doc: reflect options <$> v_opt :: Maybe Paragraph, view: view options title v }
+view' :: ViewOptions -> String -> ValWithDoc (SelStates 𝕊) -> View
+view' options title (ValWithDoc { val: v, doc }) =
+   pack $ DocView { doc: reflect options <$> doc :: Maybe Paragraph, view: view options title v }
 
 -- Convert annotated value to appropriate view, discarding top-level annotations for now.
 view :: ViewOptions -> String -> Val (SelStates 𝕊) -> View
-view options title v@(Val α _ u') = case u' of
+view options title v@(Val α u') = case u' of
    Lit (Str str) -> pack (Text (str × α))
    Lit ℓ -> pack (Text (prettyP ℓ × α))
    Constr c _
@@ -64,8 +64,8 @@ view options title v@(Val α _ u') = case u' of
       else pack (MultiView $ view options "" <$> vs)
       where
       tableView = case A.uncons vs of
-         Just { head: Val _ _ (Dictionary _) } -> true
-         Just { head: Val _ _ _ } -> false
+         Just { head: Val _ (Dictionary _) } -> true
+         Just { head: Val _ _ } -> false
          Nothing -> true
    Matrix r ->
       pack (MatrixView { title, matrix: matrixRep r })
@@ -83,8 +83,8 @@ instance Reflect (Val (SelStates 𝕊)) where
    reflect _ = identity
 
 instance Reflect b => Reflect (Array b) where
-   reflect options (Val _ _ (List vs)) = reflect options <$> vs
-   reflect _ (Val _ _ u) = typeError u "list"
+   reflect options (Val _ (List vs)) = reflect options <$> vs
+   reflect _ (Val _ u) = typeError u "list"
 
 instance Reflect b => Reflect (NonEmptyArray b) where
    reflect options v = case A.uncons (reflect options v) of
@@ -92,7 +92,7 @@ instance Reflect b => Reflect (NonEmptyArray b) where
       Nothing -> error "Expected non-empty list"
 
 instance Reflect BarChart where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cBarChart -> BarChart
          { caption: P.unpack' string (us ! fieldIndex cBarChart f_caption)
          , size: reflect options (us ! fieldIndex cBarChart f_size)
@@ -103,7 +103,7 @@ instance Reflect BarChart where
       _ -> typeError u "BarChart"
 
 instance Reflect LineChart where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cLineChart -> LineChart
          { size: reflect options (us ! fieldIndex cLineChart f_size)
          , tickLabels: reflect options (us ! fieldIndex cLineChart f_tickLabels)
@@ -113,7 +113,7 @@ instance Reflect LineChart where
       _ -> typeError u "LineChart"
 
 instance Reflect LinePlot where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cLinePlot -> LinePlot
          { name: P.unpack' string (us ! fieldIndex cLinePlot f_name)
          , points: reflect options (us ! fieldIndex cLinePlot f_points)
@@ -121,7 +121,7 @@ instance Reflect LinePlot where
       _ -> typeError u "LinePlot"
 
 instance Reflect ScatterPlot where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cScatterPlot -> ScatterPlot
          { caption: P.unpack' string (us ! fieldIndex cScatterPlot f_caption)
          , points: reflect options (us ! fieldIndex cScatterPlot f_points)
@@ -130,7 +130,7 @@ instance Reflect ScatterPlot where
       _ -> typeError u "ScatterPlot"
 
 instance Reflect (Dimensions (Selectable Int)) where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cDimensions -> Dimensions
          { width: P.unpack' int (us ! fieldIndex cDimensions f_width)
          , height: P.unpack' int (us ! fieldIndex cDimensions f_height)
@@ -138,7 +138,7 @@ instance Reflect (Dimensions (Selectable Int)) where
       _ -> typeError u "Dimensions"
 
 instance Reflect (Point Number) where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cPoint -> Point
          { x: unpackIntOrNumber (us ! fieldIndex cPoint f_x)
          , y: unpackIntOrNumber (us ! fieldIndex cPoint f_y)
@@ -146,7 +146,7 @@ instance Reflect (Point Number) where
       _ -> typeError u "Point"
 
 instance Reflect (Point String) where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cAxisLabels -> Point
          { x: P.unpack' string (us ! fieldIndex cAxisLabels f_x)
          , y: P.unpack' string (us ! fieldIndex cAxisLabels f_y)
@@ -154,7 +154,7 @@ instance Reflect (Point String) where
       _ -> typeError u "AxisLabels"
 
 instance Reflect (Point Orientation) where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cTickLabels -> Point
          { x: P.unpack' orientation (us ! fieldIndex cTickLabels f_x)
          , y: P.unpack' orientation (us ! fieldIndex cTickLabels f_y)
@@ -162,7 +162,7 @@ instance Reflect (Point Orientation) where
       _ -> typeError u "TickLabels"
 
 instance Reflect Segment where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cSegment -> Segment
          { y: P.unpack' string (us ! fieldIndex cSegment f_y)
          , z: unpackIntOrNumber (us ! fieldIndex cSegment f_z)
@@ -170,7 +170,7 @@ instance Reflect Segment where
       _ -> typeError u "Segment"
 
 instance Reflect StackedBar where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cStackedBar -> StackedBar
          { x: P.unpack' string (us ! fieldIndex cStackedBar f_x)
          , segments: reflect options (us ! fieldIndex cStackedBar f_segments)
@@ -178,25 +178,25 @@ instance Reflect StackedBar where
       _ -> typeError u "StackedBar"
 
 instance Reflect Text where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cText -> case us ! fieldIndex cText f_text of
-         Val α _ (Lit (Str s)) -> Text (s × α)
+         Val α (Lit (Str s)) -> Text (s × α)
          _ -> typeError u "Text expects string"
       _ -> typeError u "Text"
 
 instance Reflect Link where
-   reflect { fieldIndex } (Val _ _ u) = case u of
+   reflect { fieldIndex } (Val _ u) = case u of
       Constr c us | c == cLink -> case us ! fieldIndex cLink f_label of
-         Val α' _ (Lit (Str s)) -> Link (us ! fieldIndex cLink f_value) (s × α')
+         Val α' (Lit (Str s)) -> Link (us ! fieldIndex cLink f_value) (s × α')
          _ -> typeError u "Link expects string label"
       _ -> typeError u "Link"
 
 instance Reflect MultiView where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cMultiView -> MultiView (view options "" <$> reflect options (us ! fieldIndex cMultiView f_views))
       _ -> typeError u "MultiView"
 
 instance Reflect Paragraph where
-   reflect options@{ fieldIndex } (Val _ _ u) = case u of
+   reflect options@{ fieldIndex } (Val _ u) = case u of
       Constr c us | c == cParagraph -> Paragraph (view options "" <$> reflect options (us ! fieldIndex cParagraph f_fragments))
       _ -> typeError u "Paragraph"

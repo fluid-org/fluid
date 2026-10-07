@@ -25,7 +25,7 @@ import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class Highlightable, BaseVal, DictRep(..), Env(..), ForeignOp(..), Fun, MatrixRep(..), Val(..), highlightIf)
+import Val (class Highlightable, BaseVal, DictRep(..), Env(..), ForeignOp(..), Fun, MatrixRep(..), Val(..), ValWithDoc(..), EnvWithDocs(..), highlightIf)
 
 class Pretty p where
    pretty :: p -> Doc
@@ -58,8 +58,7 @@ instance RootOp E.Expr where
    rootOp _ = Nothing
 
 instance Highlightable a => RootOp (Val a) where
-   rootOp (Val _ Nothing u) = rootOp u
-   rootOp (Val _ (Just _) _) = Nothing
+   rootOp (Val _ u) = rootOp u
 
 instance Highlightable a => RootOp (BaseVal a) where
    rootOp _ = Nothing
@@ -82,8 +81,7 @@ instance IsSimple E.Expr where
    isSimple _ = true
 
 instance Highlightable a => IsSimple (Val a) where
-   isSimple (Val _ Nothing u) = isSimple u
-   isSimple (Val _ (Just _) _) = false
+   isSimple (Val _ u) = isSimple u
 
 instance Highlightable a => IsSimple (BaseVal a) where
    isSimple _ = true
@@ -370,19 +368,28 @@ instance Pretty (Dict E.Def) where
       go (xd : xds) = (go xds <+> text ";") <+> (pretty xd)
 
 instance Highlightable a => Pretty (Env a) where
-   pretty (Env ρ) = brackets $ go (toUnfoldable ρ)
-      where
-      go :: List (Var × Val a) -> Doc
-      go Nil = empty
-      go ((x × v) : rest) =
-         (text x <+> text "->" <+> pretty v <+> text ",") <++> go rest
+   pretty (Env ρ) = prettyEnv ρ
+
+instance Highlightable a => Pretty (EnvWithDocs a) where
+   pretty (EnvWithDocs ρ) = prettyEnv ρ
+
+prettyEnv :: forall v. Pretty v => Dict v -> Doc
+prettyEnv ρ = brackets $ go (toUnfoldable ρ)
+   where
+   go :: List (Var × v) -> Doc
+   go Nil = empty
+   go ((x × v) : rest) =
+      (text x <+> text "->" <+> pretty v <+> text ",") <++> go rest
 
 instance Pretty (Bind E.Def) where
    pretty (x ↦ d) = pretty x <> pretty ":" <+> pretty d
 
 instance Highlightable a => Pretty (Val a) where
-   pretty (Val a Nothing u) = highlightIf a (pretty u)
-   pretty (Val a (Just v') u) = text "@doc" <> parens (pretty v') <+> highlightIf a (pretty u)
+   pretty (Val a u) = highlightIf a (pretty u)
+
+instance Highlightable a => Pretty (ValWithDoc a) where
+   pretty (ValWithDoc { val: v, doc: Nothing }) = pretty v
+   pretty (ValWithDoc { val: v, doc: Just d }) = text "@doc" <> parens (pretty d) <+> pretty v
 
 instance Highlightable a => Pretty (Var × (a × Val a)) where
    pretty (k × (a × v)) = highlightIf a (string k) <> text ":" <+> pretty v

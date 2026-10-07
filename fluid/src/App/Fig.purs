@@ -4,9 +4,9 @@ import Prelude hiding (absurd, compare)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
-import App.Util.Selector (constrArg, envVal, sel𝔹, ViewSetter)
+import App.Util.Selector (constrArg, envVal, sel𝔹, valWithDoc, ViewSetter)
 import App.View (view')
-import App.View.Util (Direction(..), Fig, Options, HTMLId, View, drawView)
+import App.View.Util (Direction(..), Fig, Options, HTMLId, QueryResult, View, drawView)
 import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
 import DataType (class HasClasses, fieldIndex)
@@ -37,7 +37,7 @@ import Test.Util.Debug (tracing)
 import Util (type (×), Endo, spyWhen, (×))
 import Util.Map (get, insert, lookup, mapWithKey, restrict, values)
 import Util.Set ((\\), (∈), (∪))
-import Val (class HasModuleStore, Env(..), Val, dataPositions, unval, unvals, val, withDoc)
+import Val (class HasModuleStore, EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val, withDoc)
 
 str
    :: { output :: String -- pseudo-variable to use as name of output view
@@ -53,7 +53,7 @@ str =
 selectOutput :: Selector Val -> Endo Fig
 selectOutput δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
    where
-   v' × selType = δv v
+   v' × selType = valWithDoc δv v
    ρ' × dir' = case selType of
       Persistent | dir.persistent /= LinkedOutputs -> botOf ρ × dir { persistent = LinkedOutputs }
       Transient | dir.transient /= LinkedOutputs -> ρ × dir { transient = LinkedOutputs }
@@ -80,7 +80,7 @@ setInputView x δvw fig = fig
 selectIntermediate :: Deriv -> Selector Val -> Endo Fig
 selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
-   ι' × selType = first (\u -> Map.insert p u ι) (δv (get p ι))
+   ι' × selType = first (\u -> Map.insert p u ι) (valWithDoc δv (get p ι))
    ρ' × v' × dir' × ι_final = case selType of
       Transient | dir.transient /= Intermediates -> ρ × v × dir { transient = Intermediates } × ι'
       Transient -> ρ × v × dir × ι'
@@ -91,13 +91,13 @@ setIntermediateView p δvw fig =
    fig { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
 
 type SelectionResult =
-   { v :: Val (SelStates 𝕊)
-   , ρ :: Env (SelStates 𝕊)
-   , ι :: Labelling (Val (SelStates 𝔹))
+   { v :: ValWithDoc (SelStates 𝕊)
+   , ρ :: EnvWithDocs (SelStates 𝕊)
+   , ι :: Labelling (ValWithDoc (SelStates 𝔹))
    }
 
 -- Query in the given direction, with the selection primary and what it reaches secondary.
-queryResult :: Fig -> SelectionType -> Direction -> Env (SelState 𝕊) × Val (SelState 𝕊) × Labelling (Val 𝔹)
+queryResult :: Fig -> SelectionType -> Direction -> EnvWithDocs (SelState 𝕊) × ValWithDoc (SelState 𝕊) × Labelling (ValWithDoc 𝔹)
 queryResult fig@{ v, ρ, ι } selType = case _ of
    LinkedOutputs -> fig.linkedOutputs selType v # first primary >>> (second <<< first) (primaryOrSecondary selType v)
    LinkedInputs -> fig.linkedInputs selType ρ # first (primaryOrSecondary selType ρ) >>> second (first primary)
@@ -116,7 +116,7 @@ selectionResult fig@{ dir } =
    reportOut = spyWhen tracing.mediatingData ("Mediating outputs") (prettyP <<< erase)
 
 -- Intermediates reachable from either selection.
-intermediates :: Fig -> Selection (Labelling (Val 𝔹)) -> Labelling (Val (SelStates 𝔹))
+intermediates :: Fig -> Selection (Labelling (ValWithDoc 𝔹)) -> Labelling (ValWithDoc (SelStates 𝔹))
 intermediates { inertι } ιs =
    Map.filterKeys (_ ∈ (Map.keys ιs.persistent ∪ Map.keys ιs.transient)) inertι # mapWithIndex \p inert ->
       selStates <$> inert <*> sel ιs.persistent p inert <*> sel ιs.transient p inert
@@ -171,7 +171,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       graph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
       everything = map (const true) <$> graph.vals
       nothing = map (const false) <$> graph.vals
-      ignored = unvals ins (unwrap (sel𝔹 ignoreInputs (Env (ins <#> val everything))))
+      ignored = unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
 
       -- Over the graph as it is, and restricted to data positions less the ignored ones.
       unmasked = boolean (queries graph)
@@ -189,36 +189,36 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
       inertMasked = inert masked
       inertUnmasked = inert unmasked
 
-      toρ :: Labelling (Val 𝔹) -> Env (SelState 𝔹)
-      toρ m = Env (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
+      toρ :: Labelling (Val 𝔹) -> EnvWithDocs (SelState 𝔹)
+      toρ m = EnvWithDocs (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
 
-      toV :: Labelling (Val 𝔹) -> Val (SelState 𝔹)
+      toV :: Labelling (Val 𝔹) -> ValWithDoc (SelState 𝔹)
       toV m = selState <$> val inertMasked.fwd out <*> val m out
 
-      toι :: Labelling (Val 𝔹) -> Labelling (Val 𝔹)
+      toι :: Labelling (Val 𝔹) -> Labelling (ValWithDoc 𝔹)
       toι m = Map.filter or (ιs <#> val m)
 
-      fromρ :: Env (SelState 𝔹) -> Labelling (Val 𝔹)
-      fromρ (Env ρ) = unvals ins (map to𝔹 <$> ρ)
+      fromρ :: EnvWithDocs (SelState 𝔹) -> Labelling (Val 𝔹)
+      fromρ ρ = unvals ins (to𝔹 <$> ρ)
 
-      fromV :: Val (SelState 𝔹) -> Labelling (Val 𝔹)
+      fromV :: ValWithDoc (SelState 𝔹) -> Labelling (Val 𝔹)
       fromV v = unval out (to𝔹 <$> v)
 
-      linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+      linkedInputs :: SelectionType -> EnvWithDocs (SelStates 𝔹) -> QueryResult
       linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
          where
          sel = ρ <#> projSel selType
          deps = masked.fwd (fromρ sel)
          v = toV deps
 
-      linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+      linkedOutputs :: SelectionType -> ValWithDoc (SelStates 𝔹) -> QueryResult
       linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
          where
          sel = v <#> projSel selType
          deps = masked.bwd (fromV sel)
          ρ = toρ deps
 
-      linkIntermediates :: Labelling (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+      linkIntermediates :: Labelling (ValWithDoc (SelStates 𝔹)) -> QueryResult
       linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
          where
          sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
