@@ -4,9 +4,10 @@ import Prelude hiding (absurd, compare)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
-import App.Util.Selector (constrArg, envVal, sel𝔹, valWithDoc, ViewSetter)
+import App.Util.Selector (constrArg, inputVal, sel𝔹, ViewSetter)
 import App.View (view')
-import App.View.Util (Direction(..), Fig, Options, HTMLId, QueryResult, View, drawView)
+import App.View.DocView (drawView)
+import App.View.Util (Direction(..), Fig, Options, HTMLId, QueryResult, View)
 import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
 import DataType (class HasClasses, fieldIndex)
@@ -50,10 +51,10 @@ str =
    , intermediate: "intermediate"
    }
 
-selectOutput :: Selector Val -> Endo Fig
+selectOutput :: Selector ValWithDoc -> Endo Fig
 selectOutput δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
    where
-   v' × selType = valWithDoc δv v
+   v' × selType = δv v
    ρ' × dir' = case selType of
       Persistent | dir.persistent /= LinkedOutputs -> botOf ρ × dir { persistent = LinkedOutputs }
       Transient | dir.transient /= LinkedOutputs -> ρ × dir { transient = LinkedOutputs }
@@ -63,10 +64,10 @@ setOutputView :: ViewSetter Fig View
 setOutputView δvw fig = fig
    { out_view = fig.out_view <#> δvw }
 
-selectInput :: Var -> Selector Val -> Endo Fig
+selectInput :: Var -> Selector ValWithDoc -> Endo Fig
 selectInput x δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
    where
-   ρ' × selType = envVal x δv ρ
+   ρ' × selType = inputVal x δv ρ
    v' × dir' = case selType of
       Persistent | dir.persistent /= LinkedInputs -> botOf v × dir { persistent = LinkedInputs }
       Transient | dir.transient /= LinkedInputs -> v × dir { transient = LinkedInputs }
@@ -77,10 +78,10 @@ setInputView x δvw fig = fig
    { in_views = insert x (lookup x fig.in_views # join <#> δvw) fig.in_views
    }
 
-selectIntermediate :: Deriv -> Selector Val -> Endo Fig
+selectIntermediate :: Deriv -> Selector ValWithDoc -> Endo Fig
 selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
-   ι' × selType = first (\u -> Map.insert p u ι) (valWithDoc δv (get p ι))
+   ι' × selType = first (\u -> Map.insert p u ι) (δv (get p ι))
    ρ' × v' × dir' × ι_final = case selType of
       Transient | dir.transient /= Intermediates -> ρ × v × dir { transient = Intermediates } × ι'
       Transient -> ρ × v × dir × ι'

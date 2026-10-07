@@ -10,6 +10,7 @@ import Data.Profunctor.Strong (first, second)
 import Data.Tuple (fst) as T
 import DataType (FieldIndex, FieldName, cSegment, cStackedBar, f_segments, f_z)
 import Lattice (class Neg, 𝔹, neg)
+import Data.Maybe (Maybe(..))
 import Partial.Unsafe (unsafePartial)
 import Util (Endo, absurd, assert, error, unsafeUpdateAt, (!), (×))
 import Util.Map (get, insert, update)
@@ -118,12 +119,19 @@ dictVal s δv = unsafePartial $ case _ of
       where
       _ × v = get s d
 
-valWithDoc :: SelSetter ValWithDoc Val
-valWithDoc δv (ValWithDoc r) = first (\v -> ValWithDoc r { val = v }) (δv r.val)
+valOf :: SelSetter ValWithDoc Val
+valOf δv (ValWithDoc r) = first (\v -> ValWithDoc r { val = v }) (δv r.val)
 
-envVal :: Var -> Setter (EnvWithDocs (SelStates 𝔹)) (Val (SelStates 𝔹))
-envVal x δv (EnvWithDocs ρ) =
-   assert (x ∈ ρ) $ first (\v' -> EnvWithDocs (update (const v') x ρ)) (valWithDoc δv (get x ρ))
+docOf :: SelSetter ValWithDoc Val
+docOf δv = unsafePartial $ case _ of
+   ValWithDoc r@{ doc: Just d } -> first (\d' -> ValWithDoc r { doc = Just d' }) (δv d)
+
+inputVal :: Var -> SelSetter EnvWithDocs ValWithDoc
+inputVal x δv (EnvWithDocs ρ) =
+   assert (x ∈ ρ) $ first (\v' -> EnvWithDocs (update (const v') x ρ)) (δv (get x ρ))
+
+envVal :: Var -> SelSetter EnvWithDocs Val
+envVal x = inputVal x <<< valOf
 
 list :: Setter (Val (SelStates 𝔹)) 𝔹
 list δα = unsafePartial $ case _ of

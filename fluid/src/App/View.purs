@@ -4,7 +4,7 @@ import Prelude hiding (absurd)
 
 import App.Util (Dimensions(..), SelStates, Selectable, 𝕊, dict, unpackIntOrNumber)
 import App.View.BarChart (BarChart(..))
-import App.View.DocView (DocView(..))
+import App.View.DocView (DocView)
 import App.View.LineChart (LineChart(..), LinePlot(..))
 import App.View.MatrixView (MatrixView(..), matrixRep)
 import App.View.MultiView (MultiView(..))
@@ -35,9 +35,9 @@ import Val (BaseVal(..), DictRep(..), Val(..), ValWithDoc(..))
 type ViewOptions = { fieldIndex :: FieldIndex, rowFilter :: Maybe Filter }
 
 -- TODO: merge with 'view' below.
-view' :: ViewOptions -> String -> ValWithDoc (SelStates 𝕊) -> View
+view' :: ViewOptions -> String -> ValWithDoc (SelStates 𝕊) -> DocView
 view' options title (ValWithDoc { val: v, doc }) =
-   pack $ DocView { doc: reflect options <$> doc :: Maybe Paragraph, view: view options title v }
+   { doc: reflect options <$> doc :: Maybe Paragraph, view: view options title v }
 
 -- Convert annotated value to appropriate view, discarding top-level annotations for now.
 view :: ViewOptions -> String -> Val (SelStates 𝕊) -> View

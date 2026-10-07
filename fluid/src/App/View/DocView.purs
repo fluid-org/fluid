@@ -2,36 +2,51 @@ module App.View.DocView where
 
 import Prelude
 
+import App.Util (SelStates, SetSel)
+import App.Util.Selector (ConstrArg, docOf, valOf)
 import App.View.Paragraph (Paragraph)
-import App.Util.Selector (ConstrArg)
-import App.View.Util (class Viewable, Select, View, createElement, isLeaf, setSelection, unpack)
+import App.View.Util (HTMLId, View, createElement, setSelection)
+import App.View.Util.D3 (isEmpty, rootSelect, select)
 import App.View.Util.D3 as D3
+import Bind ((↦))
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
+import Lattice (𝔹)
+import Util (check)
+import Val (ValWithDoc)
 
-newtype DocView = DocView
-   { doc :: Maybe Paragraph
-   , view :: View
-   }
+-- View of a value with the view of its doc, if any.
+type DocView = { doc :: Maybe Paragraph, view :: View }
 
-instance Viewable DocView Unit where
-   isLeaf (DocView { doc: Nothing, view }) = isLeaf view
-   isLeaf (DocView { doc: Just _ }) = false
+type SelectWithDoc = SetSel (ValWithDoc (SelStates 𝔹)) -> Effect Unit
 
-   createElement :: Unit -> DocView -> D3.Selection -> Effect D3.Selection
-   createElement _ (DocView { doc: Just doc, view }) parent = do
-      rootElement <- parent # D3.create D3.G []
-      void $ unpack view \v -> createElement unit v rootElement
-      void $ createElement unit doc rootElement
-      pure rootElement
-   createElement _ (DocView { doc: Nothing, view }) parent = do
-      unpack view \v -> createElement unit v parent
+createDocView :: DocView -> D3.Selection -> Effect D3.Selection
+createDocView { doc: Just doc, view } parent = do
+   rootElement <- parent # D3.create D3.G []
+   void $ createElement unit view rootElement
+   void $ createElement unit doc rootElement
+   pure rootElement
+createDocView { doc: Nothing, view } parent = createElement unit view parent
 
-   setSelection :: ConstrArg -> Unit -> DocView -> Select -> D3.Selection -> Effect Unit
-   setSelection arg _ (DocView { doc: Just doc, view }) select rootElement = do
-      viewElem <- rootElement # D3.select (D3.nthChildOf D3.scope 1)
-      void $ unpack view \v -> setSelection arg unit v select viewElem
-      docElem <- rootElement # D3.select (D3.nthChildOf D3.scope 2)
-      void $ setSelection arg unit doc select docElem
-   setSelection arg _ (DocView { doc: Nothing, view }) select rootElement = do
-      unpack view \v -> setSelection arg unit v select rootElement
+-- Selections on the value reach its component, those on the doc its doc.
+setDocSelection :: ConstrArg -> DocView -> SelectWithDoc -> D3.Selection -> Effect Unit
+setDocSelection arg { doc: Just doc, view } select' rootElement = do
+   viewElem <- rootElement # D3.select (D3.nthChildOf D3.scope 1)
+   setSelection arg unit view (valOf >>> select') viewElem
+   docElem <- rootElement # D3.select (D3.nthChildOf D3.scope 2)
+   setSelection arg unit doc (docOf >>> select') docElem
+setDocSelection arg { doc: Nothing, view } select' rootElement =
+   setSelection arg unit view (valOf >>> select') rootElement
+
+drawView :: ConstrArg -> { divId :: HTMLId, suffix :: String, view :: DocView } -> SelectWithDoc -> Effect Unit
+drawView arg { divId, suffix, view } select' = do
+   let childId = divId <> "-" <> suffix
+   div <- rootSelect ("#" <> divId)
+   isEmpty div <#> not >>= flip check ("Unable to insert figure: no div found with id " <> divId)
+   maybeRootElement <- div # select ("#" <> childId)
+   setDocSelection arg view select' =<<
+      ( isEmpty maybeRootElement >>=
+           if _ then
+              createDocView view div <#> D3.setAttrs [ "id" ↦ childId ] # join
+           else pure maybeRootElement
+      )

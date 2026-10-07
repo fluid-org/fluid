@@ -4,9 +4,9 @@ import Prelude
 
 import App.Util (SelState, SelStates, Selectable, Selection, SelectionType, Selector, SetSel, 𝕊, classes, selClasses, selClassesFor)
 import App.Util.Selector (ConstrArg, dictVal)
-import App.View.Util.D3 (create, isEmpty, on, rootSelect, select, setAttrs)
+import App.View.Util.D3 (create, on, setAttrs)
 import App.View.Util.D3 as D3
-import Bind (Var, (↦))
+import Bind (Var)
 import DataType (FieldIndex)
 import Data.Argonaut.Decode (class DecodeJson, JsonDecodeError(..))
 import Data.Argonaut.Decode.Decoders (decodeString)
@@ -21,7 +21,7 @@ import File (Folder)
 import DepGraph (Labelling)
 import Lattice (𝔹, (∨))
 import SExpr as S
-import Util (type (×), Endo, check, (×))
+import Util (type (×), Endo, (×))
 import Util.Map (toUnfoldable, values)
 import Util.Set (size)
 import Val (EnvWithDocs, Val, ValWithDoc)
@@ -76,23 +76,6 @@ instance Viewable (Dict (View × View)) Unit where
 
 type Select = SetSel (Val (SelStates 𝔹)) -> Effect Unit
 
-draw :: forall a. Viewable a Unit => ConstrArg -> Renderer a
-draw arg _ { divId, suffix, view } select' = do
-   let childId = divId <> "-" <> suffix
-   div <- rootSelect ("#" <> divId)
-   isEmpty div <#> not >>= flip check ("Unable to insert figure: no div found with id " <> divId)
-   maybeRootElement <- div # select ("#" <> childId)
-   setSelection arg unit view select' =<<
-      ( isEmpty maybeRootElement >>=
-           if _ then
-              createElement unit view div <#> D3.setAttrs [ "id" ↦ childId ] # join
-           else pure maybeRootElement
-      )
-
-drawView :: ConstrArg -> RendererSpec View -> (SetSel (Val (SelStates 𝔹)) -> Effect Unit) -> Effect Unit
-drawView arg rSpec@{ view: vw } redraw =
-   unpack vw (\view -> draw arg uiHelpers (rSpec { view = view }) redraw)
-
 foreign import mouseButton :: Event -> Int
 
 registerMouseListeners :: (Event -> Effect Unit) -> D3.Selection -> Effect Unit
@@ -102,15 +85,6 @@ registerMouseListeners handler element = do
    void $ element # on (EventType "mousedown") click
    void $ element # on (EventType "mouseenter") hover
    void $ element # on (EventType "mouseleave") hover
-
--- Heavily curried type isn't convenient for FFI
-type RendererSpec a =
-   { divId :: HTMLId
-   , suffix :: String
-   , view :: a
-   }
-
-type Renderer a = UIHelpers -> RendererSpec a -> ((SetSel (Val (SelStates 𝔹)) -> Effect Unit)) -> Effect Unit
 
 type UIHelpers =
    { val :: forall a. Selectable a -> a
