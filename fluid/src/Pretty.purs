@@ -301,7 +301,7 @@ vcommas (d : ds) = d <> text "," <++> vcommas ds
 prettyList :: forall f a. Foldable f => Pretty a => f a -> Doc
 prettyList xs = commas (pretty <$> fromFoldable xs)
 
--- Single element followed by trailing comma, as in Python.
+-- Comma after single element distinguishes tuple from parenthesised expression.
 tuple :: List Doc -> Doc
 tuple (d : Nil) = parens (d <> text ",")
 tuple ds = parens (commas ds)
