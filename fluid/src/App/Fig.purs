@@ -27,9 +27,9 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval.Dep (depEval, visible)
+import Eval (evalProgram, visible)
 import File (class LoadFile, File(..), FileCxt)
-import Graph.Dep (ConjugatePair, DepGraph, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
+import DepGraph (ConjugatePair, DepGraph, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig)
 import Pretty (prettyP)
@@ -159,7 +159,7 @@ boolean = dimap (map selected) (map (map (_ /= Zero)))
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Options -> String -> m Fig
 loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    config@{ s } <- prepConfig fluidSrc
-   eval@{ g: g@{ docs }, root } <- depEval config.inputs config.classes config.e
+   eval@{ g: g@{ docs }, root } <- evalProgram config.inputs config.classes config.e
    let
       out = withDoc g root
       ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definedBy g q >>= (_ `Map.lookup` docs))

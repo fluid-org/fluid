@@ -22,7 +22,7 @@ import Effect.Aff (Aff, Error, message, runAff_, try)
 import Effect.Class (liftEffect)
 import Data.Traversable (for)
 import Effect.Class.Console (log, logShow)
-import Eval.Dep (depEval)
+import Eval (evalProgram)
 import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, modulePath, withClasses, withRoots)
 import Module (loadTopLevel, prepConfig, prepModule)
 import Module.Node (NodeT, runNodeT)
@@ -35,7 +35,7 @@ import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
 import SExpr (Import(..)) as S
 import Util (MayFail, type (×), Endo, orElse, (×))
-import Graph.Dep (valAt)
+import DepGraph (valAt)
 import Val (Val)
 
 data EvalArgs = EvalArgs
@@ -144,7 +144,7 @@ evaluate (EvalArgs { local, fileName, fluidSrcPaths: roots }) = do
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
       { e, inputs, classes } <- prepConfig fluidSrc
-      { g, root } <- depEval inputs classes e
+      { g, root } <- evalProgram inputs classes e
       pure (valAt g root)
 
 -- Manifest for dir and for each subdirectory with .fld files beneath it
@@ -178,7 +178,7 @@ check fluidSrcPaths asModule fileName =
             withClasses classes (void (loadTopLevel modules (S.Import q Nothing : Nil)))
       else
          stages (void (parseProgram fluidSrc)) (prepConfig fluidSrc) \{ e, inputs, classes } ->
-            void (depEval inputs classes e)
+            void (evalProgram inputs classes e)
    where
    -- module name of file, relative to its root
    moduleName = do

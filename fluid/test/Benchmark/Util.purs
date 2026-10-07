@@ -16,7 +16,7 @@ import Data.Tuple (snd)
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
-import Graph.Dep (DepGraph)
+import DepGraph (DepGraph)
 import Util (type (×), EffectError, Thunk, debug, force, (×), singleton)
 
 logAs :: forall m. MonadEffect m => String -> String -> m Unit

@@ -18,7 +18,7 @@ import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Effect (Effect)
 import File (Folder)
-import Graph.Dep (Labelling)
+import DepGraph (Labelling)
 import Lattice (𝔹, (∨))
 import SExpr as S
 import Util (type (×), Endo, check, (×))
