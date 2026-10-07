@@ -274,7 +274,7 @@ qualifiers inputs (Generator p e : gs) = do
    v <- gval <$> eval inputs e
    n <- elementCount v.val # orElse ("Found " <> prettyP v.val <> ", expected list, str or dict")
    classes <- askClasses
-   fold <$> for (L.range 0 (n - 1)) \i -> do
+   fold <$> for (L.take n (L.range 0 n)) \i -> do
       let el = { val: element i v.val, inEdges: via (element i) v }
       case dispatch classes (singleton (p × unit)) el Nil of
          Nothing × ctrl -> pure (Nil × (via root v <> ctrl))
