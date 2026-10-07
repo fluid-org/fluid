@@ -19,7 +19,7 @@ python3 $SPEC/test/run-all.py --checker "$PWD/script/spec-checker.sh" --no-run -
 
 if [[ " $* " == *" --update "* ]]; then
   n=$(wc -l < $DIFFERENCES | tr -d ' ')
-  if [ "$n" = 0 ]; then message=compatible; colour=brightgreen; else message="$n incompatibilities"; colour=orange; fi
+  if [ "$n" = 0 ]; then message=passing; colour=brightgreen; else message="$n failures"; colour=orange; fi
   printf '{ "schemaVersion": 1, "label": "PurePy %s", "message": "%s", "color": "%s" }\n' "$REF" "$message" "$colour" \
     > test/spec-compliance.json
 fi
