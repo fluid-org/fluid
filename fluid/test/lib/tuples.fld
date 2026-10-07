@@ -1,0 +1,11 @@
+def f(t):
+  match t:
+    case ():
+      return 0
+    case (a,):
+      return a
+    case (a, b, c):
+      return a + b + c
+
+t = (1, 2, 3)
+[f(()), f((4,)), f(t), t[1], t[-1], 2 in t, len(t), (1,) + ("a",), [x + 1 for x in t], (0, 0) == (0, 0)]

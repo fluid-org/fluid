@@ -19,7 +19,6 @@ import Data.NonEmpty ((:|))
 import Data.String (codePointFromChar)
 import Data.String.CodeUnits as SCU
 import Data.Traversable (foldr)
-import DataType (cPair)
 import Literal (Literal(..))
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
@@ -85,16 +84,18 @@ simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPatter
    parensPattern :: Parser Pattern
    parensPattern = do
       delim '('
-      p <- pattern
       choice
-         [ do
-              delim ')'
-              pure p
+         [ delim ')' $> PTuple Nil
          , do
-              delim ','
-              p' <- pattern
-              delim ')'
-              pure $ PConstr (singleton (last cPair)) (p : p' : Nil) Nil
+              p <- pattern
+              choice
+                 [ delim ')' $> p
+                 , do
+                      delim ','
+                      ps <- trailingCommas pattern
+                      delim ')'
+                      pure $ PTuple (p : ps)
+                 ]
          ]
 
 typeExpr :: Parser (T.TypeExpr Name)
@@ -118,7 +119,7 @@ typeExpr = defer \_ -> do
       "float" -> pure (T.Primitive T.Float)
       "str" -> pure (T.Primitive T.Str)
       "list" -> T.List <$> brackets typeExpr
-      "tuple" -> T.Tuple <$> brackets (commas typeExpr)
+      "tuple" -> T.Tuple <$> brackets ((delim '(' *> delim ')' $> Nil) <|> commas typeExpr)
       "dict" -> brackets (reserved "str" *> delim ',' *> (T.Dict <$> typeExpr))
       _ -> pure (T.ClassName (singleton x))
    namedType q = pure (T.ClassName q)
@@ -302,7 +303,7 @@ expr = context "expr" $ cond <?> "expression"
                k <- cond
                k' <- optionMaybe (delim ',' *> cond)
                close ']'
-               chain (Subscript e (maybe k (\k2 -> pair k k2) k'))
+               chain (Subscript e (maybe k (\k2 -> Tuple (k : k2 : Nil)) k'))
 
             app :: Parser Expr
             app = do
@@ -483,17 +484,19 @@ expr = context "expr" $ cond <?> "expression"
          parensExpr :: Parser Expr
          parensExpr = context "parens" do
             delim '('
-            e <- cond
             choice
-               [ do
-                    close ')'
-                    pure e
+               [ close ')' $> Tuple Nil
                , do
-                    delim ','
-                    e' <- cond
-                    close ')'
-                    pure $ pair e e'
-               , fail "Expected `)` or `,` after `(expr`"
+                    e <- cond
+                    choice
+                       [ close ')' $> e
+                       , do
+                            delim ','
+                            es <- trailingCommas cond
+                            close ')'
+                            pure $ Tuple (e : es)
+                       , fail "Expected `)` or `,` after `(expr`"
+                       ]
                ]
 
          docExpr :: Parser Expr
@@ -525,9 +528,6 @@ import_ = importAll <|> fromImport
 
 modPath :: Parser Name
 modPath = sepBy1 variable (delim '.')
-
-pair :: Expr -> Expr -> Expr
-pair e e' = Call (Var (last cPair)) (e : e' : Nil) Nil
 
 qualifiedName :: Parser Name
 qualifiedName = do

@@ -62,6 +62,10 @@ listElement :: Int -> SelSetter Val Val
 listElement n δv = unsafePartial $ case _ of
    Val α doc (List vs) -> first (\v' -> Val α doc (List (unsafeUpdateAt n v' vs))) (δv (vs ! n))
 
+tupleElement :: Int -> SelSetter Val Val
+tupleElement n δv = unsafePartial $ case _ of
+   Val α doc (Tuple vs) -> first (\v' -> Val α doc (Tuple (unsafeUpdateAt n v' vs))) (δv (vs ! n))
+
 eachElement :: SelSetter Val Val
 eachElement δv = unsafePartial $ case _ of
    Val α doc (List vs) -> Val α doc (List (T.fst <<< δv <$> vs)) × Persistent

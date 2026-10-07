@@ -18,7 +18,6 @@ import Data.Set as Set
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.Tuple (fst, snd)
-import DataType (cPair)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, bot, erase)
@@ -103,10 +102,10 @@ intOrNumberOrString =
 
 intPair :: forall a. ToFrom ((Int × a) × (Int × a)) a
 intPair =
-   { pack: \(nβ × mβ') -> Constr cPair (pack int nβ : pack int mβ' : Nil)
+   { pack: \(nβ × mβ') -> Tuple [ pack int nβ, pack int mβ' ]
    , unpack: case _ of
-        Constr c (v : v' : Nil) | c == cPair -> (×) <$> unpack int v <*> unpack int v'
-        v -> Left (typeMismatch v "Pair")
+        Tuple [ v, v' ] -> (×) <$> unpack int v <*> unpack int v'
+        v -> Left (typeMismatch v "pair of int")
    }
 
 matrixRep :: forall a. ToFrom (MatrixRep a) a
@@ -184,6 +183,8 @@ binop Add (Val α _ (Lit (Str w))) (Val β _ (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
 binop Add (Val α _ (List vs)) (Val β _ (List vs')) =
    pure (List (vs <> vs') × Set.fromFoldable [ α, β ])
+binop Add (Val α _ (Tuple vs)) (Val β _ (Tuple vs')) =
+   pure (Tuple (vs <> vs') × Set.fromFoldable [ α, β ])
 binop Mul (Val α _ (Lit (Str w))) (Val β _ (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α _ (Lit (Int n))) (Val β _ (Lit (Str w))) = pure (repeatStr w β n α)
 binop Mul (Val α _ (List vs)) (Val β _ (Lit (Int n))) = pure (repeatList vs α n β)
@@ -288,6 +289,7 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)
    List vs, List ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
+   Tuple vs, Tuple ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
    Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
    Matrix r, Matrix r' -> eqMatrix r r'
    _, _ -> pure (false × both) -- different forms
@@ -338,11 +340,12 @@ eqElems αs _ _ = pure (false × αs)
 contains :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 contains (Val α _ u') v@(Val β _ u) = case u', u of
    List vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
+   Tuple vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
    Dictionary _, _ -> Left (typeMismatch u "str")
    Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])
    Lit (Str _), _ -> Left (typeMismatch u "str")
-   _, _ -> Left (typeMismatch u' "list, dict or str")
+   _, _ -> Left (typeMismatch u' "list, tuple, dict or str")
    where
    elem :: List (Val a) -> MayFail (Boolean × Set a)
    elem Nil = pure (false × Set.empty)

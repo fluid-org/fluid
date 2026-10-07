@@ -21,12 +21,12 @@ import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, 
 import Data.Foldable (lookup) as F
 import ModuleGraph (ModuleName, implicitFor)
 import Data.List.NonEmpty as NEL
-import Data.Semigroup.Foldable (foldl1, foldr1)
+import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (cPair, cParagraph)
+import DataType (cParagraph)
 import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Dict as D
 import Util.Map (constMap)
@@ -207,6 +207,7 @@ instance Captures S.Expr where
       capturesPe (S.Token _) = Set.empty
       capturesPe (S.Unquote e) = captures e
    captures (S.List es) = Set.unions (captures <$> es)
+   captures (S.Tuple es) = Set.unions (captures <$> es)
    captures (S.ListComp e gs) = captures gs ∪ (captures e \\ bv gs)
    captures (S.DictComp k e gs) = captures gs ∪ ((captures k ∪ captures e) \\ bv gs)
    captures (S.DocExpr e e') = (captures e \\ Set.singleton varThis) ∪ captures e'
@@ -378,6 +379,7 @@ instance WellFormed S.Expr E.Expr where
       pe (S.Unquote e) = wellFormed cxt e
       pe (S.Token str) = pure (E.Lit (Str str))
    wellFormed cxt (S.List es) = E.List <$> traverse (wellFormed cxt) es
+   wellFormed cxt (S.Tuple es) = E.Tuple <$> traverse (wellFormed cxt) es
    wellFormed cxt (S.ListComp e gs) =
       (\(e' × gs') -> E.ListComp e' gs') <$> wellFormedQualifiers cxt gs (\cxt' -> wellFormed cxt' e)
    wellFormed cxt (S.DictComp k e gs) =
@@ -444,14 +446,8 @@ clauses cs = do
       ss = cs <#> \(_ × _ × s) -> s
       body = case matched of
          Nil -> NEL.head ss
-         _ ->
-            let
-               e = foldr1 (\e1 e2 -> E.Constr cPair (e1 : e2 : Nil)) (E.Var <<< fst <$> nonEmpty matched)
-               bs = NEL.zipWith (\ps s -> foldr1 (\p p' -> S.PConstr cPair (p : p' : Nil) Nil) (nonEmpty ps) × s)
-                  (nonEmpty (transpose (snd <$> matched)))
-                  ss
-            in
-               E.Match e bs
+         (x × ps) : Nil -> E.Match (E.Var x) (NEL.zip (nonEmpty ps) ss)
+         _ -> E.Match (E.Tuple (E.Var <<< fst <$> matched)) (NEL.zipWith (\ps s -> S.PTuple ps × s) (nonEmpty (transpose (snd <$> matched))) ss)
    pure (E.Def (zipWith E.Param (fst <$> named) ψs) ψ body)
    where
    sharedVar :: List S.Pattern -> Maybe Var
@@ -502,6 +498,9 @@ instance WellFormed S.Pattern S.Pattern where
    wellFormed cxt (S.PList ps) = do
       distinctVars ps
       S.PList <$> traverse (wellFormed cxt) ps
+   wellFormed cxt (S.PTuple ps) = do
+      distinctVars ps
+      S.PTuple <$> traverse (wellFormed cxt) ps
    wellFormed cxt (S.PAs p x) = do
       distinctVars (p : S.PVar x : Nil)
       S.PAs <$> wellFormed cxt p <@> x
@@ -519,6 +518,7 @@ subsumed _ (S.PLit ℓ) (S.PLit ℓ') = ℓ == ℓ'
 subsumed cxt (S.PRecord xps) (S.PRecord xps') =
    all (\(x × p') -> maybe false (\p -> subsumed cxt p p') (F.lookup x xps)) xps'
 subsumed cxt (S.PList ps) (S.PList ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')
+subsumed cxt (S.PTuple ps) (S.PTuple ps') = length ps == length ps' && and (zipWith (subsumed cxt) ps ps')
 subsumed cxt (S.PConstr c ps xps) (S.PConstr c' ps' xps') = fromMaybe false do
    cls <- hush (classOf cxt c)
    cls' <- hush (classOf cxt c')

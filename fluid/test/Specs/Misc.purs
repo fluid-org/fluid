@@ -26,6 +26,7 @@ misc_cases =
    , { file: "div_mod_quot_rem.fld"
      , fwd_expect: "[[1, -2, -2, 1], [2, -1, 1, -2], [1, -1, -1, 1], [2, 2, -2, -2]]"
      }
+   , { file: "tuples.fld", fwd_expect: """[0, 4, 6, 2, 3, True, 3, (1, "a"), [2, 3, 4], True]""" }
    , { file: "eq_nan.fld", fwd_expect: "[False, True, False, True, False]" }
    , { file: "elif.fld", fwd_expect: """["much more", "more", "less", "much less"]""" }
    , { file: "factorial.fld", fwd_expect: "40320" }

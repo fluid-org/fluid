@@ -24,7 +24,7 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DefiniteAssignment (ancestors)
-import DataType (class HasClasses, ClassTable, arity, askClasses, cPair, checkArity, fieldsOf)
+import DataType (class HasClasses, ClassTable, arity, askClasses, checkArity, fieldsOf)
 import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -73,9 +73,11 @@ matches classes v@{ val: Val _ _ u } p = second (via root v : _) case u, p of
          Just kvs -> second ((kvs <#> \(x × _) -> via (dictEntry x >>> fst) v) <> _)
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
-   V.List vs, PList ps | A.length vs == length ps ->
-      matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (element i) v }) (L.fromFoldable vs)) ps
+   V.List vs, PList ps | A.length vs == length ps -> matchesElements vs ps
+   V.Tuple vs, PTuple ps | A.length vs == length ps -> matchesElements vs ps
    _, _ -> Nothing × Nil
+   where
+   matchesElements vs ps = matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (element i) v }) (L.fromFoldable vs)) ps
 
 matchesMany :: forall s. ClassTable -> List (GVal s) -> List Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
 matchesMany _ Nil Nil = Just empty × Nil
@@ -137,6 +139,9 @@ eval inputs = case _ of
    List es -> do
       vs <- traverse (eval inputs >>> map gval) es
       constructWith inputs.ctrl (A.fromFoldable >>> V.List) vs
+   Tuple es -> do
+      vs <- traverse (eval inputs >>> map gval) es
+      constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) vs
    ListComp e gs -> do
       cs × ctrl <- qualifiers inputs gs
       vs <- for cs \inputs' -> gval <$> eval inputs' e
@@ -159,12 +164,12 @@ eval inputs = case _ of
       index :: GVal s -> Int -> Int -> GVal s
       index dims k n =
          { val: Val unit Nothing (V.Lit (Int n))
-         , inEdges: via (\p -> Val (ctrlWeight * root (field k p)) Nothing (V.Lit (Int n))) dims
+         , inEdges: via (\p -> Val (ctrlWeight * root (element k p)) Nothing (V.Lit (Int n))) dims
          }
 
       mat :: forall a. Int -> Int -> Product (Compose Array Array) Identity (Val a) -> BaseVal a
       mat i j (Product (Compose vss × Identity p)) =
-         V.Matrix (MatrixRep (vss × MatrixDim (i × root (field 0 p)) × MatrixDim (j × root (field 1 p))))
+         V.Matrix (MatrixRep (vss × MatrixDim (i × root (element 0 p)) × MatrixDim (j × root (element 1 p))))
    Lambda d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
    Attribute e x -> do
       v <- gval <$> eval inputs e
@@ -187,12 +192,13 @@ eval inputs = case _ of
             unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
             subscript v v' (element i') root
          V.List _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
+         V.Tuple _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
-         V.Matrix (MatrixRep (_ × MatrixDim (m × _) × MatrixDim (n × _))), V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil) | c == cPair -> do
+         V.Matrix (MatrixRep (_ × MatrixDim (m × _) × MatrixDim (n × _))), V.Tuple [ Val _ _ (V.Lit (Int i)), Val _ _ (V.Lit (Int j)) ] -> do
             unless (0 <= i && i < m && 0 <= j && j < n) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
             subscript v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
-         _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, str, dict or matrix"
+         _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
       where
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
       subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Deriv × Raw Val)
@@ -273,7 +279,7 @@ qualifiers inputs (Guard e : gs) = do
    if holds then qualifiers (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
 qualifiers inputs (Generator p e : gs) = do
    v <- gval <$> eval inputs e
-   n <- elementCount v.val # orElse ("Found " <> prettyP v.val <> ", expected list, str or dict")
+   n <- elementCount v.val # orElse ("Found " <> prettyP v.val <> ", expected list, tuple, str or dict")
    classes <- askClasses
    fold <$> for (L.take n (L.range 0 n)) \i -> do
       let el = { val: element i v.val, inEdges: via (element i) v }

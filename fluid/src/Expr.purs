@@ -29,6 +29,7 @@ data Expr
    | Dictionary (List (Pair Expr)) -- constructor name Dict borks (import of same name)
    | Constr Name (List Expr)
    | List (List Expr)
+   | Tuple (List Expr)
    | Matrix Expr (Var × Var) Expr
    | Lambda Def
    | Attribute Expr Var -- attribute x of a dataclass instance
@@ -57,6 +58,7 @@ data Pattern
    | PConstr Name (List Pattern) (List (Bind Pattern))
    | PRecord (List (Bind Pattern))
    | PList (List Pattern)
+   | PTuple (List Pattern)
    | PAs Pattern Var
 
 data Param = Param Var (Maybe T.Type)
@@ -100,6 +102,7 @@ instance FV Expr where
    fv (Dictionary ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ es) = unions (fv <$> es)
    fv (List es) = unions (fv <$> es)
+   fv (Tuple es) = unions (fv <$> es)
    fv (Matrix e1 _ e2) = fv e1 ∪ fv e2
    fv (Lambda d) = fv d
    fv (Attribute e _) = fv e
@@ -164,6 +167,7 @@ instance BV Pattern where
    bv (PConstr _ ps xps) = unions (bv <$> ps) ∪ unions ((bv <<< snd) <$> xps)
    bv (PRecord xps) = unions ((bv <<< snd) <$> xps)
    bv (PList ps) = unions (bv <$> ps)
+   bv (PTuple ps) = unions (bv <$> ps)
    bv (PAs p x) = bv p ∪ singleton x
 
 instance BV Qualifier where

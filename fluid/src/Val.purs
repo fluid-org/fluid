@@ -26,7 +26,7 @@ import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
 import Data.Profunctor.Strong (second)
 import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple)
 import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
@@ -60,6 +60,7 @@ data BaseVal a
    = Lit Literal
    | Constr Name (List (Val a)) -- always saturated
    | List (Array (Val a))
+   | Tuple (Array (Val a))
    | Dictionary (DictRep a)
    | Matrix (MatrixRep a)
    | Fun (Fun a)
@@ -71,6 +72,7 @@ overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
 overChildren f (Constr c vs) = Constr c (f <$> vs)
 overChildren f (List vs) = List (f <$> vs)
+overChildren f (Tuple vs) = Tuple (f <$> vs)
 overChildren f (Dictionary (DictRep d)) = Dictionary (DictRep (map f <$> d))
 overChildren f (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (map f) vss × i × j))
 overChildren f (Fun φ) = Fun (overFun φ)
@@ -79,12 +81,13 @@ overChildren f (Fun φ) = Fun (overFun φ)
    overFun (Partial φ' vs) = Partial (overFun φ') (f <$> vs)
    overFun φ' = φ'
 
--- False at shape positions: root, keys and dimensions of a list, dictionary or matrix.
+-- False at shape positions: root, keys and dimensions of a list, tuple, dictionary or matrix.
 dataPositions :: forall a. Val a -> Val Boolean
 dataPositions (Val _ _ u) = Val (not container) Nothing (overChildren dataPositions (false <$ u))
    where
    container = case u of
       List _ -> true
+      Tuple _ -> true
       Dictionary _ -> true
       Matrix _ -> true
       _ -> false
@@ -152,6 +155,7 @@ unitSection (Val _ _ u) = Val one Nothing case u of
    Lit ℓ -> Lit ℓ
    Constr c vs -> Constr c (unitSection <$> vs)
    List vs -> List (unitSection <$> vs)
+   Tuple vs -> Tuple (unitSection <$> vs)
    Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
    Matrix (MatrixRep (vss × MatrixDim (i × _) × MatrixDim (j × _))) ->
       Matrix (MatrixRep (map (map unitSection) vss × MatrixDim (i × one) × MatrixDim (j × one)))
@@ -171,7 +175,7 @@ val :: forall a. Labelling (Val a) -> DerivWithDoc -> Val a
 val m (p × d) = let Val α _ u = get p m in Val α (flip get m <$> d) u
 
 unval :: forall a. DerivWithDoc -> Val a -> Labelling (Val a)
-unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable (Tuple <$> d <*> doc)))
+unval (p × d) (Val α doc u) = Map.fromFoldable (A.cons (p × Val α Nothing u) (A.fromFoldable ((×) <$> d <*> doc)))
 
 unvals :: forall a. Dict DerivWithDoc -> Dict (Val a) -> Labelling (Val a)
 unvals ps vs = Map.unions (values (intersectionWith unval ps vs))
@@ -353,15 +357,17 @@ field :: forall a. Int -> Val a -> Val a
 field i (Val _ _ (Constr _ vs)) = definitely' (vs L.!! i)
 field _ _ = error absurd
 
--- i-th element of a sequence: element of a list, character of a string, key of a dictionary.
+-- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary.
 element :: forall a. Int -> Val a -> Val a
 element i (Val _ _ (List vs)) = definitely' (vs A.!! i)
+element i (Val _ _ (Tuple vs)) = definitely' (vs A.!! i)
 element i (Val α _ (Lit (Str s))) = Val α Nothing (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
 element i (Val _ _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β Nothing (Lit (Str k))
 element _ _ = error absurd
 
 elementCount :: forall a. Val a -> Maybe Int
 elementCount (Val _ _ (List vs)) = Just (A.length vs)
+elementCount (Val _ _ (Tuple vs)) = Just (A.length vs)
 elementCount (Val _ _ (Lit (Str s))) = Just (S.length s)
 elementCount (Val _ _ (Dictionary (DictRep d))) = Just (size d)
 elementCount _ = Nothing
@@ -442,6 +448,7 @@ instance Apply BaseVal where
    apply (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
    apply (Constr c fes) (Constr c' es) = Constr (c ≜ c') (zipWith (<*>) fes es)
    apply (List fvs) (List vs) = List (A.zipWith (<*>) fvs vs)
+   apply (Tuple fvs) (Tuple vs) = Tuple (A.zipWith (<*>) fvs vs)
    apply (Dictionary fxvs) (Dictionary xvs) = Dictionary (fxvs <*> xvs)
    apply (Matrix fm) (Matrix m) = Matrix (fm <*> m)
    apply (Fun ff) (Fun f) = Fun (ff <*> f)
@@ -510,6 +517,7 @@ instance JoinSemilattice a => JoinSemilattice (BaseVal a) where
    join (Dictionary d) (Dictionary d') = Dictionary (d ∨ d')
    join (Constr c vs) (Constr c' us) = Constr (c ≜ c') (vs ∨ us)
    join (List vs) (List us) = List (vs ∨ us)
+   join (Tuple vs) (Tuple us) = Tuple (vs ∨ us)
    join (Matrix m) (Matrix m') = Matrix (m ∨ m')
    join (Fun φ) (Fun φ') = Fun (φ ∨ φ')
    join x y = (∨) <$> x <*> y
@@ -548,6 +556,7 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand (Dictionary d) (Dictionary d') = Dictionary (expand d d')
    expand (Constr c vs) (Constr c' us) = Constr (c ≜ c') (expand vs us)
    expand (List vs) (List us) = List (expand vs us)
+   expand (Tuple vs) (Tuple us) = Tuple (expand vs us)
    expand (Matrix m) (Matrix m') = Matrix (expand m m')
    expand (Fun φ) (Fun φ') = Fun (expand φ φ')
    expand _ _ = shapeMismatch unit

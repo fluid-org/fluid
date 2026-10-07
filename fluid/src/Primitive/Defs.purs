@@ -27,7 +27,6 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for)
 import Data.Tuple (fst, snd)
-import DataType (cPair)
 import DefiniteAssignment (Cxt, Entry(..))
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -148,7 +147,7 @@ dims =
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) =
-      pure (Val α Nothing (Constr cPair (Val β1 Nothing (Lit (Int i)) : Val β2 Nothing (Lit (Int j)) : Nil)))
+      pure (Val α Nothing (Tuple [ Val β1 Nothing (Lit (Int i)), Val β2 Nothing (Lit (Int j)) ]))
    depRel _ = Left "Matrix expected"
 
 matrixUpdate :: ForeignOp
@@ -156,8 +155,8 @@ matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
-      | c == cPair = pure (Val α Nothing (Matrix (matrixPut i j (const v) r)))
+   depRel (Val α _ (Matrix r) : Val _ _ (Tuple [ Val _ _ (Lit (Int i)), Val _ _ (Lit (Int j)) ]) : v : Nil) =
+      pure (Val α Nothing (Matrix (matrixPut i j (const v) r)))
    depRel _ = Left "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -191,7 +190,7 @@ split =
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) =
-      pure (Val (α + β) Nothing (Constr cPair (part (String.take n str) : part (String.drop n str) : Nil)))
+      pure (Val (α + β) Nothing (Tuple [ part (String.take n str), part (String.drop n str) ]))
       where
       part w = Val (α + β) Nothing (Lit (Str w))
    depRel _ = Left "Int and string expected"

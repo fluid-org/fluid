@@ -2,8 +2,8 @@ module Test.Specs.Dependence where
 
 import Prelude
 
-import App.Util.Selector (dict, dictKey, dictVal, listElement, list, matrixElement, select, select', (>.>))
-import DataType (cPair, cParagraph, f_fragments, f_fst, f_snd)
+import App.Util.Selector (dict, dictKey, dictVal, listElement, list, matrixElement, select, tupleElement, select', (>.>))
+import DataType (cParagraph, f_fragments)
 import Test.Util (DepSpec, Query(..), VertexSpec(..))
 
 dep_cases :: Array DepSpec
@@ -76,7 +76,7 @@ dep_cases =
      }
    , { file: "dependence/seq.fld"
      , queries:
-          [ Bwd Output (\arg -> arg cPair f_snd select) "1\n2\n⟪True⟫\n⸨4⸩\n(1, ⸨4⸩)"
+          [ Bwd Output (const (tupleElement 1 select)) "1\n2\n⟪True⟫\n⸨4⸩\n(1, ⸨4⸩)"
           , Fwd (Input "c") (\_ -> select) "1\n2\n⸨True⸩\n4\n⟪(⟪1⟫, ⟪4⟫)⟫"
           ]
      }
@@ -89,7 +89,7 @@ dep_cases =
      }
    , { file: "dependence/matrix/matmul.fld"
      , queries:
-          [ Bwd Output (\arg -> arg cPair f_fst $ matrixElement 0 0 select)
+          [ Bwd Output (const (tupleElement 0 (matrixElement 0 0 select)))
                """
                ⟪⸨1⸩, ⸨2⸩, ⸨3⸩,
                4, 5, 6⟫
@@ -186,7 +186,7 @@ dep_cases =
      }
    , { file: "dependence/output_not_source.fld"
      , queries:
-          [ Bwd Output (\arg -> arg cPair f_snd select) "⸨3⸩\n⸨5⸩\n(3, ⸨True⸩)"
+          [ Bwd Output (const (tupleElement 1 select)) "⸨3⸩\n⸨5⸩\n(3, ⸨True⸩)"
           ]
      }
    , { file: "dependence/array/lookup.fld"
