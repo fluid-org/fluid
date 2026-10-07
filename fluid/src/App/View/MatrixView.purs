@@ -13,7 +13,7 @@ import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int (toNumber)
 import Data.Tuple (fst, snd, uncurry)
 import Effect (Effect, foreachE)
-import Primitive (int, unpack')
+import Primitive (int, unpack', unpackVal)
 import Util ((!), (×))
 import Val (Array2, MatrixRep(..))
 
@@ -189,7 +189,7 @@ borderStyles None = "visibility: hidden;"
 
 matrixRep :: MatrixRep (SelStates 𝕊) -> IntMatrix
 matrixRep (MatrixRep (vss × i × j)) =
-   { cells: (unpack' int <$> _) <$> vss, i: fst (unpack' int i), j: fst (unpack' int j) }
+   { cells: (unpack' int <$> _) <$> vss, i: unpackVal int i, j: unpackVal int j }
 
 -- 1-based indices of selected cell; see data binding in .js
 type MatrixCellCoordinate = { i :: Int, j :: Int }
