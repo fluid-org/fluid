@@ -1,6 +1,4 @@
-def range1((m, n)):
-  return range(m, n + 1)
-def range2(((m1, n1), (m2, n2))):
-  return [(i1, i2) for i1 in range1((m1, m2)) for i2 in range1((n1, n2))]
+def range2((m1, n1), (m2, n2)):
+  return [(i1, i2) for i1 in range(m1, m2 + 1) for i2 in range(n1, n2 + 1)]
 
-range2(((0, 0), (1, 1)))
+[range2((0, 0), (1, 1)), len(range(2, 5)), range(1, 1) == range(2, 2), [i for i in range(3, 1)]]

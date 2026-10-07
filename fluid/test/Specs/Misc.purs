@@ -101,7 +101,7 @@ misc_cases =
    , { file: "piecewise_def.fld", fwd_expect: "3" }
    , { file: "prefix_op.fld", fwd_expect: "True" }
    , { file: "qualified_access.fld", fwd_expect: "1" }
-   , { file: "range.fld", fwd_expect: "[(0, 0), (0, 1), (1, 0), (1, 1)]" }
+   , { file: "range.fld", fwd_expect: "[[(0, 0), (0, 1), (1, 0), (1, 1)], 3, True, []]" }
    , { file: "record_lookup.fld", fwd_expect: "True" }
    , { file: "records.fld", fwd_expect: "{\"a\": 2, \"b\": 6, \"c\": 7, \"d\": [5], \"e\": 7}" }
    , { file: "reverse.fld", fwd_expect: "[2, 1]" }

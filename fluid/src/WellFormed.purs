@@ -26,7 +26,7 @@ import Data.Set (Set, unions)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DataType (cParagraph)
+import DataType (cParagraph, cRange)
 import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Dict as D
 import Util.Map (constMap)
@@ -484,6 +484,7 @@ wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
 instance WellFormed S.Pattern S.Pattern where
    wellFormed cxt (S.PConstr c ps xps) = do
       cls <- classOf cxt c
+      when (cls.name == cRange) $ throwError "range not permitted in a constructor pattern"
       let fs = fields cls
       when (null xps && length ps /= length fs)
          $ throwError

@@ -259,12 +259,6 @@ def zip_with(op, xs, ys):
 def zip(xs, ys):
   return zip_with(curry(identity), xs, ys)
 
-# Int -> Int -> List Int
-def range(n, m):
-  if n < m:
-    return [n] + range(n + 1, m)
-  return []
-
 def abs(x):
   return -x if x < 0 else x
 
