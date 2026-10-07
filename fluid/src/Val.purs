@@ -26,7 +26,6 @@ import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
 import Data.Profunctor.Strong (second)
 import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
-import Data.Tuple (Tuple)
 import Dict (Dict)
 import Dict as D
 import Effect.Aff.Class (class MonadAff)
