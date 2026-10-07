@@ -11,7 +11,7 @@ import Control.Monad.Reader (class MonadReader, ReaderT)
 import Control.Monad.State (class MonadState, StateT, gets)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
-import Data.Array (cons, fromFoldable, zipWith, (!!)) as A
+import Data.Array (cons, fromFoldable, length, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
@@ -22,6 +22,7 @@ import Data.List ((!!)) as L
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
+import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
 import Data.Profunctor.Strong (second)
 import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
@@ -36,9 +37,9 @@ import ModuleGraph (ModuleName)
 import Graph.Dep (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
 import Graph.Dep (Deriv, Pos) as Dep
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
-import Literal (Literal)
+import Literal (Literal(..))
 import Pretty.Doc (Doc, text)
-import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
@@ -342,9 +343,7 @@ newtype MatrixRep a = MatrixRep (Array2 (Val a) × MatrixDim a × MatrixDim a)
 type Array2 a = Array (Array a)
 
 matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
-matrixGet i j (MatrixRep (vss × _ × _)) = definitely "matrix indices within bounds" $ do
-   us <- vss A.!! i
-   us A.!! j
+matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
 
 matrixElement :: forall a. Int -> Int -> Val a -> Val a
 matrixElement i j (Val _ _ (Matrix r)) = matrixGet i j r
@@ -354,9 +353,18 @@ field :: forall a. Int -> Val a -> Val a
 field i (Val _ _ (Constr _ vs)) = definitely' (vs L.!! i)
 field _ _ = error absurd
 
-listElement :: forall a. Int -> Val a -> Val a
-listElement i (Val _ _ (List vs)) = definitely' (vs A.!! i)
-listElement _ _ = error absurd
+-- i-th element of a sequence: element of a list, character of a string, key of a dictionary.
+element :: forall a. Int -> Val a -> Val a
+element i (Val _ _ (List vs)) = definitely' (vs A.!! i)
+element i (Val α _ (Lit (Str s))) = Val α Nothing (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
+element i (Val _ _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β Nothing (Lit (Str k))
+element _ _ = error absurd
+
+elementCount :: forall a. Val a -> Maybe Int
+elementCount (Val _ _ (List vs)) = Just (A.length vs)
+elementCount (Val _ _ (Lit (Str s))) = Just (S.length s)
+elementCount (Val _ _ (Dictionary (DictRep d))) = Just (size d)
+elementCount _ = Nothing
 
 dictEntries :: forall a. Val a -> Dict (a × Val a)
 dictEntries (Val _ _ (Dictionary (DictRep d))) = d

@@ -144,7 +144,7 @@ whenever true = Just
 
 definitely :: forall a. String -> Maybe a -> a
 definitely _ (Just a) = a
-definitely msg Nothing = error ("definitely " <> msg)
+definitely msg Nothing = error msg
 
 definitely' :: forall a. Maybe a -> a
 definitely' = definitely absurd
@@ -221,7 +221,7 @@ class UnsafeArray (f :: Type -> Type) where
    unsafeUpdateAt :: forall a. Int -> a -> Endo (f a)
 
 withinBounds :: forall a. Maybe a -> a
-withinBounds = definitely "index within bounds"
+withinBounds = definitely "Index out of bounds"
 
 instance UnsafeArray Array where
    unsafeIndex xs i = withinBounds (xs !! i)
@@ -323,12 +323,12 @@ class NonEmpty (f :: Type -> Type) (g :: Type -> Type) | f -> g where
    tail :: forall a. g a -> f a
 
 instance NonEmpty List NonEmptyList where
-   nonEmpty = definitely "non-empty" <<< fromList
+   nonEmpty = definitely "Empty" <<< fromList
    init = NEL.init
    tail = NEL.tail
 
 instance NonEmpty Array NonEmptyArray where
-   nonEmpty = definitely "non-empty" <<< fromArray
+   nonEmpty = definitely "Empty" <<< fromArray
    init = NEA.init
    tail = NEA.tail
 

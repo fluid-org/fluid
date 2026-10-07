@@ -60,9 +60,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@codemirror/language@npm:^6.0.0, @codemirror/language@npm:^6.8.0":
-  version: 6.12.1
-  resolution: "@codemirror/language@npm:6.12.1"
+"@codemirror/language@npm:6.12.4, @codemirror/language@npm:^6.0.0, @codemirror/language@npm:^6.8.0":
+  version: 6.12.4
+  resolution: "@codemirror/language@npm:6.12.4"
   dependencies:
     "@codemirror/state": "npm:^6.0.0"
     "@codemirror/view": "npm:^6.23.0"
@@ -70,7 +70,7 @@ __metadata:
     "@lezer/highlight": "npm:^1.0.0"
     "@lezer/lr": "npm:^1.0.0"
     style-mod: "npm:^4.0.0"
-  checksum: 10c0/d37e526a839f571f767372c49e28649c4e79a539c73845a74117ee408ad31c29d60a32b5e1bad439637b1456d18154d672eb225e9b4482d3e00eca150461bc6a
+  checksum: 10c0/1b704a66f618d96eddf5937a41996e1ab42a70b5333a90b768e5539c25b7ab822e91a93e66b14d47a886cd73b3e3e22ddf77b8f11fb2f496ebd7ba010f3c4deb
   languageName: node
   linkType: hard
 
@@ -586,6 +586,7 @@ __metadata:
   dependencies:
     "@codemirror/commands": "npm:^6.8.1"
     "@codemirror/lang-python": "npm:^6.2.1"
+    "@codemirror/language": "npm:6.12.4"
     "@codemirror/state": "npm:^6.5.2"
     "@codemirror/theme-one-dark": "npm:^6.1.3"
     "@codemirror/view": "npm:^6.38.3"
@@ -1574,6 +1575,7 @@ __metadata:
   dependencies:
     "@codemirror/commands": "npm:^6.8.1"
     "@codemirror/lang-python": "npm:^6.2.1"
+    "@codemirror/language": "npm:6.12.4"
     "@codemirror/state": "npm:^6.5.2"
     "@codemirror/theme-one-dark": "npm:^6.1.3"
     "@codemirror/view": "npm:^6.38.3"
@@ -3690,6 +3692,7 @@ __metadata:
   dependencies:
     "@codemirror/commands": "npm:^6.8.1"
     "@codemirror/lang-python": "npm:^6.2.1"
+    "@codemirror/language": "npm:6.12.4"
     "@codemirror/state": "npm:^6.5.2"
     "@codemirror/theme-one-dark": "npm:^6.1.3"
     "@codemirror/view": "npm:^6.38.3"
@@ -4667,6 +4670,7 @@ __metadata:
   dependencies:
     "@codemirror/commands": "npm:^6.8.1"
     "@codemirror/lang-python": "npm:^6.2.1"
+    "@codemirror/language": "npm:6.12.4"
     "@codemirror/state": "npm:^6.5.2"
     "@codemirror/theme-one-dark": "npm:^6.1.3"
     "@codemirror/view": "npm:^6.38.3"

@@ -4,7 +4,10 @@ import Test.Util.Suite (TestSpec)
 
 comprehension_cases :: Array TestSpec
 comprehension_cases =
-   [ { file: "comprehension/list_comp_1.fld"
+   [ { file: "comprehension/list_comp_sequences.fld"
+     , fwd_expect: """[[], ["a", "b"], ["a", "b"]]"""
+     }
+   , { file: "comprehension/list_comp_1.fld"
      , fwd_expect: "[14, 12, 10, 13, 11, 9, 12, 10, 8]"
      }
    , { file: "comprehension/list_comp_2.fld"

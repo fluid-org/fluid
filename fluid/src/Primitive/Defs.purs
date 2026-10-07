@@ -38,12 +38,12 @@ import Graph.Dep (zeros)
 import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
-import Util (MayFail, type (+), type (×), definitely, definitely', error, singleton, throw, (×))
+import Util (MayFail, type (+), type (×), definitely', error, orElse, singleton, throw, (×))
 import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -101,14 +101,8 @@ len =
    ForeignOp ("len" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ u : Nil) = len_ u <#> \n -> Val α Nothing (Lit (Int n))
+   depRel (v@(Val α _ u) : Nil) = maybe (Left (typeMismatch u "Sized")) (\n -> Right (Val α Nothing (Lit (Int n)))) (elementCount v)
    depRel _ = Left "Single argument expected"
-
-   len_ :: forall a. BaseVal a -> MayFail Int
-   len_ (List vs) = pure (Array.length vs)
-   len_ (Dictionary (DictRep d)) = pure (Set.size (keys d))
-   len_ (Lit (Str s)) = pure (String.length s)
-   len_ u = Left (typeMismatch u "Sized")
 
 print_ :: ForeignOp
 print_ =
@@ -130,7 +124,7 @@ loadJson =
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
 loadJsonFile path = do
-   str <- definitely ("File \"" <> path <> "\" exists") <$> loadFileFromPath (File path)
+   str <- loadFileFromPath (File path) >>= orElse ("File not found: " <> path)
    case parseJson str of
       Left err -> throw ("Failed to parse JSON: " <> show err)
       Right json -> pure json

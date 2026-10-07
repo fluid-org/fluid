@@ -13,7 +13,7 @@ import Data.Unfoldable (class Unfoldable)
 import Effect.Exception (Error)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Util (type (×), Endo, assert, definitely, error, orElse, (×))
+import Util (type (×), Endo, assert, definitely, definitely', error, orElse, (×))
 import Util.Set (class Set, (∈), size)
 import Data.Map as M
 import Data.Set as DSet
@@ -84,13 +84,13 @@ disjointUnion_inv :: forall a k b. Ord k => Map a k b => Set k -> a -> a × a
 disjointUnion_inv ks m = filterKeys (_ ∈ ks) m × filterKeys (_ `not <<< (∈)` ks) m
 
 lookup' :: forall m a k b. MonadThrow Error m => Show k => Map a k b => k -> a -> m b
-lookup' k = lookup k >>> orElse (keyExists k)
+lookup' k = lookup k >>> orElse (keyNotFound k)
 
-keyExists :: forall k. Show k => k -> String
-keyExists k = "Key " <> show k <> " exists in map"
+keyNotFound :: forall k. Show k => k -> String
+keyNotFound k = "Key " <> show k <> " not found"
 
 get :: forall a k b. Show k => Map a k b => k -> a -> b
-get k = lookup k >>> definitely (keyExists k)
+get k = lookup k >>> definitely (keyNotFound k)
 
 findWithDefault :: forall k v. Ord k => v -> k -> M.Map k v -> v
 findWithDefault d k = maybe d identity <<< M.lookup k
@@ -110,11 +110,11 @@ alter f k m = case f (lookup k m) of
    Just v -> insert k v m
 
 update :: forall a k b. Show k => Map a k b => Endo b -> k -> Endo a
-update f k = alter (definitely (keyExists k) >>> f >>> Just) k
+update f k = alter (definitely (keyNotFound k) >>> f >>> Just) k
 
 insertWith :: forall a k b. Map a k b => (b -> Endo b) -> k -> b -> Endo a
 insertWith f k v = alter (Just <<< maybe v (flip f v)) k
 
 asMaplet :: forall a k b. Map a k b => a -> k × b
 asMaplet m =
-   assert (size m == 1) (definitely "singleton map" (head (toUnfoldable m)))
+   assert (size m == 1) (definitely' (head (toUnfoldable m)))
