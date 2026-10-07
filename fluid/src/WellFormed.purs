@@ -41,15 +41,15 @@ import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
 -- Predefined modules and program (under __main__) have no body
-type LoadedModule = { cxt :: Cxt, mod :: Maybe E.Module }
+type CheckedModule = { cxt :: Cxt, mod :: Maybe E.Module }
 
--- Modules loaded so far, over parsed modules.
-type LoadM = StateT (Map.Map ModuleName LoadedModule) (ReaderT (Map.Map ModuleName S.Module) (Either String))
+-- Modules checked so far, over parsed modules.
+type CheckM = StateT (Map.Map ModuleName CheckedModule) (ReaderT (Map.Map ModuleName S.Module) (Either String))
 
-runLoadM :: forall a. LoadM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> MayFail (a × Map.Map ModuleName LoadedModule)
-runLoadM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
+runCheckM :: forall a. CheckM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> MayFail (a × Map.Map ModuleName CheckedModule)
+runCheckM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
 
-checkProgram :: List S.Import -> S.Stmt -> LoadM (VarCxt × E.Stmt)
+checkProgram :: List S.Import -> S.Stmt -> CheckM (VarCxt × E.Stmt)
 checkProgram imports s = do
    _ × cxt_imp <- checkImports mainModule imports
    -- Unlike a module (checkStatements), the program may return: a top-level return yields
@@ -58,10 +58,10 @@ checkProgram imports s = do
    modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
    pure (Map.insert "__name__" true (erase cxt_imp) × s')
 
--- Member context of module q, loaded on demand as its import is checked; memoised. The recursion has no
+-- Member context of module q, checked on demand as its import is checked; memoised. The recursion has no
 -- cycle guard; it terminates because the dependency graph is acyclic.
-loadModule :: ModuleName -> LoadM Cxt
-loadModule q = get >>= \loaded -> case Map.lookup q loaded of
+checkModule :: ModuleName -> CheckM Cxt
+checkModule q = get >>= \checked -> case Map.lookup q checked of
    Just { cxt } -> pure cxt
    Nothing -> mapStateT (mapReaderT (lmap (_ <> "\nChecking module " <> dottedName q))) do
       mods <- lift ask
@@ -77,46 +77,46 @@ loadModule q = get >>= \loaded -> case Map.lookup q loaded of
       modify_ (Map.insert q { cxt, mod: Just mod' })
       pure cxt
 
-checkImports :: ModuleName -> List S.Import -> LoadM (Cxt × Cxt)
+checkImports :: ModuleName -> List S.Import -> CheckM (Cxt × Cxt)
 checkImports enclosing is = do
-   implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> loadModule q) Map.empty (implicitFor enclosing)
+   implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> checkModule q) Map.empty (implicitFor enclosing)
    importCxt <- foldM (\acc i -> (acc `extendCxtWith` _) <$> importBindings enclosing i) Map.empty is
    pure (importCxt × (implicitCxt `extendCxtWith` importCxt))
 
 -- Bindings contributed by one import of the enclosing module.
-importBindings :: ModuleName -> S.Import -> LoadM Cxt
+importBindings :: ModuleName -> S.Import -> CheckM Cxt
 importBindings enclosing (S.Import q Nothing) = do
    when (enclosing `properPrefixOf` q)
       $ throwError
       $ "Module " <> dottedName enclosing <> " cannot import its own descendant " <> dottedName q
-   θ <- ModLoaded q <$> loadModule q
-   Map.singleton (NEL.head q) <$> loadsTo Nothing q θ
+   θ <- ModChecked q <$> checkModule q
+   Map.singleton (NEL.head q) <$> checksTo Nothing q θ
 importBindings enclosing (S.Import q (Just xs)) = do
-   cxt <- loadModule q
-   _ <- loadsTo (Just enclosing) q (ModLoaded q cxt) -- loads q's ancestors; contributes no bindings
+   cxt <- checkModule q
+   _ <- checksTo (Just enclosing) q (ModChecked q cxt) -- checks q's ancestors; contributes no bindings
    importedMembers q cxt xs
 
--- Wrap the reference for module q in loaded references for its proper
--- prefixes, loading each; prefixes of the bound (the enclosing module,
+-- Wrap the reference for module q in checked references for its proper
+-- prefixes, checking each; prefixes of the bound (the enclosing module,
 -- for a from-import) are exempt.
-loadsTo :: Maybe ModuleName -> ModuleName -> Entry -> LoadM Entry
-loadsTo bound q θ = case NEL.fromList init of
+checksTo :: Maybe ModuleName -> ModuleName -> Entry -> CheckM Entry
+checksTo bound q θ = case NEL.fromList init of
    Nothing -> pure θ
    Just q'
       | maybe false (q' `prefixOf` _) bound -> pure θ
       | otherwise -> do
-           cxt <- loadModule q'
-           loadsTo bound q' (ModLoaded q' (cxt `extendCxtWith` Map.singleton x θ))
+           cxt <- checkModule q'
+           checksTo bound q' (ModChecked q' (cxt `extendCxtWith` Map.singleton x θ))
    where
    { init, last: x } = NEL.unsnoc q
 
 -- Bindings for names imported from module q with member context cxt.
-importedMembers :: ModuleName -> Cxt -> List Var -> LoadM Cxt
+importedMembers :: ModuleName -> Cxt -> List Var -> CheckM Cxt
 importedMembers _ _ Nil = pure Map.empty
 importedMembers q cxt (x : xs) = do
    othersCxt <- importedMembers q cxt xs
    case Map.lookup x cxt of
-      Just (Mod q') -> loadModule q' <#> \cxt' -> Map.insert x (ModLoaded q' cxt') othersCxt
+      Just (Mod q') -> checkModule q' <#> \cxt' -> Map.insert x (ModChecked q' cxt') othersCxt
       Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
       Just θ -> pure (Map.insert x θ othersCxt)
       Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
@@ -355,7 +355,7 @@ instance WellFormed S.Expr E.Expr where
       E.App (E.Var f) <$> traverse (wellFormed cxt) (e : e' : Nil)
    wellFormed cxt (S.Cond e1 e e2) = E.Cond <$> wellFormed cxt e1 <*> wellFormed cxt e <*> wellFormed cxt e2
    wellFormed cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
-      Just (ModLoaded q cxt') -> do
+      Just (ModChecked q cxt') -> do
          when (not (Map.member y cxt'))
             $ throwError
             $ "module " <> dottedName q <> " has no member " <> y
@@ -468,7 +468,7 @@ var cxt x = case Map.lookup x cxt of
    Just (VarStatus true) -> pure unit
    Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
    Just (Mod q) -> throwError $ "module " <> dottedName q <> " is not a value"
-   Just (ModLoaded q _) -> throwError $ "module " <> dottedName q <> " is not a value"
+   Just (ModChecked q _) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just (Class _) -> throwError $ "class " <> x <> " is not a value"
    Just PredefName -> throwError $ "predefined name " <> x <> " is not a value"
    Nothing -> throwError $ "Unbound name: " <> x

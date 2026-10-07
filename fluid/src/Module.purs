@@ -31,7 +31,7 @@ import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
 import DefiniteAssignment (Cxt, Entry(..), erase)
 import Primitive.Defs (predefined)
-import WellFormed (LoadM, LoadedModule, checkProgram, loadModule, mainModule, runLoadM)
+import WellFormed (CheckM, CheckedModule, checkProgram, checkModule, mainModule, runCheckM)
 import SExpr as S
 import Util (MayFail, type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
@@ -129,12 +129,12 @@ prepConfig
    -> m Config
 prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   { result: cxt_wf × e, modules: mods, loaded, classes } <- prepModules imports (checkProgram imports s)
+   { result: cxt_wf × e, modules: mods, checked, classes } <- prepModules imports (checkProgram imports s)
    withClasses classes do
       inputs <- loadTopLevel mods imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
       { modules } <- moduleStore
-      for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
+      for_ (Map.toUnfoldable checked :: List (ModuleName × CheckedModule)) \(q × { cxt, mod }) ->
          when (isJust mod) $ for_ (Map.lookup q modules >>= loadedEnv) \ρ_q ->
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": context and environment bind the same names")
@@ -149,12 +149,12 @@ prepModules
    => MonadReader FileCxt m
    => LoadFile m
    => List S.Import
-   -> LoadM a
-   -> m { result :: a, modules :: Map ModuleName Module, loaded :: Map ModuleName LoadedModule, classes :: ClassTable }
+   -> CheckM a
+   -> m { result :: a, modules :: Map ModuleName Module, checked :: Map ModuleName CheckedModule, classes :: ClassTable }
 prepModules imports action = do
    mods <- parseModules imports
-   result × loaded <- orThrow (runLoadM action mods (fst <$> predefined))
-   pure { result, modules: Map.mapMaybe _.mod loaded, loaded, classes: classTable (_.cxt <$> loaded) }
+   result × checked <- orThrow (runCheckM action mods (fst <$> predefined))
+   pure { result, modules: Map.mapMaybe _.mod checked, checked, classes: classTable (_.cxt <$> checked) }
 
 -- Module q checked as module, not program, with modules it imports.
 prepModule
@@ -165,7 +165,7 @@ prepModule
    => LoadFile m
    => ModuleName
    -> m { modules :: Map ModuleName Module, classes :: ClassTable }
-prepModule q = prepModules (S.Import q Nothing : Nil) (loadModule q) <#> \{ modules, classes } -> { modules, classes }
+prepModule q = prepModules (S.Import q Nothing : Nil) (checkModule q) <#> \{ modules, classes } -> { modules, classes }
 
 parseModules
    :: forall m

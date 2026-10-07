@@ -27,7 +27,7 @@ data Entry
    = VarStatus Boolean -- definite-assignment status
    | Class ClassEntry
    | Mod Name
-   | ModLoaded Name Cxt
+   | ModChecked Name Cxt
    | PredefName
 
 type Cxt = Map Var Entry
@@ -38,9 +38,9 @@ extendCxtWith :: Cxt -> Cxt -> Cxt
 extendCxtWith cxt cxt' = Map.unionWith extendEntry cxt cxt'
 
 extendEntry :: Entry -> Entry -> Entry
-extendEntry (ModLoaded q cxt) (ModLoaded q' cxt') | q == q' = ModLoaded q (cxt `extendCxtWith` cxt')
-extendEntry (Mod q) θ'@(ModLoaded q' _) | q == q' = θ'
-extendEntry θ@(ModLoaded q _) (Mod q') | q == q' = θ
+extendEntry (ModChecked q cxt) (ModChecked q' cxt') | q == q' = ModChecked q (cxt `extendCxtWith` cxt')
+extendEntry (Mod q) θ'@(ModChecked q' _) | q == q' = θ'
+extendEntry θ@(ModChecked q _) (Mod q') | q == q' = θ
 extendEntry _ θ' = θ'
 
 overrideVarCxt :: VarCxt -> VarCxt -> VarCxt
@@ -89,13 +89,13 @@ resolveName :: Cxt -> Name -> Maybe Entry
 resolveName cxt name = case NEL.fromList init of
    Nothing -> simpleEntry cxt x
    Just q -> case resolveName cxt q of
-      Just (ModLoaded _ cxt') -> simpleEntry cxt' x
+      Just (ModChecked _ cxt') -> simpleEntry cxt' x
       _ -> Nothing
    where
    { init, last: x } = NEL.unsnoc name
    simpleEntry g y = case Map.lookup y g of
       Just e@(VarStatus true) -> Just e
-      Just e@(ModLoaded _ _) -> Just e
+      Just e@(ModChecked _ _) -> Just e
       Just e@(Class _) -> Just e
       _ -> Nothing
 
