@@ -66,7 +66,7 @@ matches classes v (PAs p x) = first (map (_ `unionWith_never` maplet x v)) (matc
 matches classes v@{ val: Val _ _ u } p = second (via root v : _) case u, p of
    V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Constr c' vs, PConstr c ps Nil
-      | c `elem` ancestors (definitely' (Map.lookup (dottedName c') classes)) ->
+      | c `elem` ancestors (get (dottedName c') classes) ->
            matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (field i) v }) (take (length ps) vs)) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
       case traverse (\(x × p') -> lookup x xvs <#> \(_ × val) -> x × { val, inEdges: via (dictEntry x >>> snd) v } × p') xps of
@@ -200,7 +200,7 @@ eval inputs = case _ of
          deliver (inputs.ctrl <> via consumed v <> via sum v') { val: select v.val, inEdges: via select v }
    ModMember q x -> do
       { modules } <- moduleStore
-      let ρ_q = definitely' (Map.lookup q modules >>= loadedEnv)
+      let ρ_q = definitely' (loadedEnv (get q modules))
       p <- withMsg "Module member" $ lookup' x ρ_q
       gvalAt p >>= deliver inputs.ctrl
    App e es -> do
