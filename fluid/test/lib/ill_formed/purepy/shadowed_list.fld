@@ -1,3 +1,0 @@
-list = 5
-x: list[int] = [1]
-x

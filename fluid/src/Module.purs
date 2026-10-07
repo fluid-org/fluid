@@ -24,16 +24,16 @@ import Effect.Exception (Error)
 import Eval.Dep (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
-import File (class LoadFile, File(..), FileCxt(..), fluidExtension, hasDirectory, loadFile, loadFileMaybe, withClasses)
+import File (class LoadFile, File(..), FileCxt(..), hasDirectory, loadModuleSource, withClasses)
 import Graph.Dep (Deriv, deriv, emptyGraph)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
 import DefiniteAssignment (Cxt, Entry(..), erase)
 import Primitive.Defs (predefined)
-import WellFormed (LoadedModule, checkProgram, mainModule)
+import WellFormed (CheckM, CheckedModule, checkProgram, checkModule, mainModule, runCheckM)
 import SExpr as S
-import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
+import Util (MayFail, type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
 import Val (class HasModuleStore, ModuleState(..), moduleStore, modifyModuleStore, loadedEnv, Env(..), Val(..))
 import Val (BaseVal(..)) as V
@@ -43,7 +43,7 @@ type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTa
 isModule :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => ModuleName -> m Boolean
 isModule q = do
    FileCxt { fluidSrcPaths } <- ask
-   loadFileMaybe fluidSrcPaths (File (pathName q <> fluidExtension)) >>= case _ of
+   loadModuleSource fluidSrcPaths (pathName q) >>= case _ of
       Just _ -> pure true
       Nothing -> hasDirectory fluidSrcPaths (File (pathName q))
 
@@ -74,10 +74,10 @@ importDeps enclosing (S.Import q f) = do
    where
    keepModules = map catMaybes <<< traverse (\m' -> isModule m' <#> \b -> whenever b m')
 
-checkAcyclic :: DependencyGraph -> List ModuleName -> Either String Unit
+checkAcyclic :: DependencyGraph -> List ModuleName -> MayFail Unit
 checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
    where
-   go :: List ModuleName -> Set ModuleName -> ModuleName -> Either String (Set ModuleName)
+   go :: List ModuleName -> Set ModuleName -> ModuleName -> MayFail (Set ModuleName)
    go path done q
       | Set.member q done = pure done
       | q `elem` path = Left
@@ -129,18 +129,43 @@ prepConfig
    -> m Config
 prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   mods <- parseModules imports
-   { cxt: cxt_wf, s: e, loaded } <- orThrow (checkProgram mods (fst <$> predefined) imports s)
-   let classes = classTable (_.cxt <$> loaded)
+   { result: cxt_wf × e, modules: mods, checked, classes } <- prepModules imports (checkProgram imports s)
    withClasses classes do
-      inputs <- loadTopLevel (Map.mapMaybe _.mod loaded) imports
+      inputs <- loadTopLevel mods imports
       check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
       { modules } <- moduleStore
-      for_ (Map.toUnfoldable loaded :: List (ModuleName × LoadedModule)) \(q × { cxt, mod }) ->
+      for_ (Map.toUnfoldable checked :: List (ModuleName × CheckedModule)) \(q × { cxt, mod }) ->
          when (isJust mod) $ for_ (Map.lookup q modules >>= loadedEnv) \ρ_q ->
             check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
                ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
+
+-- Parse modules reachable through imports and run checking action over them, yielding its result, modules
+-- checked, and class table.
+prepModules
+   :: forall m a
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => List S.Import
+   -> CheckM a
+   -> m { result :: a, modules :: Map ModuleName Module, checked :: Map ModuleName CheckedModule, classes :: ClassTable }
+prepModules imports action = do
+   mods <- parseModules imports
+   result × checked <- orThrow (runCheckM action mods (fst <$> predefined))
+   pure { result, modules: Map.mapMaybe _.mod checked, checked, classes: classTable (_.cxt <$> checked) }
+
+-- Module q checked as module, not program, with modules it imports.
+prepModule
+   :: forall m
+    . MonadAff m
+   => MonadError Error m
+   => MonadReader FileCxt m
+   => LoadFile m
+   => ModuleName
+   -> m { modules :: Map ModuleName Module, classes :: ClassTable }
+prepModule q = prepModules (S.Import q Nothing : Nil) (checkModule q) <#> \{ modules, classes } -> { modules, classes }
 
 parseModules
    :: forall m
@@ -186,8 +211,7 @@ parseModules imports = do
    parseAndCollect :: ModuleName -> m (S.Module × List ModuleName × List ModuleName)
    parseAndCollect path = do
       FileCxt { fluidSrcPaths } <- ask
-      let file = File (pathName path <> fluidExtension)
-      loadFileMaybe fluidSrcPaths file >>= case _ of
+      loadModuleSource fluidSrcPaths (pathName path) >>= case _ of
          Just src -> do
             mod × _ <- throwLeft <#> withMsg ("Loading module " <> dottedName path) $ parseModule src
             deps <- case mod of S.Module is _ -> traverse (importDeps path) is
@@ -196,4 +220,4 @@ parseModules imports = do
             pure $ mod × edges × toLoad
          Nothing -> hasDirectory fluidSrcPaths (File (pathName path)) >>= case _ of
             true -> pure (S.Module Nil Nil × Nil × Nil)
-            false -> loadFile fluidSrcPaths file *> pure (S.Module Nil Nil × Nil × Nil)
+            false -> throw ("Module not found in any path: " <> dottedName path)

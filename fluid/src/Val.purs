@@ -19,7 +19,6 @@ import Data.Foldable (class Foldable, fold, foldMapDefaultL, foldl, foldrDefault
 import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!)) as L
-import Data.Either (Either)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
@@ -39,7 +38,7 @@ import Graph.Dep (Deriv, Pos) as Dep
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal)
 import Pretty.Doc (Doc, text)
-import Util (class IsEmpty, type (×), Endo, absurd, definitely, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
@@ -278,7 +277,7 @@ fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
 fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
-pureRel :: (forall a. DepSemiring a => List (Val a) -> Either String (Val a)) -> DepOp
+pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
 pureRel f ctrl vs = do
    _ <- orThrow (f (_.val <$> vs))
    fromRel (f >>> definitelyRight) ctrl vs

@@ -1,8 +1,0 @@
-from dataclasses import dataclass
-
-@dataclass
-class Point:
-  x: int
-  y: int
-
-return Point(1, 2, 3)

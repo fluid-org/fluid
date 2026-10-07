@@ -1,7 +1,0 @@
-def f(x):
-   a = x
-   x = 5
-   b = x
-   return a + b
-
-f(10)

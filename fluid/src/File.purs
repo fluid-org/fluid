@@ -16,12 +16,12 @@ import Data.Either (Either(..), either)
 import Data.HTTP.Method (Method(..))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.String (Pattern(..), stripPrefix)
-import Data.Foldable (any, find)
+import Data.String (Pattern(..), stripPrefix, stripSuffix)
+import Data.Foldable (any, find, foldr, oneOf)
 import Data.Traversable (for)
 import DataType (ClassTable)
 import Effect.Aff (Aff)
@@ -102,8 +102,18 @@ prependFolder (Folder folder) (File file) = File (folder <> "/" <> file)
 
 infixr 5 prependFolder as </>
 
-fluidExtension :: String
-fluidExtension = ".fld"
+-- Source files, Fluid's and Python's.
+extensions :: Array String
+extensions = [ ".fld", ".py" ]
+
+-- Files that may hold module body at given path, in order of preference.
+moduleFiles :: String -> Array File
+moduleFiles path = File <$> [ path <> ".fld", path <> ".py", path <> "/__init__.py" ]
+
+-- Module name of source file, as path.
+modulePath :: File -> Maybe String
+modulePath (File path) = oneOf ((\ext -> stripSuffix (Pattern ext) path) <$> extensions) <#> \p ->
+   fromMaybe p (stripSuffix (Pattern "/__init__") p)
 
 -- Lists the .fld files under a source root, relative to the root
 manifestFile :: File
@@ -130,6 +140,12 @@ loadFileMaybe folders file = do
 loadFile :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadReader FileCxt m => Array Folder -> File -> m String
 loadFile folders file =
    loadFileMaybe folders file >>= orElse ("File not found in any path: " <> show (searchPaths folders file))
+
+-- Source of module at given path.
+loadModuleSource :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadReader FileCxt m => Array Folder -> String -> m (Maybe String)
+loadModuleSource folders path = findMapM (loadFileMaybe folders) (moduleFiles path)
+   where
+   findMapM f = foldr (\x rest -> f x >>= maybe rest (pure <<< Just)) (pure Nothing)
 
 hasDirectory :: forall m. MonadReader FileCxt m => Array Folder -> File -> m Boolean
 hasDirectory folders (File dir) = ask <#> \(FileCxt { manifests }) ->

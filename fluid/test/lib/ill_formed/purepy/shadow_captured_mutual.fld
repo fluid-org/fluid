@@ -1,9 +1,0 @@
-def g():
-   return 0
-
-h = lambda: g()
-
-def g():
-   return 1
-
-h()

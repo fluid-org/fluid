@@ -1,5 +1,0 @@
-match Pair(1, 2):
-   case Pair:
-      pass
-   case Pair(x, _):
-      pass

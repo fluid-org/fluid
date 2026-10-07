@@ -1,5 +1,0 @@
-def f(x):
-   return x + 1
-   return x
-
-f(5)

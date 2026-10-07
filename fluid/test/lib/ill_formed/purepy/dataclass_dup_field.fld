@@ -1,8 +1,0 @@
-from dataclasses import dataclass
-
-@dataclass
-class Point:
-  x: int
-  x: int
-
-return 0

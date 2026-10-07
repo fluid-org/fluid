@@ -1,2 +1,0 @@
-f: Callable[[int], int] = lambda x: x + 1
-f(1)

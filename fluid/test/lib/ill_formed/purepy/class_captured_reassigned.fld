@@ -1,3 +1,0 @@
-mk = lambda x: Pair(x, x)
-Pair = 3
-mk(1)

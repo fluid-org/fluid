@@ -11,3 +11,4 @@ artifact/*.tar.gz
 website/
 lib/**/manifest.json
 test/**/manifest.json
+.spec/

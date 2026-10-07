@@ -25,7 +25,7 @@ import Lattice (class BoundedJoinSemilattice, bot, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (type (+), type (×), absurd, definitely', error, (×))
+import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixDim(..), MatrixRep(..), Val(..), pureRel)
@@ -34,10 +34,10 @@ import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), Ma
 -- work with required higher-rank polymorphism.
 type ToFrom d a =
    { pack :: d -> BaseVal a
-   , unpack :: BaseVal a -> Either String d
+   , unpack :: BaseVal a -> MayFail d
    }
 
-unpack :: forall d a. ToFrom d a -> Val a -> Either String (d × a)
+unpack :: forall d a. ToFrom d a -> Val a -> MayFail (d × a)
 unpack toFrom (Val α _ v) = toFrom.unpack v <#> (_ × α)
 
 -- For values whose shape is known.
@@ -147,7 +147,7 @@ unary id f =
    op :: ForeignOp'
    op = ForeignOp' { arity: 1, depOp: pureRel (unsafePartial depRel) }
 
-   depRel :: forall a. Partial => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Partial => List (Val a) -> MayFail (Val a)
    depRel (Val α _ v : Nil) = f.i.unpack v <#> \x -> Val α Nothing (f.o.pack (f.fwd x))
 
 class As a b where
@@ -165,13 +165,13 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
-binopRel :: forall a. Ord a => Semiring a => Binop -> Val a -> Val a -> Either String (Val a)
+binopRel :: forall a. Ord a => Semiring a => Binop -> Val a -> Val a -> MayFail (Val a)
 binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
 
-unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> Either String (Val a)
+unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> MayFail (Val a)
 unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) Nothing u
 
-binop :: forall a. Ord a => Binop -> Val a -> Val a -> Either String (BaseVal a × Set a)
+binop :: forall a. Ord a => Binop -> Val a -> Val a -> MayFail (BaseVal a × Set a)
 binop Eq v v'
    | bothNan v v' = pure (Lit (Bool false) × vertices2 v v')
    | otherwise = first (Lit <<< Bool) <$> eqOp v v'
@@ -216,30 +216,30 @@ binop op (Val α _ u) (Val β _ u') = do
       | isZero y = Set.singleton β
       | otherwise = both
 
-   operand :: BaseVal a -> Either String Operand
+   operand :: BaseVal a -> MayFail Operand
    operand (Lit (Int n)) = pure (Left n)
    operand (Lit (Float r)) = pure (Right (Left r))
    operand (Lit (Str w)) = pure (Right (Right w))
    operand u'' = Left (typeMismatch u'' "int, float or str")
 
-   float :: Operand -> Either String Number
+   float :: Operand -> MayFail Number
    float (Left n) = pure (toNumber n)
    float (Right (Left r)) = pure r
    float (Right (Right w)) = Left (typeMismatch (Lit (Str w)) "int or float")
 
-   compare :: (forall b. Ord b => b -> b -> Boolean) -> Operand -> Operand -> Either String (BaseVal a × Set a)
+   compare :: (forall b. Ord b => b -> b -> Boolean) -> Operand -> Operand -> MayFail (BaseVal a × Set a)
    compare f (Right (Right w)) (Right (Right w')) = pure (Lit (Bool (f w w')) × both)
    compare f (Left m) (Left n) = pure (Lit (Bool (f m n)) × both)
    compare f x y = (\r r' -> Lit (Bool (f r r')) × both) <$> float x <*> float y
 
-   arith :: (Int -> Int -> Int) -> (Number -> Number -> Number) -> Operand -> Operand -> Either String (BaseVal a)
+   arith :: (Int -> Int -> Int) -> (Number -> Number -> Number) -> Operand -> Operand -> MayFail (BaseVal a)
    arith f _ (Left m) (Left n) = pure (Lit (Int (f m n)))
    arith _ g x y = Lit <<< Float <$> (g <$> float x <*> float y)
 
    floorDiv :: Int -> Int -> Int
    floorDiv m n = Int.floor (toNumber m / toNumber n)
 
-   nonZero :: Operand -> Either String Unit
+   nonZero :: Operand -> MayFail Unit
    nonZero y = when (isZero y) (Left "ZeroDivisionError: division by zero")
 
    isZero :: Operand -> Boolean
@@ -266,7 +266,7 @@ repeatList vs α n β = List (A.concat (replicate n vs)) × deps
    where
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
-unop :: forall a. Ord a => Unop -> Val a -> Either String (BaseVal a × Set a)
+unop :: forall a. Ord a => Unop -> Val a -> MayFail (BaseVal a × Set a)
 unop Not (Val α _ (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
 unop Not (Val _ _ u) = Left (typeMismatch u "bool")
 unop Neg (Val α _ (Lit (Int n))) = pure (Lit (Int (negate n)) × Set.singleton α)
@@ -275,7 +275,7 @@ unop Pos (Val α _ u@(Lit (Int _))) = pure (u × Set.singleton α)
 unop Pos (Val α _ u@(Lit (Float _))) = pure (u × Set.singleton α)
 unop _ (Val _ _ u) = Left (typeMismatch u "int or float")
 
-eqOp :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
+eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp (Val α _ u) (Val β _ u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r || N.isNaN r' -> Left "Cannot compare nan"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
@@ -291,7 +291,7 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
    where
    both = Set.fromFoldable [ α, β ]
 
-   eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> Either String (Boolean × Set a)
+   eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> MayFail (Boolean × Set a)
    eqDict d d' =
       if keys d == keys d' then
          eqElems αs (snd <$> values d) (snd <<< definitely' <<< flip lookup d' <$> Set.toUnfoldable (keys d))
@@ -302,7 +302,7 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
    keyVertices :: Dict (a × Val a) -> Set a
    keyVertices = values >>> map fst >>> Set.fromFoldable
 
-   eqMatrix :: MatrixRep a -> MatrixRep a -> Either String (Boolean × Set a)
+   eqMatrix :: MatrixRep a -> MatrixRep a -> MayFail (Boolean × Set a)
    eqMatrix
       (MatrixRep (vss × MatrixDim (i × γ) × MatrixDim (j × δ)))
       (MatrixRep (vss' × MatrixDim (i' × γ') × MatrixDim (j' × δ'))) =
@@ -324,14 +324,14 @@ eqOp (Val α _ u) (Val β _ u') = case u, u' of
       None, None -> true
       _, _ -> false
 
-eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> Either String (Boolean × Set a)
+eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> MayFail (Boolean × Set a)
 eqElems αs Nil Nil = pure (true × αs)
 eqElems αs (v : vs) (v' : vs') = do
    b × βs <- eqOp v v'
    if b then eqElems (αs ∪ βs) vs vs' else pure (false × (αs ∪ βs))
 eqElems αs _ _ = pure (false × αs)
 
-contains :: forall a. Ord a => Val a -> Val a -> Either String (Boolean × Set a)
+contains :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 contains (Val α _ u') v@(Val β _ u) = case u', u of
    List vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
@@ -340,7 +340,7 @@ contains (Val α _ u') v@(Val β _ u) = case u', u of
    Lit (Str _), _ -> Left (typeMismatch u "str")
    _, _ -> Left (typeMismatch u' "list, dict or str")
    where
-   elem :: List (Val a) -> Either String (Boolean × Set a)
+   elem :: List (Val a) -> MayFail (Boolean × Set a)
    elem Nil = pure (false × Set.empty)
    elem (v' : vs) = do
       b × βs <- eqOp v v'

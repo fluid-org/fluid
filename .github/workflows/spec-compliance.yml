@@ -1,0 +1,38 @@
+name: spec-compliance
+
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  spec-compliance:
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+    - name: cache PureScript dependencies
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-spago-${{ hashFiles('**/*.dhall') }}
+        path: fluid/.spago
+    - name: hash source file list
+      id: sources
+      run: echo "hash=$(git ls-files fluid/src fluid/test fluid/config | sort | shasum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - name: cache compiler output
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-output-${{ hashFiles('**/*.dhall') }}-${{ steps.sources.outputs.hash }}
+        path: fluid/output
+    - name: spec-compliance
+      run: |
+        yarn install
+        yarn workspace @fluid-org/fluid build-prod
+        yarn workspace @fluid-org/fluid spec-compliance

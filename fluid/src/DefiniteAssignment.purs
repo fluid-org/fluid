@@ -4,7 +4,6 @@ import Prelude
 
 import Bind (Name, Var, dottedName)
 import Control.Monad.Error.Class (throwError)
-import Data.Either (Either)
 import Data.List.NonEmpty as NEL
 import Data.Foldable (foldl, lookup)
 import Data.List (List(..), elemIndex, index, length, (:))
@@ -13,7 +12,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
-import Util (type (×), definitely')
+import Util (MayFail, type (×), definitely')
 
 type VarCxt = Map Var Boolean
 
@@ -28,7 +27,7 @@ data Entry
    = VarStatus Boolean -- definite-assignment status
    | Class ClassEntry
    | Mod Name
-   | ModLoaded Name Cxt
+   | ModChecked Name Cxt
    | PredefName
 
 type Cxt = Map Var Entry
@@ -39,9 +38,9 @@ extendCxtWith :: Cxt -> Cxt -> Cxt
 extendCxtWith cxt cxt' = Map.unionWith extendEntry cxt cxt'
 
 extendEntry :: Entry -> Entry -> Entry
-extendEntry (ModLoaded q cxt) (ModLoaded q' cxt') | q == q' = ModLoaded q (cxt `extendCxtWith` cxt')
-extendEntry (Mod q) θ'@(ModLoaded q' _) | q == q' = θ'
-extendEntry θ@(ModLoaded q _) (Mod q') | q == q' = θ
+extendEntry (ModChecked q cxt) (ModChecked q' cxt') | q == q' = ModChecked q (cxt `extendCxtWith` cxt')
+extendEntry (Mod q) θ'@(ModChecked q' _) | q == q' = θ'
+extendEntry θ@(ModChecked q _) (Mod q') | q == q' = θ
 extendEntry _ θ' = θ'
 
 overrideVarCxt :: VarCxt -> VarCxt -> VarCxt
@@ -78,25 +77,25 @@ classFor cxt c = case Map.lookup c cxt of
    Just (Class cls) -> Just cls
    _ -> Nothing
 
-classOf :: Cxt -> Name -> Either String ClassEntry
+classOf :: Cxt -> Name -> MayFail ClassEntry
 classOf cxt c = case resolveName cxt c of
    Just (Class cls) -> pure cls
    _ -> throwError $ "Unknown dataclass: " <> dottedName c
 
-className :: Cxt -> Name -> Either String Name
+className :: Cxt -> Name -> MayFail Name
 className cxt c = _.name <$> classOf cxt c
 
 resolveName :: Cxt -> Name -> Maybe Entry
 resolveName cxt name = case NEL.fromList init of
    Nothing -> simpleEntry cxt x
    Just q -> case resolveName cxt q of
-      Just (ModLoaded _ cxt') -> simpleEntry cxt' x
+      Just (ModChecked _ cxt') -> simpleEntry cxt' x
       _ -> Nothing
    where
    { init, last: x } = NEL.unsnoc name
    simpleEntry g y = case Map.lookup y g of
       Just e@(VarStatus true) -> Just e
-      Just e@(ModLoaded _ _) -> Just e
+      Just e@(ModChecked _ _) -> Just e
       Just e@(Class _) -> Just e
       _ -> Nothing
 

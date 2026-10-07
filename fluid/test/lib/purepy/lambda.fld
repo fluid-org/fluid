@@ -1,2 +1,0 @@
-x = lambda a: a + 10
-x(5)
