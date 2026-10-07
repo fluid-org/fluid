@@ -34,7 +34,7 @@ import Options.Applicative.Builder (info)
 import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
 import SExpr (Import(..)) as S
-import Util (MayFail, type (×), Endo, definitely, (×))
+import Util (MayFail, type (×), Endo, orElse, (×))
 import Graph.Dep (valAt)
 import Val (Val)
 
@@ -172,7 +172,8 @@ check :: Array Folder -> Boolean -> String -> Aff (Int × Maybe String)
 check fluidSrcPaths asModule fileName =
    runNodeT emptyFileCxt $ withRoots fluidSrcPaths do
       fluidSrc <- loadFile fluidSrcPaths (File fileName)
-      if asModule then
+      if asModule then do
+         q <- moduleName
          stages (void (parseModule fluidSrc)) (prepModule q) \{ modules, classes } ->
             withClasses classes (void (loadTopLevel modules (S.Import q Nothing : Nil)))
       else
@@ -180,7 +181,9 @@ check fluidSrcPaths asModule fileName =
             void (depEval inputs classes e)
    where
    -- module name of file, relative to its root
-   q = definitely "Empty module name" (NEL.fromFoldable (split (Pattern "/") (definitely ("Not a source file: " <> fileName) (modulePath (File fileName)))))
+   moduleName = do
+      path <- modulePath (File fileName) # orElse ("Not a source file: " <> fileName)
+      NEL.fromFoldable (split (Pattern "/") path) # orElse "Empty module name"
 
 -- Parse, check, run; stop at first failure with its code and first line of its message.
 stages :: forall a. MayFail Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)

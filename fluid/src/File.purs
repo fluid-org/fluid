@@ -28,7 +28,7 @@ import Effect.Aff (Aff)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class.Console (log)
 import Effect.Exception (Error)
-import Util (type (×), (×), debug, definitely, orElse, throw, throwLeft)
+import Util (type (×), (×), debug, definitely', orElse, throw, throwLeft)
 import Util.Set ((∈))
 
 -- Files under each source root
@@ -128,7 +128,7 @@ withRoots roots m = do
    local (\(FileCxt cxt) -> FileCxt cxt { fluidSrcPaths = cxt.fluidSrcPaths <> roots, manifests = Map.union cxt.manifests manifests }) m
 
 manifest :: Folder -> Manifests -> Set File
-manifest root = Map.lookup root >>> definitely ("No manifest for " <> show root)
+manifest root = Map.lookup root >>> definitely'
 
 loadFileMaybe :: forall m. LoadFile m => MonadError Error m => MonadAff m => MonadReader FileCxt m => Array Folder -> File -> m (Maybe String)
 loadFileMaybe folders file = do

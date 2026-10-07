@@ -39,7 +39,7 @@ import Graph.Dep (Deriv, Pos) as Dep
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal(..))
 import Pretty.Doc (Doc, text)
-import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
@@ -343,7 +343,7 @@ newtype MatrixRep a = MatrixRep (Array2 (Val a) × MatrixDim a × MatrixDim a)
 type Array2 a = Array (Array a)
 
 matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
-matrixGet i j (MatrixRep (vss × _ × _)) = definitely "Matrix indices out of bounds" $ do
+matrixGet i j (MatrixRep (vss × _ × _)) = definitely' $ do
    us <- vss A.!! i
    us A.!! j
 

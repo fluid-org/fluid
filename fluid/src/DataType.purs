@@ -20,7 +20,7 @@ import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String (Pattern(..), split)
 import DefiniteAssignment (ClassEntry, fields)
 import Effect.Exception (Error)
-import Util (definitely, throw)
+import Util (definitely', throw)
 
 type FieldName = String
 type Ctr = String -- newtype would require more general Dict keys
@@ -59,7 +59,7 @@ checkArity c n classes = do
 type FieldIndex = Name -> FieldName -> Int
 
 fieldIndex :: ClassTable -> Name -> FieldName -> Int
-fieldIndex classes c field = definitely ("Field " <> field <> " not declared for class " <> dottedName c) do
+fieldIndex classes c field = definitely' do
    fs <- fieldsOf classes (dottedName c)
    elemIndex field fs
 

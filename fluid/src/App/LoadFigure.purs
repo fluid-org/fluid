@@ -22,7 +22,7 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Module.Web (runWebT)
-import Util (definitely, definitely', error, (×))
+import Util (error, orElse, (×))
 
 -- TODO: remove this extra type
 type JsonOptions =
@@ -47,8 +47,8 @@ optionsFromJson spec@{ inputs, query, ignoreInputs, linking, rowFilter } =
 
 loadFigure :: Json -> String -> String -> Effect Unit
 loadFigure jsonSpec divId srcFile = launchAff_ do
-   fluidSrc <- loadFileFromPath (File srcFile)
-   liftEffect $ loadFigureSrc jsonSpec divId (definitely' fluidSrc)
+   fluidSrc <- loadFileFromPath (File srcFile) >>= orElse ("File not found: " <> srcFile)
+   liftEffect $ loadFigureSrc jsonSpec divId fluidSrc
 
 loadFigureSrc :: Json -> String -> String -> Effect Unit
 loadFigureSrc options divId fluidSrc = flip runAff_ load case _ of
@@ -69,11 +69,9 @@ foreign import figureFailed :: String -> String -> Effect Unit
 
 loadCode :: String -> Effect Unit
 loadCode file = launchAff_ do
-   fluidSrc <- loadFileFromPath (File file)
-   liftEffect $ drawFile (File filename × definitely ("loadCode: File not found: " <> file) fluidSrc)
-   where
-   filename :: String
-   filename = definitely ("loadCode: Filename cannot be empty: " <> file) do
+   fluidSrc <- loadFileFromPath (File file) >>= orElse ("File not found: " <> file)
+   filename <- orElse ("Empty file name: " <> file) do
       splitPath <- last (split (Pattern "/") file)
       filename_ <- head (split (Pattern ".") splitPath)
       if filename_ == "" then Nothing else pure filename_
+   liftEffect $ drawFile (File filename × fluidSrc)

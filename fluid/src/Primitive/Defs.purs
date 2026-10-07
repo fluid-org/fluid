@@ -38,7 +38,7 @@ import Graph.Dep (zeros)
 import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
-import Util (MayFail, type (+), type (×), definitely, definitely', error, singleton, throw, (×))
+import Util (MayFail, type (+), type (×), definitely', error, orElse, singleton, throw, (×))
 import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
@@ -124,7 +124,7 @@ loadJson =
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
 loadJsonFile path = do
-   str <- definitely ("File not found: " <> path) <$> loadFileFromPath (File path)
+   str <- loadFileFromPath (File path) >>= orElse ("File not found: " <> path)
    case parseJson str of
       Left err -> throw ("Failed to parse JSON: " <> show err)
       Right json -> pure json

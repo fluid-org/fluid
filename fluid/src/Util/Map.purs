@@ -13,7 +13,7 @@ import Data.Unfoldable (class Unfoldable)
 import Effect.Exception (Error)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Util (type (×), Endo, assert, definitely, error, orElse, (×))
+import Util (type (×), Endo, assert, definitely, definitely', error, orElse, (×))
 import Util.Set (class Set, (∈), size)
 import Data.Map as M
 import Data.Set as DSet
@@ -117,4 +117,4 @@ insertWith f k v = alter (Just <<< maybe v (flip f v)) k
 
 asMaplet :: forall a k b. Map a k b => a -> k × b
 asMaplet m =
-   assert (size m == 1) (definitely "Not a singleton map" (head (toUnfoldable m)))
+   assert (size m == 1) (definitely' (head (toUnfoldable m)))

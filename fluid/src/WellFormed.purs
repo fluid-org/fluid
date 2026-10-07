@@ -36,7 +36,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Q
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Type as T
-import Util (MayFail, type (×), checkDistinct, definitely, nonEmpty, singleton, whenever, (×), (∩))
+import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, whenever, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -419,7 +419,7 @@ positionaliseKw cls c n xbs = do
    let provided = fst <$> xbs
    when (sort provided /= sort remaining) $ throwError $
       "Class " <> NEL.last c <> " keyword fields mismatch: expected " <> show remaining <> ", got " <> show provided
-   pure $ remaining <#> \f -> definitely ("No keyword argument for field " <> f) (snd <$> find (\(k ↦ _) -> k == f) xbs)
+   pure $ remaining <#> \f -> definitely' (snd <$> find (\(k ↦ _) -> k == f) xbs)
 
 -- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
 param :: Int -> Var
