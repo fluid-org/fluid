@@ -26,7 +26,8 @@ import Pretty (prettyP)
 import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), pureRel, root)
+import DataType (cRange)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elementCount, pureRel, root)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -280,6 +281,8 @@ eqOp (Val α u) (Val β u') = case u, u' of
    Lit (Int _), Lit (Bool _) -> undefined
    Lit (Float _), Lit (Bool _) -> undefined
    Fun _, Fun _ -> undefined
+   Constr c (v : Nil), Constr d (v' : Nil)
+      | c == cRange && d == cRange -> pure ((elementCount (Val α u) == elementCount (Val β u')) × (both ∪ vertices2 v v'))
    Constr c vs, Constr d ws
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)

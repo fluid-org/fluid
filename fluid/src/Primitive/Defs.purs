@@ -27,6 +27,7 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for)
 import Data.Tuple (fst, snd)
+import DataType (cRange)
 import DefiniteAssignment (Cxt, Entry(..))
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -51,6 +52,7 @@ extern (ForeignOp (id × φ)) =
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
    [ predefinedModule builtins ("None" : "object" : "bool" : "int" : "float" : "str" : "list" : "dict" : "tuple" : Nil)
+        [ "range" × Class { cxt: M.empty, name: cRange, base: Nothing, fields: "stop" : Nil } ]
         [ extern print_
         , extern len
         -- Fluid-only members, without spec counterpart
@@ -73,7 +75,7 @@ predefined = M.fromFoldable
         , extern quot
         , extern rem
         ]
-   , predefinedModule math Nil
+   , predefinedModule math Nil []
         [ "pi" × Val bot (Lit (Float N.pi))
         , "e" × Val bot (Lit (Float N.e))
         , unary "sqrt" { i: intOrNumber, o: number, fwd: (toNumber >>> N.sqrt) `union1` N.sqrt }
@@ -85,15 +87,15 @@ predefined = M.fromFoldable
         , unary "floor" { i: intOrNumber, o: int, fwd: identity `union1` floor }
         , unary "ceil" { i: intOrNumber, o: int, fwd: identity `union1` ceil }
         ]
-   , predefinedModule typing ("Callable" : "Literal" : "Never" : "Sized" : Nil) []
-   , predefinedModule dataclasses ("dataclass" : Nil) []
+   , predefinedModule typing ("Callable" : "Literal" : "Never" : "Sized" : Nil) [] []
+   , predefinedModule dataclasses ("dataclass" : Nil) [] []
    ]
    where
-   predefinedModule :: ModuleName -> List Var -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
-   predefinedModule q names members = q × (cxt × ρ)
+   predefinedModule :: ModuleName -> List Var -> Array (Bind Entry) -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
+   predefinedModule q names classes members = q × (cxt × ρ)
       where
       ρ = wrap (D.fromFoldable (Array.cons ("__name__" × Val bot (Lit (Str (dottedName q)))) members))
-      cxt = M.union (constMap PredefName (Set.fromFoldable names)) (constMap (VarStatus true) (keys ρ))
+      cxt = M.unions [ constMap PredefName (Set.fromFoldable names), M.fromFoldable classes, constMap (VarStatus true) (keys ρ) ]
 
 len :: ForeignOp
 len =

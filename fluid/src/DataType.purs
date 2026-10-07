@@ -3,7 +3,7 @@ module DataType where
 import Prelude
 
 import Bind (Name, Var, dottedName, qual)
-import ModuleGraph (prelude)
+import ModuleGraph (builtins, prelude)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except.Trans (ExceptT)
 import Control.Monad.Reader.Trans (ReaderT)
@@ -84,6 +84,7 @@ cTickLabels = qual view "TickLabels" :: Name
 cSegment = qual view "Segment" :: Name
 cStackedBar = qual view "StackedBar" :: Name
 cNonEmpty = qual prelude "NonEmpty" :: Name -- Tree
+cRange = qual builtins "range" :: Name
 cText = qual view "Text" :: Name
 cLink = qual view "Link" :: Name
 -- Field names used internally by rendering layer.

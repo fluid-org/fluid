@@ -3,7 +3,7 @@ module Val where
 import Prelude hiding (absurd, append)
 
 import Bind (Name, Var)
-import DataType (class HasClasses)
+import DataType (class HasClasses, cRange)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except (ExceptT)
@@ -359,17 +359,19 @@ field :: forall a. Int -> Val a -> Val a
 field i (Val _ (Constr _ vs)) = definitely' (vs L.!! i)
 field _ _ = error absurd
 
--- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary.
+-- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary, integer of a range.
 element :: forall a. Int -> Val a -> Val a
 element i (Val _ (List vs)) = definitely' (vs A.!! i)
 element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
 element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
 element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
+element i (Val _ (Constr c (Val β _ : Nil))) | c == cRange = Val β (Lit (Int i))
 element _ _ = error absurd
 
 elementCount :: forall a. Val a -> Maybe Int
 elementCount (Val _ (List vs)) = Just (A.length vs)
 elementCount (Val _ (Tuple vs)) = Just (A.length vs)
+elementCount (Val _ (Constr c (Val _ (Lit (Int n)) : Nil))) | c == cRange = Just (max 0 n)
 elementCount (Val _ (Lit (Str s))) = Just (S.length s)
 elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
 elementCount _ = Nothing
