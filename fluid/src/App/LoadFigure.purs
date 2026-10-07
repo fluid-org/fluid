@@ -3,7 +3,7 @@ module App.LoadFigure where
 import Prelude hiding (absurd)
 
 import App.Fig (drawFig, drawFile, loadFig)
-import App.Util.Selector (dictVal, eachElement, envVal, select, none, (>.>))
+import App.Util.Selector (dictVal, eachElement, envVal, valOf, select, none, (>.>))
 import App.View.Util (Filter, Options)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson)
@@ -40,7 +40,7 @@ optionsFromJson spec@{ inputs, query, ignoreInputs, linking, rowFilter } =
    , inputs
    , query
    , ignoreInputs: foldr (>.>) none $ (maybe [] Object.toUnfoldable ignoreInputs) <#> \(x × ks) ->
-        envVal x (eachElement (foldr (>.>) none (ks <#> \k -> dictVal k select)))
+        envVal x (valOf (eachElement (foldr (>.>) none (ks <#> \k -> dictVal k select))))
    , linking
    , rowFilter
    }

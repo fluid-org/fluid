@@ -1,6 +1,6 @@
 module Test.Specs.LinkedOutputs where
 
-import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, none, topα, tupleElement, (>.>), select, select')
+import App.Util.Selector (barSegment, dictVal, eachElement, envVal, valOf, listElement, matrixDims, matrixElement, none, topα, tupleElement, (>.>), select, select')
 import Data.Maybe (Maybe(..))
 import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPoint, cScatterPlot, f_plots, f_points, f_stackedBars, f_views, f_y)
 import Test.Util (at, fluidSrcPaths)
@@ -12,7 +12,7 @@ linkedOutputs_spec1 =
         { fluidSrcPaths
         , inputs: [ "renewables" ]
         , query: false
-        , ignoreInputs: envVal "renewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
+        , ignoreInputs: envVal "renewables" (valOf (eachElement (dictVal "year" select >.> dictVal "country" select)))
         , linking: true
         , rowFilter: Nothing
         }
@@ -39,7 +39,7 @@ linkedOutputs_spec2 =
         { fluidSrcPaths
         , inputs: [ "nonRenewables" ]
         , query: false
-        , ignoreInputs: envVal "nonRenewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
+        , ignoreInputs: envVal "nonRenewables" (valOf (eachElement (dictVal "year" select >.> dictVal "country" select)))
         , linking: true
         , rowFilter: Nothing
         }

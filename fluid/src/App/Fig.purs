@@ -4,7 +4,7 @@ import Prelude hiding (absurd, compare)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
-import App.Util.Selector (constrArg, inputVal, sel𝔹, ViewSetter)
+import App.Util.Selector (constrArg, envVal, sel𝔹, ViewSetter)
 import App.View (view')
 import App.View.DocView (drawView)
 import App.View.Util (Direction(..), Fig, Options, HTMLId, QueryResult, View)
@@ -67,7 +67,7 @@ setOutputView δvw fig = fig
 selectInput :: Var -> Selector ValWithDoc -> Endo Fig
 selectInput x δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
    where
-   ρ' × selType = inputVal x δv ρ
+   ρ' × selType = envVal x δv ρ
    v' × dir' = case selType of
       Persistent | dir.persistent /= LinkedInputs -> botOf v × dir { persistent = LinkedInputs }
       Transient | dir.transient /= LinkedInputs -> v × dir { transient = LinkedInputs }

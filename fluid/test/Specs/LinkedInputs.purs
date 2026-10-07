@@ -1,7 +1,7 @@
 module Test.Specs.LinkedInputs where
 
 import App.Util (Selector)
-import App.Util.Selector (dictVal, eachElement, envVal, listElement, select, none, (>.>))
+import App.Util.Selector (dictVal, eachElement, envVal, valOf, listElement, select, none, (>.>))
 import Bind ((↦))
 import Data.Maybe (Maybe(..))
 import Test.Util (fluidSrcPaths)
@@ -17,18 +17,20 @@ linkedInputs_spec3 =
         { fluidSrcPaths
         , inputs: [ "renewables", "nonRenewables" ]
         , query: false
-        , ignoreInputs: envVal "renewables" yearAndCountry >.> envVal "nonRenewables" yearAndCountry
+        , ignoreInputs: envVal "renewables" (valOf yearAndCountry) >.> envVal "nonRenewables" (valOf yearAndCountry)
         , linking: true
         , rowFilter: Nothing
         }
    , δ_in: "nonRenewables" ↦ listElement 51 (dictVal "coalCap" select)
    , in_expect:
-        envVal "nonRenewables" (listElement 51 (dictVal "coalCap" select >.> dictVal "gasCap" select >.> dictVal "nuclearCap" select >.> dictVal "petrolCap" select)) >.>
+        envVal "nonRenewables" (valOf (listElement 51 (dictVal "coalCap" select >.> dictVal "gasCap" select >.> dictVal "nuclearCap" select >.> dictVal "petrolCap" select))) >.>
            envVal "renewables"
-              ( listElement 204 (dictVal "capacity" select)
-                   >.> listElement 205 (dictVal "capacity" select)
-                   >.> listElement 206 (dictVal "capacity" select)
-                   >.> listElement 207 (dictVal "capacity" select)
+              ( valOf
+                   ( listElement 204 (dictVal "capacity" select)
+                        >.> listElement 205 (dictVal "capacity" select)
+                        >.> listElement 206 (dictVal "capacity" select)
+                        >.> listElement 207 (dictVal "capacity" select)
+                   )
               )
    , file: "linked_inputs/energyscatter.fld"
    }
@@ -39,26 +41,30 @@ linkedInputs_spec4 =
         { fluidSrcPaths
         , inputs: [ "renewables", "nonRenewables" ]
         , query: false
-        , ignoreInputs: envVal "renewables" yearAndCountry >.> envVal "nonRenewables" yearAndCountry
+        , ignoreInputs: envVal "renewables" (valOf yearAndCountry) >.> envVal "nonRenewables" (valOf yearAndCountry)
         , linking: true
         , rowFilter: Nothing
         }
    , δ_in: "renewables" ↦ listElement 204 (dictVal "capacity" select)
    , in_expect:
         envVal "nonRenewables"
-           ( listElement 51
-                ( dictVal "coalCap" select
-                     >.> dictVal "gasCap" select
-                     >.> dictVal "nuclearCap" select
-                     >.> dictVal "petrolCap" select
-                     >.> dictVal "nuclearOut" select
+           ( valOf
+                ( listElement 51
+                     ( dictVal "coalCap" select
+                          >.> dictVal "gasCap" select
+                          >.> dictVal "nuclearCap" select
+                          >.> dictVal "petrolCap" select
+                          >.> dictVal "nuclearOut" select
+                     )
                 )
            )
            >.> envVal "renewables"
-              ( listElement 204 (dictVal "capacity" select >.> dictVal "output" select)
-                   >.> listElement 205 (dictVal "capacity" select >.> dictVal "output" select)
-                   >.> listElement 206 (dictVal "capacity" select >.> dictVal "output" select)
-                   >.> listElement 207 (dictVal "capacity" select >.> dictVal "output" select)
+              ( valOf
+                   ( listElement 204 (dictVal "capacity" select >.> dictVal "output" select)
+                        >.> listElement 205 (dictVal "capacity" select >.> dictVal "output" select)
+                        >.> listElement 206 (dictVal "capacity" select >.> dictVal "output" select)
+                        >.> listElement 207 (dictVal "capacity" select >.> dictVal "output" select)
+                   )
               )
    , file: "linked_inputs/energyscatter.fld"
    }
@@ -77,18 +83,22 @@ linkedInputs_spec5 =
    , δ_in: "nonRenewables" ↦ listElement 0 (dictVal "coalCap" select)
    , in_expect:
         envVal "nonRenewables"
-           ( listElement 0
-                ( dictVal "coalCap" select
-                     >.> dictVal "gasCap" select
-                     >.> dictVal "nuclearCap" select
-                     >.> dictVal "petrolCap" select
+           ( valOf
+                ( listElement 0
+                     ( dictVal "coalCap" select
+                          >.> dictVal "gasCap" select
+                          >.> dictVal "nuclearCap" select
+                          >.> dictVal "petrolCap" select
+                     )
                 )
            )
            >.> envVal "renewables"
-              ( listElement 0 (dictVal "capacity" select)
-                   >.> listElement 1 (dictVal "capacity" select)
-                   >.> listElement 2 (dictVal "capacity" select)
-                   >.> listElement 3 (dictVal "capacity" select)
+              ( valOf
+                   ( listElement 0 (dictVal "capacity" select)
+                        >.> listElement 1 (dictVal "capacity" select)
+                        >.> listElement 2 (dictVal "capacity" select)
+                        >.> listElement 3 (dictVal "capacity" select)
+                   )
               )
    , file: "linked_inputs/mini_energyscatter.fld"
    }

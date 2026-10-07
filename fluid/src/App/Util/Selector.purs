@@ -126,12 +126,9 @@ docOf :: SelSetter ValWithDoc Val
 docOf δv = unsafePartial $ case _ of
    ValWithDoc r@{ doc: Just d } -> first (\d' -> ValWithDoc r { doc = Just d' }) (δv d)
 
-inputVal :: Var -> SelSetter EnvWithDocs ValWithDoc
-inputVal x δv (EnvWithDocs ρ) =
+envVal :: Var -> SelSetter EnvWithDocs ValWithDoc
+envVal x δv (EnvWithDocs ρ) =
    assert (x ∈ ρ) $ first (\v' -> EnvWithDocs (update (const v') x ρ)) (δv (get x ρ))
-
-envVal :: Var -> SelSetter EnvWithDocs Val
-envVal x = inputVal x <<< valOf
 
 list :: Setter (Val (SelStates 𝔹)) 𝔹
 list δα = unsafePartial $ case _ of
