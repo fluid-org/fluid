@@ -170,7 +170,6 @@ withDoc g p = p × Map.lookup p g.docs
 
 -- Value with its doc, as shown in a figure.
 newtype ValWithDoc a = ValWithDoc { val :: Val a, doc :: Maybe (Val a) }
-
 newtype EnvWithDocs a = EnvWithDocs (Dict (ValWithDoc a))
 
 -- Value at a vertex, with the value of its doc.
