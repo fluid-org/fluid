@@ -32,9 +32,9 @@ import DefiniteAssignment (Cxt, Entry(..))
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval.Dep (apply) as Dep
+import Eval (apply) as Dep
 import File (class LoadFile, File(..), loadFileFromPath)
-import Graph.Dep (zeros)
+import DepGraph (zeros)
 import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)

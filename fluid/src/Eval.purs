@@ -1,4 +1,4 @@
-module Eval.Dep where
+module Eval where
 
 import Prelude hiding (absurd, apply)
 
@@ -30,7 +30,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
-import Graph.Dep (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
+import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import ModuleGraph (ModuleName, implicit)
@@ -451,17 +451,17 @@ load q = do
    where
    loaded ρ_q = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules }) $> ρ_q
 
-type DepEval =
+type Eval =
    { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
    , inputs :: Dict Deriv
    , root :: Deriv
    }
 
 -- Documented vertices, their docs and the root.
-visible :: DepEval -> Set Deriv
+visible :: Eval -> Set Deriv
 visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
 
-depEval
+evalProgram
    :: forall m
     . HasClasses m
    => HasModuleStore m
@@ -472,8 +472,8 @@ depEval
    => Dict Deriv -- top-level environment, as vertices of the module store's dependence graph
    -> ClassTable
    -> Stmt
-   -> m DepEval
-depEval inputs classes s =
+   -> m Eval
+evalProgram inputs classes s =
    withClasses classes do
       { depGraph } <- moduleStore
       p × g <- flip runStateT depGraph do

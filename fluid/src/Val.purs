@@ -34,8 +34,8 @@ import Effect.Exception (Error)
 import Expr (Def, Module, fv)
 import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
-import Graph.Dep (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
-import Graph.Dep (Deriv, Pos) as Dep
+import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
+import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
 import Literal (Literal(..))
 import Pretty.Doc (Doc, text)

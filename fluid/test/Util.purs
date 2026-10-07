@@ -20,8 +20,8 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval.Dep (DepEval, depEval, visible)
-import Graph.Dep (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
+import Eval (Eval, evalProgram, visible)
+import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
 import File (class LoadFile, File, FileCxt, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig)
@@ -61,7 +61,7 @@ testProperties
    -> AffError m Unit
 testProperties { e, inputs, classes } expect = do
    eval@{ g, root } <- benchmark "Dep" \_ ->
-      depEval inputs classes e
+      evalProgram inputs classes e
    withMsg "fwd_expect" $ checkPretty expect (prettyP (val g.vals (withDoc g root)))
    recordDepGraphSize eval.g
 
@@ -91,7 +91,7 @@ depName file = case _ of
       Doc vertex -> "doc of " <> name vertex
 
 -- depGraph holds the vertices created by loading the modules, before the program ran.
-deriv :: forall s. DepGraph Val s -> DepEval -> VertexSpec -> Deriv
+deriv :: forall s. DepGraph Val s -> Eval -> VertexSpec -> Deriv
 deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
    Input x -> case A.filter (\(_ × d) -> valAt g d == Val unit Nothing (Lit (Str x))) (Map.toUnfoldable docs) of
@@ -103,7 +103,7 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
-showDeps :: DepEval -> Labelling (Val DepKind) -> String
+showDeps :: Eval -> Labelling (Val DepKind) -> String
 showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
    where
    dep p = get p deps
@@ -115,7 +115,7 @@ selection
    :: forall s
     . ClassTable
    -> DepGraph Val s
-   -> DepEval
+   -> Eval
    -> VertexSpec
    -> (ConstrArg -> Selector Val)
    -> Labelling (Set Pos)
@@ -129,7 +129,7 @@ testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, inputs, classes } <- prepConfig fluidSrc
    { depGraph } <- moduleStore
-   eval <- depEval inputs classes e
+   eval <- evalProgram inputs classes e
    let
       visibleGraph = materialise eval.g (visible eval)
       deps × expect = case query of

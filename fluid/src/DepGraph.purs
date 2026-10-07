@@ -1,4 +1,4 @@
-module Graph.Dep where
+module DepGraph where
 
 import Prelude
 

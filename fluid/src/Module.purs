@@ -21,11 +21,11 @@ import DataType (class HasClasses, ClassTable)
 import Dict (Dict)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval.Dep (evalImport, implicitMembers, load) as Dep
+import Eval (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), hasDirectory, loadModuleSource, withClasses)
-import Graph.Dep (Deriv, deriv, emptyGraph)
+import DepGraph (Deriv, deriv, emptyGraph)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
