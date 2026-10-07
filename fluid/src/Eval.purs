@@ -36,13 +36,13 @@ import Literal (Literal(..), eqLiteral)
 import ModuleGraph (ModuleName, implicit)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
-import Primitive (binop, binopRel, boolean, string, typeMismatch, unop, unopRel, unpack)
+import Primitive (binop, binopRel, boolean, int, string, typeMismatch, unop, unopRel, unpack, unpack')
 import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, singleton, throw, withMsg, (×))
 import Util.Map (delete, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, dimension, field, forDefs, fun, gval, gvalAt, element, elementCount, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -196,7 +196,7 @@ eval inputs = case _ of
          V.Tuple _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
-            unless (0 <= i && i < dimension m && 0 <= j && j < dimension n) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
+            unless (0 <= i && i < fst (unpack' int m) && 0 <= j && j < fst (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
             subscript v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"

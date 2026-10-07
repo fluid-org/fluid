@@ -352,10 +352,6 @@ type Array2 a = Array (Array a)
 matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
 matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
 
-dimension :: forall a. Val a -> Int
-dimension (Val _ (Lit (Int n))) = n
-dimension _ = error absurd
-
 matrixElement :: forall a. Int -> Int -> Val a -> Val a
 matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
 matrixElement _ _ _ = error absurd

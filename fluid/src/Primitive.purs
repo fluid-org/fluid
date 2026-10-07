@@ -26,7 +26,7 @@ import Pretty (prettyP)
 import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), dimension, pureRel, root)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), pureRel, root)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -301,7 +301,7 @@ eqOp (Val α u) (Val β u') = case u, u' of
 
    eqMatrix :: MatrixRep a -> MatrixRep a -> MayFail (Boolean × Set a)
    eqMatrix (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
-      if dimension i == dimension i' && dimension j == dimension j' then eqElems αs (elems vss) (elems vss')
+      if fst (unpack' int i) == fst (unpack' int i') && fst (unpack' int j) == fst (unpack' int j') then eqElems αs (elems vss) (elems vss')
       else pure (false × αs)
       where
       αs = both ∪ Set.fromFoldable (root <$> [ i, j, i', j' ])

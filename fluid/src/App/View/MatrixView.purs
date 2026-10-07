@@ -15,7 +15,7 @@ import Data.Tuple (fst, snd, uncurry)
 import Effect (Effect, foreachE)
 import Primitive (int, unpack')
 import Util ((!), (×))
-import Val (Array2, MatrixRep(..), dimension)
+import Val (Array2, MatrixRep(..))
 
 --  (Rendered) matrices are required to have element type Int for now.
 type IntMatrix = { cells :: Array2 (Selectable Int), i :: Int, j :: Int }
@@ -189,7 +189,7 @@ borderStyles None = "visibility: hidden;"
 
 matrixRep :: MatrixRep (SelStates 𝕊) -> IntMatrix
 matrixRep (MatrixRep (vss × i × j)) =
-   { cells: (unpack' int <$> _) <$> vss, i: dimension i, j: dimension j }
+   { cells: (unpack' int <$> _) <$> vss, i: fst (unpack' int i), j: fst (unpack' int j) }
 
 -- 1-based indices of selected cell; see data binding in .js
 type MatrixCellCoordinate = { i :: Int, j :: Int }
