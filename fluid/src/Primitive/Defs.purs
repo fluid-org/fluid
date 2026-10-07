@@ -38,7 +38,7 @@ import Graph.Dep (zeros)
 import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
-import Util (type (+), type (×), definitely, definitely', error, singleton, throw, (×))
+import Util (MayFail, type (+), type (×), definitely, definitely', error, singleton, throw, (×))
 import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
@@ -100,11 +100,11 @@ len :: ForeignOp
 len =
    ForeignOp ("len" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val α _ u : Nil) = len_ u <#> \n -> Val α Nothing (Lit (Int n))
    depRel _ = Left "Single argument expected"
 
-   len_ :: forall a. BaseVal a -> Either String Int
+   len_ :: forall a. BaseVal a -> MayFail Int
    len_ (List vs) = pure (Array.length vs)
    len_ (Dictionary (DictRep d)) = pure (Set.size (keys d))
    len_ (Lit (Str s)) = pure (String.length s)
@@ -114,7 +114,7 @@ print_ :: ForeignOp
 print_ =
    ForeignOp ("print" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (_ : Nil) = pure (Val zero Nothing (Lit None))
    depRel _ = Left "Single argument expected"
 
@@ -152,7 +152,7 @@ dims :: ForeignOp
 dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) =
       pure (Val α Nothing (Constr cPair (Val β1 Nothing (Lit (Int i)) : Val β2 Nothing (Lit (Int j)) : Nil)))
    depRel _ = Left "Matrix expected"
@@ -161,7 +161,7 @@ matrixUpdate :: ForeignOp
 matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
       | c == cPair = pure (Val α Nothing (Matrix (matrixPut i j (const v) r)))
    depRel _ = Left "Matrix, pair of integers and value expected"
@@ -170,7 +170,7 @@ find_str :: ForeignOp
 find_str =
    ForeignOp ("find_str" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (find s1 s2))))
    depRel _ = Left "Two strings expected"
 
@@ -181,11 +181,11 @@ search :: ForeignOp
 search =
    ForeignOp ("search" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = matchIndex regex str <#> Val (α + β) Nothing
    depRel _ = Left "Two strings expected"
 
-   matchIndex :: forall a. String -> String -> Either String (BaseVal a)
+   matchIndex :: forall a. String -> String -> MayFail (BaseVal a)
    matchIndex regex str = case Regex.regex regex noFlags of
       Left msg -> Left ("Regex expected: " <> msg)
       Right regex' -> pure (Lit (maybe None Int (Regex.search regex' str)))
@@ -195,7 +195,7 @@ split :: ForeignOp
 split =
    ForeignOp ("split" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) =
       pure (Val (α + β) Nothing (Constr cPair (part (String.take n str) : part (String.drop n str) : Nil)))
       where
@@ -206,7 +206,7 @@ dict_difference :: ForeignOp
 dict_difference =
    ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
       pure (Val (α + β) Nothing (Dictionary (DictRep (d \\ d'))))
    depRel _ = Left "Dictionaries expected."
@@ -215,7 +215,7 @@ dict_disjointUnion :: ForeignOp
 dict_disjointUnion =
    ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
       pure (Val (α + β) Nothing (Dictionary (DictRep (unionWith_never d d'))))
    depRel _ = Left "Dictionaries expected"
@@ -239,7 +239,7 @@ get :: ForeignOp
 get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
       pure (maybe (Val α Nothing (Lit None)) snd (lookup s d))
    depRel _ = Left "String and dictionary expected"
@@ -248,7 +248,7 @@ insert :: ForeignOp
 insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> Either String (Val a)
+   depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (Str k)) : v : Nil) =
       pure (Val α Nothing (Dictionary (DictRep (Map.insert k (α' × v) d))))
    depRel _ = Left "Dictionary, key and value expected"
@@ -303,7 +303,7 @@ intBinary :: String -> (Int -> Int -> Int) -> ForeignOp
 intBinary id f =
    ForeignOp (id × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> Either String (Val a)
+   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α _ (Lit (Int m)) : Val β _ (Lit (Int n)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (f m n))))
    depRel _ = Left "Two integers expected"
 

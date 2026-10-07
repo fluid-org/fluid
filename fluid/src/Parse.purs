@@ -33,7 +33,7 @@ import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
 import Expr (Binop(..), Pattern(..))
 import SExpr (Branch, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
 import Type (Primitive(..), TypeExpr(..)) as T
-import Util (type (+), type (×), nonEmpty, singleton, (×))
+import Util (MayFail, type (+), type (×), nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
 pattern = defer \_ -> do
@@ -544,7 +544,7 @@ moduleImports (Module is _) = importName <$> is
 topLevel :: forall a. Parser a -> Parser a
 topLevel p = whitespace *> withPos p <* whitespace <* eof
 
-parse :: forall a. Parser a -> String -> Either String a
+parse :: forall a. Parser a -> String -> MayFail a
 parse parser input =
    lmap printError $ runIndent $ runParserT input parser
    where
@@ -552,7 +552,7 @@ parse parser input =
    printError (ParseError msg (Position { line, column })) =
       "ParseError on line " <> show line <> ", column " <> show column <> ":\n" <> msg
 
-parseProgram :: String -> Either String (Stmt × List Import)
+parseProgram :: String -> MayFail (Stmt × List Import)
 parseProgram src = parse (topLevel programBody) src
    where
    programBody = do
@@ -560,5 +560,5 @@ parseProgram src = parse (topLevel programBody) src
       s <- programStmts
       pure (s × is)
 
-parseModule :: String -> Either String (Module × List Name)
+parseModule :: String -> MayFail (Module × List Name)
 parseModule src = parse (topLevel module_) src <#> \m -> m × moduleImports m

@@ -33,7 +33,7 @@ import DefiniteAssignment (Cxt, Entry(..), erase)
 import Primitive.Defs (predefined)
 import WellFormed (LoadM, LoadedModule, checkProgram, loadModule, mainModule, runLoadM)
 import SExpr as S
-import Util (type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
+import Util (MayFail, type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
 import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
 import Val (class HasModuleStore, ModuleState(..), moduleStore, modifyModuleStore, loadedEnv, Env(..), Val(..))
 import Val (BaseVal(..)) as V
@@ -74,10 +74,10 @@ importDeps enclosing (S.Import q f) = do
    where
    keepModules = map catMaybes <<< traverse (\m' -> isModule m' <#> \b -> whenever b m')
 
-checkAcyclic :: DependencyGraph -> List ModuleName -> Either String Unit
+checkAcyclic :: DependencyGraph -> List ModuleName -> MayFail Unit
 checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
    where
-   go :: List ModuleName -> Set ModuleName -> ModuleName -> Either String (Set ModuleName)
+   go :: List ModuleName -> Set ModuleName -> ModuleName -> MayFail (Set ModuleName)
    go path done q
       | Set.member q done = pure done
       | q `elem` path = Left

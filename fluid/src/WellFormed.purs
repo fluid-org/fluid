@@ -36,7 +36,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Q
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
 import Type as T
-import Util (type (×), checkDistinct, definitely, nonEmpty, singleton, whenever, (×), (∩))
+import Util (MayFail, type (×), checkDistinct, definitely, nonEmpty, singleton, whenever, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -46,7 +46,7 @@ type LoadedModule = { cxt :: Cxt, mod :: Maybe E.Module }
 -- Modules loaded so far, over parsed modules.
 type LoadM = StateT (Map.Map ModuleName LoadedModule) (ReaderT (Map.Map ModuleName S.Module) (Either String))
 
-runLoadM :: forall a. LoadM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> Either String (a × Map.Map ModuleName LoadedModule)
+runLoadM :: forall a. LoadM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> MayFail (a × Map.Map ModuleName LoadedModule)
 runLoadM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
 
 checkProgram :: List S.Import -> S.Stmt -> LoadM (VarCxt × E.Stmt)
@@ -127,7 +127,7 @@ submodules modules q = Map.fromFoldable (mapMaybe sub (Set.toUnfoldable modules)
    where
    sub m = let { init, last: x } = NEL.unsnoc m in whenever (NEL.fromList init == Just q) (x × Mod m)
 
-checkStatements :: Name -> Cxt -> S.Module -> Either String (Cxt × E.Module)
+checkStatements :: Name -> Cxt -> S.Module -> MayFail (Cxt × E.Module)
 checkStatements q cxt_imp (S.Module imports ss) =
    case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
       Nothing -> pure (Map.singleton "__name__" (VarStatus true) × E.Module imports' Nil)
@@ -219,7 +219,7 @@ instance Captures (List S.Qualifier) where
 
 -- Translation into core, with the variables assigned or a return.
 class WellFormed a b | a -> b where
-   wellFormed :: Cxt -> a -> Either String b
+   wellFormed :: Cxt -> a -> MayFail b
 
 instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
    wellFormed _ S.Pass = pure (Assigns Map.empty × E.Pass)
@@ -289,7 +289,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          _ -> Assigns Map.empty
    wellFormed _ (S.Dataclass c _ _) = throwError $ "Class declaration not at top level: " <> c
 
-wellFormedTop :: Name -> Cxt -> S.Stmt -> Either String (Map.Map Var ClassEntry × WfResult VarCxt × E.Stmt)
+wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Map.Map Var ClassEntry × WfResult VarCxt × E.Stmt)
 wellFormedTop q cxt (S.Dataclass c b xψs) = do
    predefName cxt "dataclass"
    let xs = fst <$> xψs
@@ -321,7 +321,7 @@ wellFormedTop _ cxt s = do
    r × s' <- wellFormed cxt s
    pure (Map.empty × r × s')
 
-resolveType :: Cxt -> T.TypeExpr Name -> Either String T.Type
+resolveType :: Cxt -> T.TypeExpr Name -> MayFail T.Type
 resolveType cxt (T.Primitive ν) = T.Primitive ν <$ predefName cxt (T.primitiveName ν)
 resolveType cxt (T.ClassName q) = T.ClassName <<< T.Class <$> className cxt q
 resolveType cxt (T.Lit ℓ) = T.Lit ℓ <$ predefName cxt "Literal"
@@ -395,8 +395,8 @@ wellFormedQualifiers
    :: forall b
     . Cxt
    -> List S.Qualifier
-   -> (Cxt -> Either String b)
-   -> Either String (b × List E.Qualifier)
+   -> (Cxt -> MayFail b)
+   -> MayFail (b × List E.Qualifier)
 wellFormedQualifiers cxt Nil body = (_ × Nil) <$> body cxt
 wellFormedQualifiers cxt (g : gs) body = case g of
    S.Guard e -> do
@@ -413,7 +413,7 @@ wellFormedQualifiers cxt (g : gs) body = case g of
       map (E.Decl p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs body
 
 -- Keyword arguments in field order; must cover fields after first n exactly.
-positionaliseKw :: forall b. ClassEntry -> Name -> Int -> List (Bind b) -> Either String (List b)
+positionaliseKw :: forall b. ClassEntry -> Name -> Int -> List (Bind b) -> MayFail (List b)
 positionaliseKw cls c n xbs = do
    let remaining = drop n (fields cls)
    let provided = fst <$> xbs
@@ -428,7 +428,7 @@ param i = "$" <> show i
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
 -- there are several.
-clauses :: NEL.NonEmptyList (List (S.Pattern × Maybe T.Type) × Maybe T.Type × E.Stmt) -> Either String E.Def
+clauses :: NEL.NonEmptyList (List (S.Pattern × Maybe T.Type) × Maybe T.Type × E.Stmt) -> MayFail E.Def
 clauses cs = do
    let n = length (fst (NEL.head cs)) :: Int
    for_ cs \(ps × _) ->
@@ -458,12 +458,12 @@ clauses cs = do
    sharedVar (S.PVar x : ps) | all (_ == S.PVar x) ps = Just x
    sharedVar _ = Nothing
 
-   signature :: String -> NEL.NonEmptyList (Maybe T.Type) -> Either String (Maybe T.Type)
+   signature :: String -> NEL.NonEmptyList (Maybe T.Type) -> MayFail (Maybe T.Type)
    signature what ψs
       | all (\ψ -> ψ == Nothing || ψ == NEL.head ψs) (NEL.tail ψs) = pure (NEL.head ψs)
       | otherwise = throwError ("Clauses differ in " <> what)
 
-var :: Cxt -> Var -> Either String Unit
+var :: Cxt -> Var -> MayFail Unit
 var cxt x = case Map.lookup x cxt of
    Just (VarStatus true) -> pure unit
    Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
@@ -473,13 +473,13 @@ var cxt x = case Map.lookup x cxt of
    Just PredefName -> throwError $ "predefined name " <> x <> " is not a value"
    Nothing -> throwError $ "Unbound name: " <> x
 
-predefName :: Cxt -> Var -> Either String Unit
+predefName :: Cxt -> Var -> MayFail Unit
 predefName cxt x = case Map.lookup x cxt of
    Just PredefName -> pure unit
    _ -> throwError $ "Not bound as a predefined name: " <> x
 
 -- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
-wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> Either String (NEL.NonEmptyList S.Pattern)
+wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> MayFail (NEL.NonEmptyList S.Pattern)
 wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
    forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
       when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"
@@ -507,7 +507,7 @@ instance WellFormed S.Pattern S.Pattern where
       S.PAs <$> wellFormed cxt p <@> x
    wellFormed _ p = pure p
 
-distinctVars :: List S.Pattern -> Either String Unit
+distinctVars :: List S.Pattern -> MayFail Unit
 distinctVars ps = checkDistinct ("Duplicate variable in pattern: " <> _) (ps >>= Set.toUnfoldable <<< bv)
 
 subsumed :: Cxt -> S.Pattern -> S.Pattern -> Boolean

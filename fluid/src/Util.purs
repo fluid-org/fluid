@@ -5,7 +5,6 @@ import Prelude hiding (absurd)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError, class MonadThrow, catchError, liftEither, throwError)
-import Control.Monad.Except (Except, ExceptT, runExcept)
 import Control.MonadPlus (class Alt, class Alternative, guard)
 import Data.Array ((!!), updateAt)
 import Data.Array as A
@@ -158,8 +157,7 @@ onlyIf b a = do
    guard b
    pure a
 
-type MayFail a = Except Error a
-type MayFailT m = ExceptT Error m
+type MayFail a = Either String a
 
 orElse :: forall a m. MonadThrow Error m => String -> Maybe a -> m a
 orElse s Nothing = throw s
@@ -168,17 +166,9 @@ orElse _ (Just x) = pure x
 throwLeft :: forall a e m. MonadError Error m => Show e => Either e a -> m a
 throwLeft = liftEither <<< lmap (E.error <<< show)
 
-orThrow :: forall a m. MonadThrow Error m => Either String a -> m a
+orThrow :: forall a m. MonadThrow Error m => MayFail a -> m a
 orThrow (Left s) = throw s
 orThrow (Right x) = pure x
-
-defined :: forall a. MayFail a -> a
-defined = runExcept >>> case _ of
-   Right x -> x
-   Left e -> error $ show e
-
-definedWith :: String -> forall a. MayFail a -> a
-definedWith msg = defined <<< withMsg msg
 
 withMsg :: forall a m. MonadError Error m => String -> Endo (m a)
 withMsg msg m = catchError m \e ->

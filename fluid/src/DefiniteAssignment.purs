@@ -4,7 +4,6 @@ import Prelude
 
 import Bind (Name, Var, dottedName)
 import Control.Monad.Error.Class (throwError)
-import Data.Either (Either)
 import Data.List.NonEmpty as NEL
 import Data.Foldable (foldl, lookup)
 import Data.List (List(..), elemIndex, index, length, (:))
@@ -13,7 +12,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
-import Util (type (×), definitely')
+import Util (MayFail, type (×), definitely')
 
 type VarCxt = Map Var Boolean
 
@@ -78,12 +77,12 @@ classFor cxt c = case Map.lookup c cxt of
    Just (Class cls) -> Just cls
    _ -> Nothing
 
-classOf :: Cxt -> Name -> Either String ClassEntry
+classOf :: Cxt -> Name -> MayFail ClassEntry
 classOf cxt c = case resolveName cxt c of
    Just (Class cls) -> pure cls
    _ -> throwError $ "Unknown dataclass: " <> dottedName c
 
-className :: Cxt -> Name -> Either String Name
+className :: Cxt -> Name -> MayFail Name
 className cxt c = _.name <$> classOf cxt c
 
 resolveName :: Cxt -> Name -> Maybe Entry

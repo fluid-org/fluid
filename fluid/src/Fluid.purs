@@ -34,7 +34,7 @@ import Options.Applicative.Builder (info)
 import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
 import SExpr (Import(..)) as S
-import Util (type (×), Endo, definitely, (×))
+import Util (MayFail, type (×), Endo, definitely, (×))
 import Graph.Dep (valAt)
 import Val (Val)
 
@@ -53,19 +53,19 @@ data CheckArgs = CheckArgs
 
 data Command = Evaluate EvalArgs | Parse_ EvalArgs | Check CheckArgs | Manifest (NonEmptyList String)
 
-between :: forall a. Pattern -> Pattern -> Endo (String -> Either String a)
+between :: forall a. Pattern -> Pattern -> Endo (String -> MayFail a)
 between p1 p2 f s =
    case (stripPrefix p1) s >>= stripSuffix p2 of
       Just rest -> f rest
       Nothing -> Left ("Expected " <> show p1 <> "..." <> show p2 <> " but got ...")
 
-parsePair :: String -> Either String (Bind String)
+parsePair :: String -> MayFail (Bind String)
 parsePair = between (Pattern "(") (Pattern ")") $ \s ->
    case split (Pattern ",") s of
       [ k, v ] -> Right (trim k ↦ trim v)
       _ -> Left $ "Expected a pair but got " <> s
 
-parseImports' :: Pattern -> Pattern -> (String -> Either String (Array String))
+parseImports' :: Pattern -> Pattern -> (String -> MayFail (Array String))
 parseImports' open close = between open close $ \s -> do
    Right (map trim $ filter (not <<< String.null) $ split (Pattern ",") s)
 
@@ -183,7 +183,7 @@ check fluidSrcPaths asModule fileName =
    q = definitely "module name" (NEL.fromFoldable (split (Pattern "/") (definitely "source file" (modulePath (File fileName)))))
 
 -- Parse, check, run; stop at first failure with its code and first line of its message.
-stages :: forall a. Either String Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
+stages :: forall a. MayFail Unit -> NodeT Aff a -> (a -> NodeT Aff Unit) -> NodeT Aff (Int × Maybe String)
 stages parsed prepare run = case parsed of
    Left err -> rejected exitCode.prohibited err
    Right _ -> try prepare >>= case _ of
