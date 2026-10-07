@@ -4,9 +4,9 @@ import Prelude
 
 import App.Util (SelState, SelStates, Selectable, Selection, SelectionType, Selector, SetSel, 𝕊, classes, selClasses, selClassesFor)
 import App.Util.Selector (ConstrArg, dictVal)
-import App.View.Util.D3 (create, isEmpty, on, rootSelect, select, setAttrs)
+import App.View.Util.D3 (create, on, setAttrs)
 import App.View.Util.D3 as D3
-import Bind (Var, (↦))
+import Bind (Var)
 import DataType (FieldIndex)
 import Data.Argonaut.Decode (class DecodeJson, JsonDecodeError(..))
 import Data.Argonaut.Decode.Decoders (decodeString)
@@ -21,10 +21,10 @@ import File (Folder)
 import DepGraph (Labelling)
 import Lattice (𝔹, (∨))
 import SExpr as S
-import Util (type (×), Endo, check, (×))
+import Util (type (×), Endo, (×))
 import Util.Map (toUnfoldable, values)
 import Util.Set (size)
-import Val (Env, Val)
+import Val (EnvWithDocs, Val, ValWithDoc)
 import Web.Event.Event (Event, EventType(..))
 import Web.Event.EventTarget (eventListener)
 
@@ -76,23 +76,6 @@ instance Viewable (Dict (View × View)) Unit where
 
 type Select = SetSel (Val (SelStates 𝔹)) -> Effect Unit
 
-draw :: forall a. Viewable a Unit => ConstrArg -> Renderer a
-draw arg _ { divId, suffix, view } select' = do
-   let childId = divId <> "-" <> suffix
-   div <- rootSelect ("#" <> divId)
-   isEmpty div <#> not >>= flip check ("Unable to insert figure: no div found with id " <> divId)
-   maybeRootElement <- div # select ("#" <> childId)
-   setSelection arg unit view select' =<<
-      ( isEmpty maybeRootElement >>=
-           if _ then
-              createElement unit view div <#> D3.setAttrs [ "id" ↦ childId ] # join
-           else pure maybeRootElement
-      )
-
-drawView :: ConstrArg -> RendererSpec View -> (SetSel (Val (SelStates 𝔹)) -> Effect Unit) -> Effect Unit
-drawView arg rSpec@{ view: vw } redraw =
-   unpack vw (\view -> draw arg uiHelpers (rSpec { view = view }) redraw)
-
 foreign import mouseButton :: Event -> Int
 
 registerMouseListeners :: (Event -> Effect Unit) -> D3.Selection -> Effect Unit
@@ -102,15 +85,6 @@ registerMouseListeners handler element = do
    void $ element # on (EventType "mousedown") click
    void $ element # on (EventType "mouseenter") hover
    void $ element # on (EventType "mouseleave") hover
-
--- Heavily curried type isn't convenient for FFI
-type RendererSpec a =
-   { divId :: HTMLId
-   , suffix :: String
-   , view :: a
-   }
-
-type Renderer a = UIHelpers -> RendererSpec a -> ((SetSel (Val (SelStates 𝔹)) -> Effect Unit)) -> Effect Unit
 
 type UIHelpers =
    { val :: forall a. Selectable a -> a
@@ -135,7 +109,7 @@ type Options =
    { fluidSrcPaths :: Array Folder
    , inputs :: Array Var
    , query :: Boolean -- show documented intermediates
-   , ignoreInputs :: Selector Env -- input positions left out of linked queries; retire with #1585
+   , ignoreInputs :: Selector EnvWithDocs -- input positions left out of linked queries; retire with #1585
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
@@ -145,19 +119,22 @@ data Direction = LinkedInputs | LinkedOutputs | Intermediates
 type Fig =
    { spec :: Options
    , s :: S.Stmt
-   , ρ :: Env (SelStates 𝔹)
-   , v :: Val (SelStates 𝔹)
-   , ι :: Labelling (Val (SelStates 𝔹))
+   , ρ :: EnvWithDocs (SelStates 𝔹)
+   , v :: ValWithDoc (SelStates 𝔹)
+   , ι :: Labelling (ValWithDoc (SelStates 𝔹))
    , dir :: Selection Direction
-   , linkedInputs :: SelectionType -> Env (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
-   , linkedOutputs :: SelectionType -> Val (SelStates 𝔹) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
-   , linkIntermediates :: Labelling (Val (SelStates 𝔹)) -> Env (SelState 𝔹) × Val (SelState 𝔹) × Labelling (Val 𝔹)
+   , linkedInputs :: SelectionType -> EnvWithDocs (SelStates 𝔹) -> QueryResult
+   , linkedOutputs :: SelectionType -> ValWithDoc (SelStates 𝔹) -> QueryResult
+   , linkIntermediates :: Labelling (ValWithDoc (SelStates 𝔹)) -> QueryResult
    , in_views :: Dict (Maybe View) -- strengthen this
    , out_view :: Maybe View
    , intermediate_views :: Labelling (Maybe View)
-   , inertι :: Labelling (Val 𝔹) -- inert positions of each intermediate
+   , inertι :: Labelling (ValWithDoc 𝔹) -- inert positions of each intermediate
    , fieldIndex :: FieldIndex
    }
+
+-- Inputs, output and intermediates reached by a query.
+type QueryResult = EnvWithDocs (SelState 𝔹) × ValWithDoc (SelState 𝔹) × Labelling (ValWithDoc 𝔹)
 
 -- ======================
 -- boilerplate

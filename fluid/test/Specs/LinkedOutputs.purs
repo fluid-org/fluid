@@ -1,8 +1,8 @@
 module Test.Specs.LinkedOutputs where
 
-import App.Util.Selector (barSegment, dictVal, eachElement, envVal, listElement, matrixDims, matrixElement, none, topα, (>.>), select, select')
+import App.Util.Selector (barSegment, dictVal, eachElement, envVal, valOf, listElement, matrixDims, matrixElement, none, topα, tupleElement, (>.>), select, select')
 import Data.Maybe (Maybe(..))
-import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPair, cPoint, cScatterPlot, f_fst, f_plots, f_points, f_snd, f_stackedBars, f_views, f_y)
+import DataType (cBarChart, cLineChart, cLinePlot, cMultiView, cPoint, cScatterPlot, f_plots, f_points, f_stackedBars, f_views, f_y)
 import Test.Util (at, fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
 
@@ -12,7 +12,7 @@ linkedOutputs_spec1 =
         { fluidSrcPaths
         , inputs: [ "renewables" ]
         , query: false
-        , ignoreInputs: envVal "renewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
+        , ignoreInputs: envVal "renewables" (valOf (eachElement (dictVal "year" select >.> dictVal "country" select)))
         , linking: true
         , rowFilter: Nothing
         }
@@ -39,7 +39,7 @@ linkedOutputs_spec2 =
         { fluidSrcPaths
         , inputs: [ "nonRenewables" ]
         , query: false
-        , ignoreInputs: envVal "nonRenewables" (eachElement (dictVal "year" select >.> dictVal "country" select))
+        , ignoreInputs: envVal "nonRenewables" (valOf (eachElement (dictVal "year" select >.> dictVal "country" select)))
         , linking: true
         , rowFilter: Nothing
         }
@@ -84,9 +84,9 @@ linkedOutputs_cases =
           , linking: true
           , rowFilter: Nothing
           }
-     , δ_out: \arg -> arg cPair f_snd select
+     , δ_out: \_ -> tupleElement 1 select
      , out_expect: \_ -> select
-     , inert_expect: \_ -> Just none
+     , inert_expect: \_ -> Just (topα select' >.> tupleElement 1 (topα select'))
      , file: "linked_outputs/pairs.fld"
      }
    , { spec:
@@ -98,9 +98,9 @@ linkedOutputs_cases =
           , linking: true
           , rowFilter: Nothing
           }
-     , δ_out: \arg -> arg cPair f_fst (matrixElement 1 1 select)
-     , out_expect: \arg ->
-          arg cPair f_fst
+     , δ_out: \_ -> tupleElement 0 (matrixElement 1 1 select)
+     , out_expect: \_ ->
+          tupleElement 0
              ( at
                   """
                   18, 15, 10, 10, 17,
@@ -110,7 +110,7 @@ linkedOutputs_cases =
                   6, 11, 15, 7, 8
                   """
              )
-             >.> arg cPair f_snd
+             >.> tupleElement 1
                 ( at
                      """
                      ⸨18⸩, ⸨12⸩, ⸨13⸩, 9, 19,
@@ -120,10 +120,10 @@ linkedOutputs_cases =
                      3, 10, 12, 3, 11
                      """
                 )
-     , inert_expect: \arg -> Just
+     , inert_expect: \_ -> Just
           ( topα select'
-               >.> arg cPair f_fst (topα select' >.> matrixDims select')
-               >.> arg cPair f_snd (topα select' >.> matrixDims select')
+               >.> tupleElement 0 (topα select' >.> matrixDims select')
+               >.> tupleElement 1 (topα select' >.> matrixDims select')
           )
      , file: "linked_outputs/convolution.fld"
      }
@@ -135,7 +135,7 @@ linkedOutputs_cases =
           , linking: true
           , rowFilter: Nothing
           }
-     , δ_out: \arg -> arg cPair f_fst (listElement 0 select)
+     , δ_out: \_ -> tupleElement 0 (listElement 0 select)
      , out_expect: \_ -> at "([⸨8⸩, ⸨7⸩], [6, 9])"
      , inert_expect: \_ -> Nothing
      , file: "linked_outputs/filter.fld"
@@ -162,7 +162,7 @@ linkedOutputs_cases =
           , rowFilter: Nothing
           }
      , δ_out: \_ -> listElement 1 select
-     , out_expect: \_ -> at "[⸨(⸨0⸩, ⸨0⸩)⸩, ⸨(⸨1⸩, ⸨1⸩)⸩, ⸨(⸨1⸩, ⸨2⸩)⸩, ⸨(⸨2⸩, ⸨3⸩)⸩, ⸨(⸨3⸩, ⸨4⸩)⸩, ⸨(⸨4⸩, ⸨5⸩)⸩, ⸨(⸨4⸩, ⸨6⸩)⸩]"
+     , out_expect: \_ -> at "[(⸨0⸩, ⸨0⸩), (⸨1⸩, ⸨1⸩), (⸨1⸩, ⸨2⸩), (⸨2⸩, ⸨3⸩), (⸨3⸩, ⸨4⸩), (⸨4⸩, ⸨5⸩), (⸨4⸩, ⸨6⸩)]"
      , inert_expect: \_ -> Nothing
      , file: "dependence/dtw/compute_dtw.fld"
      }
@@ -174,7 +174,7 @@ linkedOutputs_cases =
           , linking: true
           , rowFilter: Nothing
           }
-     , δ_out: \arg -> arg cPair f_snd select
+     , δ_out: \_ -> tupleElement 1 select
      , out_expect: \_ -> at "(⸨3⸩, ⸨True⸩)"
      , inert_expect: \_ -> Nothing
      , file: "dependence/output_not_source.fld"

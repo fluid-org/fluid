@@ -4,7 +4,7 @@ import Prelude
 
 import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
 import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
-import App.Util.Selector (ConstrArg, constrArg, sel𝔹)
+import App.Util.Selector (ConstrArg, constrArg, sel𝔹, valOf)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import DataType (class HasClasses)
@@ -25,7 +25,7 @@ import Test.Benchmark.Util (BenchRow, logTimeWhen)
 import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
 import Util (type (×), throw, (×))
-import Val (class HasModuleStore, Val, Env)
+import Val (class HasModuleStore, Val, EnvWithDocs)
 
 -- benchmarks parameterised on number of iterations
 type BenchSuite m = Int × Boolean -> Array (String × m BenchRow)
@@ -46,7 +46,7 @@ type TestLinkedOutputsSpec =
 type TestLinkedInputsSpec =
    { spec :: Options
    , δ_in :: Bind (Selector Val)
-   , in_expect :: Selector Env
+   , in_expect :: Selector EnvWithDocs
    , file :: String
    }
 
@@ -70,11 +70,11 @@ linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
    fig0 <- loadFig spec fluidSrc
    let arg = constrArg fig0.fieldIndex
-   let fig = selectOutput (δ_out arg) fig0
+   let fig = selectOutput (valOf (δ_out arg)) fig0
    v <- logTimeWhen timing.selectionResult file \_ ->
       pure (selectionResult fig).v
-   checkSelection (out_expect arg) (selected <$> v)
-   for_ (inert_expect arg) \sel -> checkEq "inert" "inert_expect" (isInert <$> v) (sel𝔹 sel v)
+   checkSelection (valOf (out_expect arg)) (selected <$> v)
+   for_ (inert_expect arg) \sel -> checkEq "inert" "inert_expect" (isInert <$> v) (sel𝔹 (valOf sel) v)
    pure fig
 
 linkedOutputsSuite :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => Array TestLinkedOutputsSpec -> Array (String × m Unit)
@@ -83,7 +83,7 @@ linkedOutputsSuite testSpecs = testSpecs <#> (_.file &&& (linkedOutputsTest >>> 
 linkedInputsTest :: forall m. MonadAff m => MonadError Error m => HasClasses m => HasModuleStore m => MonadReader FileCxt m => LoadFile m => TestLinkedInputsSpec -> m Fig
 linkedInputsTest { spec, δ_in, in_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
-   fig <- loadFig spec fluidSrc <#> uncurry selectInput δ_in
+   fig <- loadFig spec fluidSrc <#> uncurry selectInput (valOf <$> δ_in)
    ρ <- logTimeWhen timing.selectionResult file \_ ->
       pure (selectionResult fig).ρ
    checkSelection in_expect (selected <$> ρ)

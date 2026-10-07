@@ -49,7 +49,7 @@ cell_selClassesFor colName s
    | otherwise = selClassesFor s
 
 visible :: Filter -> Val (SelStates 𝕊) -> Boolean
-visible filter (Val α _ _) = visible' filter α
+visible filter (Val α _) = visible' filter α
    where
    visible' Everything = const true
    visible' Interactive = not isInert
@@ -59,7 +59,7 @@ visible filter (Val α _ _) = visible' filter α
    isNone a = getPersistent a == None && getTransient a == None
 
 prim :: Val (SelStates 𝕊) -> String
-prim (Val _ _ v) = v # case _ of
+prim (Val _ v) = v # case _ of
    Lit (Int n) -> show n
    Lit (Float n) -> toStringWith (fixed 2) n
    Lit (Str s) -> s
@@ -85,7 +85,7 @@ instance Viewable TableView Unit where
          if i == -1 || j == -1 then pure unit
          else do
             cell # classed selClasses false
-               >>= classed (cell_selClassesFor colName (rows ! i ! j # \(Val α _ _) -> α)) true
+               >>= classed (cell_selClassesFor colName (rows ! i ! j # \(Val α _) -> α)) true
                >>= registerMouseListeners (redraw <<< uncurry tableViewSelSetter <<< selectionEventData')
          void $ cell # setStyles
             [ "border-right" ↦ border Faint (hasRightBorder i j) (isNothing $ column_visibleSucc j)
@@ -185,7 +185,7 @@ instance Viewable TableView Unit where
       isCellTransient :: Int -> Int -> Boolean
       isCellTransient i j
          | i == -1 || j == -1 = false
-         | otherwise = isTransient <<< (\(Val α _ _) -> α) $ rows ! i ! j
+         | otherwise = isTransient <<< (\(Val α _) -> α) $ rows ! i ! j
 
       tableViewSelSetter :: ViewSelSetter CellIndex
       tableViewSelSetter { i, colName } = listElement i <<< dictVal colName

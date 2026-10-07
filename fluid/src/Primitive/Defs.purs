@@ -27,7 +27,6 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for)
 import Data.Tuple (fst, snd)
-import DataType (cPair)
 import DefiniteAssignment (Cxt, Entry(..))
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
@@ -43,11 +42,11 @@ import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
 import Util.Map (constMap, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
-   id × Val bot Nothing (Fun (Prim (ForeignOp (id × φ))))
+   id × Val bot (Fun (Prim (ForeignOp (id × φ))))
 
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
@@ -75,8 +74,8 @@ predefined = M.fromFoldable
         , extern rem
         ]
    , predefinedModule math Nil
-        [ "pi" × Val bot Nothing (Lit (Float N.pi))
-        , "e" × Val bot Nothing (Lit (Float N.e))
+        [ "pi" × Val bot (Lit (Float N.pi))
+        , "e" × Val bot (Lit (Float N.e))
         , unary "sqrt" { i: intOrNumber, o: number, fwd: (toNumber >>> N.sqrt) `union1` N.sqrt }
         , unary "exp" { i: intOrNumber, o: number, fwd: (toNumber >>> N.exp) `union1` N.exp }
         , unary "log" { i: intOrNumber, o: number, fwd: (toNumber >>> N.log) `union1` N.log }
@@ -93,7 +92,7 @@ predefined = M.fromFoldable
    predefinedModule :: ModuleName -> List Var -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
    predefinedModule q names members = q × (cxt × ρ)
       where
-      ρ = wrap (D.fromFoldable (Array.cons ("__name__" × Val bot Nothing (Lit (Str (dottedName q)))) members))
+      ρ = wrap (D.fromFoldable (Array.cons ("__name__" × Val bot (Lit (Str (dottedName q)))) members))
       cxt = M.union (constMap PredefName (Set.fromFoldable names)) (constMap (VarStatus true) (keys ρ))
 
 len :: ForeignOp
@@ -101,7 +100,7 @@ len =
    ForeignOp ("len" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (v@(Val α _ u) : Nil) = maybe (Left (typeMismatch u "Sized")) (\n -> Right (Val α Nothing (Lit (Int n)))) (elementCount v)
+   depRel (v@(Val α u) : Nil) = maybe (Left (typeMismatch u "Sized")) (\n -> Right (Val α (Lit (Int n)))) (elementCount v)
    depRel _ = Left "Single argument expected"
 
 print_ :: ForeignOp
@@ -109,7 +108,7 @@ print_ =
    ForeignOp ("print" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (_ : Nil) = pure (Val zero Nothing (Lit None))
+   depRel (_ : Nil) = pure (Val zero (Lit None))
    depRel _ = Left "Single argument expected"
 
 loadJson :: ForeignOp
@@ -117,7 +116,7 @@ loadJson =
    ForeignOp ("load_json" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ctrl vs@({ val: Val _ _ (Lit (Str path)) } : Nil) = do
+   depOp ctrl vs@({ val: Val _ (Lit (Str path)) } : Nil) = do
       json <- loadJsonFile path
       fromRel (\us -> jsonVal (ctrlWeight * foldl add zero (root <$> us)) json) ctrl vs
    depOp _ _ = throw "String expected"
@@ -136,19 +135,18 @@ jsonVal α json = caseJson
    (Bool >>> lit)
    (\n -> lit (maybe (Float n) Int (Int.fromNumber n)))
    (Str >>> lit)
-   (map (jsonVal α) >>> List >>> Val α Nothing)
-   (map (\x -> α × jsonVal α x) >>> wrap >>> DictRep >>> Dictionary >>> Val α Nothing)
+   (map (jsonVal α) >>> List >>> Val α)
+   (map (\x -> α × jsonVal α x) >>> wrap >>> DictRep >>> Dictionary >>> Val α)
    json
    where
-   lit = Lit >>> Val α Nothing
+   lit = Lit >>> Val α
 
 dims :: ForeignOp
 dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Matrix (MatrixRep (_ × MatrixDim (i × β1) × MatrixDim (j × β2)))) : Nil) =
-      pure (Val α Nothing (Constr cPair (Val β1 Nothing (Lit (Int i)) : Val β2 Nothing (Lit (Int j)) : Nil)))
+   depRel (Val α (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α (Tuple [ i, j ]))
    depRel _ = Left "Matrix expected"
 
 matrixUpdate :: ForeignOp
@@ -156,8 +154,8 @@ matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Matrix r) : Val _ _ (Constr c (Val _ _ (Lit (Int i)) : Val _ _ (Lit (Int j)) : Nil)) : v : Nil)
-      | c == cPair = pure (Val α Nothing (Matrix (matrixPut i j (const v) r)))
+   depRel (Val α (Matrix r) : Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) : v : Nil) =
+      pure (Val α (Matrix (matrixPut i j (const v) r)))
    depRel _ = Left "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -165,7 +163,7 @@ find_str =
    ForeignOp ("find_str" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Lit (Str s1)) : Val β _ (Lit (Str s2)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (find s1 s2))))
+   depRel (Val α (Lit (Str s1)) : Val β (Lit (Str s2)) : Nil) = pure (Val (α + β) (Lit (Int (find s1 s2))))
    depRel _ = Left "Two strings expected"
 
    find :: String -> String -> Int
@@ -176,7 +174,7 @@ search =
    ForeignOp ("search" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Lit (Str regex)) : Val β _ (Lit (Str str)) : Nil) = matchIndex regex str <#> Val (α + β) Nothing
+   depRel (Val α (Lit (Str regex)) : Val β (Lit (Str str)) : Nil) = matchIndex regex str <#> Val (α + β)
    depRel _ = Left "Two strings expected"
 
    matchIndex :: forall a. String -> String -> MayFail (BaseVal a)
@@ -190,10 +188,10 @@ split =
    ForeignOp ("split" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Lit (Int n)) : Val β _ (Lit (Str str)) : Nil) =
-      pure (Val (α + β) Nothing (Constr cPair (part (String.take n str) : part (String.drop n str) : Nil)))
+   depRel (Val α (Lit (Int n)) : Val β (Lit (Str str)) : Nil) =
+      pure (Val (α + β) (Tuple [ part (String.take n str), part (String.drop n str) ]))
       where
-      part w = Val (α + β) Nothing (Lit (Str w))
+      part w = Val (α + β) (Lit (Str w))
    depRel _ = Left "Int and string expected"
 
 dict_difference :: ForeignOp
@@ -201,8 +199,8 @@ dict_difference =
    ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
-      pure (Val (α + β) Nothing (Dictionary (DictRep (d \\ d'))))
+   depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
+      pure (Val (α + β) (Dictionary (DictRep (d \\ d'))))
    depRel _ = Left "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
@@ -210,8 +208,8 @@ dict_disjointUnion =
    ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Dictionary (DictRep d)) : Val β _ (Dictionary (DictRep d')) : Nil) =
-      pure (Val (α + β) Nothing (Dictionary (DictRep (unionWith_never d d'))))
+   depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
+      pure (Val (α + β) (Dictionary (DictRep (unionWith_never d d'))))
    depRel _ = Left "Dictionaries expected"
 
 foldl_with_index :: ForeignOp
@@ -226,7 +224,7 @@ foldl_with_index =
       where
       step f acc (k × _) = Dep.apply ctrl f (key : gval acc : entryValue k d : Nil)
          where
-         key = { val: Val unit Nothing (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) Nothing (Lit (Str k))) d }
+         key = { val: Val unit (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d }
    depOp _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
@@ -234,8 +232,8 @@ get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Lit (Str s)) : Val _ _ (Dictionary (DictRep d)) : Nil) =
-      pure (maybe (Val α Nothing (Lit None)) snd (lookup s d))
+   depRel (Val α (Lit (Str s)) : Val _ (Dictionary (DictRep d)) : Nil) =
+      pure (maybe (Val α (Lit None)) snd (lookup s d))
    depRel _ = Left "String and dictionary expected"
 
 insert :: ForeignOp
@@ -243,8 +241,8 @@ insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Dictionary (DictRep d)) : Val α' _ (Lit (Str k)) : v : Nil) =
-      pure (Val α Nothing (Dictionary (DictRep (Map.insert k (α' × v) d))))
+   depRel (Val α (Dictionary (DictRep d)) : Val α' (Lit (Str k)) : v : Nil) =
+      pure (Val α (Dictionary (DictRep (Map.insert k (α' × v) d))))
    depRel _ = Left "Dictionary, key and value expected"
 
 dict_intersectionWith :: ForeignOp
@@ -279,13 +277,13 @@ entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> s
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
 dictFrom ds kvs =
-   { val: Val unit Nothing (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-   , inEdges: L.concat (ds <#> via \x -> Val (root x) Nothing (Dictionary (DictRep (Dict.mapWithKey (\k (_ × zu) -> fst (dictEntry k x) × zu) zd))))
+   { val: Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
+   , inEdges: L.concat (ds <#> via \x -> Val (root x) (Dictionary (DictRep (Dict.mapWithKey (\k (_ × zu) -> fst (dictEntry k x) × zu) zd))))
         <> L.concat (kvs <#> \(k × v) -> via (\y -> dict (Map.insert k (zero × y) zd)) v)
    }
    where
    zd = D.fromFoldable (kvs <#> \(k × v) -> k × (zero × zeros v.val))
-   dict = DictRep >>> Dictionary >>> Val zero Nothing
+   dict = DictRep >>> Dictionary >>> Val zero
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot
@@ -298,7 +296,7 @@ intBinary id f =
    ForeignOp (id × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α _ (Lit (Int m)) : Val β _ (Lit (Int n)) : Nil) = pure (Val (α + β) Nothing (Lit (Int (f m n))))
+   depRel (Val α (Lit (Int m)) : Val β (Lit (Int n)) : Nil) = pure (Val (α + β) (Lit (Int (f m n))))
    depRel _ = Left "Two integers expected"
 
 numToStr :: Int + Number -> String

@@ -38,8 +38,8 @@ instance Viewable Link Unit where
       where
       selLink :: ViewSelSetter Link
       selLink _ δv = unsafePartial $ case _ of
-         (Val α doc (Constr c (v1 : v2 : Nil))) | c == cLink ->
-            first (\v1' -> Val α doc (Constr c (v1' : v2 : Nil))) (δv v1)
+         (Val α (Constr c (v1 : v2 : Nil))) | c == cLink ->
+            first (\v1' -> Val α (Constr c (v1' : v2 : Nil))) (δv v1)
 
 instance Textual Link where
    getText (Link v (s × _)) = s × foldr join bot v

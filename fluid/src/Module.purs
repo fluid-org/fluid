@@ -112,7 +112,7 @@ loadTopLevel modules imports = do
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
       ρ1 <- foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
-      name <- deriv (Val unit Nothing (V.Lit (Str "__main__")))
+      name <- deriv (Val unit (V.Lit (Str "__main__")))
       pure (ρ1 <+> maplet "__name__" name)
    modifyModuleStore (_ { depGraph = depGraph })
    pure inputs

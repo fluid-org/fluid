@@ -94,7 +94,7 @@ depName file = case _ of
 deriv :: forall s. DepGraph Val s -> Eval -> VertexSpec -> Deriv
 deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
-   Input x -> case A.filter (\(_ × d) -> valAt g d == Val unit Nothing (Lit (Str x))) (Map.toUnfoldable docs) of
+   Input x -> case A.filter (\(_ × d) -> valAt g d == Val unit (Lit (Str x))) (Map.toUnfoldable docs) of
       [ p × _ ] -> p
       _ -> error ("no vertex documented " <> show x)
    Intermediate n -> intermediates ! n

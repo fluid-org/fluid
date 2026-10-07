@@ -10,7 +10,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype)
 import Data.NonEmpty ((:|))
 import Data.Traversable (class Foldable)
-import DataType (Ctr, cPair)
+import DataType (Ctr)
 import Dict (Dict)
 import Expr (Pattern(..))
 import Expr as E
@@ -25,7 +25,7 @@ import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class Highlightable, BaseVal, DictRep(..), Env(..), ForeignOp(..), Fun, MatrixRep(..), Val(..), highlightIf)
+import Val (class Highlightable, BaseVal, DictRep(..), Env(..), ForeignOp(..), Fun, MatrixRep(..), Val(..), ValWithDoc(..), EnvWithDocs(..), highlightIf)
 
 class Pretty p where
    pretty :: p -> Doc
@@ -58,8 +58,7 @@ instance RootOp E.Expr where
    rootOp _ = Nothing
 
 instance Highlightable a => RootOp (Val a) where
-   rootOp (Val _ Nothing u) = rootOp u
-   rootOp (Val _ (Just _) _) = Nothing
+   rootOp (Val _ u) = rootOp u
 
 instance Highlightable a => RootOp (BaseVal a) where
    rootOp _ = Nothing
@@ -82,8 +81,7 @@ instance IsSimple E.Expr where
    isSimple _ = true
 
 instance Highlightable a => IsSimple (Val a) where
-   isSimple (Val _ Nothing u) = isSimple u
-   isSimple (Val _ (Just _) _) = false
+   isSimple (Val _ u) = isSimple u
 
 instance Highlightable a => IsSimple (BaseVal a) where
    isSimple _ = true
@@ -127,7 +125,6 @@ infixApp n op s sym s' =
 instance Pretty Expr where
    pretty (Var x) = text x
    pretty (Lit ℓ) = pretty ℓ
-   pretty (Call (Var c) (e : e' : Nil) Nil) | c == last cPair = pair pretty e e'
    pretty (Call e es xes) =
       expr $ prettySimple e <> parens (commas ((pretty <$> es) <> ((\(x ↦ e') -> text x <> text "=" <> pretty e') <$> xes)))
    pretty (Dictionary Nil) = text "{}"
@@ -136,7 +133,7 @@ instance Pretty Expr where
       expr $ matrix (pretty e <+> text "for" <+> pair text x y <+> text "in" <+> pretty e')
    pretty (Lambda c) = pretty c
    pretty (Attribute s x) = expr $ prettySimple s <> text "." <> text x
-   pretty (Subscript e (Call (Var c) (k : k' : Nil) Nil)) | c == last cPair = expr $ prettySimple e <> brackets (expr $ pretty k <> text "," <+> pretty k')
+   pretty (Subscript e (Tuple ks)) = expr $ prettySimple e <> brackets (expr $ prettyList ks)
    pretty (Subscript e k) = expr $ prettySimple e <> brackets (expr $ pretty k)
    pretty e@(BinOp _ _ _) = expr $ operatorApp 0 e
    pretty e@(UnOp _ _) = expr $ operatorApp 0 e
@@ -151,6 +148,7 @@ instance Pretty Expr where
       text "[" <> inlOrMul (commas ds) (indent (line <> vcommas ds) <> line) <> text "]"
       where
       ds = pretty <$> es
+   pretty (Tuple es) = tuple (pretty <$> es)
 
    pretty (ListComp s qs) = brackets (expr (pretty s) <+> pretty qs)
    pretty (DictComp k s qs) = braces (pretty k <> text ":" <+> expr (pretty s) <+> pretty qs)
@@ -180,6 +178,7 @@ instance Pretty Pattern where
    pretty (PConstr c ps xps) =
       text (dottedName c) <> parens (commas ((pretty <$> ps) <> ((\(x ↦ p) -> text x <> text "=" <> pretty p) <$> xps)))
    pretty (PList ps) = brackets (prettyList ps)
+   pretty (PTuple ps) = tuple (pretty <$> ps)
    pretty (PAs p x) = pretty p <+> text "as" <+> text x
 
 instance Pretty (String × Pattern) where
@@ -285,7 +284,6 @@ instance Pretty ParagraphElem where
    pretty (Unquote e) = text "{" <> pretty e <> text "}"
 
 prettyConstr :: forall a. RootOp a => IsSimple a => Pretty a => Ctr -> List a -> Doc
-prettyConstr "Pair" (x : y : Nil) = pair pretty x y
 prettyConstr c ps = text c <> parens (prettyList ps)
 
 commas :: List Doc -> Doc
@@ -301,6 +299,11 @@ vcommas (d : ds) = d <> text "," <++> vcommas ds
 prettyList :: forall f a. Foldable f => Pretty a => f a -> Doc
 prettyList xs = commas (pretty <$> fromFoldable xs)
 
+-- Comma after single element distinguishes tuple from parenthesised expression.
+tuple :: List Doc -> Doc
+tuple (d : Nil) = parens (d <> text ",")
+tuple ds = parens (commas ds)
+
 instance Pretty (Pair E.Expr) where
    pretty (Pair k v) = pretty k <> text ":" <+> pretty v
 
@@ -310,6 +313,7 @@ instance Pretty E.Expr where
    pretty (E.Dictionary ees) = record (pretty <$> ees)
    pretty (E.Constr c es) = prettyConstr (last c) es
    pretty (E.List es) = brackets (prettyList es)
+   pretty (E.Tuple es) = tuple (pretty <$> es)
    pretty (E.Matrix e1 (i × j) e2) =
       matrix (pretty e1 <+> text "for" <+> pair text i j <+> text "in" <+> pretty e2)
    pretty (E.Lambda o) = text "lambda" <+> pretty o -- really?
@@ -364,19 +368,28 @@ instance Pretty (Dict E.Def) where
       go (xd : xds) = (go xds <+> text ";") <+> (pretty xd)
 
 instance Highlightable a => Pretty (Env a) where
-   pretty (Env ρ) = brackets $ go (toUnfoldable ρ)
-      where
-      go :: List (Var × Val a) -> Doc
-      go Nil = empty
-      go ((x × v) : rest) =
-         (text x <+> text "->" <+> pretty v <+> text ",") <++> go rest
+   pretty (Env ρ) = prettyEnv ρ
+
+instance Highlightable a => Pretty (EnvWithDocs a) where
+   pretty (EnvWithDocs ρ) = prettyEnv ρ
+
+prettyEnv :: forall v. Pretty v => Dict v -> Doc
+prettyEnv ρ = brackets $ go (toUnfoldable ρ)
+   where
+   go :: List (Var × v) -> Doc
+   go Nil = empty
+   go ((x × v) : rest) =
+      (text x <+> text "->" <+> pretty v <+> text ",") <++> go rest
 
 instance Pretty (Bind E.Def) where
    pretty (x ↦ d) = pretty x <> pretty ":" <+> pretty d
 
 instance Highlightable a => Pretty (Val a) where
-   pretty (Val a Nothing u) = highlightIf a (pretty u)
-   pretty (Val a (Just v') u) = text "@doc" <> parens (pretty v') <+> highlightIf a (pretty u)
+   pretty (Val a u) = highlightIf a (pretty u)
+
+instance Highlightable a => Pretty (ValWithDoc a) where
+   pretty (ValWithDoc { val: v, doc: Nothing }) = pretty v
+   pretty (ValWithDoc { val: v, doc: Just d }) = text "@doc" <> parens (pretty d) <+> pretty v
 
 instance Highlightable a => Pretty (Var × (a × Val a)) where
    pretty (k × (a × v)) = highlightIf a (string k) <> text ":" <+> pretty v
@@ -388,6 +401,7 @@ instance Highlightable a => Pretty (BaseVal a) where
       | otherwise = record (pretty <$> (toUnfoldable svs))
    pretty (V.Constr c vs) = prettyConstr (last c) vs
    pretty (V.List vs) = brackets (prettyList vs)
+   pretty (V.Tuple vs) = tuple (pretty <$> fromFoldable vs)
    pretty (V.Matrix (MatrixRep (vss × _ × _))) = vcommas $ fromFoldable (prettyList <$> vss) -- ???
    pretty (V.Fun phi) = pretty phi
 

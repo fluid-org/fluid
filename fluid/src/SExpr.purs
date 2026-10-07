@@ -35,6 +35,7 @@ data Expr
    | Cond Expr Expr Expr -- e1 if e else e2
    | Paragraph Paragraph
    | List (List Expr)
+   | Tuple (List Expr)
    | ListComp Expr (List Qualifier)
    | DictComp Expr Expr (List Qualifier)
    | DocExpr Expr Expr
@@ -149,6 +150,7 @@ instance FV Expr where
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
    fv (Paragraph elems) = Set.unions (fv <$> elems)
    fv (List es) = Set.unions (fv <$> es)
+   fv (Tuple es) = Set.unions (fv <$> es)
    fv (ListComp e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
    fv (DictComp k e gs) = fvQualifiers gs ∪ ((fv k ∪ fv e) \\ bv gs)
    fv (DocExpr e e') = (fv e \\ Set.singleton varThis) ∪ fv e'

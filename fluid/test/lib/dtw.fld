@@ -14,12 +14,12 @@ def costMatrixInit(rows, cols, window):
 def minAndPrev((i, j), im1, jm1, ijm1):
   minim = minimal([im1, jm1, ijm1])
   if minim |eq| im1:
-    return ((i, j + 1), minim)
+    return (i, j + 1, minim)
   else:
     if minim |eq| jm1:
-      return ((i + 1, j), minim)
+      return (i + 1, j, minim)
     else:
-      return ((i, j), minim)
+      return (i, j, minim)
 
 def extractPath(indmatrix, (n, m), accum):
   if n == 0 and m == 0:
@@ -36,10 +36,10 @@ def localMinUpdate(seq1, seq2, cost, (costmatrix, indmatrix), (i, j)):
   im1 = costmatrix[i, jp]
   jm1 = costmatrix[ip, j]
   im1jm1 = costmatrix[i, j]
-  (prev, FNum(minim)) = minAndPrev((i, j), im1, jm1, im1jm1)
+  (pi, pj, FNum(minim)) = minAndPrev((i, j), im1, jm1, im1jm1)
   newVal = FNum(dist + minim)
 
-  return (matrixUpdate(costmatrix, (ip, jp), newVal), matrixUpdate(indmatrix, (ip, jp), prev))
+  return (matrixUpdate(costmatrix, (ip, jp), newVal), matrixUpdate(indmatrix, (ip, jp), (pi, pj)))
 
 def computeDTW(seq1, seq2, cost, window):
   n = len(seq1)

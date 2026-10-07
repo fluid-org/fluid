@@ -2,11 +2,6 @@ from dataclasses import dataclass
 from math import ceil, log
 
 @dataclass
-class Pair:
-  fst: object
-  snd: object
-
-@dataclass
 class Tree:
   pass
 
