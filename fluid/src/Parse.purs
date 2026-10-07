@@ -506,8 +506,8 @@ expr = context "expr" $ cond <?> "expression"
 module_ :: Parser Module
 module_ = do
    is <- many (align import_)
-   ss <- many1 (align stmt)
-   pure $ Module is (toList ss)
+   ss <- many (align stmt)
+   pure $ Module is ss
 
 misplacedImport :: forall a. Parser a
 misplacedImport = (reserved "import" <|> reserved "from") *> fail "imports must precede statements"

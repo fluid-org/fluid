@@ -84,7 +84,7 @@ disjointUnion_inv :: forall a k b. Ord k => Map a k b => Set k -> a -> a × a
 disjointUnion_inv ks m = filterKeys (_ ∈ ks) m × filterKeys (_ `not <<< (∈)` ks) m
 
 lookup' :: forall m a k b. MonadThrow Error m => Show k => Map a k b => k -> a -> m b
-lookup' k = lookup k >>> orElse (keyExists k)
+lookup' k = lookup k >>> orElse ("Key " <> show k <> " not found")
 
 keyExists :: forall k. Show k => k -> String
 keyExists k = "Key " <> show k <> " exists in map"

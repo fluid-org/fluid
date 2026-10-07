@@ -42,7 +42,7 @@ import Util.Map (delete, get, lookup, lookup', mapWithKey, maplet, restrict, uni
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, listElement, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixDim(..), MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -74,7 +74,7 @@ matches classes v@{ val: Val _ _ u } p = second (via root v : _) case u, p of
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
    V.List vs, PList ps | A.length vs == length ps ->
-      matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (listElement i) v }) (L.fromFoldable vs)) ps
+      matchesMany classes (mapWithIndex (\i val -> { val, inEdges: via (element i) v }) (L.fromFoldable vs)) ps
    _, _ -> Nothing × Nil
 
 matchesMany :: forall s. ClassTable -> List (GVal s) -> List Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
@@ -182,15 +182,16 @@ eval inputs = case _ of
             _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
             subscript v v' (dictEntry s >>> snd) (\z -> root z + fst (dictEntry s z))
          V.Dictionary _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected str"
-         V.List vs, V.Lit (Int i) -> do
-            let i' = if i < 0 then A.length vs + i else i
-            _ <- vs A.!! i' # orElse ("List index " <> show i <> " out of range")
-            subscript v v' (listElement i') root
+         _, V.Lit (Int i) | Just n <- elementCount v.val -> do
+            let i' = if i < 0 then n + i else i
+            unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
+            subscript v v' (element i') root
          V.List _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
+         V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Matrix _, V.Constr c (Val _ _ (V.Lit (Int i)) : Val _ _ (V.Lit (Int j)) : Nil) | c == cPair ->
             subscript v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
-         _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, dict or matrix"
+         _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, str, dict or matrix"
       where
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
       subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Deriv × Raw Val)
@@ -271,12 +272,10 @@ qualifiers inputs (Guard e : gs) = do
    if holds then qualifiers (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
 qualifiers inputs (Generator p e : gs) = do
    v <- gval <$> eval inputs e
-   us <- case v.val of
-      Val _ _ (V.List us) -> pure us
-      _ -> throw $ "Found " <> prettyP v.val <> ", expected list"
+   n <- elementCount v.val # orElse ("Found " <> prettyP v.val <> ", expected list, str or dict")
    classes <- askClasses
-   fold <$> for (mapWithIndex const (L.fromFoldable us)) \i -> do
-      let el = { val: listElement i v.val, inEdges: via (listElement i) v }
+   fold <$> for (L.range 0 (n - 1)) \i -> do
+      let el = { val: element i v.val, inEdges: via (element i) v }
       case dispatch classes (singleton (p × unit)) el Nil of
          Nothing × ctrl -> pure (Nil × (via root v <> ctrl))
          Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via root v <> ctrl }) gs

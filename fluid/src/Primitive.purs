@@ -279,17 +279,21 @@ eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp (Val α _ u) (Val β _ u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r || N.isNaN r' -> Left "Cannot compare nan"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
-   Lit None, _ -> pure (false × both)
-   _, Lit None -> pure (false × both)
+   Lit (Bool _), Lit (Int _) -> undefined
+   Lit (Bool _), Lit (Float _) -> undefined
+   Lit (Int _), Lit (Bool _) -> undefined
+   Lit (Float _), Lit (Bool _) -> undefined
+   Fun _, Fun _ -> undefined
    Constr c vs, Constr d ws
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)
    List vs, List ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
    Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
    Matrix r, Matrix r' -> eqMatrix r r'
-   _, _ -> Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
+   _, _ -> pure (false × both) -- different forms
    where
    both = Set.fromFoldable [ α, β ]
+   undefined = Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
 
    eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> MayFail (Boolean × Set a)
    eqDict d d' =
