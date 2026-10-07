@@ -140,7 +140,8 @@ prepConfig fluidSrc = do
                ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
 
--- Modules reachable through imports, parsed and checked by given action, with class table.
+-- Parse modules reachable through imports and run checking action over them, yielding its result, modules
+-- checked, and class table.
 prepModules
    :: forall m a
     . MonadAff m
