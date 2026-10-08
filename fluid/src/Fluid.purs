@@ -48,7 +48,7 @@ data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Manifest (
 
 parseFileArgs :: Parser FileArgs
 parseFileArgs = ado
-   local <- switch (long "local" <> short 'l' <> help "Are you running fluid as a library?")
+   local <- switch (long "local" <> short 'l' <> help "Are you running Fluid as a library?")
    fileName <- strOption (long "file" <> short 'f' <> help "The file")
    fluidSrcPaths <- Array.fromFoldable <$> some (Folder <$> strOption (long "fluid-src-path" <> short 'p' <> help "A path containing program or library files"))
    asModule <- switch (long "module" <> short 'm' <> help "Treat the file as a module rather than a program")
