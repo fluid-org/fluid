@@ -61,7 +61,7 @@ parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write man
 commandParser :: Parser Command
 commandParser = subparser
    ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse files and print them back"))
-        <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check files statically, reporting each as <code> <file>[: <message>] with the exit codes of a pure-py-spec checker, and exit with the largest code"))
+        <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check files statically, reporting each as <code> <file>[: <message>] with the exit codes of a PurePy checker, and exit with the largest code"))
         <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate files, reporting each as <code> <file>[: <message or value>], and exit with the largest code"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
@@ -117,7 +117,7 @@ writeManifests root@(Folder dir) = do
       where
       segments = split (Pattern "/") path
 
--- Exit codes required of checker by pure-py-spec test runner.
+-- Exit codes required of checker by PurePy test runner.
 exitCode :: { accepted :: Int, prohibited :: Int, illFormed :: Int }
 exitCode = { accepted: 0, prohibited: 1, illFormed: 3 }
 
