@@ -15,8 +15,8 @@ import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
-import Data.List.NonEmpty (head, last)
-import Data.List.NonEmpty (fromList, snoc, toList, unsnoc) as NEL
+import Data.List.NonEmpty (head, last, snoc, unsnoc)
+import Data.List.NonEmpty (fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
@@ -431,7 +431,7 @@ evalImport enclosing ρ = case _ of
       loadAncestors (Just enclosing) q
       importsFrom q ρ_q ρ xs
    where
-   loadAncestors bound q = case NEL.fromList (NEL.unsnoc q).init of
+   loadAncestors bound q = case NEL.fromList (unsnoc q).init of
       Nothing -> pure unit
       Just q'
          | maybe false (q' `prefixOf` _) bound -> pure unit
@@ -441,7 +441,7 @@ evalImport enclosing ρ = case _ of
       where
       step ρ' x = do
          { modules } <- moduleStore
-         when (Map.member (NEL.snoc q x) modules) (void (load (NEL.snoc q x)))
+         when (Map.member (snoc q x) modules) (void (load (snoc q x)))
          pure (ρ' <+> maplet x (get x ρ_q))
 
 moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
