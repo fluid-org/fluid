@@ -3,7 +3,7 @@ module SExpr where
 import Prelude hiding (top)
 
 import Bind (Bind, Name, Var, varThis)
-import Data.Set (Set, empty, singleton, unions) as Set
+import Data.Set (Set, empty, singleton, unions)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
 import Data.List.NonEmpty (NonEmptyList)
@@ -134,11 +134,11 @@ instance Show ParagraphElem where
 -- ======================
 
 instance FV Expr where
-   fv (Var x) = Set.singleton x
-   fv (Lit _) = Set.empty
-   fv (Call e es xes) = fv e ∪ Set.unions (fv <$> es) ∪ Set.unions ((fv <<< snd) <$> xes)
-   fv (Dictionary entries) = Set.unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
-   fv (Matrix body (x × y) source) = (fv body \\ (Set.singleton x ∪ Set.singleton y)) ∪ fv source
+   fv (Var x) = singleton x
+   fv (Lit _) = empty
+   fv (Call e es xes) = fv e ∪ unions (fv <$> es) ∪ unions ((fv <<< snd) <$> xes)
+   fv (Dictionary entries) = unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
+   fv (Matrix body (x × y) source) = (fv body \\ (singleton x ∪ singleton y)) ∪ fv source
    fv (Lambda clause) = fv clause
    fv (Attribute e _) = fv e
    fv (Subscript e e') = fv e ∪ fv e'
@@ -146,69 +146,69 @@ instance FV Expr where
    fv (UnOp _ e) = fv e
    fv (And e e') = fv e ∪ fv e'
    fv (Or e e') = fv e ∪ fv e'
-   fv (InfixApp e f e') = fv e ∪ Set.singleton f ∪ fv e'
+   fv (InfixApp e f e') = fv e ∪ singleton f ∪ fv e'
    fv (Cond e1 e e2) = fv e1 ∪ fv e ∪ fv e2
-   fv (Paragraph elems) = Set.unions (fv <$> elems)
-   fv (List es) = Set.unions (fv <$> es)
-   fv (Tuple es) = Set.unions (fv <$> es)
+   fv (Paragraph elems) = unions (fv <$> elems)
+   fv (List es) = unions (fv <$> es)
+   fv (Tuple es) = unions (fv <$> es)
    fv (ListComp e gs) = fvQualifiers gs ∪ (fv e \\ bv gs)
    fv (DictComp k e gs) = fvQualifiers gs ∪ ((fv k ∪ fv e) \\ bv gs)
-   fv (DocExpr e e') = (fv e \\ Set.singleton varThis) ∪ fv e'
+   fv (DocExpr e e') = (fv e \\ singleton varThis) ∪ fv e'
 
 instance FV Stmt where
    fv (Return e) = fv e
    fv (If ess s_opt) =
-      Set.unions ((\(e × s) -> fv e ∪ fv s) <$> ess) ∪ fv s_opt
+      unions ((\(e × s) -> fv e ∪ fv s) <$> ess) ∪ fv s_opt
    fv (Match scrut branches) =
-      fv scrut ∪ Set.unions ((\(p × b) -> fv b \\ bv p) <$> branches)
+      fv scrut ∪ unions ((\(p × b) -> fv b \\ bv p) <$> branches)
    fv (Def vd) = fv vd
    fv (DefRec rs) = fvRecDefs rs
-   fv Pass = Set.empty
+   fv Pass = empty
    fv (ExprStmt e) = fv e
-   fv (Assert cond msg) = fv cond ∪ maybe Set.empty fv msg
+   fv (Assert cond msg) = fv cond ∪ maybe empty fv msg
    fv (Seq s1 s2) = fv s1 ∪ fv s2
-   fv (Dataclass _ _ _) = Set.empty
+   fv (Dataclass _ _ _) = empty
 
 instance FV VarDef where
    fv (VarDef _ _ e) = fv e
 
 instance FV LambdaClause where
-   fv (LambdaClause (ps × e)) = fv e \\ Set.unions (bv <$> ps)
+   fv (LambdaClause (ps × e)) = fv e \\ unions (bv <$> ps)
 
 instance FV Clause where
-   fv (Clause (ps × _ × b)) = (fv b \\ Set.unions (bv <$> ps)) \\ assigns b
+   fv (Clause (ps × _ × b)) = (fv b \\ unions (bv <$> ps)) \\ assigns b
 
 -- Variables assigned by a statement.
-assigns :: Stmt -> Set.Set Var
-assigns Pass = Set.empty
+assigns :: Stmt -> Set Var
+assigns Pass = empty
 assigns (Def (VarDef p _ _)) = bv p
-assigns (ExprStmt _) = Set.empty
-assigns (Assert _ _) = Set.empty
-assigns (Return _) = Set.empty
-assigns (If es s) = Set.unions (assigns <$> (snd <$> es)) ∪ maybe Set.empty assigns s
-assigns (Match _ ps) = Set.unions (assigns <$> (snd <$> ps))
-assigns (DefRec ds) = Set.unions (Set.singleton <<< fst <$> ds)
+assigns (ExprStmt _) = empty
+assigns (Assert _ _) = empty
+assigns (Return _) = empty
+assigns (If es s) = unions (assigns <$> (snd <$> es)) ∪ maybe empty assigns s
+assigns (Match _ ps) = unions (assigns <$> (snd <$> ps))
+assigns (DefRec ds) = unions (singleton <<< fst <$> ds)
 assigns (Seq s1 s2) = assigns s1 ∪ assigns s2
-assigns (Dataclass c _ _) = Set.singleton c
+assigns (Dataclass c _ _) = singleton c
 
 instance BV Param where
    bv (Param p _) = bv p
 
 instance FV ParagraphElem where
-   fv (Token _) = Set.empty
+   fv (Token _) = empty
    fv (Unquote e) = fv e
 
-fvRecDefs :: RecDefs -> Set.Set Var
+fvRecDefs :: RecDefs -> Set Var
 fvRecDefs rs =
-   Set.unions (fv <$> (snd <$> rs)) \\ Set.unions (Set.singleton <<< fst <$> rs)
+   unions (fv <$> (snd <$> rs)) \\ unions (singleton <<< fst <$> rs)
 
-fvQualifiers :: List Qualifier -> Set.Set Var
-fvQualifiers Nil = Set.empty
+fvQualifiers :: List Qualifier -> Set Var
+fvQualifiers Nil = empty
 fvQualifiers (Guard e : gs) = fv e ∪ fvQualifiers gs
 fvQualifiers (Generator p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
 fvQualifiers (Decl (VarDef p _ e) : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
 
 instance BV Qualifier where
-   bv (Guard _) = Set.empty
+   bv (Guard _) = empty
    bv (Generator p _) = bv p
    bv (Decl (VarDef p _ _)) = bv p
