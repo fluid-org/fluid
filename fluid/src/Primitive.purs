@@ -27,7 +27,7 @@ import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import DataType (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), pureRel, root)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -273,7 +273,7 @@ unop Pos (Val α u@(Lit (Float _))) = pure (u × Set.singleton α)
 unop _ (Val _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
-eqOp (Val α u) (Val β u') = case u, u' of
+eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r && N.isNaN r' -> Left "Cannot compare nan with nan in container"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
    Lit (Bool _), Lit (Int _) -> undefined
@@ -281,26 +281,18 @@ eqOp (Val α u) (Val β u') = case u, u' of
    Lit (Int _), Lit (Bool _) -> undefined
    Lit (Float _), Lit (Bool _) -> undefined
    Fun _, Fun _ -> undefined
-   Constr c vs, Constr d ws
-      | c == cRange && d == cRange -> pure (eqRange vs ws × (both ∪ Set.fromFoldable (root <$> vs <> ws)))
+   Constr c _, Constr d _ | c == cRange && d == cRange -> eqElems both (elements v) (elements v')
    Constr c vs, Constr d ws
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)
-   List vs, List ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
-   Tuple vs, Tuple ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
+   List _, List _ -> eqElems both (elements v) (elements v')
+   Tuple _, Tuple _ -> eqElems both (elements v) (elements v')
    Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
    Matrix r, Matrix r' -> eqMatrix r r'
    _, _ -> pure (false × both) -- different forms
    where
    both = Set.fromFoldable [ α, β ]
    undefined = Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
-
-   eqRange :: List (Val a) -> List (Val a) -> Boolean
-   eqRange (m : n : Nil) (m' : n' : Nil) = len == len' && (len == 0 || unpackVal int m == unpackVal int m')
-      where
-      len = max 0 (unpackVal int n - unpackVal int m)
-      len' = max 0 (unpackVal int n' - unpackVal int m')
-   eqRange _ _ = error absurd
 
    eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> MayFail (Boolean × Set a)
    eqDict d d' =
@@ -342,9 +334,9 @@ eqElems αs (v : vs) (v' : vs') = do
 eqElems αs _ _ = pure (false × αs)
 
 contains :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
-contains (Val α u') v@(Val β u) = case u', u of
-   List vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
-   Tuple vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
+contains v'@(Val α u') v@(Val β u) = case u', u of
+   List _, _ -> second (Set.insert α) <$> elem (elements v')
+   Tuple _, _ -> second (Set.insert α) <$> elem (elements v')
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
    Dictionary _, _ -> Left (typeMismatch u "str")
    Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])
@@ -353,6 +345,6 @@ contains (Val α u') v@(Val β u) = case u', u of
    where
    elem :: List (Val a) -> MayFail (Boolean × Set a)
    elem Nil = pure (false × Set.empty)
-   elem (v' : vs) = do
-      b × βs <- eqOp v v'
-      if b then pure (true × βs) else second (βs ∪ _) <$> elem vs
+   elem (w : ws) = do
+      b × βs <- eqOp v w
+      if b then pure (true × βs) else second (βs ∪ _) <$> elem ws

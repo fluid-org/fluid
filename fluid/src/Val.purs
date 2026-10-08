@@ -18,7 +18,7 @@ import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, fold, foldMapDefaultL, foldl, foldrDefault, for_)
 import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
-import Data.List ((!!)) as L
+import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
@@ -367,6 +367,11 @@ element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$
 element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
 element i (Val _ (Constr c (Val β (Lit (Int m)) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
 element _ _ = error absurd
+
+elements :: forall a. Val a -> List (Val a)
+elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
+   where
+   n = definitely' (elementCount v)
 
 -- Dependence of the length of a sequence: the root, plus start and stop of a range.
 lengthDep :: forall a. Semiring a => Val a -> a
