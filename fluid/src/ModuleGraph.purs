@@ -22,6 +22,9 @@ typing = pure "typing"
 dataclasses :: ModuleName
 dataclasses = pure "dataclasses"
 
+sys :: ModuleName
+sys = pure "sys"
+
 prelude :: ModuleName
 prelude = NonEmptyList ("fluid" :| "prelude" : Nil)
 

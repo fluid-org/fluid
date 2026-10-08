@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run pure-py-spec suite with Fluid as checker, at revision in purepy-version. Expected failures listed in
+# Run PurePy suite with Fluid as checker, at revision in purepy-version. Expected failures listed in
 # test/spec-differences.txt; `--update` rewrites list from this run and badge in test/spec-compliance.json.
 set -e
 cd "$(dirname "$0")/.."
