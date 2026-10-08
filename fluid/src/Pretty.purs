@@ -410,6 +410,7 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Fun phi) = pretty phi
    pretty (V.Opaque q) = text (last q)
    pretty (V.Module q) = text ("<module " <> dottedName q <> ">")
+   pretty V.Unbound = text "<unbound>"
 
 instance Highlightable a => Pretty (Fun a) where
    pretty (V.Closure _ _ _) = text "cl"

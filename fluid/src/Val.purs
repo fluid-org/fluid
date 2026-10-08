@@ -65,6 +65,7 @@ data BaseVal a
    | Fun (Fun a)
    | Opaque Name -- predefined name, fully qualified
    | Module ModuleName
+   | Unbound
 
 root :: forall a. Val a -> a
 root (Val α _) = α
@@ -73,6 +74,7 @@ overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
 overChildren _ (Opaque q) = Opaque q
 overChildren _ (Module q) = Module q
+overChildren _ Unbound = Unbound
 overChildren f (Constr c vs) = Constr c (f <$> vs)
 overChildren f (List vs) = List (f <$> vs)
 overChildren f (Tuple vs) = Tuple (f <$> vs)
@@ -164,6 +166,7 @@ unitSection (Val _ u) = Val one case u of
    Fun φ -> Fun (zeros φ)
    Opaque q -> Opaque q
    Module q -> Module q
+   Unbound -> Unbound
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
@@ -481,6 +484,7 @@ instance Apply BaseVal where
    apply (Fun ff) (Fun f) = Fun (ff <*> f)
    apply (Opaque q) (Opaque q') = Opaque (q ≜ q')
    apply (Module q) (Module q') = Module (q ≜ q')
+   apply Unbound Unbound = Unbound
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where
@@ -584,6 +588,7 @@ instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
    expand (Fun φ) (Fun φ') = Fun (expand φ φ')
    expand (Opaque q) (Opaque q') = Opaque (q ≜ q')
    expand (Module q) (Module q') = Module (q ≜ q')
+   expand Unbound Unbound = Unbound
    expand _ _ = shapeMismatch unit
 
 instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where

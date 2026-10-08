@@ -41,6 +41,7 @@ misc_cases =
      }
    , { file: "foldr_sum_squares.fld", fwd_expect: "661" }
    , { file: "if_no_else.fld", fwd_expect: "1" }
+   , { file: "import_if_no_else.fld", fwd_expect: "1" }
    , { file: "include_input_into_output.fld"
      , fwd_expect: "(1, 1)"
      }

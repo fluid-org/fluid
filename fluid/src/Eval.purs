@@ -8,7 +8,7 @@ import Control.Monad.Reader (class MonadReader)
 import Control.Monad.State (runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, fold, foldM, foldl, sum)
+import Data.Foldable (elem, fold, foldM, foldMap, foldl, sum)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
@@ -29,7 +29,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), assigns, fv, paramVar)
 import File (class LoadFile, FileCxt, withClasses)
 import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
@@ -406,8 +406,9 @@ evalModule ρ0 q (Module is ss) = do
    ρ_subs <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
    ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
    bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
+   ρ_unbound <- traverse (const (deriv (Val unit V.Unbound))) (D.fromFoldable ((_ × unit) <$> L.fromFoldable (foldMap assigns ss)))
    members <- traverse (record >>> map fst) bindings
-   pure (ρ_name <+> ρ_subs <+> members)
+   pure (ρ_name <+> ρ_subs <+> ρ_unbound <+> members)
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport

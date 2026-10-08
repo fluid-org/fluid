@@ -146,6 +146,7 @@ wellFormedEnv cxt ρ =
    Map.keys cxt == Set.fromFoldable (keys ρ) && and (Map.mapMaybeWithKey (\x θ -> wellFormedVal θ <$> lookup x ρ) cxt)
 
 wellFormedVal :: forall a. Entry -> Val a -> Boolean
+wellFormedVal (VarStatus true) (Val _ V.Unbound) = false
 wellFormedVal (VarStatus _) _ = true
 wellFormedVal (Class cls) (Val _ (V.Fun (V.Type c))) = c == cls.name
 wellFormedVal PredefName (Val _ (V.Opaque _)) = true
