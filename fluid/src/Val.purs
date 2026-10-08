@@ -3,7 +3,7 @@ module Val where
 import Prelude hiding (absurd, append)
 
 import Bind (Name, Var)
-import DataType (class HasClasses)
+import DataType (class HasClasses, cRange)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.Except (ExceptT)
@@ -18,7 +18,7 @@ import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, fold, foldMapDefaultL, foldl, foldrDefault, for_)
 import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
-import Data.List ((!!)) as L
+import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
@@ -359,17 +359,29 @@ field :: forall a. Int -> Val a -> Val a
 field i (Val _ (Constr _ vs)) = definitely' (vs L.!! i)
 field _ _ = error absurd
 
--- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary.
+-- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary, integer of a range.
 element :: forall a. Int -> Val a -> Val a
 element i (Val _ (List vs)) = definitely' (vs A.!! i)
 element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
 element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
 element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
+element i (Val _ (Constr c (Val β (Lit (Int m)) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
 element _ _ = error absurd
+
+elements :: forall a. Val a -> List (Val a)
+elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
+   where
+   n = definitely' (elementCount v)
+
+-- Dependence of the length of a sequence: the root, plus start and stop of a range.
+lengthDep :: forall a. Semiring a => Val a -> a
+lengthDep (Val α (Constr c vs)) | c == cRange = foldl (+) α (root <$> vs)
+lengthDep (Val α _) = α
 
 elementCount :: forall a. Val a -> Maybe Int
 elementCount (Val _ (List vs)) = Just (A.length vs)
 elementCount (Val _ (Tuple vs)) = Just (A.length vs)
+elementCount (Val _ (Constr c (Val _ (Lit (Int m)) : Val _ (Lit (Int n)) : Nil))) | c == cRange = Just (max 0 (n - m))
 elementCount (Val _ (Lit (Str s))) = Just (S.length s)
 elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
 elementCount _ = Nothing

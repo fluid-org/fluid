@@ -26,7 +26,8 @@ import Pretty (prettyP)
 import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), pureRel, root)
+import DataType (cRange)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -272,7 +273,7 @@ unop Pos (Val α u@(Lit (Float _))) = pure (u × Set.singleton α)
 unop _ (Val _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
-eqOp (Val α u) (Val β u') = case u, u' of
+eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r && N.isNaN r' -> Left "Cannot compare nan with nan in container"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
    Lit (Bool _), Lit (Int _) -> undefined
@@ -280,11 +281,12 @@ eqOp (Val α u) (Val β u') = case u, u' of
    Lit (Int _), Lit (Bool _) -> undefined
    Lit (Float _), Lit (Bool _) -> undefined
    Fun _, Fun _ -> undefined
+   Constr c _, Constr d _ | c == cRange && d == cRange -> eqElems both (elements v) (elements v')
    Constr c vs, Constr d ws
       | c == d -> eqElems both vs ws
       | otherwise -> pure (false × both)
-   List vs, List ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
-   Tuple vs, Tuple ws -> eqElems both (fromFoldable vs) (fromFoldable ws)
+   List _, List _ -> eqElems both (elements v) (elements v')
+   Tuple _, Tuple _ -> eqElems both (elements v) (elements v')
    Dictionary (DictRep d), Dictionary (DictRep d') -> eqDict d d'
    Matrix r, Matrix r' -> eqMatrix r r'
    _, _ -> pure (false × both) -- different forms
@@ -333,8 +335,8 @@ eqElems αs _ _ = pure (false × αs)
 
 contains :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 contains (Val α u') v@(Val β u) = case u', u of
-   List vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
-   Tuple vs, _ -> second (Set.insert α) <$> elem (fromFoldable vs)
+   List _, _ -> second (Set.insert α) <$> elem (elements (Val α u'))
+   Tuple _, _ -> second (Set.insert α) <$> elem (elements (Val α u'))
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
    Dictionary _, _ -> Left (typeMismatch u "str")
    Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])

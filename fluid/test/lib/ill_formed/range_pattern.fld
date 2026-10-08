@@ -1,0 +1,5 @@
+match range(0, 3):
+  case range(0, 3):
+    return "three"
+  case _:
+    return "other"
