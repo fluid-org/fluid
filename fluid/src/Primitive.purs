@@ -334,9 +334,9 @@ eqElems αs (v : vs) (v' : vs') = do
 eqElems αs _ _ = pure (false × αs)
 
 contains :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
-contains v'@(Val α u') v@(Val β u) = case u', u of
-   List _, _ -> second (Set.insert α) <$> elem (elements v')
-   Tuple _, _ -> second (Set.insert α) <$> elem (elements v')
+contains (Val α u') v@(Val β u) = case u', u of
+   List _, _ -> second (Set.insert α) <$> elem (elements (Val α u'))
+   Tuple _, _ -> second (Set.insert α) <$> elem (elements (Val α u'))
    Dictionary (DictRep d), Lit (Str w) -> pure (Set.member w (keys d) × Set.fromFoldable [ α, β ])
    Dictionary _, _ -> Left (typeMismatch u "str")
    Lit (Str w'), Lit (Str w) -> pure (String.contains (Pattern w) w' × Set.fromFoldable [ α, β ])
@@ -345,6 +345,6 @@ contains v'@(Val α u') v@(Val β u) = case u', u of
    where
    elem :: List (Val a) -> MayFail (Boolean × Set a)
    elem Nil = pure (false × Set.empty)
-   elem (w : ws) = do
-      b × βs <- eqOp v w
-      if b then pure (true × βs) else second (βs ∪ _) <$> elem ws
+   elem (v' : vs) = do
+      b × βs <- eqOp v v'
+      if b then pure (true × βs) else second (βs ∪ _) <$> elem vs
