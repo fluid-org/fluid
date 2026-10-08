@@ -15,8 +15,8 @@ import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
-import Data.List.NonEmpty (last)
-import Data.List.NonEmpty (fromList, head, snoc, toList, unsnoc) as NEL
+import Data.List.NonEmpty (head, last)
+import Data.List.NonEmpty (fromList, snoc, toList, unsnoc) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
@@ -425,7 +425,7 @@ evalImport enclosing ρ = case _ of
    Import q Nothing -> do
       _ <- load q
       loadAncestors Nothing q
-      maplet (NEL.head q) <$> moduleVal (pure (NEL.head q)) <#> (ρ <+> _)
+      maplet (head q) <$> moduleVal (pure (head q)) <#> (ρ <+> _)
    Import q (Just xs) -> do
       ρ_q <- load q
       loadAncestors (Just enclosing) q
