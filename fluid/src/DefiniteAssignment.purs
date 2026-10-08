@@ -13,6 +13,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
 import Util (MayFail, type (×), definitely')
+import Util.Set ((∪))
 
 type VarCxt = Map Var Boolean
 
@@ -51,7 +52,7 @@ mergeVarCxt cxt1 cxt2 =
    foldl (\acc k -> Map.insert k (mergedAt k) acc) Map.empty allKeys
    where
    allKeys :: Set Var
-   allKeys = Set.fromFoldable (Map.keys cxt1) `Set.union` Set.fromFoldable (Map.keys cxt2)
+   allKeys = Set.fromFoldable (Map.keys cxt1) ∪ Set.fromFoldable (Map.keys cxt2)
    mergedAt k = case Map.lookup k cxt1, Map.lookup k cxt2 of
       Just a, Just b -> a && b
       _, _ -> false

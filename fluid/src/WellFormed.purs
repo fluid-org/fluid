@@ -34,7 +34,7 @@ import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
 import Literal (Literal(..))
-import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..)) as S
+import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..), assigns) as S
 import Type as T
 import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, whenever, (×), (∩))
 import Util.Pair (Pair(..))
@@ -145,18 +145,6 @@ checkStatements q cxt_imp (S.Module imports ss) =
 mainModule :: Name
 mainModule = pure "__main__"
 
-assigns :: S.Stmt -> Set Var
-assigns S.Pass = Set.empty
-assigns (S.Def (S.VarDef p _ _)) = bv p
-assigns (S.ExprStmt _) = Set.empty
-assigns (S.Assert _ _) = Set.empty
-assigns (S.Return _) = Set.empty
-assigns (S.If es s) = unions (assigns <$> (snd <$> es)) ∪ maybe Set.empty assigns s
-assigns (S.Match _ ps) = unions (assigns <$> (snd <$> ps))
-assigns (S.DefRec ds) = unions (Set.singleton <<< fst <$> ds)
-assigns (S.Seq s1 s2) = assigns s1 ∪ assigns s2
-assigns (S.Dataclass c _ _) = Set.singleton c
-
 classDecls :: S.Stmt -> Set Var
 classDecls (S.Dataclass c _ _) = Set.singleton c
 classDecls (S.Seq s1 s2) = classDecls s1 ∪ classDecls s2
@@ -176,11 +164,7 @@ instance Captures S.Stmt where
       unions ((\(e × s') -> captures e ∪ captures s') <$> es) ∪ maybe Set.empty captures s
    captures (S.Match e ps) =
       captures e ∪ unions ((\(_ × s) -> captures s) <$> ps)
-   captures (S.DefRec ds) =
-      (unions (clauseCaptures <$> ds)) \\ unions (Set.singleton <<< fst <$> ds)
-      where
-      clauseCaptures (_ × S.Clause (ps × _ × s)) =
-         (fv s \\ unions (bv <$> ps)) \\ assigns s
+   captures (S.DefRec ds) = unions ((fv <<< snd) <$> ds) \\ unions (Set.singleton <<< fst <$> ds)
    captures (S.Seq s1 s2) = captures s1 ∪ captures s2
    captures (S.Dataclass _ _ _) = Set.empty
 
@@ -206,8 +190,8 @@ instance Captures S.Expr where
       where
       capturesPe (S.Token _) = Set.empty
       capturesPe (S.Unquote e) = captures e
-   captures (S.List es) = Set.unions (captures <$> es)
-   captures (S.Tuple es) = Set.unions (captures <$> es)
+   captures (S.List es) = unions (captures <$> es)
+   captures (S.Tuple es) = unions (captures <$> es)
    captures (S.ListComp e gs) = captures gs ∪ (captures e \\ bv gs)
    captures (S.DictComp k e gs) = captures gs ∪ ((captures k ∪ captures e) \\ bv gs)
    captures (S.DocExpr e e') = (captures e \\ Set.singleton varThis) ∪ captures e'
@@ -230,7 +214,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       (Assigns Map.empty × _) <$> (E.Assert <$> wellFormed cxt e <*> traverse (wellFormed cxt) e')
    wellFormed cxt (S.Def (S.VarDef p ψ e)) = do
       let xs = bv p
-      for_ (Set.toUnfoldable (xs `Set.intersection` captures e) :: Array Var) \x ->
+      for_ (Set.toUnfoldable (xs ∩ captures e) :: Array Var) \x ->
          throwError $ "Variable captured by its own definition: " <> x
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
@@ -245,7 +229,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          void $ wellFormedPatterns cxt' (group <#> \(_ × S.Clause (ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
          cs <- for group \(_ × S.Clause (ps × ψ × s)) -> do
             let xs = unions (bv <$> ps)
-            let ys = assigns s \\ xs
+            let ys = S.assigns s \\ xs
             let cxt'' = cxt' `extendCxt` constMap true xs `extendCxt` constMap false ys
             ps' <- traverse (\(S.Param p ψ') -> (×) <$> wellFormed cxt' p <*> traverse (resolveType cxt') ψ') ps
             τ <- traverse (resolveType cxt') ψ
@@ -262,7 +246,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       case r1 of
          Returns -> throwError "Unreachable statement"
          Assigns δ -> do
-            for_ (Set.toUnfoldable (captures s1 `Set.intersection` assigns s2) :: Array Var) \x ->
+            for_ (Set.toUnfoldable (captures s1 ∩ S.assigns s2) :: Array Var) \x ->
                throwError $ "Captured variable reassigned: " <> x
             r2 × s2' <- wellFormed (cxt `extendCxt` δ) s2
             pure (overrideRes r1 r2 × E.Seq s1' s2')
@@ -301,7 +285,7 @@ wellFormedTop q cxt (S.Dataclass c b xψs) = do
       Just base -> do
          cls <- maybe (throwError $ "Unknown class: " <> base) pure (classFor cxt base)
          when (cls.name /= NEL.snoc q base) $ throwError $ "Cannot extend imported class: " <> base
-         let clash = Set.intersection (Set.fromFoldable xs) (Set.fromFoldable (fields cls))
+         let clash = Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)
          when (not Set.isEmpty clash)
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
@@ -312,9 +296,9 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
    case r1 of
       Returns -> throwError "Unreachable statement"
       Assigns δ -> do
-         for_ (Set.toUnfoldable (captures t1 `Set.intersection` assigns t2) :: Array Var) \x ->
+         for_ (Set.toUnfoldable (captures t1 ∩ S.assigns t2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         for_ (Set.toUnfoldable (Map.keys decls1 `Set.intersection` assigns t2) :: Array Var) \c ->
+         for_ (Set.toUnfoldable (Map.keys decls1 ∩ S.assigns t2) :: Array Var) \c ->
             throwError $ (if c `Set.member` classDecls t2 then "Duplicate class declaration: " else "Class name reassigned: ") <> c
          decls2 × r2 × t2' <- wellFormedTop q (Map.union (Class <$> decls1) (cxt `extendCxt` δ)) t2
          pure (Map.union decls2 decls1 × overrideRes r1 r2 × E.Seq t1' t2')
