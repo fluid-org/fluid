@@ -149,11 +149,13 @@ wellFormedEnv cxt ρ =
    hasVal = case _ of
       VarStatus _ -> true
       Class _ -> true
+      PredefName -> true
       _ -> false
 
 wellFormedVal :: forall a. Entry -> Val a -> Boolean
 wellFormedVal (VarStatus _) _ = true
 wellFormedVal (Class cls) (Val _ (V.Fun (V.Type c))) = c == cls.name
+wellFormedVal PredefName (Val _ (V.Opaque _)) = true
 wellFormedVal _ _ = false
 
 -- Parse modules reachable through imports and run checking action over them, yielding its result, modules

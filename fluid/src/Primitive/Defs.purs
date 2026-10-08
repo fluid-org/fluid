@@ -2,7 +2,7 @@ module Primitive.Defs where
 
 import Prelude hiding (absurd, apply, div, mod, top)
 
-import Bind (Bind, Var, dottedName)
+import Bind (Bind, Var, dottedName, qual)
 import Control.Monad.Error.Class (class MonadError)
 import Data.Argonaut.Core (Json, caseJson)
 import Data.Argonaut.Decode (parseJson)
@@ -96,10 +96,11 @@ predefined = M.fromFoldable
    ]
    where
    predefinedModule :: ModuleName -> List Var -> Array (Bind ClassEntry) -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
-   predefinedModule q names classes members = q × (cxt × wrap (ρ `unionWith_never` ρ_classes))
+   predefinedModule q names classes members = q × (cxt × wrap (ρ `unionWith_never` ρ_classes `unionWith_never` ρ_names))
       where
       ρ = D.fromFoldable (Array.cons ("__name__" × Val bot (Lit (Str (dottedName q)))) members)
       ρ_classes = D.fromFoldable classes <#> \cls -> Val bot (Fun (Type cls.name))
+      ρ_names = D.fromFoldable (names <#> \x -> x × Val bot (Opaque (qual q x)))
       cxt = M.unions [ constMap PredefName (Set.fromFoldable names), Class <$> M.fromFoldable classes, constMap (VarStatus true) (keys ρ) ]
 
 len :: ForeignOp
