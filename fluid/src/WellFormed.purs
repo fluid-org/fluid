@@ -27,7 +27,7 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DataType (cParagraph, cRange)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Dict as D
 import Util.Map (constMap)
 import Expr (bv, fv)
@@ -49,14 +49,14 @@ type CheckM = StateT (Map.Map ModuleName CheckedModule) (ReaderT (Map.Map Module
 runCheckM :: forall a. CheckM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> MayFail (a × Map.Map ModuleName CheckedModule)
 runCheckM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
 
-checkProgram :: List S.Import -> S.Stmt -> CheckM (VarCxt × E.Stmt)
+checkProgram :: List S.Import -> S.Stmt -> CheckM (Cxt × E.Stmt)
 checkProgram imports s = do
    _ × cxt_imp <- checkImports mainModule imports
    -- Unlike a module (checkStatements), the program may return: a top-level return yields
    -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
    decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
    modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
-   pure (Map.insert "__name__" true (erase cxt_imp) × s')
+   pure (Map.insert "__name__" (VarStatus true) cxt_imp × s')
 
 -- Member context of module q, checked on demand as its import is checked; memoised. The recursion has no
 -- cycle guard; it terminates because the dependency graph is acyclic.
@@ -290,7 +290,7 @@ wellFormedTop q cxt (S.Dataclass c b xψs) = do
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Map.singleton c { cxt, name: NEL.snoc q c, base: b, fields: xs } × Assigns Map.empty × E.Pass)
+   pure (Map.singleton c { cxt, name: NEL.snoc q c, base: b, fields: xs } × Assigns Map.empty × E.Dataclass (NEL.snoc q c))
 wellFormedTop q cxt (S.Seq t1 t2) = do
    decls1 × r1 × t1' <- wellFormedTop q cxt t1
    case r1 of

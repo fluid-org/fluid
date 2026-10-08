@@ -354,6 +354,7 @@ instance Pretty E.Stmt where
    pretty (E.ExprStmt e) = pretty e
    pretty (E.Assert e Nothing) = text "assert" <+> pretty e
    pretty (E.Assert e (Just e')) = text "assert" <+> pretty e <> text "," <+> pretty e'
+   pretty (E.Dataclass c) = text "@dataclass" <> line <> text "class" <+> text (last c)
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Pretty E.Def where

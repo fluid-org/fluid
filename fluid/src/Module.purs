@@ -8,7 +8,7 @@ import Control.Monad.State (runStateT)
 import Bind (dottedName, pathName, prefixOf)
 import Data.List.NonEmpty (snoc, unsnoc, fromList) as NEL
 import Data.Either (Either(..))
-import Data.Foldable (foldM, for_, intercalate)
+import Data.Foldable (and, foldM, for_, intercalate)
 import Data.List (List(..), catMaybes, elem, filter, mapMaybe, reverse, takeWhile, (:))
 import Data.Map (Map)
 import Data.Map as Map
@@ -25,18 +25,18 @@ import Eval (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), hasDirectory, loadModuleSource, withClasses)
-import DepGraph (Deriv, deriv, emptyGraph)
+import DepGraph (Deriv, deriv, emptyGraph, valAt)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
-import DefiniteAssignment (Cxt, Entry(..), erase)
+import DefiniteAssignment (Cxt, Entry(..))
 import Primitive.Defs (predefined)
 import WellFormed (CheckM, CheckedModule, checkProgram, checkModule, mainModule, runCheckM)
 import SExpr as S
 import Util (MayFail, type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
-import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
+import Util.Map (constMap, keys, findWithDefault, lookup, maplet, restrict, (<+>))
 import Val (class HasModuleStore, ModuleState(..), moduleStore, modifyModuleStore, loadedEnv, Env(..), Val(..))
-import Val (BaseVal(..)) as V
+import Val (BaseVal(..), Fun(..)) as V
 
 type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
 
@@ -132,13 +132,29 @@ prepConfig fluidSrc = do
    { result: cxt_wf × e, modules: mods, checked, classes } <- prepModules imports (checkProgram imports s)
    withClasses classes do
       inputs <- loadTopLevel mods imports
-      check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
-      { modules } <- moduleStore
+      { modules, depGraph } <- moduleStore
+      check (wellFormedEnv cxt_wf (valAt depGraph <$> inputs)) "top-level environment well-formed for context"
       for_ (Map.toUnfoldable checked :: List (ModuleName × CheckedModule)) \(q × { cxt, mod }) ->
          when (isJust mod) $ for_ (Map.lookup q modules >>= loadedEnv) \ρ_q ->
-            check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
-               ("module " <> dottedName q <> ": context and environment bind the same names")
+            check (wellFormedEnv cxt (valAt depGraph <$> ρ_q))
+               ("module " <> dottedName q <> ": environment well-formed for context")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
+
+-- Environment binds same names as context, each to value well-formed for its entry.
+wellFormedEnv :: forall a. Cxt -> Dict (Val a) -> Boolean
+wellFormedEnv cxt ρ =
+   Map.keys cxt' == Set.fromFoldable (keys ρ) && and (Map.mapMaybeWithKey (\x θ -> wellFormedVal θ <$> lookup x ρ) cxt')
+   where
+   cxt' = Map.filter hasVal cxt
+   hasVal = case _ of
+      VarStatus _ -> true
+      Class _ -> true
+      _ -> false
+
+wellFormedVal :: forall a. Entry -> Val a -> Boolean
+wellFormedVal (VarStatus _) _ = true
+wellFormedVal (Class cls) (Val _ (V.Fun (V.Type c))) = c == cls.name
+wellFormedVal _ _ = false
 
 -- Parse modules reachable through imports and run checking action over them, yielding its result, modules
 -- checked, and class table.

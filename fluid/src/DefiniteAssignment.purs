@@ -67,12 +67,6 @@ mergeRes Returns r = r
 mergeRes r Returns = r
 mergeRes (Assigns a) (Assigns b) = Assigns (mergeVarCxt a b)
 
--- The desugared program's context: module and class entries resolved away.
-erase :: Cxt -> VarCxt
-erase = Map.mapMaybe case _ of
-   VarStatus b -> Just b
-   _ -> Nothing
-
 classFor :: Cxt -> Var -> Maybe ClassEntry
 classFor cxt c = case Map.lookup c cxt of
    Just (Class cls) -> Just cls

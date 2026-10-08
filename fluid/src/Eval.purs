@@ -15,7 +15,7 @@ import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
-import Data.List.NonEmpty (fromList, head, snoc, toList, unsnoc) as NEL
+import Data.List.NonEmpty (fromList, head, last, snoc, toList, unsnoc) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
@@ -333,6 +333,8 @@ evalStmt inputs = case _ of
          Just e' -> do
             _ × Val _ w <- eval (inputs { ctrl = ctrl }) e'
             throw ("AssertionError: " <> either (\_ -> prettyP w) identity (string.unpack w))
+   Dataclass c ->
+      pure (Assigns (maplet (NEL.last c) (constructed inputs.ctrl { val: Val unit (V.Fun (V.Type c)), inEdges: Nil })) inputs.ctrl)
    Seq s1 s2 -> do
       r1 <- evalStmt inputs s1
       case r1 of

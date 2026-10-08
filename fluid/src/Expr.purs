@@ -87,6 +87,7 @@ data Stmt
    | Pass
    | ExprStmt Expr
    | Assert Expr (Maybe Expr)
+   | Dataclass Name -- class declaration, by fully-qualified name
    | Seq Stmt Stmt
 
 data Import = Import Name (Maybe (List Var))
@@ -142,6 +143,7 @@ instance FV Stmt where
    fv Pass = empty
    fv (ExprStmt e) = fv e
    fv (Assert e e_opt) = fv e ∪ fv e_opt
+   fv (Dataclass _) = empty
    fv (Seq s s') = fv s ∪ fv s'
 
 instance FV a => FV (Dict a) where
