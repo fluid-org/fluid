@@ -143,19 +143,14 @@ prepConfig fluidSrc = do
 -- Environment binds same names as context, each to value well-formed for its entry.
 wellFormedEnv :: forall a. Cxt -> Dict (Val a) -> Boolean
 wellFormedEnv cxt ρ =
-   Map.keys cxt' == Set.fromFoldable (keys ρ) && and (Map.mapMaybeWithKey (\x θ -> wellFormedVal θ <$> lookup x ρ) cxt')
-   where
-   cxt' = Map.filter hasVal cxt
-   hasVal = case _ of
-      VarStatus _ -> true
-      Class _ -> true
-      PredefName -> true
-      _ -> false
+   Map.keys cxt == Set.fromFoldable (keys ρ) && and (Map.mapMaybeWithKey (\x θ -> wellFormedVal θ <$> lookup x ρ) cxt)
 
 wellFormedVal :: forall a. Entry -> Val a -> Boolean
 wellFormedVal (VarStatus _) _ = true
 wellFormedVal (Class cls) (Val _ (V.Fun (V.Type c))) = c == cls.name
 wellFormedVal PredefName (Val _ (V.Opaque _)) = true
+wellFormedVal (Mod q) (Val _ (V.Module q')) = q == q'
+wellFormedVal (ModChecked q _) (Val _ (V.Module q')) = q == q'
 wellFormedVal _ _ = false
 
 -- Parse modules reachable through imports and run checking action over them, yielding its result, modules

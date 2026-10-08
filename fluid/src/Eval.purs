@@ -26,6 +26,7 @@ import Data.Tuple (fst, snd)
 import DefiniteAssignment (ancestors)
 import DataType (class HasClasses, ClassTable, arity, askClasses, checkArity, fieldsOf)
 import Dict (Dict)
+import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), fv, paramVar)
@@ -33,12 +34,12 @@ import File (class LoadFile, FileCxt, withClasses)
 import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
-import ModuleGraph (ModuleName, implicit)
+import ModuleGraph (ModuleName, implicit, submodules)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Primitive (binop, binopRel, boolean, int, string, typeMismatch, unop, unopRel, unpack, unpackVal)
 import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, singleton, throw, withMsg, (×))
-import Util.Map (delete, get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
+import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
@@ -401,12 +402,14 @@ evalModule
 evalModule ρ0 q (Module is ss) = do
    ρ_imp <- foldM (evalImport q) ρ0 is
    ρ_name <- maplet "__name__" <$> deriv (Val unit (V.Lit (Str (dottedName q))))
+   { modules } <- moduleStore
+   ρ_subs <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
    ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
    bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
    members <- traverse (record >>> map fst) bindings
-   pure (ρ_name <+> members)
+   pure (ρ_name <+> ρ_subs <+> members)
 
--- Bind imported value members; delete bindings for names that now denote modules.
+-- Bind imported members, and names of imported modules to module values.
 evalImport
    :: forall m s
     . MonadEval s m
@@ -418,7 +421,7 @@ evalImport enclosing ρ = case _ of
    Import q Nothing -> do
       _ <- load q
       loadAncestors Nothing q
-      pure (delete (NEL.head q) ρ)
+      maplet (NEL.head q) <$> moduleVal (pure (NEL.head q)) <#> (ρ <+> _)
    Import q (Just xs) -> do
       ρ_q <- load q
       loadAncestors (Just enclosing) q
@@ -432,12 +435,13 @@ evalImport enclosing ρ = case _ of
 
    importsFrom q ρ_q = foldM step
       where
-      step ρ' x = case lookup x ρ_q of
-         Just p -> pure (ρ' <+> maplet x p)
-         Nothing -> do
-            { modules } <- moduleStore
-            when (Map.member (NEL.snoc q x) modules) (void (load (NEL.snoc q x)))
-            pure (delete x ρ')
+      step ρ' x = do
+         { modules } <- moduleStore
+         when (Map.member (NEL.snoc q x) modules) (void (load (NEL.snoc q x)))
+         pure (ρ' <+> maplet x (get x ρ_q))
+
+moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
+moduleVal q = deriv (Val unit (V.Module q))
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)

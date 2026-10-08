@@ -19,7 +19,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, zipWith, (:))
 import Data.Foldable (lookup) as F
-import ModuleGraph (ModuleName, implicitFor)
+import ModuleGraph (ModuleName, implicitFor, submodules)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
@@ -36,7 +36,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Q
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..), assigns) as S
 import Type as T
-import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, whenever, (×), (∩))
+import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -68,7 +68,7 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
       importCxt × cxt_imp <- checkImports q is
       δ × mod' <- lift (lift (checkStatements q cxt_imp mod))
-      let subs = submodules (Map.keys mods) q
+      let subs = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
       let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
       when (not Set.isEmpty clash)
          $ throwError
@@ -120,12 +120,6 @@ importedMembers q cxt (x : xs) = do
       Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
       Just θ -> pure (Map.insert x θ othersCxt)
       Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
-
--- Stubs for the immediate submodules of q in the module table.
-submodules :: Set ModuleName -> ModuleName -> Cxt
-submodules modules q = Map.fromFoldable (mapMaybe sub (Set.toUnfoldable modules))
-   where
-   sub m = let { init, last: x } = NEL.unsnoc m in whenever (NEL.fromList init == Just q) (x × Mod m)
 
 checkStatements :: Name -> Cxt -> S.Module -> MayFail (Cxt × E.Module)
 checkStatements q cxt_imp (S.Module imports ss) =

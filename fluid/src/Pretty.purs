@@ -409,6 +409,7 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Matrix (MatrixRep (vss × _ × _))) = vcommas $ fromFoldable (prettyList <$> vss) -- ???
    pretty (V.Fun phi) = pretty phi
    pretty (V.Opaque q) = text (last q)
+   pretty (V.Module q) = text ("<module " <> dottedName q <> ">")
 
 instance Highlightable a => Pretty (Fun a) where
    pretty (V.Closure _ _ _) = text "cl"
