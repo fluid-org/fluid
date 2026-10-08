@@ -39,7 +39,7 @@ import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
 import Literal (Literal(..))
 import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
 import Util (MayFail, type (+), type (×), definitely', error, orElse, singleton, throw, (×))
-import ModuleGraph (ModuleName, builtins, dataclasses, math, typing)
+import ModuleGraph (ModuleName, builtins, dataclasses, math, sys, typing)
 import Util.Map (constMap, keys, lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
@@ -87,6 +87,10 @@ predefined = M.fromFoldable
         , unary "floor" { i: intOrNumber, o: int, fwd: identity `union1` floor }
         , unary "ceil" { i: intOrNumber, o: int, fwd: identity `union1` ceil }
         ]
+   , predefinedModule sys Nil []
+        [ "argv" × Val bot (List [])
+        , extern exit
+        ]
    , predefinedModule typing ("Callable" : "Literal" : "Never" : "Sized" : Nil) [] []
    , predefinedModule dataclasses ("dataclass" : Nil) [] []
    ]
@@ -103,6 +107,15 @@ len =
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (v@(Val α u) : Nil) = maybe (Left (typeMismatch u "Sized")) (\n -> Right (Val α (Lit (Int n)))) (elementCount v)
+   depRel _ = Left "Single argument expected"
+
+exit :: ForeignOp
+exit =
+   ForeignOp ("exit" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   where
+   depRel :: forall a. List (Val a) -> MayFail (Val a)
+   depRel (Val _ (Lit (Int n)) : Nil) = Left ("Exit status " <> show n)
+   depRel (Val _ u : Nil) = Left (typeMismatch u "int")
    depRel _ = Left "Single argument expected"
 
 print_ :: ForeignOp
