@@ -266,7 +266,6 @@ test/module-level/semantically-valid/match_returning_branch.py (check: exit 1, e
 test/module-level/semantically-valid/match_var_bound_in_each_case.py (check: exit 3, expected [0]: 3 match_var_bound_in_each_case.py: Not definitely assigned: x)
 test/module-level/semantically-valid/never_below.py (check: exit 3, expected [0]: 3 never_below.py: Module not found in any path: sys)
 test/module-level/semantically-valid/pat_class_nested.py (check: exit 1, expected [0]: 1 pat_class_nested.py: ParseError on line 15, column 27:)
-test/module-level/semantically-valid/scopes/nested_def_local.py (check: exit 3, expected [0]: 3 nested_def_local.py: Captured variable reassigned: z)
 test/module-level/semantically-valid/type_alias.py (check: exit 1, expected [0]: 1 type_alias.py: ParseError on line 2, column 6:)
 test/module-level/semantically-valid/type_alias_field.py (check: exit 1, expected [0]: 1 type_alias_field.py: ParseError on line 4, column 6:)
 test/module-level/semantically-valid/type_alias_generic.py (check: exit 1, expected [0]: 1 type_alias_generic.py: ParseError on line 2, column 6:)

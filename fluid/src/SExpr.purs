@@ -176,7 +176,20 @@ instance FV LambdaClause where
    fv (LambdaClause (ps × e)) = fv e \\ Set.unions (bv <$> ps)
 
 instance FV Clause where
-   fv (Clause (ps × _ × b)) = fv b \\ Set.unions (bv <$> ps)
+   fv (Clause (ps × _ × b)) = (fv b \\ Set.unions (bv <$> ps)) \\ assigns b
+
+-- Variables assigned by a statement.
+assigns :: Stmt -> Set.Set Var
+assigns Pass = Set.empty
+assigns (Def (VarDef p _ _)) = bv p
+assigns (ExprStmt _) = Set.empty
+assigns (Assert _ _) = Set.empty
+assigns (Return _) = Set.empty
+assigns (If es s) = Set.unions (assigns <$> (snd <$> es)) ∪ maybe Set.empty assigns s
+assigns (Match _ ps) = Set.unions (assigns <$> (snd <$> ps))
+assigns (DefRec ds) = Set.unions (Set.singleton <<< fst <$> ds)
+assigns (Seq s1 s2) = assigns s1 ∪ assigns s2
+assigns (Dataclass c _ _) = Set.singleton c
 
 instance BV Param where
    bv (Param p _) = bv p

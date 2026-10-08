@@ -1,0 +1,8 @@
+def f():
+  def g():
+    z = 1
+    return z
+  return g()
+
+z = 5
+f() + z
