@@ -5,7 +5,7 @@ import Prelude
 import Data.Argonaut.Core (stringifyWithIndent)
 import Data.Argonaut.Encode (encodeJson)
 import Data.Array as Array
-import Data.Foldable (foldl, for_)
+import Data.Foldable (for_)
 import Data.List.Types (NonEmptyList)
 import Data.Set as Set
 import Data.Either (Either(..))
@@ -17,7 +17,6 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff (Aff, Error, message, runAff_, try)
 import Effect.Class (liftEffect)
-import Data.Traversable (for)
 import Effect.Class.Console (log, logShow)
 import Eval (evalProgram)
 import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, modulePath, withClasses, withRoots)
@@ -40,9 +39,9 @@ import DepGraph (valAt)
 
 type FileArgs =
    { local :: Boolean
-   , fileNames :: NonEmptyList String
+   , fileName :: String
    , fluidSrcPaths :: Array Folder
-   , asModule :: Boolean -- each file as module rather than program
+   , asModule :: Boolean -- as module rather than program
    }
 
 data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Manifest (NonEmptyList String)
@@ -50,42 +49,40 @@ data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Manifest (
 parseFileArgs :: Parser FileArgs
 parseFileArgs = ado
    local <- switch (long "local" <> short 'l' <> help "Are you running fluid as a library?")
-   fileNames <- some (strOption (long "file" <> short 'f' <> help "A file"))
+   fileName <- strOption (long "file" <> short 'f' <> help "The file")
    fluidSrcPaths <- Array.fromFoldable <$> some (Folder <$> strOption (long "fluid-src-path" <> short 'p' <> help "A path containing program or library files"))
-   asModule <- switch (long "module" <> short 'm' <> help "Treat each file as a module rather than a program")
-   in { local, fileNames, fluidSrcPaths, asModule }
+   asModule <- switch (long "module" <> short 'm' <> help "Treat the file as a module rather than a program")
+   in { local, fileName, fluidSrcPaths, asModule }
 
 parseManifest :: Parser (NonEmptyList String)
 parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write manifests under"))
 
 commandParser :: Parser Command
 commandParser = subparser
-   ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse files and print them back"))
-        <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check files statically, reporting each as <code> <file>[: <message>] with the exit codes of a PurePy checker, and exit with the largest code"))
-        <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate files, reporting each as <code> <file>[: <message or value>], and exit with the largest code"))
+   ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse a file and print it back"))
+        <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check a file statically, with the exit codes of a PurePy checker"))
+        <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate a file, printing its value; exit 1 on failure"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
 dispatchCommand ∷ Command → Aff Unit
-dispatchCommand (Parse_ args) = report args \fileName -> do
-   fluidSrc <- loadFile (srcPaths args.local args.fluidSrcPaths) (File fileName)
+dispatchCommand (Parse_ args) = report args do
+   fluidSrc <- loadFile (srcPaths args.local args.fluidSrcPaths) (File args.fileName)
    pure case (if args.asModule then prettyP <<< fst <$> parseModule fluidSrc else prettyP <<< fst <$> parseProgram fluidSrc) of
       Left err -> exitCode.prohibited × Just err
       Right src -> exitCode.accepted × Just src
-dispatchCommand (Check args) = report args \fileName -> stages args fileName (const (pure Nothing))
-dispatchCommand (Evaluate args) = report args \fileName -> stages args fileName case _ of
+dispatchCommand (Check args) = report args (stages args (const (pure Nothing)))
+dispatchCommand (Evaluate args) = report args $ stages args case _ of
    AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, root } -> Just (prettyP (valAt g root))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
 dispatchCommand (Manifest dirs) = for_ dirs (writeManifests <<< Folder)
 
--- Run action over each file, printing its code and message, and exit with the largest code.
-report :: FileArgs -> (String -> NodeT Aff (Int × Maybe String)) -> Aff Unit
-report { local, fileNames, fluidSrcPaths } action = do
-   codes <- for fileNames \fileName -> do
-      code × msg <- runNodeT emptyFileCxt $ withRoots (srcPaths local fluidSrcPaths) (action fileName)
-      log (show code <> " " <> fileName <> maybe "" (": " <> _) msg)
-      pure code
-   liftEffect (exit' (foldl max 0 codes))
+-- Print message, if any, and exit with code.
+report :: FileArgs -> NodeT Aff (Int × Maybe String) -> Aff Unit
+report { local, fluidSrcPaths } action = do
+   code × msg <- runNodeT emptyFileCxt $ withRoots (srcPaths local fluidSrcPaths) action
+   for_ msg log
+   liftEffect (exit' code)
 
 main :: Effect Unit
 main = runAff_ callback (dispatchCommand =<< liftEffect (execParser opts))
@@ -126,8 +123,8 @@ data Prepared = AsProgram Config | AsModule ModuleName { modules :: Map ModuleNa
 
 -- Parse and check, then run; stop at first failure with its code and first line of its message, or finish with
 -- the run's message. A run failure exits 1.
-stages :: FileArgs -> String -> (Prepared -> NodeT Aff (Maybe String)) -> NodeT Aff (Int × Maybe String)
-stages { local, fluidSrcPaths, asModule } fileName run = do
+stages :: FileArgs -> (Prepared -> NodeT Aff (Maybe String)) -> NodeT Aff (Int × Maybe String)
+stages { local, fileName, fluidSrcPaths, asModule } run = do
    fluidSrc <- loadFile (srcPaths local fluidSrcPaths) (File fileName)
    let
       parsed = if asModule then void (parseModule fluidSrc) else void (parseProgram fluidSrc)
