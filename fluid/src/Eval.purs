@@ -334,8 +334,9 @@ evalStmt inputs = case _ of
          Just e' -> do
             _ × Val _ w <- eval (inputs { ctrl = ctrl }) e'
             throw ("AssertionError: " <> either (\_ -> prettyP w) identity (string.unpack w))
-   Dataclass c ->
-      pure (Assigns (maplet (NEL.last c) (constructed inputs.ctrl { val: Val unit (V.Fun (V.Type c)), inEdges: Nil })) inputs.ctrl)
+   Dataclass c -> do
+      let v = constructed inputs.ctrl { val: Val unit (V.Fun (V.Type c)), inEdges: Nil }
+      pure (Assigns (maplet (NEL.last c) v) inputs.ctrl)
    Seq s1 s2 -> do
       r1 <- evalStmt inputs s1
       case r1 of
@@ -406,7 +407,8 @@ evalModule ρ0 q (Module is ss) = do
    ρ_subs <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
    ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
    bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
-   ρ_unbound <- traverse (const (deriv (Val unit V.Unbound))) (D.fromFoldable ((_ × unit) <$> L.fromFoldable (foldMap assigns ss)))
+   let xs = L.fromFoldable (foldMap assigns ss)
+   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Val unit V.Unbound))) xs
    members <- traverse (record >>> map fst) bindings
    pure (ρ_name <+> ρ_subs <+> ρ_unbound <+> members)
 
