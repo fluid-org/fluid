@@ -368,10 +368,10 @@ element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (t
 element i (Val _ (Constr c (Val β (Lit (Int m)) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
 element _ _ = error absurd
 
--- Positions deciding the length of a sequence: the root, plus start and stop of a range.
-extent :: forall a. Semiring a => Val a -> a
-extent (Val α (Constr c vs)) | c == cRange = foldl (+) α (root <$> vs)
-extent (Val α _) = α
+-- Dependence of the length of a sequence: the root, plus start and stop of a range.
+lengthDep :: forall a. Semiring a => Val a -> a
+lengthDep (Val α (Constr c vs)) | c == cRange = foldl (+) α (root <$> vs)
+lengthDep (Val α _) = α
 
 elementCount :: forall a. Val a -> Maybe Int
 elementCount (Val _ (List vs)) = Just (A.length vs)
