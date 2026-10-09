@@ -17,7 +17,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.TraversableWithIndex (forWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, zipWith, (:))
+import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, (:))
 import Data.Foldable (lookup) as F
 import ModuleGraph (ModuleName, implicitFor, submodules)
 import Data.List.NonEmpty (NonEmptyList(..), head, last, snoc, unsnoc)
@@ -38,7 +38,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Qualifier(..
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeExpr(..), VarDef(..), assigns) as S
 import Types as T
-import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, tail, (×), (∩))
+import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, tail, zip, zipWith, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -261,7 +261,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
    wellFormed cxt (S.Match e bs) = do
       e' <- wellFormed cxt e
       ps' <- wellFormedPatterns cxt (fst <$> bs)
-      bs' <- for (NEL.zip ps' bs) \(p' × (p × s)) -> do
+      bs' <- for (zip ps' bs) \(p' × (p × s)) -> do
          let xs = bv p
          r × s' <- wellFormed (cxt `extendCxt` constMap true xs) s
          pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
@@ -458,7 +458,7 @@ param i = "$" <> show i
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
 -- there are several.
-clauses :: NEL.NonEmptyList (List (S.Pattern × Maybe T.Type) × Maybe T.Type × E.Stmt) -> MayFail E.Def
+clauses :: NonEmptyList (List (S.Pattern × Maybe T.Type) × Maybe T.Type × E.Stmt) -> MayFail E.Def
 clauses cs = do
    let n = length (fst (head cs)) :: Int
    for_ cs \(ps × _) ->
@@ -474,15 +474,15 @@ clauses cs = do
       ss = cs <#> \(_ × _ × s) -> s
       body = case matched of
          Nil -> head ss
-         (x × ps) : Nil -> E.Match (E.Var x) (NEL.zip (nonEmpty ps) ss)
-         _ -> E.Match (E.Tuple (E.Var <<< fst <$> matched)) (NEL.zipWith (\ps s -> S.PTuple ps × s) (nonEmpty (transpose (snd <$> matched))) ss)
+         (x × ps) : Nil -> E.Match (E.Var x) (zip (nonEmpty ps) ss)
+         _ -> E.Match (E.Tuple (E.Var <<< fst <$> matched)) (zipWith (\ps s -> S.PTuple ps × s) (nonEmpty (transpose (snd <$> matched))) ss)
    pure (E.Def (fst <$> named) body)
    where
    sharedVar :: List S.Pattern -> Maybe Var
    sharedVar (S.PVar x : ps) | all (_ == S.PVar x) ps = Just x
    sharedVar _ = Nothing
 
-   agree :: String -> NEL.NonEmptyList (Maybe T.Type) -> MayFail Unit
+   agree :: String -> NonEmptyList (Maybe T.Type) -> MayFail Unit
    agree what ψs =
       unless (all (\ψ -> ψ == Nothing || ψ == head ψs) (tail ψs)) $ throwError ("Clauses differ in " <> what)
 
@@ -504,7 +504,7 @@ predefName cxt x = case Map.lookup x cxt of
    _ -> throwError $ "Not bound as a predefined name: " <> x
 
 -- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
-wellFormedPatterns :: Cxt -> NEL.NonEmptyList S.Pattern -> MayFail (NEL.NonEmptyList S.Pattern)
+wellFormedPatterns :: Cxt -> NonEmptyList S.Pattern -> MayFail (NonEmptyList S.Pattern)
 wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
    forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
       when (subsumed cxt p' p) $ throwError $ "case " <> show (i + j + 2) <> " is unreachable"

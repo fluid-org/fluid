@@ -365,3 +365,7 @@ instance Zip Array where
 instance Zip List where
    zip = L.zip
    zipWith = L.zipWith
+
+instance Zip NonEmptyList where
+   zip = NEL.zip
+   zipWith = NEL.zipWith
