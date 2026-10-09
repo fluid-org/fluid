@@ -1,20 +1,17 @@
 module Type where
 
-import Prelude hiding (join)
+import Prelude
 import Prim hiding (Type)
 
-import Bind (Name, dottedName)
-import Data.Foldable (and, elem, foldr)
+import Bind (Name, Var)
 import Data.Generic.Rep (class Generic)
-import Data.List (List, length, zipWith)
-import Data.Map (lookup)
-import Data.Maybe (maybe)
-import Data.Newtype (class Newtype)
+import Data.List (List, length, zip)
+import Data.Map (fromFoldable, lookup)
+import Data.Maybe (fromMaybe)
 import Data.Show.Generic (genericShow)
-import DataType (ClassTable)
-import DefiniteAssignment (ancestors)
 import Literal (Literal)
 import Literal as L
+import Util (assert)
 
 data Primitive
    = Object
@@ -26,17 +23,16 @@ data Primitive
    | Str
    | Sized
 
-data TypeExpr c
-   = Primitive Primitive
-   | List (TypeExpr c)
-   | Tuple (List (TypeExpr c))
-   | Dict (TypeExpr c)
-   | Callable (List (TypeExpr c)) (TypeExpr c)
-   | Lit Literal
-   | ClassName c
-   | Union (TypeExpr c) (TypeExpr c)
-
-newtype Class = Class Name
+data Type
+   = PrimitiveTy Primitive
+   | ListTy Type
+   | TupleTy (List Type)
+   | DictTy Type
+   | CallableTy (List Type) Type
+   | LitTy Literal
+   | VarTy Var
+   | ClassTy Name (List Type) -- class by fully-qualified name, with type arguments
+   | UnionTy Type Type
 
 primitiveName :: Primitive -> String
 primitiveName Object = "object"
@@ -48,67 +44,34 @@ primitiveName Float = "float"
 primitiveName Str = "str"
 primitiveName Sized = "Sized"
 
-type Type = TypeExpr Class
-
 baseType :: Type -> Type
-baseType (Lit (L.Int _)) = Primitive Int
-baseType (Lit (L.Float _)) = Primitive Float
-baseType (Lit (L.Str _)) = Primitive Str
-baseType (Lit (L.Bool _)) = Primitive Bool
-baseType (Lit L.None) = Primitive None
+baseType (LitTy (L.Int _)) = PrimitiveTy Int
+baseType (LitTy (L.Float _)) = PrimitiveTy Float
+baseType (LitTy (L.Str _)) = PrimitiveTy Str
+baseType (LitTy (L.Bool _)) = PrimitiveTy Bool
+baseType (LitTy L.None) = PrimitiveTy None
 baseType τ = τ
 
-subtype :: ClassTable -> Type -> Type -> Boolean
-subtype classes σ τ
-   | σ == τ = true
-   | otherwise =
-        case σ, τ of
-           Primitive Never, _ -> true
-           _, Primitive Object -> true
-           Union σ1 σ2, _ -> subtype classes σ1 τ && subtype classes σ2 τ
-           _, Union τ1 τ2 -> subtype classes σ τ1 || subtype classes σ τ2
-           Lit _, _ -> subtype classes (baseType σ) τ
-           Primitive Int, Primitive Float -> true
-           ClassName (Class c), ClassName (Class d) -> maybe false (elem d <<< ancestors) (lookup (dottedName c) classes)
-           _, Primitive Sized -> sized σ
-           List σ', List τ' -> equiv classes σ' τ'
-           Dict σ', Dict τ' -> equiv classes σ' τ'
-           Tuple σs, Tuple τs -> length σs == length τs && and (zipWith (subtype classes) σs τs)
-           Callable σs σ', Callable τs τ' ->
-              length σs == length τs && and (zipWith (subtype classes) τs σs) && subtype classes σ' τ'
-           _, _ -> false
-        where
-        sized (List _) = true
-        sized (Dict _) = true
-        sized (Primitive Str) = true
-        sized (Tuple _) = true
-        sized _ = false
+subst :: List Type -> List Var -> Type -> Type
+subst τs αs = assert (length τs == length αs) go
+   where
+   σs = fromFoldable (zip αs τs)
 
-equiv :: ClassTable -> Type -> Type -> Boolean
-equiv classes σ τ = subtype classes σ τ && subtype classes τ σ
-
-join :: ClassTable -> Type -> Type -> Type
-join classes σ τ
-   | subtype classes σ τ = τ
-   | subtype classes τ σ = σ
-   | otherwise = Union σ τ
-
-joins :: ClassTable -> List (Type) -> Type
-joins classes = foldr (join classes) (Primitive Never)
+   go (VarTy α) = fromMaybe (VarTy α) (lookup α σs)
+   go (ListTy τ) = ListTy (go τ)
+   go (TupleTy τs') = TupleTy (go <$> τs')
+   go (DictTy τ) = DictTy (go τ)
+   go (CallableTy τs' τ) = CallableTy (go <$> τs') (go τ)
+   go (ClassTy c τs') = ClassTy c (go <$> τs')
+   go (UnionTy σ τ) = UnionTy (go σ) (go τ)
+   go τ = τ
 
 derive instance Eq Primitive
 derive instance Generic Primitive _
 instance Show Primitive where
    show = genericShow
 
-derive instance Functor TypeExpr
-derive instance Eq c => Eq (TypeExpr c)
-derive instance Generic (TypeExpr c) _
-instance Show c => Show (TypeExpr c) where
+derive instance Eq Type
+derive instance Generic Type _
+instance Show Type where
    show x = genericShow x
-
-derive instance Newtype Class _
-derive instance Eq Class
-derive instance Generic Class _
-instance Show Class where
-   show = genericShow

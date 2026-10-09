@@ -21,7 +21,7 @@ import Util (type (×), (×))
 data Expr
    = Var Var
    | Lit Literal
-   | Call Expr (List Expr) (List (Bind Expr)) -- constructor call when head names a class
+   | Call Expr (List TypeExpr) (List Expr) (List (Bind Expr)) -- constructor call when head names a class
    | Dictionary (List (Expr × Expr))
    | Matrix Expr (Var × Var) Expr
    | Lambda LambdaClause
@@ -53,16 +53,18 @@ data Stmt
    | ExprStmt Expr
    | Assert Expr (Maybe Expr)
    | Seq Stmt Stmt
-   | Dataclass Var (Maybe Var) (List (Var × T.TypeExpr Name))
+   | Dataclass Var (List Var) (Maybe TypeExpr) (List (Var × TypeExpr))
+   | TypeAlias Var (List Var) TypeExpr
 
 data Import = Import Name (Maybe (List Var))
 
 -- Case of a match statement.
 type Case = Pattern × Stmt
 
-data Param = Param Pattern (Maybe (T.TypeExpr Name))
+data Param = Param Pattern (Maybe TypeExpr)
 
-data Clause = Clause (List Param × Maybe (T.TypeExpr Name) × Stmt)
+-- Type parameters, parameters, return annotation and body.
+data Clause = Clause (List Var × List Param × Maybe TypeExpr × Stmt)
 
 type Branch = Var × Clause
 
@@ -71,7 +73,7 @@ newtype LambdaClause = LambdaClause (List Pattern × Expr)
 
 type RecDefs = NonEmptyList Branch
 
-data VarDef = VarDef Pattern (Maybe (T.TypeExpr Name)) Expr
+data VarDef = VarDef Pattern (Maybe TypeExpr) Expr
 type VarDefs = NonEmptyList VarDef
 
 data Qualifier
@@ -80,6 +82,16 @@ data Qualifier
    | Decl VarDef
 
 data Module = Module (List Import) (List Stmt)
+
+data TypeExpr
+   = PrimitiveTy T.Primitive
+   | ListTy TypeExpr
+   | TupleTy (List TypeExpr)
+   | DictTy TypeExpr
+   | CallableTy (List TypeExpr) TypeExpr
+   | LitTy Literal
+   | NameTy Name (List TypeExpr) -- class, alias or type parameter, with type arguments
+   | UnionTy TypeExpr TypeExpr
 
 -- ======================
 -- boilerplate
@@ -124,6 +136,11 @@ derive instance Generic Qualifier _
 instance Show Qualifier where
    show c = genericShow c
 
+derive instance Eq TypeExpr
+derive instance Generic TypeExpr _
+instance Show TypeExpr where
+   show c = genericShow c
+
 derive instance Eq ParagraphElem
 derive instance Generic ParagraphElem _
 instance Show ParagraphElem where
@@ -136,7 +153,7 @@ instance Show ParagraphElem where
 instance FV Expr where
    fv (Var x) = singleton x
    fv (Lit _) = empty
-   fv (Call e es xes) = fv e ∪ unions (fv <$> es) ∪ unions ((fv <<< snd) <$> xes)
+   fv (Call e _ es xes) = fv e ∪ unions (fv <$> es) ∪ unions ((fv <<< snd) <$> xes)
    fv (Dictionary entries) = unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
    fv (Matrix body (x × y) source) = (fv body \\ (singleton x ∪ singleton y)) ∪ fv source
    fv (Lambda clause) = fv clause
@@ -167,7 +184,8 @@ instance FV Stmt where
    fv (ExprStmt e) = fv e
    fv (Assert cond msg) = fv cond ∪ maybe empty fv msg
    fv (Seq s1 s2) = fv s1 ∪ fv s2
-   fv (Dataclass _ _ _) = empty
+   fv (Dataclass _ _ _ _) = empty
+   fv (TypeAlias _ _ _) = empty
 
 instance FV VarDef where
    fv (VarDef _ _ e) = fv e
@@ -176,7 +194,7 @@ instance FV LambdaClause where
    fv (LambdaClause (ps × e)) = fv e \\ unions (bv <$> ps)
 
 instance FV Clause where
-   fv (Clause (ps × _ × b)) = (fv b \\ unions (bv <$> ps)) \\ assigns b
+   fv (Clause (_ × ps × _ × b)) = (fv b \\ unions (bv <$> ps)) \\ assigns b
 
 -- Variables assigned by a statement.
 assigns :: Stmt -> Set Var
@@ -189,7 +207,8 @@ assigns (If es s) = unions (assigns <$> (snd <$> es)) ∪ maybe empty assigns s
 assigns (Match _ ps) = unions ((\(p × s) -> bv p ∪ assigns s) <$> ps)
 assigns (DefRec ds) = unions (singleton <<< fst <$> ds)
 assigns (Seq s1 s2) = assigns s1 ∪ assigns s2
-assigns (Dataclass c _ _) = singleton c
+assigns (Dataclass c _ _ _) = singleton c
+assigns (TypeAlias x _ _) = singleton x
 
 instance BV Param where
    bv (Param p _) = bv p

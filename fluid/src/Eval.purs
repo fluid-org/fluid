@@ -338,6 +338,9 @@ evalStmt inputs = case _ of
    Dataclass c -> do
       let v = constructed inputs.ctrl { val: Val unit (V.Fun (V.Type c)), inEdges: Nil }
       pure (Assigns (maplet (last c) v) inputs.ctrl)
+   TypeAlias x αs τ -> do
+      let v = constructed inputs.ctrl { val: Val unit (V.TypeAlias αs τ), inEdges: Nil }
+      pure (Assigns (maplet x v) inputs.ctrl)
    Seq s1 s2 -> do
       r1 <- evalStmt inputs s1
       case r1 of

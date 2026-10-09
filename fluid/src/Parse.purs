@@ -8,7 +8,7 @@ import Control.Monad.State (StateT)
 import Data.Array (reverse, some)
 import Data.Bifunctor (lmap)
 import Data.CodePoint.Unicode (isSpace)
-import Bind (Bind, Name, varAnon, (↦))
+import Bind (Bind, Name, Var, varAnon, (↦))
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
 import Data.Identity (Identity)
@@ -23,15 +23,15 @@ import Literal (Literal(..))
 import Parse.Number (float, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
-import Parsing.Combinators (choice, many, many1, option, optionMaybe, sepBy1, try, (<?>))
+import Parsing.Combinators (choice, lookAhead, many, many1, option, optionMaybe, sepBy1, try, (<?>))
 import Parsing.Expr (Operator(..)) as P
 import Parsing.Expr (OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
 import Parsing.String (eof, satisfy)
 import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
 import Expr (Binop(..), Pattern(..))
-import SExpr (Branch, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
-import Type (Primitive(..), TypeExpr(..)) as T
+import SExpr (Branch, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), TypeExpr(..), VarDef(..), VarDefs)
+import Type (Primitive(..)) as T
 import Util (MayFail, type (+), type (×), nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
@@ -98,31 +98,37 @@ simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPatter
                  ]
          ]
 
-typeExpr :: Parser (T.TypeExpr Name)
+typeExpr :: Parser TypeExpr
 typeExpr = defer \_ -> do
    ψ <- typeAtom
    ψs <- many (reservedOperator "|" *> typeAtom)
-   pure (foldl T.Union ψ ψs)
+   pure (foldl UnionTy ψ ψs)
    where
-   typeAtom :: Parser (T.TypeExpr Name)
-   typeAtom = defer \_ -> (reserved "None" $> T.Primitive T.None) <|> (qualifiedName >>= namedType)
+   typeAtom :: Parser TypeExpr
+   typeAtom = defer \_ -> (reserved "None" $> PrimitiveTy T.None) <|> (qualifiedName >>= namedType)
 
-   namedType :: Name -> Parser (T.TypeExpr Name)
+   namedType :: Name -> Parser TypeExpr
    namedType (NonEmptyList (x :| Nil)) = case x of
-      "Never" -> pure (T.Primitive T.Never)
-      "Sized" -> pure (T.Primitive T.Sized)
-      "Callable" -> brackets (T.Callable <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
-      "Literal" -> T.Lit <$> brackets literal
-      "object" -> pure (T.Primitive T.Object)
-      "bool" -> pure (T.Primitive T.Bool)
-      "int" -> pure (T.Primitive T.Int)
-      "float" -> pure (T.Primitive T.Float)
-      "str" -> pure (T.Primitive T.Str)
-      "list" -> T.List <$> brackets typeExpr
-      "tuple" -> T.Tuple <$> brackets ((delim '(' *> delim ')' $> Nil) <|> commas typeExpr)
-      "dict" -> brackets (reserved "str" *> delim ',' *> (T.Dict <$> typeExpr))
-      _ -> pure (T.ClassName (singleton x))
-   namedType q = pure (T.ClassName q)
+      "Never" -> pure (PrimitiveTy T.Never)
+      "Sized" -> pure (PrimitiveTy T.Sized)
+      "Callable" -> brackets (CallableTy <$> brackets (commas typeExpr) <* delim ',' <*> typeExpr)
+      "Literal" -> LitTy <$> brackets literal
+      "object" -> pure (PrimitiveTy T.Object)
+      "bool" -> pure (PrimitiveTy T.Bool)
+      "int" -> pure (PrimitiveTy T.Int)
+      "float" -> pure (PrimitiveTy T.Float)
+      "str" -> pure (PrimitiveTy T.Str)
+      "list" -> ListTy <$> brackets typeExpr
+      "tuple" -> TupleTy <$> brackets ((delim '(' *> delim ')' $> Nil) <|> commas typeExpr)
+      "dict" -> brackets (reserved "str" *> delim ',' *> (DictTy <$> typeExpr))
+      _ -> NameTy (singleton x) <$> typeArgs
+   namedType q = NameTy q <$> typeArgs
+
+   typeArgs :: Parser (List TypeExpr)
+   typeArgs = defer \_ -> option Nil (brackets (commas typeExpr))
+
+typeParams :: Parser (List Var)
+typeParams = option Nil (brackets (commas variable))
 
 literal :: Parser Literal
 literal =
@@ -147,7 +153,7 @@ varDefs :: Parser VarDefs
 varDefs = many1 varDef
 
 stmt :: Parser Stmt
-stmt = defer \_ -> ifStmt <|> matchStmt <|> defStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (expr <#> ExprStmt)
+stmt = defer \_ -> ifStmt <|> matchStmt <|> typeAliasStmt <|> defStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (expr <#> ExprStmt)
 
 returnStmt :: Parser Stmt
 returnStmt = do
@@ -169,7 +175,7 @@ stmts = defer \_ -> many1 (align stmt) <#> foldr1Seq
 -- the program its value. Inside functions and other block bodies, 'return'
 -- is required.
 programStmt :: Parser Stmt
-programStmt = defer \_ -> ifStmt <|> matchStmt <|> defStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (Return <$> expr)
+programStmt = defer \_ -> ifStmt <|> matchStmt <|> typeAliasStmt <|> defStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (Return <$> expr)
 
 programStmts :: Parser Stmt
 programStmts = defer \_ -> many1 (align programStmt) <#> foldr1Seq
@@ -222,7 +228,8 @@ dataclassStmt = do
    decorator "dataclass"
    reserved "class"
    c <- variable
-   b <- optionMaybe (parens variable)
+   αs <- typeParams
+   b <- optionMaybe (parens typeExpr)
    let
       fieldDecl = do
          x <- variable
@@ -230,19 +237,24 @@ dataclassStmt = do
          ψ <- typeExpr
          pure (x × ψ)
    xs <- block ((reserved "pass" $> Nil) <|> (toList <$> many1 (align fieldDecl)))
-   pure $ Dataclass c b xs
+   pure $ Dataclass c αs b xs
+
+typeAliasStmt :: Parser Stmt
+typeAliasStmt = do
+   x × αs <- try (reserved "type" *> ((×) <$> variable <*> typeParams) <* reservedOperator "=")
+   TypeAlias x αs <$> typeExpr
 
 recDefs :: Parser RecDefs
 recDefs = many1 recDef
    where
    recDef :: Parser Branch
    recDef = do
-      f <- try (reserved "def" *> variable <* delim '(')
+      f × αs <- try (reserved "def" *> ((×) <$> variable <*> typeParams) <* delim '(')
       ps <- commas param
       delim ')'
       ψ <- optionMaybe (reservedOperator "->" *> typeExpr)
       s <- blockBody
-      pure $ f × Clause (ps × ψ × s)
+      pure $ f × Clause (αs × ps × ψ × s)
 
    param :: Parser Param
    param = Param <$> pattern <*> optionMaybe (delim ':' *> typeExpr)
@@ -287,7 +299,7 @@ expr = context "expr" $ cond <?> "expression"
       simpleChain = withPos (simple >>= chain)
          where
          chain :: Expr -> Parser Expr
-         chain e = sameOrIndented *> (project <|> dproject <|> app) <|> pure e
+         chain e = sameOrIndented *> (project <|> typeApp <|> dproject <|> app Nil) <|> pure e
             where
             project :: Parser Expr
             project = do
@@ -305,12 +317,23 @@ expr = context "expr" $ cond <?> "expression"
                close ']'
                chain (Subscript e (maybe k (\k2 -> Tuple (k : k2 : Nil)) k'))
 
-            app :: Parser Expr
-            app = do
+            -- Type arguments of a constructor call; read back as subscript by checker if head not a class.
+            typeApp :: Parser Expr
+            typeApp
+               | isName e = try (delim '[' *> commas typeExpr <* close ']' <* lookAhead (delim '(')) >>= app
+               | otherwise = fail "Expected name before type arguments"
+
+            isName :: Expr -> Boolean
+            isName (Var _) = true
+            isName (Attribute e' _) = isName e'
+            isName _ = false
+
+            app :: List TypeExpr -> Parser Expr
+            app ψs = do
                delim '('
                args <- commas arg
                close ')'
-               chain (Call e (takeLefts args) (takeRights args))
+               chain (Call e ψs (takeLefts args) (takeRights args))
                where
                arg :: Parser (Expr + Bind Expr)
                arg = defer \_ -> (Right <$> try kwArg) <|> (Left <$> cond)

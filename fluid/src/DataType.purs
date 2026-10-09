@@ -1,6 +1,7 @@
 module DataType where
 
-import Prelude
+import Prelude hiding (join)
+import Prim hiding (Type)
 
 import Bind (Name, Var, dottedName, qual)
 import ModuleGraph (builtins, prelude)
@@ -10,7 +11,8 @@ import Control.Monad.Reader.Trans (ReaderT)
 import Control.Monad.State.Trans (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer.Trans (WriterT)
-import Data.List (List(..), elemIndex, (:))
+import Data.Foldable (and, elem, foldr)
+import Data.List (List(..), elemIndex, zipWith, (:))
 import Data.List as List
 import Data.List.NonEmpty (NonEmptyList(..)) as NE
 import Data.NonEmpty ((:|))
@@ -18,8 +20,9 @@ import Data.Map as Map
 import Data.Array (last) as A
 import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String (Pattern(..), split)
-import DefiniteAssignment (ClassEntry, fields)
+import DefiniteAssignment (ClassEntry, ancestors, fields)
 import Effect.Exception (Error)
+import Type (Primitive(..), Type(..), baseType)
 import Util (definitely', throw)
 
 type FieldName = String
@@ -55,6 +58,45 @@ checkArity :: forall m. MonadError Error m => Ctr -> Int -> ClassTable -> m Unit
 checkArity c n classes = do
    n' <- arity c classes
    when (n' /= n) $ throw $ simpleName c <> " arity " <> show n' <> "; got " <> show n
+
+subtype :: ClassTable -> Type -> Type -> Boolean
+subtype classes σ τ
+   | σ == τ = true
+   | otherwise =
+        case σ, τ of
+           PrimitiveTy Never, _ -> true
+           _, PrimitiveTy Object -> true
+           UnionTy σ1 σ2, _ -> subtype classes σ1 τ && subtype classes σ2 τ
+           _, UnionTy τ1 τ2 -> subtype classes σ τ1 || subtype classes σ τ2
+           LitTy _, _ -> subtype classes (baseType σ) τ
+           PrimitiveTy Int, PrimitiveTy Float -> true
+           -- classes with type arguments related only by equality until class table records instantiated bases
+           ClassTy c Nil, ClassTy d Nil -> maybe false (elem d <<< ancestors) (Map.lookup (dottedName c) classes)
+           _, PrimitiveTy Sized -> sized σ
+           ListTy σ', ListTy τ' -> equiv classes σ' τ'
+           DictTy σ', DictTy τ' -> equiv classes σ' τ'
+           TupleTy σs, TupleTy τs -> List.length σs == List.length τs && and (zipWith (subtype classes) σs τs)
+           CallableTy σs σ', CallableTy τs τ' ->
+              List.length σs == List.length τs && and (zipWith (subtype classes) τs σs) && subtype classes σ' τ'
+           _, _ -> false
+        where
+        sized (ListTy _) = true
+        sized (DictTy _) = true
+        sized (PrimitiveTy Str) = true
+        sized (TupleTy _) = true
+        sized _ = false
+
+equiv :: ClassTable -> Type -> Type -> Boolean
+equiv classes σ τ = subtype classes σ τ && subtype classes τ σ
+
+join :: ClassTable -> Type -> Type -> Type
+join classes σ τ
+   | subtype classes σ τ = τ
+   | subtype classes τ σ = σ
+   | otherwise = UnionTy σ τ
+
+joins :: ClassTable -> List Type -> Type
+joins classes = foldr (join classes) (PrimitiveTy Never)
 
 type FieldIndex = Name -> FieldName -> Int
 

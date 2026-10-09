@@ -19,7 +19,7 @@ import Literal (Literal(..))
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
-import SExpr (Branch, Case, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), VarDef(..), VarDefs)
+import SExpr (Branch, Case, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), TypeExpr(..), VarDef(..), VarDefs)
 import Type as T
 import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
@@ -125,8 +125,8 @@ infixApp n op s sym s' =
 instance Pretty Expr where
    pretty (Var x) = text x
    pretty (Lit ℓ) = pretty ℓ
-   pretty (Call e es xes) =
-      expr $ prettySimple e <> parens (commas ((pretty <$> es) <> ((\(x ↦ e') -> text x <> text "=" <> pretty e') <$> xes)))
+   pretty (Call e ψs es xes) =
+      expr $ prettySimple e <> typeArgs ψs <> parens (commas ((pretty <$> es) <> ((\(x ↦ e') -> text x <> text "=" <> pretty e') <$> xes)))
    pretty (Dictionary Nil) = text "{}"
    pretty (Dictionary es) = expr $ record $ map pretty es
    pretty (Matrix e (x × y) e') =
@@ -213,28 +213,42 @@ instance Pretty Stmt where
    pretty (Assert cond Nothing) = text "assert" <+> pretty cond
    pretty (Assert cond (Just msg)) = text "assert" <+> pretty cond <> text "," <+> pretty msg
    pretty (Seq s1 s2) = pretty s1 <> line <> pretty s2
-   pretty (Dataclass c b xs) =
+   pretty (Dataclass c αs b xs) =
       text "@dataclass" <> line
          <> text "class" <+> text c
-         <> maybe mempty (\b' -> text "(" <> text b' <> text ")") b
+         <> typeArgs αs
+         <> maybe mempty (parens <<< pretty) b
          <> block body
       where
       body = case xs of
          Nil -> text "pass"
          _ -> vsep ((\(x × ψ) -> text x <> text ":" <+> pretty ψ) <$> xs)
+   pretty (TypeAlias x αs ψ) = text "type" <+> text x <> typeArgs αs <+> text "=" <+> pretty ψ
 
-instance Pretty c => Pretty (T.TypeExpr c) where
-   pretty (T.Primitive ν) = pretty ν
-   pretty (T.List ψ) = text "list" <> brackets (pretty ψ)
-   pretty (T.Tuple ψs) = text "tuple" <> brackets (prettyList ψs)
-   pretty (T.Dict ψ) = text "dict" <> brackets (text "str," <+> pretty ψ)
-   pretty (T.Callable ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
-   pretty (T.Lit ℓ) = text "Literal" <> brackets (pretty ℓ)
-   pretty (T.ClassName c) = pretty c
-   pretty (T.Union ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
+instance Pretty TypeExpr where
+   pretty (PrimitiveTy ν) = pretty ν
+   pretty (ListTy ψ) = text "list" <> brackets (pretty ψ)
+   pretty (TupleTy ψs) = text "tuple" <> brackets (prettyList ψs)
+   pretty (DictTy ψ) = text "dict" <> brackets (text "str," <+> pretty ψ)
+   pretty (CallableTy ψs ψ) = text "Callable" <> brackets (brackets (prettyList ψs) <> text "," <+> pretty ψ)
+   pretty (LitTy ℓ) = text "Literal" <> brackets (pretty ℓ)
+   pretty (NameTy q ψs) = text (dottedName q) <> typeArgs ψs
+   pretty (UnionTy ψ ψ') = pretty ψ <+> text "|" <+> pretty ψ'
 
-instance Pretty T.Class where
-   pretty (T.Class q) = text "~" <> text (dottedName q)
+instance Pretty T.Type where
+   pretty (T.PrimitiveTy ν) = pretty ν
+   pretty (T.ListTy τ) = text "list" <> brackets (pretty τ)
+   pretty (T.TupleTy τs) = text "tuple" <> brackets (prettyList τs)
+   pretty (T.DictTy τ) = text "dict" <> brackets (text "str," <+> pretty τ)
+   pretty (T.CallableTy τs τ) = text "Callable" <> brackets (brackets (prettyList τs) <> text "," <+> pretty τ)
+   pretty (T.LitTy ℓ) = text "Literal" <> brackets (pretty ℓ)
+   pretty (T.VarTy α) = text α
+   pretty (T.ClassTy c τs) = text "~" <> text (dottedName c) <> typeArgs τs
+   pretty (T.UnionTy σ τ) = pretty σ <+> text "|" <+> pretty τ
+
+typeArgs :: forall a. Pretty a => List a -> Doc
+typeArgs Nil = mempty
+typeArgs xs = brackets (prettyList xs)
 
 instance Pretty (NonEmptyList String) where
    pretty = text <<< dottedName
@@ -251,15 +265,15 @@ instance Pretty Literal where
    pretty None = text "None"
 
 instance Pretty Clause where
-   pretty (Clause (ps × ψ × s)) = parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
+   pretty (Clause (αs × ps × ψ × s)) = typeArgs αs <> parens (prettyList ps) <> returnAnnot ψ <> block (pretty s)
 
 instance Pretty Param where
    pretty (Param p ψ) = pretty p <> annot ψ
 
-annot :: forall c. Pretty c => Maybe (T.TypeExpr c) -> Doc
+annot :: Maybe TypeExpr -> Doc
 annot = maybe mempty \ψ -> text ":" <+> pretty ψ
 
-returnAnnot :: forall c. Pretty c => Maybe (T.TypeExpr c) -> Doc
+returnAnnot :: Maybe TypeExpr -> Doc
 returnAnnot = maybe mempty \ψ -> text " ->" <+> pretty ψ
 
 instance Pretty LambdaClause where
@@ -355,6 +369,7 @@ instance Pretty E.Stmt where
    pretty (E.Assert e Nothing) = text "assert" <+> pretty e
    pretty (E.Assert e (Just e')) = text "assert" <+> pretty e <> text "," <+> pretty e'
    pretty (E.Dataclass c) = text "@dataclass" <> line <> text "class" <+> text (last c)
+   pretty (E.TypeAlias x αs τ) = text "type" <+> text x <> typeArgs αs <+> text "=" <+> pretty τ
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Pretty E.Def where
@@ -408,6 +423,7 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Opaque q) = text (last q)
    pretty (V.Module q) = text ("<module " <> dottedName q <> ">")
    pretty V.Unbound = text "<unbound>"
+   pretty (V.TypeAlias αs τ) = text "<type alias" <> typeArgs αs <+> pretty τ <> text ">"
 
 instance Highlightable a => Pretty (Fun a) where
    pretty (V.Closure _ _ _) = text "cl"

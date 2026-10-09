@@ -13,6 +13,7 @@ import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
 import Dict (Dict)
 import Literal (Literal)
+import Type as T
 import Util (type (×), singleton, (×))
 import Util.Map (keys)
 import Util.Pair (Pair(..))
@@ -82,6 +83,7 @@ data Stmt
    | ExprStmt Expr
    | Assert Expr (Maybe Expr)
    | Dataclass Name -- class declaration, by fully-qualified name
+   | TypeAlias Var (List Var) T.Type
    | Seq Stmt Stmt
 
 data Import = Import Name (Maybe (List Var))
@@ -138,6 +140,7 @@ instance FV Stmt where
    fv (ExprStmt e) = fv e
    fv (Assert e e_opt) = fv e ∪ fv e_opt
    fv (Dataclass _) = empty
+   fv (TypeAlias _ _ _) = empty
    fv (Seq s s') = fv s ∪ fv s'
 
 instance FV a => FV (Dict a) where
@@ -184,6 +187,7 @@ assigns Pass = empty
 assigns (ExprStmt _) = empty
 assigns (Assert _ _) = empty
 assigns (Dataclass c) = singleton (last c)
+assigns (TypeAlias x _ _) = singleton x
 assigns (Seq s s') = assigns s ∪ assigns s'
 
 -- ======================
