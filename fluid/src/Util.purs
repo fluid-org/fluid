@@ -317,7 +317,7 @@ instance Singleton Set where
 instance Singleton NonEmptySet where
    singleton = NonEmptySet.singleton
 
-class NonEmpty (f :: Type -> Type) (g :: Type -> Type) | f -> g where
+class NonEmpty (f :: Type -> Type) (g :: Type -> Type) | f -> g, g -> f where
    nonEmpty :: forall a. f a -> g a
    init :: forall a. g a -> f a
    tail :: forall a. g a -> f a

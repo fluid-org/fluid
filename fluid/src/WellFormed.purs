@@ -38,7 +38,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Qualifier(..
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeExpr(..), VarDef(..), assigns) as S
 import Types as T
-import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, (×), (∩))
+import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, tail, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -228,7 +228,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          cs <- for group \(_ × S.Clause (αs × ps × ψ × s)) -> do
             let xs = unions (bv <$> ps)
             let ys = S.assigns s \\ xs
-            let cxt_α = cxt' `withTypeParams` αs
+            let cxt_α = cxt' `extendCxtWith` typeParams αs
             let cxt'' = cxt_α `extendCxt` constMap true xs `extendCxt` constMap false ys
             ps' <- traverse (\(S.Param p ψ') -> (×) <$> wellFormed cxt' p <*> traverse (resolveType cxt_α) ψ') ps
             τ <- traverse (resolveType cxt_α) ψ
@@ -277,7 +277,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
 wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Cxt × WfResult VarCxt × E.Stmt)
 wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    predefName cxt "dataclass"
-   let cxt_α = cxt `withTypeParams` αs
+   let cxt_α = cxt `extendCxtWith` typeParams αs
    let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
    for_ xψs (resolveType cxt_α <<< snd)
@@ -297,7 +297,7 @@ wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    let cls = { cxt, name: snoc q c, typeParams: αs, base, fields: xs }
    pure (Map.singleton c (Class cls) × Assigns Map.empty × E.Dataclass (snoc q c))
 wellFormedTop _ cxt (S.TypeAlias x αs ψ) = do
-   τ <- resolveType (cxt `withTypeParams` αs) ψ
+   τ <- resolveType (cxt `extendCxtWith` typeParams αs) ψ
    pure (Map.singleton x (TypeAlias αs τ) × Assigns Map.empty × E.TypeAlias x αs τ)
 wellFormedTop q cxt (S.Seq t1 t2) = do
    decls1 × r1 × t1' <- wellFormedTop q cxt t1
@@ -319,8 +319,8 @@ wellFormedTop _ cxt s = do
    r × s' <- wellFormed cxt s
    pure (Map.empty × r × s')
 
-withTypeParams :: Cxt -> List Var -> Cxt
-withTypeParams cxt αs = Map.union (constMap TypeVar (Set.fromFoldable αs)) cxt
+typeParams :: List Var -> Cxt
+typeParams αs = constMap TypeVar (Set.fromFoldable αs)
 
 resolveType :: Cxt -> S.TypeExpr -> MayFail T.Type
 resolveType cxt (S.PrimitiveTy ν) = T.PrimitiveTy ν <$ predefName cxt (T.primitiveName ν)
@@ -373,7 +373,7 @@ instance WellFormed S.Expr E.Expr where
       indexExpr (NonEmptyList (i :| Nil)) = i
       indexExpr is = S.Tuple (NEL.toList is)
 
-      nameExpr q = foldl S.Attribute (S.Var (head q)) (NEL.tail q)
+      nameExpr q = foldl S.Attribute (S.Var (head q)) (tail q)
    wellFormed cxt (S.BinOp e op e') = E.BinOp <$> wellFormed cxt e <@> op <*> wellFormed cxt e'
    wellFormed cxt (S.UnOp op e) = E.UnOp op <$> wellFormed cxt e
    wellFormed cxt (S.And e e') = E.And <$> wellFormed cxt e <*> wellFormed cxt e'
@@ -484,7 +484,7 @@ clauses cs = do
 
    agree :: String -> NEL.NonEmptyList (Maybe T.Type) -> MayFail Unit
    agree what ψs =
-      unless (all (\ψ -> ψ == Nothing || ψ == head ψs) (NEL.tail ψs)) $ throwError ("Clauses differ in " <> what)
+      unless (all (\ψ -> ψ == Nothing || ψ == head ψs) (tail ψs)) $ throwError ("Clauses differ in " <> what)
 
 var :: Cxt -> Var -> MayFail Unit
 var cxt x = case Map.lookup x cxt of
