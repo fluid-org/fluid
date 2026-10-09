@@ -6,7 +6,8 @@ import Control.Monad.Except (class MonadError)
 import Control.Monad.Reader (class MonadReader, ask)
 import Control.Monad.State (runStateT)
 import Bind (dottedName, pathName, prefixOf)
-import Data.List.NonEmpty (snoc, unsnoc, fromList) as NEL
+import Data.List.NonEmpty (snoc, unsnoc)
+import Data.List.NonEmpty (fromList) as NEL
 import Data.Either (Either(..))
 import Data.Foldable (foldM, for_, intercalate)
 import Data.List (List(..), catMaybes, elem, filter, mapMaybe, reverse, takeWhile, (:))
@@ -48,7 +49,7 @@ isModule q = do
       Nothing -> hasDirectory fluidSrcPaths (File (pathName q))
 
 parents :: ModuleName -> List ModuleName
-parents q = case NEL.fromList (NEL.unsnoc q).init of
+parents q = case NEL.fromList (unsnoc q).init of
    Nothing -> Nil
    Just q' -> parents q' <> (q' : Nil)
 
@@ -65,7 +66,7 @@ importDeps enclosing (S.Import q f) = do
    ps <- keepModules (parents q)
    subs <- case f of
       Nothing -> pure Nil
-      Just xs -> keepModules ((NEL.snoc q) <$> xs)
+      Just xs -> keepModules ((snoc q) <$> xs)
    let
       prefixEdges = case f of
          Nothing -> filter (_ /= enclosing) (parents q)

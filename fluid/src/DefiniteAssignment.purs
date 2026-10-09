@@ -4,6 +4,7 @@ import Prelude
 
 import Bind (Name, Var, dottedName)
 import Control.Monad.Error.Class (throwError)
+import Data.List.NonEmpty (unsnoc)
 import Data.List.NonEmpty as NEL
 import Data.Foldable (foldl, lookup)
 import Data.List (List(..), elemIndex, index, length, (:))
@@ -87,7 +88,7 @@ resolveName cxt name = case NEL.fromList init of
       Just (ModChecked _ cxt') -> simpleEntry cxt' x
       _ -> Nothing
    where
-   { init, last: x } = NEL.unsnoc name
+   { init, last: x } = unsnoc name
    simpleEntry g y = case Map.lookup y g of
       Just e@(VarStatus true) -> Just e
       Just e@(ModChecked _ _) -> Just e

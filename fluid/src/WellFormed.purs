@@ -20,6 +20,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, zipWith, (:))
 import Data.Foldable (lookup) as F
 import ModuleGraph (ModuleName, implicitFor, submodules)
+import Data.List.NonEmpty (snoc, unsnoc)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
@@ -108,7 +109,7 @@ checksTo bound q θ = case NEL.fromList init of
            cxt <- checkModule q'
            checksTo bound q' (ModChecked q' (cxt `extendCxtWith` Map.singleton x θ))
    where
-   { init, last: x } = NEL.unsnoc q
+   { init, last: x } = unsnoc q
 
 -- Bindings for names imported from module q with member context cxt.
 importedMembers :: ModuleName -> Cxt -> List Var -> CheckM Cxt
@@ -260,7 +261,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          let xs = bv p
          r × s' <- wellFormed (cxt `extendCxt` constMap true xs) s
          pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
-      pure (foldl1 mergeRes ((fst <$> bs') `NEL.snoc` rFall) × E.Match e' (snd <$> bs'))
+      pure (foldl1 mergeRes ((fst <$> bs') `snoc` rFall) × E.Match e' (snd <$> bs'))
       where
       rFall = case fst (NEL.last bs) of
          S.PVar _ -> Returns
@@ -278,13 +279,13 @@ wellFormedTop q cxt (S.Dataclass c b xψs) = do
       Nothing -> pure unit
       Just base -> do
          cls <- maybe (throwError $ "Unknown class: " <> base) pure (classFor cxt base)
-         when (cls.name /= NEL.snoc q base) $ throwError $ "Cannot extend imported class: " <> base
+         when (cls.name /= snoc q base) $ throwError $ "Cannot extend imported class: " <> base
          let clash = Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)
          when (not Set.isEmpty clash)
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Map.singleton c { cxt, name: NEL.snoc q c, base: b, fields: xs } × Assigns Map.empty × E.Dataclass (NEL.snoc q c))
+   pure (Map.singleton c { cxt, name: snoc q c, base: b, fields: xs } × Assigns Map.empty × E.Dataclass (snoc q c))
 wellFormedTop q cxt (S.Seq t1 t2) = do
    decls1 × r1 × t1' <- wellFormedTop q cxt t1
    case r1 of
