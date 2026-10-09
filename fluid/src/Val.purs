@@ -35,7 +35,7 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
+import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -567,39 +567,6 @@ instance MeetSemilattice a => MeetSemilattice (ValWithDoc a) where
 
 instance MeetSemilattice a => MeetSemilattice (Env a) where
    meet = lift2 (∧)
-
-instance BoundedJoinSemilattice a => Expandable (DictRep a) (Raw DictRep) where
-   expand (DictRep svs) (DictRep svs') = DictRep (expand svs svs')
-
-instance BoundedJoinSemilattice a => Expandable (MatrixRep a) (Raw MatrixRep) where
-   expand (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
-      MatrixRep (expand vss vss' × expand i i' × expand j j')
-
-instance BoundedJoinSemilattice a => Expandable (Val a) (Raw Val) where
-   expand (Val α u) (Val _ v) = Val α (expand u v)
-
-instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
-   expand (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
-   expand (Dictionary d) (Dictionary d') = Dictionary (expand d d')
-   expand (Constr c vs) (Constr c' us) = Constr (c ≜ c') (expand vs us)
-   expand (List vs) (List us) = List (expand vs us)
-   expand (Tuple vs) (Tuple us) = Tuple (expand vs us)
-   expand (Matrix m) (Matrix m') = Matrix (expand m m')
-   expand (Fun φ) (Fun φ') = Fun (expand φ φ')
-   expand (Opaque q) (Opaque q') = Opaque (q ≜ q')
-   expand (Module q) (Module q') = Module (q ≜ q')
-   expand Unbound Unbound = Unbound
-   expand _ _ = shapeMismatch unit
-
-instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
-   expand (Closure ρ ds d) (Closure ρ' _ _) = Closure (expand ρ ρ') ds d
-   expand (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
-   expand (Type c) (Type c') = Type (c ≜ c')
-   expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
-   expand _ _ = shapeMismatch unit
-
-instance BoundedJoinSemilattice a => Expandable (Env a) (Raw Env) where
-   expand (Env ρ) (Env ρ') = Env (expand ρ ρ')
 
 derive instance Eq a => Eq (Val a)
 derive newtype instance Eq a => Eq (ValWithDoc a)
