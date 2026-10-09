@@ -348,7 +348,7 @@ instance Pretty E.Stmt where
    pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
-   pretty (E.Assign p ψ e) = pretty p <> annot ψ <+> text "=" <+> pretty e
+   pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs ds)) = text "def" <+> pretty ds
    pretty E.Pass = text "pass"
    pretty (E.ExprStmt e) = pretty e
@@ -358,10 +358,7 @@ instance Pretty E.Stmt where
    pretty (E.Seq s1 s2) = pretty s1 <++> pretty s2
 
 instance Pretty E.Def where
-   pretty (E.Def xs ψ s) = parens (prettyList xs) <> returnAnnot ψ <> text "->" <> pretty s
-
-instance Pretty E.Param where
-   pretty (E.Param x ψ) = text x <> annot ψ
+   pretty (E.Def xs s) = parens (prettyList xs) <> text "->" <> pretty s
 
 instance Pretty (Dict E.Def) where
    pretty ds = go (toUnfoldable ds)

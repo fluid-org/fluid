@@ -13,7 +13,6 @@ import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
 import Dict (Dict)
 import Literal (Literal)
-import Type as T
 import Util (type (×), singleton, (×))
 import Util.Map (keys)
 import Util.Pair (Pair(..))
@@ -61,13 +60,8 @@ data Pattern
    | PTuple (List Pattern)
    | PAs Pattern Var
 
-data Param = Param Var (Maybe T.Type)
-
--- Parameters, return annotation and body of a function.
-data Def = Def (List Param) (Maybe T.Type) Stmt
-
-paramVar :: Param -> Var
-paramVar (Param x _) = x
+-- Parameters and body of a function.
+data Def = Def (List Var) Stmt
 
 -- Mutually recursive function definitions.
 newtype RecDefs = RecDefs (Dict Def)
@@ -82,7 +76,7 @@ data Stmt
    = Return Expr
    | If (NonEmptyList Branch) (Maybe Stmt)
    | Match Expr (NonEmptyList Case)
-   | Assign Pattern (Maybe T.Type) Expr -- assignment to a pattern; the spec has only variables
+   | Assign Pattern Expr -- assignment to a pattern; the spec has only variables
    | DefRec RecDefs
    | Pass
    | ExprStmt Expr
@@ -126,7 +120,7 @@ fvQualifiers (Generator p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
 fvQualifiers (Decl p e : gs) = fv e ∪ (fvQualifiers gs \\ bv p)
 
 instance FV Def where
-   fv (Def xs _ s) = fv s \\ S.fromFoldable (paramVar <$> xs)
+   fv (Def xs s) = fv s \\ S.fromFoldable xs
 
 instance FV RecDefs where
    fv (RecDefs ds) = fv ds
@@ -138,7 +132,7 @@ instance FV Stmt where
    fv (Return e) = fv e
    fv (If bs s_opt) = unions (fv <$> bs) ∪ fv s_opt
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
-   fv (Assign _ _ e) = fv e
+   fv (Assign _ e) = fv e
    fv (DefRec ds) = fv ds
    fv Pass = empty
    fv (ExprStmt e) = fv e
@@ -184,7 +178,7 @@ assigns :: Stmt -> Set Var
 assigns (Return _) = empty
 assigns (If bs s_opt) = unions ((\(Branch _ s) -> assigns s) <$> bs) ∪ maybe empty assigns s_opt
 assigns (Match _ bs) = unions ((\(p × s) -> bv p ∪ assigns s) <$> bs)
-assigns (Assign p _ _) = bv p
+assigns (Assign p _) = bv p
 assigns (DefRec (RecDefs ds)) = S.fromFoldable (keys ds)
 assigns Pass = empty
 assigns (ExprStmt _) = empty
@@ -206,11 +200,6 @@ derive instance Eq Unop
 derive instance Generic Unop _
 instance Show Unop where
    show = genericShow
-
-derive instance Eq Param
-derive instance Generic Param _
-instance Show Param where
-   show c = genericShow c
 
 derive instance Eq Def
 derive instance Eq Pattern

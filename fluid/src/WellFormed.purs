@@ -33,7 +33,7 @@ import Dict as D
 import Util.Map (constMap)
 import Expr (bv, fv)
 import Expr (Pattern(..)) as S
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..), assigns) as S
 import Type as T
@@ -213,8 +213,8 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          throwError $ "Variable captured by its own definition: " <> x
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
-      τ <- traverse (resolveType cxt) ψ
-      pure (Assigns (constMap true xs) × E.Assign p' τ e')
+      for_ ψ (resolveType cxt)
+      pure (Assigns (constMap true xs) × E.Assign p' e')
    wellFormed cxt (S.DefRec ds) = do
       let fs = unions (Set.singleton <<< fst <$> ds)
       let cxt' = cxt `extendCxt` constMap true fs
@@ -414,8 +414,8 @@ clauses cs = do
    let n = length (fst (NEL.head cs)) :: Int
    for_ cs \(ps × _) ->
       when (length ps /= n) $ throwError "Clauses differ in number of parameters"
-   ψs <- traverse (signature "parameter annotations" <<< nonEmpty) (transpose (NEL.toList (cs <#> \(ps × _) -> snd <$> ps)))
-   ψ <- signature "return annotation" (cs <#> \(_ × ψ × _) -> ψ)
+   for_ (transpose (NEL.toList (cs <#> \(ps × _) -> snd <$> ps))) (agree "parameter annotations" <<< nonEmpty)
+   agree "return annotation" (cs <#> \(_ × ψ × _) -> ψ)
    let
       columns = transpose (NEL.toList (cs <#> \(ps × _) -> fst <$> ps))
       named = columns # mapWithIndex \i ps -> case sharedVar ps of
@@ -427,16 +427,15 @@ clauses cs = do
          Nil -> NEL.head ss
          (x × ps) : Nil -> E.Match (E.Var x) (NEL.zip (nonEmpty ps) ss)
          _ -> E.Match (E.Tuple (E.Var <<< fst <$> matched)) (NEL.zipWith (\ps s -> S.PTuple ps × s) (nonEmpty (transpose (snd <$> matched))) ss)
-   pure (E.Def (zipWith E.Param (fst <$> named) ψs) ψ body)
+   pure (E.Def (fst <$> named) body)
    where
    sharedVar :: List S.Pattern -> Maybe Var
    sharedVar (S.PVar x : ps) | all (_ == S.PVar x) ps = Just x
    sharedVar _ = Nothing
 
-   signature :: String -> NEL.NonEmptyList (Maybe T.Type) -> MayFail (Maybe T.Type)
-   signature what ψs
-      | all (\ψ -> ψ == Nothing || ψ == NEL.head ψs) (NEL.tail ψs) = pure (NEL.head ψs)
-      | otherwise = throwError ("Clauses differ in " <> what)
+   agree :: String -> NEL.NonEmptyList (Maybe T.Type) -> MayFail Unit
+   agree what ψs =
+      unless (all (\ψ -> ψ == Nothing || ψ == NEL.head ψs) (NEL.tail ψs)) $ throwError ("Clauses differ in " <> what)
 
 var :: Cxt -> Var -> MayFail Unit
 var cxt x = case Map.lookup x cxt of
