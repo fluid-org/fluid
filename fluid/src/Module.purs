@@ -8,11 +8,11 @@ import Control.Monad.State (runStateT)
 import Bind (dottedName, pathName, prefixOf)
 import Data.List.NonEmpty (snoc, unsnoc, fromList) as NEL
 import Data.Either (Either(..))
-import Data.Foldable (and, foldM, for_, intercalate)
+import Data.Foldable (foldM, for_, intercalate)
 import Data.List (List(..), catMaybes, elem, filter, mapMaybe, reverse, takeWhile, (:))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
@@ -25,18 +25,18 @@ import Eval (evalImport, implicitMembers, load) as Dep
 import Expr (Import(..)) as E
 import Expr (Module, Stmt, fv)
 import File (class LoadFile, File(..), FileCxt(..), hasDirectory, loadModuleSource, withClasses)
-import DepGraph (Deriv, deriv, emptyGraph, valAt)
+import DepGraph (Deriv, deriv, emptyGraph)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
 import DefiniteAssignment (Cxt, Entry(..))
 import Primitive.Defs (predefined)
-import WellFormed (CheckM, CheckedModule, checkProgram, checkModule, mainModule, runCheckM)
+import WellFormed (CheckM, checkProgram, checkModule, mainModule, runCheckM)
 import SExpr as S
-import Util (MayFail, type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
-import Util.Map (constMap, keys, findWithDefault, lookup, maplet, restrict, (<+>))
-import Val (class HasModuleStore, ModuleState(..), moduleStore, modifyModuleStore, loadedEnv, Env(..), Val(..))
-import Val (BaseVal(..), Fun(..)) as V
+import Util (MayFail, type (×), orThrow, throw, throwLeft, whenever, withMsg, (×))
+import Util.Map (constMap, findWithDefault, maplet, restrict, (<+>))
+import Val (class HasModuleStore, ModuleState(..), modifyModuleStore, Env(..), Val(..))
+import Val (BaseVal(..)) as V
 
 type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
 
@@ -129,30 +129,10 @@ prepConfig
    -> m Config
 prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   { result: cxt_wf × e, modules: mods, checked, classes } <- prepModules imports (checkProgram imports s)
+   { result: e, modules: mods, classes } <- prepModules imports (checkProgram imports s)
    withClasses classes do
       inputs <- loadTopLevel mods imports
-      { modules, depGraph } <- moduleStore
-      check (wellFormedEnv cxt_wf (valAt depGraph <$> inputs)) "top-level environment well-formed for context"
-      for_ (Map.toUnfoldable checked :: List (ModuleName × CheckedModule)) \(q × { cxt, mod }) ->
-         when (isJust mod) $ for_ (Map.lookup q modules >>= loadedEnv) \ρ_q ->
-            check (wellFormedEnv cxt (valAt depGraph <$> ρ_q))
-               ("module " <> dottedName q <> ": environment well-formed for context")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
-
--- Environment binds same names as context, each to value well-formed for its entry.
-wellFormedEnv :: forall a. Cxt -> Dict (Val a) -> Boolean
-wellFormedEnv cxt ρ =
-   Map.keys cxt == Set.fromFoldable (keys ρ) && and (Map.mapMaybeWithKey (\x θ -> wellFormedVal θ <$> lookup x ρ) cxt)
-
-wellFormedVal :: forall a. Entry -> Val a -> Boolean
-wellFormedVal (VarStatus true) (Val _ V.Unbound) = false
-wellFormedVal (VarStatus _) _ = true
-wellFormedVal (Class cls) (Val _ (V.Fun (V.Type c))) = c == cls.name
-wellFormedVal PredefName (Val _ (V.Opaque _)) = true
-wellFormedVal (Mod q) (Val _ (V.Module q')) = q == q'
-wellFormedVal (ModChecked q _) (Val _ (V.Module q')) = q == q'
-wellFormedVal _ _ = false
 
 -- Parse modules reachable through imports and run checking action over them, yielding its result, modules
 -- checked, and class table.
@@ -164,11 +144,11 @@ prepModules
    => LoadFile m
    => List S.Import
    -> CheckM a
-   -> m { result :: a, modules :: Map ModuleName Module, checked :: Map ModuleName CheckedModule, classes :: ClassTable }
+   -> m { result :: a, modules :: Map ModuleName Module, classes :: ClassTable }
 prepModules imports action = do
    mods <- parseModules imports
    result × checked <- orThrow (runCheckM action mods (fst <$> predefined))
-   pure { result, modules: Map.mapMaybe _.mod checked, checked, classes: classTable (_.cxt <$> checked) }
+   pure { result, modules: Map.mapMaybe _.mod checked, classes: classTable (_.cxt <$> checked) }
 
 -- Module q checked as module, not program, with modules it imports.
 prepModule

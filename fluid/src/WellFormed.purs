@@ -49,14 +49,14 @@ type CheckM = StateT (Map.Map ModuleName CheckedModule) (ReaderT (Map.Map Module
 runCheckM :: forall a. CheckM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> MayFail (a × Map.Map ModuleName CheckedModule)
 runCheckM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
 
-checkProgram :: List S.Import -> S.Stmt -> CheckM (Cxt × E.Stmt)
+checkProgram :: List S.Import -> S.Stmt -> CheckM E.Stmt
 checkProgram imports s = do
    _ × cxt_imp <- checkImports mainModule imports
    -- Unlike a module (checkStatements), the program may return: a top-level return yields
    -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
    decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
    modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
-   pure (Map.insert "__name__" (VarStatus true) cxt_imp × s')
+   pure s'
 
 -- Member context of module q, checked on demand as its import is checked; memoised. The recursion has no
 -- cycle guard; it terminates because the dependency graph is acyclic.
