@@ -12,7 +12,7 @@ import Bind (Bind, Name, Var, varAnon, (↦))
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
 import Data.Identity (Identity)
-import Data.List (List(..), (:))
+import Data.List (List(..), nub, (:))
 import Data.List.NonEmpty (NonEmptyList(..), cons, toList)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty ((:|))
@@ -128,7 +128,10 @@ typeExpr = defer \_ -> do
    typeArgs = defer \_ -> option Nil (brackets (commas typeExpr))
 
 typeParams :: Parser (List Var)
-typeParams = option Nil (brackets (commas variable))
+typeParams = do
+   αs <- option Nil (brackets (commas variable))
+   when (nub αs /= αs) $ fail "Duplicate type parameter"
+   pure αs
 
 literal :: Parser Literal
 literal =

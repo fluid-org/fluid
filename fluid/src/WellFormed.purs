@@ -387,6 +387,7 @@ instance WellFormed S.Expr E.Expr where
          when (not (Map.member y cxt'))
             $ throwError
             $ "module " <> dottedName q <> " has no member " <> y
+         var cxt' y
          pure (E.ModMember q y)
       _ -> flip E.Attribute y <$> wellFormed cxt e
    wellFormed cxt (S.Subscript e e') = E.Subscript <$> wellFormed cxt e <*> wellFormed cxt e'
