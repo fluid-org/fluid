@@ -1,6 +1,6 @@
 module WellFormed where
 
-import Prelude
+import Prelude hiding (absurd)
 
 import Bind (Bind, Name, Var, dottedName, prefixOf, properPrefixOf, varThis, (↦))
 import Control.Monad.Error.Class (throwError)
@@ -38,7 +38,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Qualifier(..
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeExpr(..), VarDef(..), assigns) as S
 import Types as T
-import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, (×), (∩))
+import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -271,8 +271,8 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          S.PVar _ -> Returns
          S.PWild -> Returns
          _ -> Assigns Map.empty
-   wellFormed _ (S.Dataclass c _ _ _) = throwError $ "Class declaration not at top level: " <> c
-   wellFormed _ (S.TypeAlias x _ _) = throwError $ "Type alias not at top level: " <> x
+   wellFormed _ (S.Dataclass _ _ _ _) = error absurd
+   wellFormed _ (S.TypeAlias _ _ _) = error absurd
 
 wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Cxt × WfResult VarCxt × E.Stmt)
 wellFormedTop q cxt (S.Dataclass c αs b xψs) = do

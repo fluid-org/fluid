@@ -156,7 +156,7 @@ varDefs :: Parser VarDefs
 varDefs = many1 varDef
 
 stmt :: Parser Stmt
-stmt = defer \_ -> ifStmt <|> matchStmt <|> typeAliasStmt <|> defStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (expr <#> ExprStmt)
+stmt = defer \_ -> ifStmt <|> matchStmt <|> defStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (expr <#> ExprStmt)
 
 returnStmt :: Parser Stmt
 returnStmt = do
@@ -170,6 +170,9 @@ assertStmt = do
    e <- expr
    msg <- optionMaybe (delim ',' *> expr)
    pure $ Assert e msg
+
+topStmt :: Parser Stmt
+topStmt = defer \_ -> typeAliasStmt <|> dataclassStmt <|> stmt
 
 stmts :: Parser Stmt
 stmts = defer \_ -> many1 (align stmt) <#> foldr1Seq
@@ -535,7 +538,7 @@ expr = context "expr" $ cond <?> "expression"
 module_ :: Parser Module
 module_ = do
    is <- many (align import_)
-   ss <- many (align stmt)
+   ss <- many (align topStmt)
    pure $ Module is ss
 
 misplacedImport :: forall a. Parser a
