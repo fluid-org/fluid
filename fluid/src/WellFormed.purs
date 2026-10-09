@@ -20,7 +20,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, zipWith, (:))
 import Data.Foldable (lookup) as F
 import ModuleGraph (ModuleName, implicitFor, submodules)
-import Data.List.NonEmpty (NonEmptyList(..), snoc, unsnoc)
+import Data.List.NonEmpty (NonEmptyList(..), head, last, snoc, unsnoc)
 import Data.NonEmpty ((:|))
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
@@ -92,7 +92,7 @@ importBindings enclosing (S.Import q Nothing) = do
       $ throwError
       $ "Module " <> dottedName enclosing <> " cannot import its own descendant " <> dottedName q
    θ <- ModChecked q <$> checkModule q
-   Map.singleton (NEL.head q) <$> checksTo Nothing q θ
+   Map.singleton (head q) <$> checksTo Nothing q θ
 importBindings enclosing (S.Import q (Just xs)) = do
    cxt <- checkModule q
    _ <- checksTo (Just enclosing) q (ModChecked q cxt) -- checks q's ancestors; contributes no bindings
@@ -222,7 +222,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       let fs = unions (Set.singleton <<< fst <$> ds)
       let cxt' = cxt `extendCxt` constMap true fs
       let groups = NEL.groupBy (eq `on` fst) ds
-      checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< NEL.head <$> groups))
+      checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> groups))
       defs <- for groups \group -> do
          void $ wellFormedPatterns cxt' (group <#> \(_ × S.Clause (_ × ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
          cs <- for group \(_ × S.Clause (αs × ps × ψ × s)) -> do
@@ -234,7 +234,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
             τ <- traverse (resolveType cxt_α) ψ
             r × s' <- wellFormed cxt'' s
             pure (ps' × τ × close r s')
-         (fst (NEL.head group) ↦ _) <$> clauses cs
+         (fst (head group) ↦ _) <$> clauses cs
       pure (Assigns (constMap true fs) × E.DefRec (E.RecDefs (D.fromFoldable defs)))
       where
       -- Body that may fall through returns None
@@ -267,7 +267,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
       pure (foldl1 mergeRes ((fst <$> bs') `snoc` rFall) × E.Match e' (snd <$> bs'))
       where
-      rFall = case fst (NEL.last bs) of
+      rFall = case fst (last bs) of
          S.PVar _ -> Returns
          S.PWild -> Returns
          _ -> Assigns Map.empty
@@ -373,7 +373,7 @@ instance WellFormed S.Expr E.Expr where
       indexExpr (NonEmptyList (i :| Nil)) = i
       indexExpr is = S.Tuple (NEL.toList is)
 
-      nameExpr q = foldl S.Attribute (S.Var (NEL.head q)) (NEL.tail q)
+      nameExpr q = foldl S.Attribute (S.Var (head q)) (NEL.tail q)
    wellFormed cxt (S.BinOp e op e') = E.BinOp <$> wellFormed cxt e <@> op <*> wellFormed cxt e'
    wellFormed cxt (S.UnOp op e) = E.UnOp op <$> wellFormed cxt e
    wellFormed cxt (S.And e e') = E.And <$> wellFormed cxt e <*> wellFormed cxt e'
@@ -448,7 +448,7 @@ positionaliseKw cls c n xbs = do
    let remaining = drop n (fields cls)
    let provided = fst <$> xbs
    when (sort provided /= sort remaining) $ throwError $
-      "Class " <> NEL.last c <> " keyword fields mismatch: expected " <> show remaining <> ", got " <> show provided
+      "Class " <> last c <> " keyword fields mismatch: expected " <> show remaining <> ", got " <> show provided
    pure $ remaining <#> \f -> definitely' (snd <$> find (\(k ↦ _) -> k == f) xbs)
 
 -- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
@@ -460,7 +460,7 @@ param i = "$" <> show i
 -- there are several.
 clauses :: NEL.NonEmptyList (List (S.Pattern × Maybe T.Type) × Maybe T.Type × E.Stmt) -> MayFail E.Def
 clauses cs = do
-   let n = length (fst (NEL.head cs)) :: Int
+   let n = length (fst (head cs)) :: Int
    for_ cs \(ps × _) ->
       when (length ps /= n) $ throwError "Clauses differ in number of parameters"
    for_ (transpose (NEL.toList (cs <#> \(ps × _) -> snd <$> ps))) (agree "parameter annotations" <<< nonEmpty)
@@ -473,7 +473,7 @@ clauses cs = do
       matched = named # mapMaybe \(x × ps_opt) -> (x × _) <$> ps_opt
       ss = cs <#> \(_ × _ × s) -> s
       body = case matched of
-         Nil -> NEL.head ss
+         Nil -> head ss
          (x × ps) : Nil -> E.Match (E.Var x) (NEL.zip (nonEmpty ps) ss)
          _ -> E.Match (E.Tuple (E.Var <<< fst <$> matched)) (NEL.zipWith (\ps s -> S.PTuple ps × s) (nonEmpty (transpose (snd <$> matched))) ss)
    pure (E.Def (fst <$> named) body)
@@ -484,7 +484,7 @@ clauses cs = do
 
    agree :: String -> NEL.NonEmptyList (Maybe T.Type) -> MayFail Unit
    agree what ψs =
-      unless (all (\ψ -> ψ == Nothing || ψ == NEL.head ψs) (NEL.tail ψs)) $ throwError ("Clauses differ in " <> what)
+      unless (all (\ψ -> ψ == Nothing || ψ == head ψs) (NEL.tail ψs)) $ throwError ("Clauses differ in " <> what)
 
 var :: Cxt -> Var -> MayFail Unit
 var cxt x = case Map.lookup x cxt of
