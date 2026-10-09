@@ -5,8 +5,8 @@ import Prelude hiding (absurd, top)
 import Bind (Bind, Name, Var, varThis)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
-import Data.List.NonEmpty (NonEmptyList)
-import Data.Maybe (Maybe(..))
+import Data.List.NonEmpty (NonEmptyList, last)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set, empty, unions)
 import Data.Set (fromFoldable) as S
 import Data.Show.Generic (genericShow)
@@ -87,6 +87,7 @@ data Stmt
    | Pass
    | ExprStmt Expr
    | Assert Expr (Maybe Expr)
+   | Dataclass Name -- class declaration, by fully-qualified name
    | Seq Stmt Stmt
 
 data Import = Import Name (Maybe (List Var))
@@ -142,6 +143,7 @@ instance FV Stmt where
    fv Pass = empty
    fv (ExprStmt e) = fv e
    fv (Assert e e_opt) = fv e ∪ fv e_opt
+   fv (Dataclass _) = empty
    fv (Seq s s') = fv s ∪ fv s'
 
 instance FV a => FV (Dict a) where
@@ -177,6 +179,18 @@ instance BV Qualifier where
 
 instance BV a => BV (List a) where
    bv xs = unions (bv <$> xs)
+
+assigns :: Stmt -> Set Var
+assigns (Return _) = empty
+assigns (If bs s_opt) = unions ((\(Branch _ s) -> assigns s) <$> bs) ∪ maybe empty assigns s_opt
+assigns (Match _ bs) = unions ((\(p × s) -> bv p ∪ assigns s) <$> bs)
+assigns (Assign p _ _) = bv p
+assigns (DefRec (RecDefs ds)) = S.fromFoldable (keys ds)
+assigns Pass = empty
+assigns (ExprStmt _) = empty
+assigns (Assert _ _) = empty
+assigns (Dataclass c) = singleton (last c)
+assigns (Seq s s') = assigns s ∪ assigns s'
 
 -- ======================
 -- boilerplate

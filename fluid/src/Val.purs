@@ -35,7 +35,7 @@ import File (class LoadFile, FileCxt)
 import ModuleGraph (ModuleName)
 import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
-import Lattice (class BoundedJoinSemilattice, class BoundedLattice, class DepSemiring, class Expandable, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, expand, (∧), (∨))
+import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -63,12 +63,18 @@ data BaseVal a
    | Dictionary (DictRep a)
    | Matrix (MatrixRep a)
    | Fun (Fun a)
+   | Opaque Name -- predefined name, fully qualified
+   | Module ModuleName
+   | Unbound
 
 root :: forall a. Val a -> a
 root (Val α _) = α
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
+overChildren _ (Opaque q) = Opaque q
+overChildren _ (Module q) = Module q
+overChildren _ Unbound = Unbound
 overChildren f (Constr c vs) = Constr c (f <$> vs)
 overChildren f (List vs) = List (f <$> vs)
 overChildren f (Tuple vs) = Tuple (f <$> vs)
@@ -158,6 +164,9 @@ unitSection (Val _ u) = Val one case u of
    Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
    Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
    Fun φ -> Fun (zeros φ)
+   Opaque q -> Opaque q
+   Module q -> Module q
+   Unbound -> Unbound
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
@@ -473,6 +482,9 @@ instance Apply BaseVal where
    apply (Dictionary fxvs) (Dictionary xvs) = Dictionary (fxvs <*> xvs)
    apply (Matrix fm) (Matrix m) = Matrix (fm <*> m)
    apply (Fun ff) (Fun f) = Fun (ff <*> f)
+   apply (Opaque q) (Opaque q') = Opaque (q ≜ q')
+   apply (Module q) (Module q') = Module (q ≜ q')
+   apply Unbound Unbound = Unbound
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where
@@ -555,36 +567,6 @@ instance MeetSemilattice a => MeetSemilattice (ValWithDoc a) where
 
 instance MeetSemilattice a => MeetSemilattice (Env a) where
    meet = lift2 (∧)
-
-instance BoundedJoinSemilattice a => Expandable (DictRep a) (Raw DictRep) where
-   expand (DictRep svs) (DictRep svs') = DictRep (expand svs svs')
-
-instance BoundedJoinSemilattice a => Expandable (MatrixRep a) (Raw MatrixRep) where
-   expand (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
-      MatrixRep (expand vss vss' × expand i i' × expand j j')
-
-instance BoundedJoinSemilattice a => Expandable (Val a) (Raw Val) where
-   expand (Val α u) (Val _ v) = Val α (expand u v)
-
-instance BoundedJoinSemilattice a => Expandable (BaseVal a) (Raw BaseVal) where
-   expand (Lit ℓ) (Lit ℓ') = Lit (ℓ ≜ ℓ')
-   expand (Dictionary d) (Dictionary d') = Dictionary (expand d d')
-   expand (Constr c vs) (Constr c' us) = Constr (c ≜ c') (expand vs us)
-   expand (List vs) (List us) = List (expand vs us)
-   expand (Tuple vs) (Tuple us) = Tuple (expand vs us)
-   expand (Matrix m) (Matrix m') = Matrix (expand m m')
-   expand (Fun φ) (Fun φ') = Fun (expand φ φ')
-   expand _ _ = shapeMismatch unit
-
-instance BoundedJoinSemilattice a => Expandable (Fun a) (Raw Fun) where
-   expand (Closure ρ ds d) (Closure ρ' _ _) = Closure (expand ρ ρ') ds d
-   expand (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
-   expand (Type c) (Type c') = Type (c ≜ c')
-   expand (Partial φ vs) (Partial φ' vs') = Partial (expand φ φ') (expand vs vs')
-   expand _ _ = shapeMismatch unit
-
-instance BoundedJoinSemilattice a => Expandable (Env a) (Raw Env) where
-   expand (Env ρ) (Env ρ') = Env (expand ρ ρ')
 
 derive instance Eq a => Eq (Val a)
 derive newtype instance Eq a => Eq (ValWithDoc a)

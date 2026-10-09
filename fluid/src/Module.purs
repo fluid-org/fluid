@@ -6,13 +6,14 @@ import Control.Monad.Except (class MonadError)
 import Control.Monad.Reader (class MonadReader, ask)
 import Control.Monad.State (runStateT)
 import Bind (dottedName, pathName, prefixOf)
-import Data.List.NonEmpty (snoc, unsnoc, fromList) as NEL
+import Data.List.NonEmpty (snoc, unsnoc)
+import Data.List.NonEmpty (fromList) as NEL
 import Data.Either (Either(..))
 import Data.Foldable (foldM, for_, intercalate)
 import Data.List (List(..), catMaybes, elem, filter, mapMaybe, reverse, takeWhile, (:))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
@@ -29,13 +30,13 @@ import DepGraph (Deriv, deriv, emptyGraph)
 import Literal (Literal(..))
 import ModuleGraph (DependencyGraph, ModuleName, implicit, implicitFor)
 import Parse (parseModule, parseProgram)
-import DefiniteAssignment (Cxt, Entry(..), erase)
+import DefiniteAssignment (Cxt, Entry(..))
 import Primitive.Defs (predefined)
-import WellFormed (CheckM, CheckedModule, checkProgram, checkModule, mainModule, runCheckM)
+import WellFormed (CheckM, checkProgram, checkModule, mainModule, runCheckM)
 import SExpr as S
-import Util (MayFail, type (×), check, orThrow, throw, throwLeft, whenever, withMsg, (×))
-import Util.Map (constMap, keys, findWithDefault, maplet, restrict, (<+>))
-import Val (class HasModuleStore, ModuleState(..), moduleStore, modifyModuleStore, loadedEnv, Env(..), Val(..))
+import Util (MayFail, type (×), orThrow, throw, throwLeft, whenever, withMsg, (×))
+import Util.Map (constMap, findWithDefault, maplet, restrict, (<+>))
+import Val (class HasModuleStore, ModuleState(..), modifyModuleStore, Env(..), Val(..))
 import Val (BaseVal(..)) as V
 
 type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
@@ -48,7 +49,7 @@ isModule q = do
       Nothing -> hasDirectory fluidSrcPaths (File (pathName q))
 
 parents :: ModuleName -> List ModuleName
-parents q = case NEL.fromList (NEL.unsnoc q).init of
+parents q = case NEL.fromList (unsnoc q).init of
    Nothing -> Nil
    Just q' -> parents q' <> (q' : Nil)
 
@@ -65,7 +66,7 @@ importDeps enclosing (S.Import q f) = do
    ps <- keepModules (parents q)
    subs <- case f of
       Nothing -> pure Nil
-      Just xs -> keepModules ((NEL.snoc q) <$> xs)
+      Just xs -> keepModules ((snoc q) <$> xs)
    let
       prefixEdges = case f of
          Nothing -> filter (_ /= enclosing) (parents q)
@@ -129,15 +130,9 @@ prepConfig
    -> m Config
 prepConfig fluidSrc = do
    s × imports <- throwLeft $ parseProgram fluidSrc
-   { result: cxt_wf × e, modules: mods, checked, classes } <- prepModules imports (checkProgram imports s)
+   { result: e, modules: mods, classes } <- prepModules imports (checkProgram imports s)
    withClasses classes do
       inputs <- loadTopLevel mods imports
-      check (Map.keys cxt_wf == Set.fromFoldable (keys inputs)) "reduced context matches top-level environment"
-      { modules } <- moduleStore
-      for_ (Map.toUnfoldable checked :: List (ModuleName × CheckedModule)) \(q × { cxt, mod }) ->
-         when (isJust mod) $ for_ (Map.lookup q modules >>= loadedEnv) \ρ_q ->
-            check (Map.keys (erase cxt) == Set.fromFoldable (keys ρ_q))
-               ("module " <> dottedName q <> ": context and environment bind the same names")
       pure { s, e, inputs: restrict (fv e) inputs, classes }
 
 -- Parse modules reachable through imports and run checking action over them, yielding its result, modules
@@ -150,11 +145,11 @@ prepModules
    => LoadFile m
    => List S.Import
    -> CheckM a
-   -> m { result :: a, modules :: Map ModuleName Module, checked :: Map ModuleName CheckedModule, classes :: ClassTable }
+   -> m { result :: a, modules :: Map ModuleName Module, classes :: ClassTable }
 prepModules imports action = do
    mods <- parseModules imports
    result × checked <- orThrow (runCheckM action mods (fst <$> predefined))
-   pure { result, modules: Map.mapMaybe _.mod checked, checked, classes: classTable (_.cxt <$> checked) }
+   pure { result, modules: Map.mapMaybe _.mod checked, classes: classTable (_.cxt <$> checked) }
 
 -- Module q checked as module, not program, with modules it imports.
 prepModule

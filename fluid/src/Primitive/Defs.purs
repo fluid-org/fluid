@@ -2,7 +2,7 @@ module Primitive.Defs where
 
 import Prelude hiding (absurd, apply, div, mod, top)
 
-import Bind (Bind, Var, dottedName)
+import Bind (Bind, Var, dottedName, qual)
 import Control.Monad.Error.Class (class MonadError)
 import Data.Argonaut.Core (Json, caseJson)
 import Data.Argonaut.Decode (parseJson)
@@ -28,7 +28,7 @@ import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for)
 import Data.Tuple (fst, snd)
 import DataType (cRange)
-import DefiniteAssignment (Cxt, Entry(..))
+import DefiniteAssignment (ClassEntry, Cxt, Entry(..))
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -52,7 +52,7 @@ extern (ForeignOp (id × φ)) =
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
    [ predefinedModule builtins ("None" : "object" : "bool" : "int" : "float" : "str" : "list" : "dict" : "tuple" : Nil)
-        [ "range" × Class { cxt: M.empty, name: cRange, base: Nothing, fields: "start" : "stop" : Nil } ]
+        [ "range" × { cxt: M.empty, name: cRange, base: Nothing, fields: "start" : "stop" : Nil } ]
         [ extern print_
         , extern len
         -- Fluid-only members, without spec counterpart
@@ -95,11 +95,13 @@ predefined = M.fromFoldable
    , predefinedModule dataclasses ("dataclass" : Nil) [] []
    ]
    where
-   predefinedModule :: ModuleName -> List Var -> Array (Bind Entry) -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
-   predefinedModule q names classes members = q × (cxt × ρ)
+   predefinedModule :: ModuleName -> List Var -> Array (Bind ClassEntry) -> Array (Bind (Val Unit)) -> ModuleName × (Cxt × Raw Env)
+   predefinedModule q names classes members = q × (cxt × wrap (ρ `unionWith_never` ρ_classes `unionWith_never` ρ_names))
       where
-      ρ = wrap (D.fromFoldable (Array.cons ("__name__" × Val bot (Lit (Str (dottedName q)))) members))
-      cxt = M.unions [ constMap PredefName (Set.fromFoldable names), M.fromFoldable classes, constMap (VarStatus true) (keys ρ) ]
+      ρ = D.fromFoldable (Array.cons ("__name__" × Val bot (Lit (Str (dottedName q)))) members)
+      ρ_classes = D.fromFoldable classes <#> \cls -> Val bot (Fun (Type cls.name))
+      ρ_names = D.fromFoldable (names <#> \x -> x × Val bot (Opaque (qual q x)))
+      cxt = M.unions [ constMap PredefName (Set.fromFoldable names), Class <$> M.fromFoldable classes, constMap (VarStatus true) (keys ρ) ]
 
 len :: ForeignOp
 len =

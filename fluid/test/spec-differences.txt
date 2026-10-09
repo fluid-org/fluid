@@ -18,7 +18,6 @@ test/module-level/excluded/static/callable_arity.py (check: exit 0, expected [3]
 test/module-level/excluded/static/callable_param_narrower.py (check: exit 0, expected [3]: )
 test/module-level/excluded/static/callable_result_wider.py (check: exit 0, expected [3]: )
 test/module-level/excluded/static/class_base_not_class.py (check: exit 1, expected [3]: ParseError on line 5, column 17:)
-test/module-level/excluded/static/class_rebound_pattern.py (check: exit 0, expected [3]: )
 test/module-level/excluded/static/class_shadows_variable.py (check: exit 0, expected [3]: )
 test/module-level/excluded/static/closure_unassigned.py (check: exit 1, expected [3]: ParseError on line 3, column 6:)
 test/module-level/excluded/static/comp_guard_bool.py (check: exit 0, expected [3]: )

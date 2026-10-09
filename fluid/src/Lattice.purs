@@ -9,13 +9,10 @@ import Data.List (List, zipWith)
 import Data.Map (Map, empty, filter, unionWith) as M
 import Data.Maybe (Maybe(..))
 import Data.Profunctor.Strong ((***))
-import Data.Set (subset)
 import Dict (Dict)
-import Util (type (×), Endo, assert, shapeMismatch, (×))
-import Util.Map (intersectionWith, keys, unionWith)
-import Util.Map as Map
+import Util (type (×), Endo, shapeMismatch, (×))
+import Util.Map (unionWith)
 import Util.Pair (Pair(..))
-import Util.Set ((∪))
 
 -- join here is actually more general "weak join" operation of the formalism, which operates on maps using unionWith.
 class JoinSemilattice a where
@@ -208,28 +205,3 @@ instance JoinSemilattice a => JoinSemilattice (Maybe a) where
 
 instance (BoundedJoinSemilattice a, BoundedMeetSemilattice a) => BoundedLattice a
 
--- Expandable (t :: Type -> Type) requires functor composition.
-class Expandable t u | t -> u where
-   expand :: t -> u -> t
-
-instance Expandable (t a) (Raw t) => Expandable (a × t a) (Unit × Raw t) where
-   expand (α × a) (_ × a') = α × expand a a'
-
-instance Expandable t u => Expandable (Pair t) (Pair u) where
-   expand (Pair x x') (Pair y y') = Pair (expand x y) (expand x' y')
-
-instance (BotOf u t, Expandable t u) => Expandable (Dict t) (Dict u) where
-   expand kvs kvs' =
-      assert (keys kvs `subset` keys kvs') $
-         (kvs `intersectionWith expand` kvs') ∪ ((kvs' Map.\\ kvs) <#> botOf)
-
-instance Expandable t u => Expandable (List t) (List u) where
-   expand xs = zipWith expand xs
-
-instance Expandable t u => Expandable (Array t) (Array u) where
-   expand xs = A.zipWith expand xs
-
-instance Expandable t u => Expandable (Maybe t) (Maybe u) where
-   expand Nothing Nothing = Nothing
-   expand (Just x) (Just y) = Just (expand x y)
-   expand _ _ = shapeMismatch unit

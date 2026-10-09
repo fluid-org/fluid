@@ -19,7 +19,8 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, zipWith, (:))
 import Data.Foldable (lookup) as F
-import ModuleGraph (ModuleName, implicitFor)
+import ModuleGraph (ModuleName, implicitFor, submodules)
+import Data.List.NonEmpty (snoc, unsnoc)
 import Data.List.NonEmpty as NEL
 import Data.Semigroup.Foldable (foldl1)
 import Data.Set (Set, unions)
@@ -27,7 +28,7 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DataType (cParagraph, cRange)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, erase, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, className, classOf, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Dict as D
 import Util.Map (constMap)
 import Expr (bv, fv)
@@ -36,7 +37,7 @@ import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Param(..), Q
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), VarDef(..), assigns) as S
 import Type as T
-import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, whenever, (×), (∩))
+import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
 
@@ -49,14 +50,14 @@ type CheckM = StateT (Map.Map ModuleName CheckedModule) (ReaderT (Map.Map Module
 runCheckM :: forall a. CheckM a -> Map.Map ModuleName S.Module -> Map.Map ModuleName Cxt -> MayFail (a × Map.Map ModuleName CheckedModule)
 runCheckM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { cxt, mod: Nothing })) mods
 
-checkProgram :: List S.Import -> S.Stmt -> CheckM (VarCxt × E.Stmt)
+checkProgram :: List S.Import -> S.Stmt -> CheckM E.Stmt
 checkProgram imports s = do
    _ × cxt_imp <- checkImports mainModule imports
    -- Unlike a module (checkStatements), the program may return: a top-level return yields
    -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
    decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
    modify_ (Map.insert mainModule { cxt: Class <$> decls, mod: Nothing })
-   pure (Map.insert "__name__" true (erase cxt_imp) × s')
+   pure s'
 
 -- Member context of module q, checked on demand as its import is checked; memoised. The recursion has no
 -- cycle guard; it terminates because the dependency graph is acyclic.
@@ -68,7 +69,7 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
       importCxt × cxt_imp <- checkImports q is
       δ × mod' <- lift (lift (checkStatements q cxt_imp mod))
-      let subs = submodules (Map.keys mods) q
+      let subs = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
       let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
       when (not Set.isEmpty clash)
          $ throwError
@@ -108,7 +109,7 @@ checksTo bound q θ = case NEL.fromList init of
            cxt <- checkModule q'
            checksTo bound q' (ModChecked q' (cxt `extendCxtWith` Map.singleton x θ))
    where
-   { init, last: x } = NEL.unsnoc q
+   { init, last: x } = unsnoc q
 
 -- Bindings for names imported from module q with member context cxt.
 importedMembers :: ModuleName -> Cxt -> List Var -> CheckM Cxt
@@ -120,12 +121,6 @@ importedMembers q cxt (x : xs) = do
       Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
       Just θ -> pure (Map.insert x θ othersCxt)
       Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
-
--- Stubs for the immediate submodules of q in the module table.
-submodules :: Set ModuleName -> ModuleName -> Cxt
-submodules modules q = Map.fromFoldable (mapMaybe sub (Set.toUnfoldable modules))
-   where
-   sub m = let { init, last: x } = NEL.unsnoc m in whenever (NEL.fromList init == Just q) (x × Mod m)
 
 checkStatements :: Name -> Cxt -> S.Module -> MayFail (Cxt × E.Module)
 checkStatements q cxt_imp (S.Module imports ss) =
@@ -266,7 +261,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          let xs = bv p
          r × s' <- wellFormed (cxt `extendCxt` constMap true xs) s
          pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
-      pure (foldl1 mergeRes ((fst <$> bs') `NEL.snoc` rFall) × E.Match e' (snd <$> bs'))
+      pure (foldl1 mergeRes ((fst <$> bs') `snoc` rFall) × E.Match e' (snd <$> bs'))
       where
       rFall = case fst (NEL.last bs) of
          S.PVar _ -> Returns
@@ -284,13 +279,13 @@ wellFormedTop q cxt (S.Dataclass c b xψs) = do
       Nothing -> pure unit
       Just base -> do
          cls <- maybe (throwError $ "Unknown class: " <> base) pure (classFor cxt base)
-         when (cls.name /= NEL.snoc q base) $ throwError $ "Cannot extend imported class: " <> base
+         when (cls.name /= snoc q base) $ throwError $ "Cannot extend imported class: " <> base
          let clash = Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)
          when (not Set.isEmpty clash)
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
                  <> show (Set.toUnfoldable clash :: List Var)
-   pure (Map.singleton c { cxt, name: NEL.snoc q c, base: b, fields: xs } × Assigns Map.empty × E.Pass)
+   pure (Map.singleton c { cxt, name: snoc q c, base: b, fields: xs } × Assigns Map.empty × E.Dataclass (snoc q c))
 wellFormedTop q cxt (S.Seq t1 t2) = do
    decls1 × r1 × t1' <- wellFormedTop q cxt t1
    case r1 of
