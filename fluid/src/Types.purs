@@ -1,4 +1,4 @@
-module Type where
+module Types where
 
 import Prelude
 import Prim hiding (Type)

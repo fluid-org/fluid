@@ -37,7 +37,7 @@ import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, va
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
-import Type as T
+import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))

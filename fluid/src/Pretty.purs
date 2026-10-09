@@ -20,7 +20,7 @@ import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtO
 import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
 import SExpr (Branch, Case, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), TypeExpr(..), VarDef(..), VarDefs)
-import Type as T
+import Types as T
 import Util (type (×), isEmpty, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))

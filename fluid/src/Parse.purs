@@ -31,7 +31,7 @@ import Parsing.String (eof, satisfy)
 import Operator (Operator(..), assoc, binopSymbol, levels, unopSymbol)
 import Expr (Binop(..), Pattern(..))
 import SExpr (Branch, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), RecDefs, Stmt(..), TypeExpr(..), VarDef(..), VarDefs)
-import Type (Primitive(..)) as T
+import Types (Primitive(..)) as T
 import Util (MayFail, type (+), type (×), nonEmpty, singleton, (×))
 
 pattern :: Parser Pattern
@@ -320,7 +320,7 @@ expr = context "expr" $ cond <?> "expression"
             -- Type arguments of a constructor call; read back as subscript by checker if head not a class.
             typeApp :: Parser Expr
             typeApp
-               | isName e = try (delim '[' *> commas typeExpr <* close ']' <* lookAhead (delim '(')) >>= app
+               | isName e = try (delim '[' *> commas typeExpr <* close ']' <* lookAhead (sameOrIndented *> delim '(')) >>= app
                | otherwise = fail "Expected name before type arguments"
 
             isName :: Expr -> Boolean

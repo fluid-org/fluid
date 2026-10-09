@@ -13,7 +13,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
-import Type (Type) as T
+import Types (Type) as T
 import Util (MayFail, type (×), definitely')
 import Util.Set ((∪))
 

@@ -22,7 +22,7 @@ import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String (Pattern(..), split)
 import DefiniteAssignment (ClassEntry, ancestors, fields)
 import Effect.Exception (Error)
-import Type (Primitive(..), Type(..), baseType)
+import Types (Primitive(..), Type(..), baseType)
 import Util (definitely', throw)
 
 type FieldName = String

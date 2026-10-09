@@ -12,7 +12,7 @@ import Data.Show.Generic (genericShow)
 import Data.Tuple (fst, snd)
 import Literal (Literal)
 import Expr (class BV, class FV, Binop, Pattern, Unop, bv, fv)
-import Type as T
+import Types as T
 import Util.Set ((\\), (∪))
 import Util (type (×), (×))
 

@@ -13,7 +13,7 @@ import Data.Show.Generic (genericShow)
 import Data.Tuple (snd)
 import Dict (Dict)
 import Literal (Literal)
-import Type as T
+import Types as T
 import Util (type (×), singleton, (×))
 import Util.Map (keys)
 import Util.Pair (Pair(..))

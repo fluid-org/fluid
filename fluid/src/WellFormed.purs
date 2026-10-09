@@ -37,7 +37,7 @@ import Expr (Pattern(..)) as S
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
 import Literal (Literal(..))
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeExpr(..), VarDef(..), assigns) as S
-import Type as T
+import Types as T
 import Util (MayFail, type (×), checkDistinct, definitely', nonEmpty, singleton, (×), (∩))
 import Util.Pair (Pair(..))
 import Util.Set ((\\), (∪))
