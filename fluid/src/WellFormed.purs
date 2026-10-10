@@ -273,11 +273,11 @@ wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
          cls <- maybe (throwError $ "Base of class " <> c <> " is not a class: " <> base) pure (classFor cxt base)
          when (cls.name /= snoc q base) $ throwError $ "Cannot extend imported class: " <> base
          void $ resolveType cxt_αs ψ
-         let clash = Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)
-         when (not Set.isEmpty clash)
+         let redecl = Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)
+         when (not Set.isEmpty redecl)
             $ throwError
             $ "Class " <> c <> " redeclares inherited field(s): "
-                 <> show (Set.toUnfoldable clash :: List Var)
+                 <> show (Set.toUnfoldable redecl :: List Var)
          pure base
       S.NameTy base _ -> throwError $ "Cannot extend imported class: " <> dottedName base
       _ -> throwError $ "Base of class " <> c <> " is not a class"
