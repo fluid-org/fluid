@@ -13,6 +13,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Set (Set)
 import Data.Set as Set
+import Types (Type) as T
 import Util (MayFail, type (×), definitely')
 import Util.Set ((∪))
 
@@ -21,6 +22,7 @@ type VarCxt = Map Var Boolean
 type ClassEntry =
    { cxt :: Cxt -- declaring context (resolves the base class)
    , name :: Name -- fully-qualified name, the class's identity
+   , typeParams :: List Var
    , base :: Maybe Var -- base class, if any
    , fields :: List Var -- own field names, distinct
    }
@@ -31,16 +33,18 @@ data Entry
    | Mod Name
    | ModChecked Name Cxt
    | PredefName
+   | TypeVar -- type parameter
+   | TypeAlias (List Var) T.Type
 
 type Cxt = Map Var Entry
 
 data WfResult a = Returns | Assigns a
 
-extendCxtWith :: Cxt -> Cxt -> Cxt
-extendCxtWith cxt cxt' = Map.unionWith extendEntry cxt cxt'
+extend :: Cxt -> Cxt -> Cxt
+extend cxt cxt' = Map.unionWith extendEntry cxt cxt'
 
 extendEntry :: Entry -> Entry -> Entry
-extendEntry (ModChecked q cxt) (ModChecked q' cxt') | q == q' = ModChecked q (cxt `extendCxtWith` cxt')
+extendEntry (ModChecked q cxt) (ModChecked q' cxt') | q == q' = ModChecked q (cxt `extend` cxt')
 extendEntry (Mod q) θ'@(ModChecked q' _) | q == q' = θ'
 extendEntry θ@(ModChecked q _) (Mod q') | q == q' = θ
 extendEntry _ θ' = θ'
@@ -78,9 +82,6 @@ classOf cxt c = case resolveName cxt c of
    Just (Class cls) -> pure cls
    _ -> throwError $ "Unknown dataclass: " <> dottedName c
 
-className :: Cxt -> Name -> MayFail Name
-className cxt c = _.name <$> classOf cxt c
-
 resolveName :: Cxt -> Name -> Maybe Entry
 resolveName cxt name = case NEL.fromList init of
    Nothing -> simpleEntry cxt x
@@ -93,10 +94,12 @@ resolveName cxt name = case NEL.fromList init of
       Just e@(VarStatus true) -> Just e
       Just e@(ModChecked _ _) -> Just e
       Just e@(Class _) -> Just e
+      Just e@TypeVar -> Just e
+      Just e@(TypeAlias _ _) -> Just e
       _ -> Nothing
 
-extendCxt :: Cxt -> VarCxt -> Cxt
-extendCxt cxt δ = Map.union (VarStatus <$> δ) cxt
+extendVar :: Cxt -> VarCxt -> Cxt
+extendVar cxt cxt' = Map.union (VarStatus <$> cxt') cxt
 
 fields :: ClassEntry -> List Var
 fields cls = case cls.base of

@@ -52,7 +52,7 @@ extern (ForeignOp (id × φ)) =
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
    [ predefinedModule builtins ("None" : "object" : "bool" : "int" : "float" : "str" : "list" : "dict" : "tuple" : Nil)
-        [ "range" × { cxt: M.empty, name: cRange, base: Nothing, fields: "start" : "stop" : Nil } ]
+        [ "range" × { cxt: M.empty, name: cRange, typeParams: Nil, base: Nothing, fields: "start" : "stop" : Nil } ]
         [ extern print_
         , extern len
         -- Fluid-only members, without spec counterpart

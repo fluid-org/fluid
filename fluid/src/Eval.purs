@@ -30,7 +30,7 @@ import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), assigns, fv, paramVar)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), RecDefs(..), Stmt(..), assigns, fv)
 import File (class LoadFile, FileCxt, withClasses)
 import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
@@ -319,7 +319,7 @@ evalStmt inputs = case _ of
             case r of
                Returns _ -> pure r
                Assigns ρ'' ctrl' -> pure (Assigns (ρ' <+> ρ'') ctrl')
-   Assign p _ e -> do
+   Assign p e -> do
       v <- gval <$> eval inputs e
       classes <- askClasses
       ρ' × ctrl <- destructure classes p v inputs.ctrl
@@ -338,6 +338,9 @@ evalStmt inputs = case _ of
    Dataclass c -> do
       let v = constructed inputs.ctrl { val: Val unit (V.Fun (V.Type c)), inEdges: Nil }
       pure (Assigns (maplet (last c) v) inputs.ctrl)
+   TypeAlias x αs τ -> do
+      let v = constructed inputs.ctrl { val: Val unit (V.TypeAlias αs τ), inEdges: Nil }
+      pure (Assigns (maplet x v) inputs.ctrl)
    Seq s1 s2 -> do
       r1 <- evalStmt inputs s1
       case r1 of
@@ -365,7 +368,7 @@ apply ctrl f@{ val: Val _ u } vs = case u of
       where
       arity' :: m Int
       arity' = case φ of
-         V.Closure _ _ (Def xs _ _) -> pure (length xs)
+         V.Closure _ _ (Def xs _) -> pure (length xs)
          V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
          V.Type c -> askClasses >>= arity (dottedName c)
          V.Partial _ _ -> error absurd
@@ -382,11 +385,11 @@ apply ctrl f@{ val: Val _ u } vs = case u of
    -- Applying a function consumes its root.
    call :: V.Fun Unit -> List (GVal s) -> m (Deriv × Raw Val)
    call φ vs' = case φ of
-      V.Closure (Env ρ1) ds (Def xs _ s) -> do
+      V.Closure (Env ρ1) ds (Def xs s) -> do
          let
             ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
             ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
-            ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip (paramVar <$> xs) vs')
+            ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
          asReturns <$> evalStmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
       V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp ctrl' vs'
       V.Type c -> constructWith ctrl' (V.Constr c) vs'
@@ -401,17 +404,17 @@ evalModule
    -> ModuleName
    -> Module
    -> m (Dict Deriv)
-evalModule ρ0 q (Module is ss) = do
-   ρ_imp <- foldM (evalImport q) ρ0 is
+evalModule ρ0 q (Module ιs ss) = do
+   ρ_imp <- foldM (evalImport q) ρ0 ιs
    ρ_name <- maplet "__name__" <$> deriv (Val unit (V.Lit (Str (dottedName q))))
    { modules } <- moduleStore
-   ρ_subs <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
+   ρ_subMods <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
    ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
    bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
    let xs = L.fromFoldable (foldMap assigns ss)
    ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Val unit V.Unbound))) xs
    members <- traverse (record >>> map fst) bindings
-   pure (ρ_name <+> ρ_subs <+> ρ_unbound <+> members)
+   pure (ρ_name <+> ρ_subMods <+> ρ_unbound <+> members)
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport

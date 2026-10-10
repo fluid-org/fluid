@@ -37,6 +37,7 @@ import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, va
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
+import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
@@ -66,6 +67,7 @@ data BaseVal a
    | Opaque Name -- predefined name, fully qualified
    | Module ModuleName
    | Unbound
+   | TypeAlias (List Var) T.Type
 
 root :: forall a. Val a -> a
 root (Val α _) = α
@@ -75,6 +77,7 @@ overChildren _ (Lit ℓ) = Lit ℓ
 overChildren _ (Opaque q) = Opaque q
 overChildren _ (Module q) = Module q
 overChildren _ Unbound = Unbound
+overChildren _ (TypeAlias αs τ) = TypeAlias αs τ
 overChildren f (Constr c vs) = Constr c (f <$> vs)
 overChildren f (List vs) = List (f <$> vs)
 overChildren f (Tuple vs) = Tuple (f <$> vs)
@@ -167,6 +170,7 @@ unitSection (Val _ u) = Val one case u of
    Opaque q -> Opaque q
    Module q -> Module q
    Unbound -> Unbound
+   TypeAlias αs τ -> TypeAlias αs τ
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: singleton (p × identity) }
@@ -485,6 +489,7 @@ instance Apply BaseVal where
    apply (Opaque q) (Opaque q') = Opaque (q ≜ q')
    apply (Module q) (Module q') = Module (q ≜ q')
    apply Unbound Unbound = Unbound
+   apply (TypeAlias αs τ) (TypeAlias αs' τ') = TypeAlias (αs ≜ αs') (τ ≜ τ')
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where

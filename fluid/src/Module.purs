@@ -209,7 +209,7 @@ parseModules imports = do
       loadModuleSource fluidSrcPaths (pathName path) >>= case _ of
          Just src -> do
             mod × _ <- throwLeft <#> withMsg ("Loading module " <> dottedName path) $ parseModule src
-            deps <- case mod of S.Module is _ -> traverse (importDeps path) is
+            deps <- case mod of S.Module ιs _ -> traverse (importDeps path) ιs
             let edges = deps >>= _.edges
             let toLoad = implicitFor path <> (deps >>= _.load)
             pure $ mod × edges × toLoad
