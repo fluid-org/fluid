@@ -291,14 +291,12 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
          for_ (Set.toUnfoldable (captures t1 ∩ S.assigns t2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
          for_ (Map.toUnfoldable (Map.filterKeys (_ ∈ S.assigns t2) decls1) :: Array (Var × Entry)) \(x × θ) ->
-            throwError $ (if x ∈ typeDecls t2 then duplicate θ else reassigned θ) <> x
+            throwError $ (if x ∈ typeDecls t2 then "Duplicate " <> kind θ <> " declaration: " else "Reassigned " <> kind θ <> " name: ") <> x
          decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendVar` cxt')) t2
          pure (Map.union decls2 decls1 × overrideRes r1 r2 × E.Seq t1' t2')
    where
-   duplicate (TypeAlias _ _) = "Duplicate type alias declaration: "
-   duplicate _ = "Duplicate class declaration: "
-   reassigned (TypeAlias _ _) = "Type alias name reassigned: "
-   reassigned _ = "Class name reassigned: "
+   kind (TypeAlias _ _) = "type alias"
+   kind _ = "class"
 wellFormedTop _ cxt s = do
    r × s' <- wellFormed cxt s
    pure (Map.empty × r × s')
