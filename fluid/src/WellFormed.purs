@@ -57,8 +57,8 @@ checkProgram imports s = do
    _ × cxt_imp <- checkImports mainModule imports
    -- Unlike a module (checkStatements), the program may return: a top-level return yields
    -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
-   decls × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
-   modify_ (Map.insert mainModule { cxt: decls, mod: Nothing })
+   cxt × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
+   modify_ (Map.insert mainModule { cxt, mod: Nothing })
    pure s'
 
 -- Member context of module q, checked on demand as its import is checked; memoised. The recursion has no
@@ -129,11 +129,11 @@ checkStatements q cxt_imp (S.Module imports ss) =
    case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
       Nothing -> pure (Map.singleton "__name__" (VarStatus true) × E.Module imports' Nil)
       Just s -> do
-         decls × r × s' <- wellFormedTop q (Map.insert "__name__" (VarStatus true) cxt_imp) s
+         cxt × r × s' <- wellFormedTop q (Map.insert "__name__" (VarStatus true) cxt_imp) s
          case r of
             Returns -> throwError "Module body cannot return"
             Assigns cxt' ->
-               pure (Map.insert "__name__" (VarStatus true) (Map.union decls (VarStatus <$> cxt')) × E.Module imports' (unSeq s'))
+               pure (Map.insert "__name__" (VarStatus true) (Map.union cxt (VarStatus <$> cxt')) × E.Module imports' (unSeq s'))
    where
    imports' = imports <#> \(S.Import q' xs) -> E.Import q' xs
    unSeq (E.Seq s1 s2) = s1 : unSeq s2
@@ -288,16 +288,16 @@ wellFormedTop _ cxt (S.TypeAlias x αs ψ) = do
    τ <- resolveType (cxt `extend` typeParams αs) ψ
    pure (Map.singleton x (TypeAlias αs τ) × Assigns Map.empty × E.TypeAlias x αs τ)
 wellFormedTop q cxt (S.Seq t1 t2) = do
-   decls1 × r1 × t1' <- wellFormedTop q cxt t1
+   cxt_t1 × r1 × t1' <- wellFormedTop q cxt t1
    case r1 of
       Returns -> throwError "Unreachable statement"
       Assigns cxt' -> do
          for_ (Set.toUnfoldable (captures t1 ∩ S.assigns t2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         for_ (Map.toUnfoldable (Map.filterKeys (_ ∈ S.assigns t2) decls1) :: Array (Var × Entry)) \(x × θ) ->
+         for_ (Map.toUnfoldable (Map.filterKeys (_ ∈ S.assigns t2) cxt_t1) :: Array (Var × Entry)) \(x × θ) ->
             throwError $ (if x ∈ typeDecls t2 then "Duplicate " <> kind θ <> " declaration: " else "Reassigned " <> kind θ <> " name: ") <> x
-         decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendVar` cxt')) t2
-         pure (Map.union decls2 decls1 × overrideRes r1 r2 × E.Seq t1' t2')
+         cxt_t2 × r2 × t2' <- wellFormedTop q (Map.union cxt_t1 (cxt `extendVar` cxt')) t2
+         pure (Map.union cxt_t2 cxt_t1 × overrideRes r1 r2 × E.Seq t1' t2')
    where
    kind (TypeAlias _ _) = "type alias"
    kind _ = "class"
