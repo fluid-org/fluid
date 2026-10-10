@@ -339,10 +339,10 @@ instance WellFormed S.Expr E.Expr where
    wellFormed cxt (S.Call e ψs es xes) = case asName e >>= \c -> (c × _) <$> resolveName cxt c of
       Just (c × Class cls) -> do
          for_ (NEL.fromList ψs) \_ -> resolveType cxt (S.NameTy c ψs)
-         let fs = fields cls
-         when (null xes && length es /= length fs)
+         let n = length (fields cls)
+         when (null xes && length es /= n)
             $ throwError
-            $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length es)
+            $ dottedName c <> " expects " <> show n <> " argument(s); got " <> show (length es)
          xes' <- if null xes then pure Nil else positionaliseKw cls c (length es) xes
          E.Constr cls.name <$> traverse (wellFormed cxt) (es <> xes')
       _ -> case NEL.fromList ψs of
@@ -513,10 +513,10 @@ instance WellFormed S.Pattern S.Pattern where
    wellFormed cxt (S.PConstr c ps xps) = do
       cls <- classOf cxt c
       when (cls.name == cRange) $ throwError "range not permitted in a constructor pattern"
-      let fs = fields cls
-      when (null xps && length ps /= length fs)
+      let n = length (fields cls)
+      when (null xps && length ps /= n)
          $ throwError
-         $ dottedName c <> " expects " <> show (length fs) <> " argument(s); got " <> show (length ps)
+         $ dottedName c <> " expects " <> show n <> " argument(s); got " <> show (length ps)
       distinctVars (ps <> (snd <$> xps))
       xps' <- if null xps then pure Nil else positionaliseKw cls c (length ps) xps
       S.PConstr cls.name <$> traverse (wellFormed cxt) (ps <> xps') <@> Nil
