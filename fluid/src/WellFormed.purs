@@ -221,12 +221,12 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
    wellFormed cxt (S.DefRec ds) = do
       let cxt_fs = constMap true (Set.fromFoldable (fst <$> ds))
       let cxt' = cxt `extendVar` cxt_fs
-      let groups = NEL.groupBy (eq `on` fst) ds
-      checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> groups))
-      defs <- for groups \group -> do
-         void $ wellFormedPatterns cxt' (group <#> \(_ × S.Clause (_ × ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
-         (fst (head group) ↦ _) <$> (traverse (wellFormedClause cxt' <<< snd) group >>= clauses)
-      pure (Assigns cxt_fs × E.DefRec (E.RecDefs (D.fromFoldable defs)))
+      let defs = NEL.groupBy (eq `on` fst) ds
+      checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> defs))
+      defs' <- for defs \def -> do
+         void $ wellFormedPatterns cxt' (def <#> \(_ × S.Clause (_ × ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
+         (fst (head def) ↦ _) <$> (traverse (wellFormedClause cxt' <<< snd) def >>= clauses)
+      pure (Assigns cxt_fs × E.DefRec (E.RecDefs (D.fromFoldable defs')))
    wellFormed cxt (S.Seq s1 s2) = do
       r1 × s1' <- wellFormed cxt s1
       case r1 of
