@@ -36,6 +36,7 @@ import Expr (bv, fv)
 import Expr (Pattern(..)) as S
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Qualifier(..), RecDefs(..), Stmt(..)) as E
 import Literal (Literal(..))
+import Pretty (prettyP)
 import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeExpr(..), VarDef(..), assigns) as S
 import Types as T
 import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, tail, zip, zipWith, (×), (∩))
@@ -252,9 +253,9 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          let xs = bv p
          r × s' <- wellFormed (cxt `extendVar` constMap true xs) s
          pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
-      pure (foldl1 mergeRes ((fst <$> bs') `snoc` rFall) × E.Match e' (snd <$> bs'))
+      pure (foldl1 mergeRes ((fst <$> bs') `snoc` rNoMatch) × E.Match e' (snd <$> bs'))
       where
-      rFall = case fst (last bs) of
+      rNoMatch = case fst (last bs) of
          S.PVar _ -> Returns
          S.PWild -> Returns
          _ -> Assigns Map.empty
@@ -270,16 +271,19 @@ wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    for_ xψs (resolveType cxt_αs <<< snd)
    base <- for b \ψ -> case ψ of
       S.NameTy (NonEmptyList (base :| Nil)) _ -> do
-         cls <- maybe (throwError $ "Base of class " <> c <> " is not a class: " <> base) pure (classFor cxt base)
+         cls <- maybe (notClass ψ) pure (classFor cxt base)
          when (cls.name /= snoc q base) $ throwError $ "Cannot extend imported class: " <> base
          void $ resolveType cxt_αs ψ
          let redecl = xs `intersect` fields cls
          unless (null redecl) $ throwError $ "Class " <> c <> " redeclares inherited field(s): " <> show redecl
          pure base
       S.NameTy base _ -> throwError $ "Cannot extend imported class: " <> dottedName base
-      _ -> throwError $ "Base of class " <> c <> " is not a class"
+      _ -> notClass ψ
    let cls = { cxt, name: snoc q c, typeParams: αs, base, fields: xs }
    pure (Map.singleton c (Class cls) × Assigns Map.empty × E.Dataclass (snoc q c))
+   where
+   notClass :: forall a. S.TypeExpr -> MayFail a
+   notClass ψ = throwError $ "Class " <> c <> " extends " <> prettyP ψ <> ", which is not a class"
 wellFormedTop _ cxt (S.TypeAlias x αs ψ) = do
    τ <- resolveType (cxt `extend` typeParams αs) ψ
    pure (Map.singleton x (TypeAlias αs τ) × Assigns Map.empty × E.TypeAlias x αs τ)
