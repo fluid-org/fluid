@@ -502,7 +502,7 @@ predefName cxt x = case Map.lookup x cxt of
    Just PredefName -> pure unit
    _ -> throwError $ "Not bound as a predefined name: " <> x
 
--- Case patterns well-formed as a list: each well-formed, and none subsumed by an earlier one.
+-- Each case pattern well-formed and not subsumed by an earlier one.
 wellFormedPatterns :: Cxt -> NonEmptyList S.Pattern -> MayFail (NonEmptyList S.Pattern)
 wellFormedPatterns cxt ps = forWithIndex ps \i p -> do
    forWithIndex_ (drop (i + 1) (NEL.toList ps)) \j p' ->
