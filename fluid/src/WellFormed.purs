@@ -29,7 +29,7 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DataType (cParagraph, cRange)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, extendVar, extend, fieldMap, fields, mergeRes, overrideRes, resolveName)
+import DefiniteAssignment (ClassEntry, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, extend, fieldMap, fields, mergeRes, override, overrideRes, resolveName)
 import Dict as D
 import Util.Map (constMap)
 import Expr (bv, fv)
@@ -54,10 +54,10 @@ runCheckM m mods predefined = runReaderT (runStateT m (predefined <#> \cxt -> { 
 
 checkProgram :: List S.Import -> S.Stmt -> CheckM E.Stmt
 checkProgram imports s = do
-   _ × cxt_imp <- checkImports mainModule imports
+   cxt_ιs × cxt_imp <- checkImports mainModule imports
    -- Unlike a module (checkStatements), the program may return: a top-level return yields
    -- its result value. The spec forbids this, treating __main__ as a module; Fluid does not.
-   cxt × _ × s' <- lift (lift (wellFormedTop mainModule (Map.insert "__name__" (VarStatus true) cxt_imp) s))
+   cxt × _ × s' <- lift (lift (wellFormedTop mainModule (moduleScope cxt_ιs cxt_imp s) s))
    modify_ (Map.insert mainModule { cxt, mod: Nothing })
    pure s'
 
@@ -70,7 +70,7 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       mods <- lift ask
       mod@(S.Module ιs _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
       cxt_ιs × cxt_imp <- checkImports q ιs
-      cxt' × mod' <- lift (lift (checkStatements q cxt_imp mod))
+      cxt' × mod' <- lift (lift (checkStatements q cxt_ιs cxt_imp mod))
       let subMods = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
       for_ (Set.toUnfoldable ((Map.keys cxt_ιs ∪ Map.keys cxt') ∩ Map.keys subMods) :: List Var) \x ->
          throwError $ "Duplicate module member: " <> dottedName q <> " defines " <> x
@@ -120,24 +120,31 @@ importedMembers q cxt (x : xs) = do
    othersCxt <- importedMembers q cxt xs
    case Map.lookup x cxt of
       Just (Mod q') -> checkModule q' <#> \cxt' -> Map.insert x (ModChecked q' cxt') othersCxt
-      Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
+      Just Declared -> throwError $ "Not definitely assigned: " <> x
+      Just PossiblyUnassigned -> throwError $ "Not definitely assigned: " <> x
       Just θ -> pure (Map.insert x θ othersCxt)
       Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
 
-checkStatements :: Name -> Cxt -> S.Module -> MayFail (Cxt × E.Module)
-checkStatements q cxt_imp (S.Module imports ss) =
+checkStatements :: Name -> Cxt -> Cxt -> S.Module -> MayFail (Cxt × E.Module)
+checkStatements q cxt_ιs cxt_imp (S.Module imports ss) =
    case foldr (\s acc -> Just (maybe s (S.Seq s) acc)) Nothing ss of
-      Nothing -> pure (Map.singleton "__name__" (VarStatus true) × E.Module imports' Nil)
+      Nothing -> pure (Map.singleton "__name__" Assigned × E.Module imports' Nil)
       Just s -> do
-         cxt × r × s' <- wellFormedTop q (Map.insert "__name__" (VarStatus true) cxt_imp) s
+         cxt × r × s' <- wellFormedTop q (moduleScope cxt_ιs cxt_imp s) s
          case r of
             Returns -> throwError "Module body cannot return"
             Assigns cxt' ->
-               pure (Map.insert "__name__" (VarStatus true) (Map.union cxt (VarStatus <$> cxt')) × E.Module imports' (unSeq s'))
+               pure (Map.insert "__name__" Assigned (cxt `override` cxt') × E.Module imports' (unSeq s'))
    where
    imports' = imports <#> \(S.Import q' xs) -> E.Import q' xs
    unSeq (E.Seq s1 s2) = s1 : unSeq s2
    unSeq s = s : Nil
+
+moduleScope :: Cxt -> Cxt -> S.Stmt -> Cxt
+moduleScope cxt_ιs cxt_imp s = Map.insert "__name__" Assigned (cxt_imp `override` scope (Map.keys cxt_ιs) s)
+
+scope :: Set Var -> S.Stmt -> Cxt
+scope ys s = constMap Unbound (S.assigns s \\ ys)
 
 mainModule :: Name
 mainModule = pure "__main__"
@@ -154,6 +161,7 @@ class Captures a where
 
 instance Captures S.Stmt where
    captures S.Pass = Set.empty
+   captures (S.Declare _ _) = Set.empty
    captures (S.Def (S.VarDef _ _ e)) = captures e
    captures (S.ExprStmt e) = captures e
    captures (S.Assert e e') = captures e ∪ maybe Set.empty captures e'
@@ -205,23 +213,27 @@ instance Captures (List S.Qualifier) where
 class WellFormed a b | a -> b where
    wellFormed :: Cxt -> a -> MayFail b
 
-instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
+instance WellFormed S.Stmt (WfResult Cxt × E.Stmt) where
    wellFormed _ S.Pass = pure (Assigns Map.empty × E.Pass)
    wellFormed cxt (S.Return e) = (Returns × _) <<< E.Return <$> wellFormed cxt e
    wellFormed cxt (S.ExprStmt e) = (Assigns Map.empty × _) <<< E.ExprStmt <$> wellFormed cxt e
    wellFormed cxt (S.Assert e e') =
       (Assigns Map.empty × _) <$> (E.Assert <$> wellFormed cxt e <*> traverse (wellFormed cxt) e')
+   wellFormed cxt (S.Declare x ψ) = do
+      void $ resolveType cxt ψ
+      pure (Assigns (Map.singleton x Declared) × E.Declare x)
    wellFormed cxt (S.Def (S.VarDef p ψ e)) = do
       let xs = bv p
       for_ (Set.toUnfoldable (xs ∩ captures e) :: Array Var) \x ->
          throwError $ "Variable captured by its own definition: " <> x
+      for_ xs (assignable cxt)
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
       for_ ψ (resolveType cxt)
-      pure (Assigns (constMap true xs) × E.Assign p' e')
+      pure (Assigns (constMap Assigned xs) × E.Assign p' e')
    wellFormed cxt (S.DefRec ds) = do
-      let cxt_fs = constMap true (Set.fromFoldable (fst <$> ds))
-      let cxt' = cxt `extendVar` cxt_fs
+      let cxt_fs = constMap Assigned (Set.fromFoldable (fst <$> ds))
+      let cxt' = cxt `override` cxt_fs
       let defs = NEL.groupBy (eq `on` fst) ds
       checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> defs))
       defs' <- for defs \def -> do
@@ -235,7 +247,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          Assigns cxt' -> do
             for_ (Set.toUnfoldable (captures s1 ∩ S.assigns s2) :: Array Var) \x ->
                throwError $ "Captured variable reassigned: " <> x
-            r2 × s2' <- wellFormed (cxt `extendVar` cxt') s2
+            r2 × s2' <- wellFormed (cxt `override` cxt') s2
             pure (overrideRes r1 r2 × E.Seq s1' s2')
    wellFormed cxt (S.If es elseBranch) = do
       es' <- for es \(e × s) -> do
@@ -250,9 +262,9 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       e' <- wellFormed cxt e
       ps' <- wellFormedPatterns cxt (fst <$> bs)
       bs' <- for (zip ps' bs) \(p' × (p × s)) -> do
-         let xs = bv p
-         r × s' <- wellFormed (cxt `extendVar` constMap true xs) s
-         pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
+         let cxt_xs = constMap Assigned (bv p)
+         r × s' <- wellFormed (cxt `override` cxt_xs) s
+         pure (overrideRes (Assigns cxt_xs) r × (p' × s'))
       pure (foldl1 mergeRes ((fst <$> bs') `snoc` rNoMatch) × E.Match e' (snd <$> bs'))
       where
       rNoMatch = case fst (last bs) of
@@ -262,7 +274,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
    wellFormed _ (S.Dataclass _ _ _ _) = error absurd
    wellFormed _ (S.TypeAlias _ _ _) = error absurd
 
-wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Cxt × WfResult VarCxt × E.Stmt)
+wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Cxt × WfResult Cxt × E.Stmt)
 wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    predefName cxt "dataclass"
    let cxt_αs = cxt `extend` typeParams αs
@@ -296,11 +308,8 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
             throwError $ "Captured variable reassigned: " <> x
          for_ (Map.toUnfoldable (Map.filterKeys (_ ∈ S.assigns t2) cxt_t1) :: Array (Var × Entry)) \(x × θ) ->
             throwError $ (if x ∈ typeDecls t2 then "Duplicate " <> kind θ <> " declaration: " else "Reassigned " <> kind θ <> " name: ") <> x
-         cxt_t2 × r2 × t2' <- wellFormedTop q (Map.union cxt_t1 (cxt `extendVar` cxt')) t2
+         cxt_t2 × r2 × t2' <- wellFormedTop q (cxt `override` cxt' `override` cxt_t1) t2
          pure (Map.union cxt_t2 cxt_t1 × overrideRes r1 r2 × E.Seq t1' t2')
-   where
-   kind (TypeAlias _ _) = "type alias"
-   kind _ = "class"
 wellFormedTop _ cxt s = do
    r × s' <- wellFormed cxt s
    pure (Map.empty × r × s')
@@ -379,11 +388,11 @@ instance WellFormed S.Expr E.Expr where
    wellFormed cxt (S.Subscript e e') = E.Subscript <$> wellFormed cxt e <*> wellFormed cxt e'
    wellFormed cxt (S.Matrix e1 (x × y) e2) =
       (\e2' e1' -> E.Matrix e1' (x × y) e2') <$> wellFormed cxt e2 <*> wellFormed
-         (cxt `extendVar` constMap true (Set.singleton x ∪ Set.singleton y))
+         (cxt `override` constMap Assigned (Set.singleton x ∪ Set.singleton y))
          e1
    wellFormed cxt (S.Lambda (S.LambdaClause (ps × e))) = do
       ps' <- traverse (wellFormed cxt) ps
-      e' <- wellFormed (cxt `extendVar` constMap true (unions (bv <$> ps))) e
+      e' <- wellFormed (cxt `override` constMap Assigned (unions (bv <$> ps))) e
       E.Lambda <$> clauses (NEL.singleton ((ps' <#> (_ × Nothing)) × Nothing × E.Return e'))
    wellFormed cxt (S.Dictionary kvs) =
       E.Dictionary <$> traverse (\(k × v) -> Pair <$> wellFormed cxt k <*> wellFormed cxt v) kvs
@@ -400,7 +409,7 @@ instance WellFormed S.Expr E.Expr where
       (\((k' × e') × gs') -> E.DictComp k' e' gs') <$> wellFormedQualifiers cxt gs \cxt' ->
          (×) <$> wellFormed cxt' k <*> wellFormed cxt' e
    wellFormed cxt (S.DocExpr e e') =
-      E.DocExpr <$> wellFormed (cxt `extendVar` constMap true (Set.singleton varThis)) e <*> wellFormed cxt e'
+      E.DocExpr <$> wellFormed (cxt `override` constMap Assigned (Set.singleton varThis)) e <*> wellFormed cxt e'
 
 asName :: S.Expr -> Maybe Name
 asName (S.Var x) = Just (singleton x)
@@ -421,12 +430,12 @@ wellFormedQualifiers cxt (g : gs) body = case g of
    S.Generator p e -> do
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
-      map (E.Generator p' e' : _) <$> wellFormedQualifiers (cxt `extendVar` constMap true (bv p)) gs body
+      map (E.Generator p' e' : _) <$> wellFormedQualifiers (cxt `override` constMap Assigned (bv p)) gs body
    S.Decl (S.VarDef p ψ e) -> do
       for_ ψ (resolveType cxt)
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
-      map (E.Decl p' e' : _) <$> wellFormedQualifiers (cxt `extendVar` constMap true (bv p)) gs body
+      map (E.Decl p' e' : _) <$> wellFormedQualifiers (cxt `override` constMap Assigned (bv p)) gs body
 
 -- Keyword arguments in field order; must cover fields after first n exactly.
 positionaliseKw :: forall b. ClassEntry -> Name -> Int -> List (Bind b) -> MayFail (List b)
@@ -447,7 +456,7 @@ wellFormedClause cxt (S.Clause (αs × ps × ψ × s)) = do
    let xs = unions (bv <$> ps)
    ps' <- for ps \(S.Param p ψ') -> (×) <$> wellFormed cxt p <*> traverse (resolveType cxt_αs) ψ'
    τ <- traverse (resolveType cxt_αs) ψ
-   r × s' <- wellFormed (cxt_αs `extendVar` constMap true xs `extendVar` constMap false (S.assigns s \\ xs)) s
+   r × s' <- wellFormed (cxt_αs `override` constMap Assigned xs `override` scope xs s) s
    pure (ps' × τ × close r s')
    where
    -- Body that may fall through returns None
@@ -487,15 +496,34 @@ clauses cs = do
 
 var :: Cxt -> Var -> MayFail Unit
 var cxt x = case Map.lookup x cxt of
-   Just (VarStatus true) -> pure unit
-   Just (VarStatus false) -> throwError $ "Not definitely assigned: " <> x
+   Just Assigned -> pure unit
+   Just Unbound -> throwError $ "Declared later in scope: " <> x
+   Just Declared -> throwError $ "Declared but not yet assigned: " <> x
+   Just PossiblyUnassigned -> throwError $ "Not definitely assigned: " <> x
    Just (Mod q) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just (ModChecked q _) -> throwError $ "module " <> dottedName q <> " is not a value"
-   Just (Class _) -> throwError $ "class " <> x <> " is not a value"
-   Just TypeVar -> throwError $ "type parameter " <> x <> " is not a value"
-   Just (TypeAlias _ _) -> throwError $ "type alias " <> x <> " is not a value"
-   Just PredefName -> throwError $ "predefined name " <> x <> " is not a value"
+   Just θ -> throwError $ kind θ <> " " <> x <> " is not a value"
    Nothing -> throwError $ "Unbound name: " <> x
+
+-- Variable may be assigned: declared but unassigned, or unbound, an unannotated assignment serving as
+-- declaration until annotations are required.
+assignable :: Cxt -> Var -> MayFail Unit
+assignable cxt x = case Map.lookup x cxt of
+   Just Declared -> pure unit
+   Just Unbound -> pure unit
+   Just Assigned -> throwError $ "Already assigned: " <> x
+   Just PossiblyUnassigned -> throwError $ "May already be assigned: " <> x
+   Just θ -> throwError $ "Reassigned " <> kind θ <> " name: " <> x
+   Nothing -> error absurd
+
+kind :: Entry -> String
+kind (Class _) = "class"
+kind (TypeAlias _ _) = "type alias"
+kind (Mod _) = "module"
+kind (ModChecked _ _) = "module"
+kind PredefName = "predefined name"
+kind TypeVar = "type parameter"
+kind _ = "variable"
 
 predefName :: Cxt -> Var -> MayFail Unit
 predefName cxt x = case Map.lookup x cxt of

@@ -77,6 +77,7 @@ data Stmt
    = Return Expr
    | If (NonEmptyList Branch) (Maybe Stmt)
    | Match Expr (NonEmptyList Case)
+   | Declare Var
    | Assign Pattern Expr -- assignment to a pattern; the spec has only variables
    | DefRec RecDefs
    | Pass
@@ -134,6 +135,7 @@ instance FV Stmt where
    fv (Return e) = fv e
    fv (If bs s_opt) = unions (fv <$> bs) ∪ fv s_opt
    fv (Match e bs) = fv e ∪ unions ((\(p × s) -> fv s \\ bv p) <$> bs)
+   fv (Declare _) = empty
    fv (Assign _ e) = fv e
    fv (DefRec ds) = fv ds
    fv Pass = empty
@@ -181,6 +183,7 @@ assigns :: Stmt -> Set Var
 assigns (Return _) = empty
 assigns (If bs s_opt) = unions ((\(Branch _ s) -> assigns s) <$> bs) ∪ maybe empty assigns s_opt
 assigns (Match _ bs) = unions ((\(p × s) -> bv p ∪ assigns s) <$> bs)
+assigns (Declare x) = singleton x
 assigns (Assign p _) = bv p
 assigns (DefRec (RecDefs ds)) = S.fromFoldable (keys ds)
 assigns Pass = empty

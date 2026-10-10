@@ -319,6 +319,7 @@ evalStmt inputs = case _ of
             case r of
                Returns _ -> pure r
                Assigns ρ'' ctrl' -> pure (Assigns (ρ' <+> ρ'') ctrl')
+   Declare _ -> pure (Assigns empty inputs.ctrl)
    Assign p e -> do
       v <- gval <$> eval inputs e
       classes <- askClasses

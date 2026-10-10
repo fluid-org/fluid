@@ -156,7 +156,12 @@ varDefs :: Parser VarDefs
 varDefs = many1 varDef
 
 stmt :: Parser Stmt
-stmt = defer \_ -> ifStmt <|> matchStmt <|> defStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (expr <#> ExprStmt)
+stmt = defer \_ -> ifStmt <|> matchStmt <|> defStmt <|> declareStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (expr <#> ExprStmt)
+
+declareStmt :: Parser Stmt
+declareStmt = do
+   x <- try (variable <* delim ':')
+   Declare x <$> typeExpr
 
 returnStmt :: Parser Stmt
 returnStmt = do
@@ -181,7 +186,7 @@ stmts = defer \_ -> many1 (align stmt) <#> foldr1Seq
 -- the program its value. Inside functions and other block bodies, 'return'
 -- is required.
 programStmt :: Parser Stmt
-programStmt = defer \_ -> ifStmt <|> matchStmt <|> typeAliasStmt <|> defStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (Return <$> expr)
+programStmt = defer \_ -> ifStmt <|> matchStmt <|> typeAliasStmt <|> defStmt <|> declareStmt <|> dataclassStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (Return <$> expr)
 
 programStmts :: Parser Stmt
 programStmts = defer \_ -> many1 (align programStmt) <#> foldr1Seq
