@@ -69,13 +69,13 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       mods <- lift ask
       mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
       importCxt × cxt_imp <- checkImports q is
-      δ × mod' <- lift (lift (checkStatements q cxt_imp mod))
+      cxt' × mod' <- lift (lift (checkStatements q cxt_imp mod))
       let subs = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
-      let clash = (Map.keys importCxt ∪ Map.keys δ) ∩ Map.keys subs
+      let clash = (Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subs
       when (not Set.isEmpty clash)
          $ throwError
          $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
-      let cxt = subs `Map.union` δ
+      let cxt = subs `Map.union` cxt'
       modify_ (Map.insert q { cxt, mod: Just mod' })
       pure cxt
 
@@ -131,8 +131,8 @@ checkStatements q cxt_imp (S.Module imports ss) =
          decls × r × s' <- wellFormedTop q (Map.insert "__name__" (VarStatus true) cxt_imp) s
          case r of
             Returns -> throwError "Module body cannot return"
-            Assigns δ ->
-               pure (Map.insert "__name__" (VarStatus true) (Map.union decls (VarStatus <$> δ)) × E.Module imports' (unSeq s'))
+            Assigns cxt' ->
+               pure (Map.insert "__name__" (VarStatus true) (Map.union decls (VarStatus <$> cxt')) × E.Module imports' (unSeq s'))
    where
    imports' = imports <#> \(S.Import q' xs) -> E.Import q' xs
    unSeq (E.Seq s1 s2) = s1 : unSeq s2
@@ -219,22 +219,22 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       for_ ψ (resolveType cxt)
       pure (Assigns (constMap true xs) × E.Assign p' e')
    wellFormed cxt (S.DefRec ds) = do
-      let fs = unions (Set.singleton <<< fst <$> ds)
-      let cxt' = cxt `extendVar` constMap true fs
+      let cxt_fs = constMap true (Set.fromFoldable (fst <$> ds))
+      let cxt' = cxt `extendVar` cxt_fs
       let groups = NEL.groupBy (eq `on` fst) ds
       checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> groups))
       defs <- for groups \group -> do
          void $ wellFormedPatterns cxt' (group <#> \(_ × S.Clause (_ × ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
          (fst (head group) ↦ _) <$> (traverse (wellFormedClause cxt' <<< snd) group >>= clauses)
-      pure (Assigns (constMap true fs) × E.DefRec (E.RecDefs (D.fromFoldable defs)))
+      pure (Assigns cxt_fs × E.DefRec (E.RecDefs (D.fromFoldable defs)))
    wellFormed cxt (S.Seq s1 s2) = do
       r1 × s1' <- wellFormed cxt s1
       case r1 of
          Returns -> throwError "Unreachable statement"
-         Assigns δ -> do
+         Assigns cxt' -> do
             for_ (Set.toUnfoldable (captures s1 ∩ S.assigns s2) :: Array Var) \x ->
                throwError $ "Captured variable reassigned: " <> x
-            r2 × s2' <- wellFormed (cxt `extendVar` δ) s2
+            r2 × s2' <- wellFormed (cxt `extendVar` cxt') s2
             pure (overrideRes r1 r2 × E.Seq s1' s2')
    wellFormed cxt (S.If es elseBranch) = do
       es' <- for es \(e × s) -> do
@@ -290,12 +290,12 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
    decls1 × r1 × t1' <- wellFormedTop q cxt t1
    case r1 of
       Returns -> throwError "Unreachable statement"
-      Assigns δ -> do
+      Assigns cxt' -> do
          for_ (Set.toUnfoldable (captures t1 ∩ S.assigns t2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
          for_ (Map.toUnfoldable (Map.filterKeys (_ `Set.member` S.assigns t2) decls1) :: Array (Var × Entry)) \(x × θ) ->
             throwError $ (if x `Set.member` typeDecls t2 then duplicate θ else reassigned θ) <> x
-         decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendVar` δ)) t2
+         decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendVar` cxt')) t2
          pure (Map.union decls2 decls1 × overrideRes r1 r2 × E.Seq t1' t2')
    where
    duplicate (TypeAlias _ _) = "Duplicate type alias declaration: "

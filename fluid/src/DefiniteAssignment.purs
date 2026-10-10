@@ -99,7 +99,7 @@ resolveName cxt name = case NEL.fromList init of
       _ -> Nothing
 
 extendVar :: Cxt -> VarCxt -> Cxt
-extendVar cxt δ = Map.union (VarStatus <$> δ) cxt
+extendVar cxt cxt' = Map.union (VarStatus <$> cxt') cxt
 
 fields :: ClassEntry -> List Var
 fields cls = case cls.base of
