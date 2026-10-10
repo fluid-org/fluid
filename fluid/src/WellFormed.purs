@@ -225,21 +225,8 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> groups))
       defs <- for groups \group -> do
          void $ wellFormedPatterns cxt' (group <#> \(_ × S.Clause (_ × ps × _)) -> S.PList (ps <#> \(S.Param p _) -> p))
-         cs <- for group \(_ × S.Clause (αs × ps × ψ × s)) -> do
-            let xs = unions (bv <$> ps)
-            let ys = S.assigns s \\ xs
-            let cxt_αs = cxt' `extend` typeParams αs
-            let cxt'' = cxt_αs `extendVar` constMap true xs `extendVar` constMap false ys
-            ps' <- traverse (\(S.Param p ψ') -> (×) <$> wellFormed cxt' p <*> traverse (resolveType cxt_αs) ψ') ps
-            τ <- traverse (resolveType cxt_αs) ψ
-            r × s' <- wellFormed cxt'' s
-            pure (ps' × τ × close r s')
-         (fst (head group) ↦ _) <$> clauses cs
+         (fst (head group) ↦ _) <$> (traverse (wellFormedClause cxt' <<< snd) group >>= clauses)
       pure (Assigns (constMap true fs) × E.DefRec (E.RecDefs (D.fromFoldable defs)))
-      where
-      -- Body that may fall through returns None
-      close Returns s = s
-      close (Assigns _) s = E.Seq s (E.Return (E.Lit None))
    wellFormed cxt (S.Seq s1 s2) = do
       r1 × s1' <- wellFormed cxt s1
       case r1 of
@@ -454,6 +441,19 @@ positionaliseKw cls c n xbs = do
 -- Parameter names for desugared functions, kept apart from source identifiers by the leading $.
 param :: Int -> Var
 param i = "$" <> show i
+
+wellFormedClause :: Cxt -> S.Clause -> MayFail (List (S.Pattern × Maybe T.Type) × Maybe T.Type × E.Stmt)
+wellFormedClause cxt (S.Clause (αs × ps × ψ × s)) = do
+   let cxt_αs = cxt `extend` typeParams αs
+   let xs = unions (bv <$> ps)
+   ps' <- for ps \(S.Param p ψ') -> (×) <$> wellFormed cxt p <*> traverse (resolveType cxt_αs) ψ'
+   τ <- traverse (resolveType cxt_αs) ψ
+   r × s' <- wellFormed (cxt_αs `extendVar` constMap true xs `extendVar` constMap false (S.assigns s \\ xs)) s
+   pure (ps' × τ × close r s')
+   where
+   -- Body that may fall through returns None
+   close Returns s' = s'
+   close (Assigns _) s' = E.Seq s' (E.Return (E.Lit None))
 
 -- Clauses over k parameters as a function of k parameters. A parameter column that is the same variable in
 -- every clause is a parameter of that name; the remaining columns are matched together, as nested pairs when
