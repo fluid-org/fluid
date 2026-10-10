@@ -40,11 +40,11 @@ type Cxt = Map Var Entry
 
 data WfResult a = Returns | Assigns a
 
-extendCxtWith :: Cxt -> Cxt -> Cxt
-extendCxtWith cxt cxt' = Map.unionWith extendEntry cxt cxt'
+extend :: Cxt -> Cxt -> Cxt
+extend cxt cxt' = Map.unionWith extendEntry cxt cxt'
 
 extendEntry :: Entry -> Entry -> Entry
-extendEntry (ModChecked q cxt) (ModChecked q' cxt') | q == q' = ModChecked q (cxt `extendCxtWith` cxt')
+extendEntry (ModChecked q cxt) (ModChecked q' cxt') | q == q' = ModChecked q (cxt `extend` cxt')
 extendEntry (Mod q) θ'@(ModChecked q' _) | q == q' = θ'
 extendEntry θ@(ModChecked q _) (Mod q') | q == q' = θ
 extendEntry _ θ' = θ'
@@ -98,8 +98,8 @@ resolveName cxt name = case NEL.fromList init of
       Just e@(TypeAlias _ _) -> Just e
       _ -> Nothing
 
-extendCxt :: Cxt -> VarCxt -> Cxt
-extendCxt cxt δ = Map.union (VarStatus <$> δ) cxt
+extendVar :: Cxt -> VarCxt -> Cxt
+extendVar cxt δ = Map.union (VarStatus <$> δ) cxt
 
 fields :: ClassEntry -> List Var
 fields cls = case cls.base of

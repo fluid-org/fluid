@@ -29,7 +29,7 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import DataType (cParagraph, cRange)
-import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, extendCxt, extendCxtWith, fieldMap, fields, mergeRes, overrideRes, resolveName)
+import DefiniteAssignment (ClassEntry, VarCxt, Entry(..), Cxt, WfResult(..), ancestors, classFor, classOf, extendVar, extend, fieldMap, fields, mergeRes, overrideRes, resolveName)
 import Dict as D
 import Util.Map (constMap)
 import Expr (bv, fv)
@@ -82,8 +82,8 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
 checkImports :: ModuleName -> List S.Import -> CheckM (Cxt × Cxt)
 checkImports enclosing is = do
    implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> checkModule q) Map.empty (implicitFor enclosing)
-   importCxt <- foldM (\acc i -> (acc `extendCxtWith` _) <$> importBindings enclosing i) Map.empty is
-   pure (importCxt × (implicitCxt `extendCxtWith` importCxt))
+   importCxt <- foldM (\acc i -> (acc `extend` _) <$> importBindings enclosing i) Map.empty is
+   pure (importCxt × (implicitCxt `extend` importCxt))
 
 -- Bindings contributed by one import of the enclosing module.
 importBindings :: ModuleName -> S.Import -> CheckM Cxt
@@ -108,7 +108,7 @@ checksTo bound q θ = case NEL.fromList init of
       | maybe false (q' `prefixOf` _) bound -> pure θ
       | otherwise -> do
            cxt <- checkModule q'
-           checksTo bound q' (ModChecked q' (cxt `extendCxtWith` Map.singleton x θ))
+           checksTo bound q' (ModChecked q' (cxt `extend` Map.singleton x θ))
    where
    { init, last: x } = unsnoc q
 
@@ -220,7 +220,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       pure (Assigns (constMap true xs) × E.Assign p' e')
    wellFormed cxt (S.DefRec ds) = do
       let fs = unions (Set.singleton <<< fst <$> ds)
-      let cxt' = cxt `extendCxt` constMap true fs
+      let cxt' = cxt `extendVar` constMap true fs
       let groups = NEL.groupBy (eq `on` fst) ds
       checkDistinct ("Non-contiguous clauses for: " <> _) (NEL.toList (fst <<< head <$> groups))
       defs <- for groups \group -> do
@@ -228,8 +228,8 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          cs <- for group \(_ × S.Clause (αs × ps × ψ × s)) -> do
             let xs = unions (bv <$> ps)
             let ys = S.assigns s \\ xs
-            let cxt_α = cxt' `extendCxtWith` typeParams αs
-            let cxt'' = cxt_α `extendCxt` constMap true xs `extendCxt` constMap false ys
+            let cxt_α = cxt' `extend` typeParams αs
+            let cxt'' = cxt_α `extendVar` constMap true xs `extendVar` constMap false ys
             ps' <- traverse (\(S.Param p ψ') -> (×) <$> wellFormed cxt' p <*> traverse (resolveType cxt_α) ψ') ps
             τ <- traverse (resolveType cxt_α) ψ
             r × s' <- wellFormed cxt'' s
@@ -247,7 +247,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          Assigns δ -> do
             for_ (Set.toUnfoldable (captures s1 ∩ S.assigns s2) :: Array Var) \x ->
                throwError $ "Captured variable reassigned: " <> x
-            r2 × s2' <- wellFormed (cxt `extendCxt` δ) s2
+            r2 × s2' <- wellFormed (cxt `extendVar` δ) s2
             pure (overrideRes r1 r2 × E.Seq s1' s2')
    wellFormed cxt (S.If es elseBranch) = do
       es' <- for es \(e × s) -> do
@@ -263,7 +263,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
       ps' <- wellFormedPatterns cxt (fst <$> bs)
       bs' <- for (zip ps' bs) \(p' × (p × s)) -> do
          let xs = bv p
-         r × s' <- wellFormed (cxt `extendCxt` constMap true xs) s
+         r × s' <- wellFormed (cxt `extendVar` constMap true xs) s
          pure (overrideRes (Assigns (constMap true xs)) r × (p' × s'))
       pure (foldl1 mergeRes ((fst <$> bs') `snoc` rFall) × E.Match e' (snd <$> bs'))
       where
@@ -277,7 +277,7 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
 wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Cxt × WfResult VarCxt × E.Stmt)
 wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    predefName cxt "dataclass"
-   let cxt_α = cxt `extendCxtWith` typeParams αs
+   let cxt_α = cxt `extend` typeParams αs
    let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
    for_ xψs (resolveType cxt_α <<< snd)
@@ -297,7 +297,7 @@ wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    let cls = { cxt, name: snoc q c, typeParams: αs, base, fields: xs }
    pure (Map.singleton c (Class cls) × Assigns Map.empty × E.Dataclass (snoc q c))
 wellFormedTop _ cxt (S.TypeAlias x αs ψ) = do
-   τ <- resolveType (cxt `extendCxtWith` typeParams αs) ψ
+   τ <- resolveType (cxt `extend` typeParams αs) ψ
    pure (Map.singleton x (TypeAlias αs τ) × Assigns Map.empty × E.TypeAlias x αs τ)
 wellFormedTop q cxt (S.Seq t1 t2) = do
    decls1 × r1 × t1' <- wellFormedTop q cxt t1
@@ -308,7 +308,7 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
             throwError $ "Captured variable reassigned: " <> x
          for_ (Map.toUnfoldable (Map.filterKeys (_ `Set.member` S.assigns t2) decls1) :: Array (Var × Entry)) \(x × θ) ->
             throwError $ (if x `Set.member` typeDecls t2 then duplicate θ else reassigned θ) <> x
-         decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendCxt` δ)) t2
+         decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendVar` δ)) t2
          pure (Map.union decls2 decls1 × overrideRes r1 r2 × E.Seq t1' t2')
    where
    duplicate (TypeAlias _ _) = "Duplicate type alias declaration: "
@@ -393,11 +393,11 @@ instance WellFormed S.Expr E.Expr where
    wellFormed cxt (S.Subscript e e') = E.Subscript <$> wellFormed cxt e <*> wellFormed cxt e'
    wellFormed cxt (S.Matrix e1 (x × y) e2) =
       (\e2' e1' -> E.Matrix e1' (x × y) e2') <$> wellFormed cxt e2 <*> wellFormed
-         (cxt `extendCxt` constMap true (Set.singleton x ∪ Set.singleton y))
+         (cxt `extendVar` constMap true (Set.singleton x ∪ Set.singleton y))
          e1
    wellFormed cxt (S.Lambda (S.LambdaClause (ps × e))) = do
       ps' <- traverse (wellFormed cxt) ps
-      e' <- wellFormed (cxt `extendCxt` constMap true (unions (bv <$> ps))) e
+      e' <- wellFormed (cxt `extendVar` constMap true (unions (bv <$> ps))) e
       E.Lambda <$> clauses (NEL.singleton ((ps' <#> (_ × Nothing)) × Nothing × E.Return e'))
    wellFormed cxt (S.Dictionary kvs) =
       E.Dictionary <$> traverse (\(k × v) -> Pair <$> wellFormed cxt k <*> wellFormed cxt v) kvs
@@ -414,7 +414,7 @@ instance WellFormed S.Expr E.Expr where
       (\((k' × e') × gs') -> E.DictComp k' e' gs') <$> wellFormedQualifiers cxt gs \cxt' ->
          (×) <$> wellFormed cxt' k <*> wellFormed cxt' e
    wellFormed cxt (S.DocExpr e e') =
-      E.DocExpr <$> wellFormed (cxt `extendCxt` constMap true (Set.singleton varThis)) e <*> wellFormed cxt e'
+      E.DocExpr <$> wellFormed (cxt `extendVar` constMap true (Set.singleton varThis)) e <*> wellFormed cxt e'
 
 asName :: S.Expr -> Maybe Name
 asName (S.Var x) = Just (singleton x)
@@ -435,12 +435,12 @@ wellFormedQualifiers cxt (g : gs) body = case g of
    S.Generator p e -> do
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
-      map (E.Generator p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs body
+      map (E.Generator p' e' : _) <$> wellFormedQualifiers (cxt `extendVar` constMap true (bv p)) gs body
    S.Decl (S.VarDef p ψ e) -> do
       for_ ψ (resolveType cxt)
       e' <- wellFormed cxt e
       p' <- wellFormed cxt p
-      map (E.Decl p' e' : _) <$> wellFormedQualifiers (cxt `extendCxt` constMap true (bv p)) gs body
+      map (E.Decl p' e' : _) <$> wellFormedQualifiers (cxt `extendVar` constMap true (bv p)) gs body
 
 -- Keyword arguments in field order; must cover fields after first n exactly.
 positionaliseKw :: forall b. ClassEntry -> Name -> Int -> List (Bind b) -> MayFail (List b)
