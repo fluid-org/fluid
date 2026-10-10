@@ -73,7 +73,7 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       cxt' × mod' <- lift (lift (checkStatements q cxt_imp mod))
       let subMods = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
       for_ (Set.toUnfoldable ((Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subMods) :: List Var) \x ->
-         throwError $ "Duplicate member of module " <> dottedName q <> ": it defines " <> x
+         throwError $ "Duplicate module member: " <> dottedName q <> " defines " <> x
             <> " and also has submodule "
             <> dottedName (snoc q x)
       let cxt = subMods `Map.union` cxt'
