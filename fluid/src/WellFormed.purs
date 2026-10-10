@@ -17,7 +17,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.TraversableWithIndex (forWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.List (List(..), drop, length, mapMaybe, nub, null, sort, transpose, (:))
+import Data.List (List(..), drop, intersect, length, mapMaybe, nub, null, sort, transpose, (:))
 import Data.Foldable (lookup) as F
 import ModuleGraph (ModuleName, implicitFor, submodules)
 import Data.List.NonEmpty (NonEmptyList(..), head, last, snoc, unsnoc)
@@ -40,7 +40,7 @@ import SExpr (Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Pa
 import Types as T
 import Util (MayFail, type (×), absurd, checkDistinct, definitely', error, nonEmpty, singleton, tail, zip, zipWith, (×), (∩))
 import Util.Pair (Pair(..))
-import Util.Set ((\\), (∪))
+import Util.Set ((\\), (∈), (∪))
 
 -- Predefined modules and program (under __main__) have no body
 type CheckedModule = { cxt :: Cxt, mod :: Maybe E.Module }
@@ -273,7 +273,7 @@ wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
          cls <- maybe (throwError $ "Base of class " <> c <> " is not a class: " <> base) pure (classFor cxt base)
          when (cls.name /= snoc q base) $ throwError $ "Cannot extend imported class: " <> base
          void $ resolveType cxt_αs ψ
-         let redecl = Set.toUnfoldable (Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)) :: List Var
+         let redecl = xs `intersect` fields cls
          unless (null redecl) $ throwError $ "Class " <> c <> " redeclares inherited field(s): " <> show redecl
          pure base
       S.NameTy base _ -> throwError $ "Cannot extend imported class: " <> dottedName base
@@ -290,8 +290,8 @@ wellFormedTop q cxt (S.Seq t1 t2) = do
       Assigns cxt' -> do
          for_ (Set.toUnfoldable (captures t1 ∩ S.assigns t2) :: Array Var) \x ->
             throwError $ "Captured variable reassigned: " <> x
-         for_ (Map.toUnfoldable (Map.filterKeys (_ `Set.member` S.assigns t2) decls1) :: Array (Var × Entry)) \(x × θ) ->
-            throwError $ (if x `Set.member` typeDecls t2 then duplicate θ else reassigned θ) <> x
+         for_ (Map.toUnfoldable (Map.filterKeys (_ ∈ S.assigns t2) decls1) :: Array (Var × Entry)) \(x × θ) ->
+            throwError $ (if x ∈ typeDecls t2 then duplicate θ else reassigned θ) <> x
          decls2 × r2 × t2' <- wellFormedTop q (Map.union decls1 (cxt `extendVar` cxt')) t2
          pure (Map.union decls2 decls1 × overrideRes r1 r2 × E.Seq t1' t2')
    where
@@ -368,7 +368,7 @@ instance WellFormed S.Expr E.Expr where
    wellFormed cxt (S.Cond e1 e e2) = E.Cond <$> wellFormed cxt e1 <*> wellFormed cxt e <*> wellFormed cxt e2
    wellFormed cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
       Just (ModChecked q cxt') -> do
-         when (not (Map.member y cxt'))
+         when (not (y ∈ cxt'))
             $ throwError
             $ "module " <> dottedName q <> " has no member " <> y
          var cxt' y
