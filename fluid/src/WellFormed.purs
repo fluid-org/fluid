@@ -10,7 +10,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
 import Data.Either (Either, hush)
 import Control.MonadPlus (guard)
-import Data.Foldable (all, and, elem, find, foldM, foldl, foldr, for_, intercalate)
+import Data.Foldable (all, and, elem, find, foldM, foldl, foldr, for_)
 import Data.Function (on)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -72,10 +72,10 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       importCxt × cxt_imp <- checkImports q is
       cxt' × mod' <- lift (lift (checkStatements q cxt_imp mod))
       let subMods = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
-      let clash = (Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subMods
-      when (not Set.isEmpty clash)
-         $ throwError
-         $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
+      for_ (Set.toUnfoldable ((Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subMods) :: List Var) \x ->
+         throwError $ "Duplicate member of module " <> dottedName q <> ": it defines " <> x
+            <> " and also has submodule "
+            <> dottedName (snoc q x)
       let cxt = subMods `Map.union` cxt'
       modify_ (Map.insert q { cxt, mod: Just mod' })
       pure cxt

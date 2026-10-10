@@ -29,7 +29,7 @@ illFormed_cases =
    , { file: "reexport_from_import.fld", expected_error: "Cannot import name foo from module reexport_mid" }
    , { file: "reexport_import_alias.fld", expected_error: "Cannot import name attr_lib from module alias_mid" }
    , { file: "self_import.fld", expected_error: "import cycle: selfy -> selfy" }
-   , { file: "submodule_name_clash.fld", expected_error: "Submodule name clash in module clash_pkg: sub\nChecking module clash_pkg" }
+   , { file: "submodule_name_clash.fld", expected_error: "Duplicate member of module clash_pkg: it defines sub and also has submodule clash_pkg.sub\nChecking module clash_pkg" }
    , { file: "eq_nan_container.fld", expected_error: "Cannot compare nan with nan in container\nIn ==" }
    , { file: "matrix_dim_type.fld", expected_error: "Found (2, \"a\"), expected pair of int" }
    , { file: "submodule_self_import.fld", expected_error: "import cycle: ssi.b -> ssi.b" }
