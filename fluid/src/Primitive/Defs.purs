@@ -101,7 +101,7 @@ predefined = M.fromFoldable
       ρ = D.fromFoldable (Array.cons ("__name__" × Val bot (Lit (Str (dottedName q)))) members)
       ρ_classes = D.fromFoldable classes <#> \cls -> Val bot (Fun (Type cls.name))
       ρ_names = D.fromFoldable (names <#> \x -> x × Val bot (Opaque (qual q x)))
-      cxt = M.unions [ constMap PredefName (Set.fromFoldable names), Class <$> M.fromFoldable classes, constMap (VarStatus true) (keys ρ) ]
+      cxt = M.unions [ constMap PredefName (Set.fromFoldable names), Class <$> M.fromFoldable classes, constMap Assigned (keys ρ) ]
 
 len :: ForeignOp
 len =

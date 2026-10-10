@@ -47,6 +47,7 @@ data Stmt
    = Return Expr
    | If (NonEmptyList (Expr × Stmt)) (Maybe Stmt)
    | Match Expr (NonEmptyList Case)
+   | Declare Var TypeExpr
    | Def VarDef
    | DefRec RecDefs
    | Pass
@@ -178,6 +179,7 @@ instance FV Stmt where
       unions ((\(e × s) -> fv e ∪ fv s) <$> ess) ∪ fv s_opt
    fv (Match scrut branches) =
       fv scrut ∪ unions ((\(p × b) -> fv b \\ bv p) <$> branches)
+   fv (Declare _ _) = empty
    fv (Def vd) = fv vd
    fv (DefRec rs) = fvRecDefs rs
    fv Pass = empty
@@ -199,6 +201,7 @@ instance FV Clause where
 -- Variables assigned by a statement.
 assigns :: Stmt -> Set Var
 assigns Pass = empty
+assigns (Declare x _) = singleton x
 assigns (Def (VarDef p _ _)) = bv p
 assigns (ExprStmt _) = empty
 assigns (Assert _ _) = empty

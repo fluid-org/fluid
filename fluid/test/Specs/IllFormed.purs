@@ -16,11 +16,11 @@ illFormed_cases =
    , { file: "from_import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module bad_pkg" }
    , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError" }
    , { file: "from_import_selective.fld", expected_error: "Unbound name: bar" }
-   , { file: "from_import_unassigned.fld", expected_error: "Not definitely assigned: x" }
+   , { file: "from_import_unassigned.fld", expected_error: "Not definitely initialised: x" }
    , { file: "import_bad_ancestor.fld", expected_error: "Unbound name: z\nChecking module bad_pkg" }
    , { file: "import_cycle.fld", expected_error: "import cycle: cyc_a -> cyc_b -> cyc_a" }
-   , { file: "match_exhaustive_assign.fld", expected_error: "Not definitely assigned: result" }
-   , { file: "match_partial_def.fld", expected_error: "Not definitely assigned: result" }
+   , { file: "match_exhaustive_assign.fld", expected_error: "Possibly uninitialised: result" }
+   , { file: "match_partial_def.fld", expected_error: "Already initialised: result" }
    , { file: "module_returns.fld", expected_error: "Module body cannot return\nChecking module return_mod" }
    , { file: "non_contiguous_def.fld", expected_error: "Non-contiguous clauses for: f" }
    , { file: "own_descendant_import.fld", expected_error: "Module od_pkg cannot import its own descendant od_pkg.sub\nChecking module od_pkg" }

@@ -206,6 +206,7 @@ instance Pretty Stmt where
       where
       prettyClause w (s × b) = text w <+> expr (pretty s) <> block (pretty b)
    pretty (Match s cs) = text "match" <+> pretty s <> block (pretty cs)
+   pretty (Declare x ψ) = text x <> annot (Just ψ)
    pretty (Def vd) = pretty vd
    pretty (DefRec xcs) = pretty xcs
    pretty Pass = text "pass"
@@ -362,6 +363,7 @@ instance Pretty E.Stmt where
    pretty (E.Match e bs) = text "match" <+> pretty e <> block (vsep (toList (prettyCase <$> bs)))
       where
       prettyCase (p × s) = text "case" <+> pretty p <> block (pretty s)
+   pretty (E.Declare x) = text x <> text ":"
    pretty (E.Assign p e) = pretty p <+> text "=" <+> pretty e
    pretty (E.DefRec (E.RecDefs ds)) = text "def" <+> pretty ds
    pretty E.Pass = text "pass"
