@@ -120,8 +120,8 @@ importedMembers q cxt (x : xs) = do
    othersCxt <- importedMembers q cxt xs
    case Map.lookup x cxt of
       Just (Mod q') -> checkModule q' <#> \cxt' -> Map.insert x (ModChecked q' cxt') othersCxt
-      Just Declared -> throwError $ "Not definitely assigned: " <> x
-      Just PossiblyUnassigned -> throwError $ "Not definitely assigned: " <> x
+      Just Declared -> throwError $ "Not definitely initialised: " <> x
+      Just PossiblyUnassigned -> throwError $ "Not definitely initialised: " <> x
       Just θ -> pure (Map.insert x θ othersCxt)
       Nothing -> throwError $ "Cannot import name " <> x <> " from module " <> dottedName q
 
@@ -498,8 +498,8 @@ var :: Cxt -> Var -> MayFail Unit
 var cxt x = case Map.lookup x cxt of
    Just Assigned -> pure unit
    Just Unbound -> throwError $ "Declared later in scope: " <> x
-   Just Declared -> throwError $ "Declared but not yet assigned: " <> x
-   Just PossiblyUnassigned -> throwError $ "Not definitely assigned: " <> x
+   Just Declared -> throwError $ "Declared but not initialised: " <> x
+   Just PossiblyUnassigned -> throwError $ "Possibly uninitialised: " <> x
    Just (Mod q) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just (ModChecked q _) -> throwError $ "module " <> dottedName q <> " is not a value"
    Just θ -> throwError $ kind θ <> " " <> x <> " is not a value"
@@ -511,8 +511,8 @@ assignable :: Cxt -> Var -> MayFail Unit
 assignable cxt x = case Map.lookup x cxt of
    Just Declared -> pure unit
    Just Unbound -> pure unit
-   Just Assigned -> throwError $ "Already assigned: " <> x
-   Just PossiblyUnassigned -> throwError $ "May already be assigned: " <> x
+   Just Assigned -> throwError $ "Already initialised: " <> x
+   Just PossiblyUnassigned -> throwError $ "Possibly initialised already: " <> x
    Just θ -> throwError $ "Reassigned " <> kind θ <> " name: " <> x
    Nothing -> error absurd
 
