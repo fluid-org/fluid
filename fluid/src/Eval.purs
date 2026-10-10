@@ -408,13 +408,13 @@ evalModule ρ0 q (Module is ss) = do
    ρ_imp <- foldM (evalImport q) ρ0 is
    ρ_name <- maplet "__name__" <$> deriv (Val unit (V.Lit (Str (dottedName q))))
    { modules } <- moduleStore
-   ρ_subs <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
+   ρ_subMods <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))
    ρ <- traverse gvalAt (ρ_imp <+> ρ_name)
    bindings × _ <- foldM (\(ρ' × ctrl) s -> asAssigns <$> evalStmt { ctrl, env: ρ <+> ρ' } s <#> first (ρ' <+> _)) (empty × Nil) ss
    let xs = L.fromFoldable (foldMap assigns ss)
    ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Val unit V.Unbound))) xs
    members <- traverse (record >>> map fst) bindings
-   pure (ρ_name <+> ρ_subs <+> ρ_unbound <+> members)
+   pure (ρ_name <+> ρ_subMods <+> ρ_unbound <+> members)
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport

@@ -70,12 +70,12 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
       importCxt × cxt_imp <- checkImports q is
       cxt' × mod' <- lift (lift (checkStatements q cxt_imp mod))
-      let subs = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
-      let clash = (Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subs
+      let subMods = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
+      let clash = (Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subMods
       when (not Set.isEmpty clash)
          $ throwError
          $ "Submodule name clash in module " <> dottedName q <> ": " <> intercalate ", " (Set.toUnfoldable clash :: List Var)
-      let cxt = subs `Map.union` cxt'
+      let cxt = subMods `Map.union` cxt'
       modify_ (Map.insert q { cxt, mod: Just mod' })
       pure cxt
 
