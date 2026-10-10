@@ -404,8 +404,8 @@ evalModule
    -> ModuleName
    -> Module
    -> m (Dict Deriv)
-evalModule ρ0 q (Module is ss) = do
-   ρ_imp <- foldM (evalImport q) ρ0 is
+evalModule ρ0 q (Module ιs ss) = do
+   ρ_imp <- foldM (evalImport q) ρ0 ιs
    ρ_name <- maplet "__name__" <$> deriv (Val unit (V.Lit (Str (dottedName q))))
    { modules } <- moduleStore
    ρ_subMods <- traverse moduleVal (D.fromFoldable (submodules (Map.keys modules) q))

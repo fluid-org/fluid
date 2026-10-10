@@ -68,11 +68,11 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
    Just { cxt } -> pure cxt
    Nothing -> mapStateT (mapReaderT (lmap (_ <> "\nChecking module " <> dottedName q))) do
       mods <- lift ask
-      mod@(S.Module is _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
-      importCxt × cxt_imp <- checkImports q is
+      mod@(S.Module ιs _) <- maybe (throwError ("Module not parsed: " <> dottedName q)) pure (Map.lookup q mods)
+      cxt_ιs × cxt_imp <- checkImports q ιs
       cxt' × mod' <- lift (lift (checkStatements q cxt_imp mod))
       let subMods = Mod <$> Map.fromFoldable (submodules (Map.keys mods) q)
-      for_ (Set.toUnfoldable ((Map.keys importCxt ∪ Map.keys cxt') ∩ Map.keys subMods) :: List Var) \x ->
+      for_ (Set.toUnfoldable ((Map.keys cxt_ιs ∪ Map.keys cxt') ∩ Map.keys subMods) :: List Var) \x ->
          throwError $ "Duplicate module member: " <> dottedName q <> " defines " <> x
             <> " and also has submodule "
             <> dottedName (snoc q x)
@@ -81,10 +81,10 @@ checkModule q = get >>= \checked -> case Map.lookup q checked of
       pure cxt
 
 checkImports :: ModuleName -> List S.Import -> CheckM (Cxt × Cxt)
-checkImports enclosing is = do
-   implicitCxt <- foldM (\acc q -> (acc `Map.union` _) <$> checkModule q) Map.empty (implicitFor enclosing)
-   importCxt <- foldM (\acc i -> (acc `extend` _) <$> importBindings enclosing i) Map.empty is
-   pure (importCxt × (implicitCxt `extend` importCxt))
+checkImports enclosing ιs = do
+   cxt <- foldM (\acc q -> (acc `Map.union` _) <$> checkModule q) Map.empty (implicitFor enclosing)
+   cxt' <- foldM (\acc ι -> (acc `extend` _) <$> importBindings enclosing ι) Map.empty ιs
+   pure (cxt' × (cxt `extend` cxt'))
 
 -- Bindings contributed by one import of the enclosing module.
 importBindings :: ModuleName -> S.Import -> CheckM Cxt

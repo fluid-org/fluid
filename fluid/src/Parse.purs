@@ -537,9 +537,9 @@ expr = context "expr" $ cond <?> "expression"
 
 module_ :: Parser Module
 module_ = do
-   is <- many (align import_)
+   ιs <- many (align import_)
    ss <- many (align topStmt)
-   pure $ Module is ss
+   pure $ Module ιs ss
 
 misplacedImport :: forall a. Parser a
 misplacedImport = (reserved "import" <|> reserved "from") *> fail "imports must precede statements"
@@ -568,7 +568,7 @@ importName :: Import -> Name
 importName (Import q _) = q
 
 moduleImports :: Module -> List Name
-moduleImports (Module is _) = importName <$> is
+moduleImports (Module ιs _) = importName <$> ιs
 
 topLevel :: forall a. Parser a -> Parser a
 topLevel p = whitespace *> withPos p <* whitespace <* eof
@@ -585,9 +585,9 @@ parseProgram :: String -> MayFail (Stmt × List Import)
 parseProgram src = parse (topLevel programBody) src
    where
    programBody = do
-      is <- many (align import_)
+      ιs <- many (align import_)
       s <- programStmts
-      pure (s × is)
+      pure (s × ιs)
 
 parseModule :: String -> MayFail (Module × List Name)
 parseModule src = parse (topLevel module_) src <#> \m -> m × moduleImports m
