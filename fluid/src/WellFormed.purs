@@ -228,10 +228,10 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
          cs <- for group \(_ × S.Clause (αs × ps × ψ × s)) -> do
             let xs = unions (bv <$> ps)
             let ys = S.assigns s \\ xs
-            let cxt_α = cxt' `extend` typeParams αs
-            let cxt'' = cxt_α `extendVar` constMap true xs `extendVar` constMap false ys
-            ps' <- traverse (\(S.Param p ψ') -> (×) <$> wellFormed cxt' p <*> traverse (resolveType cxt_α) ψ') ps
-            τ <- traverse (resolveType cxt_α) ψ
+            let cxt_αs = cxt' `extend` typeParams αs
+            let cxt'' = cxt_αs `extendVar` constMap true xs `extendVar` constMap false ys
+            ps' <- traverse (\(S.Param p ψ') -> (×) <$> wellFormed cxt' p <*> traverse (resolveType cxt_αs) ψ') ps
+            τ <- traverse (resolveType cxt_αs) ψ
             r × s' <- wellFormed cxt'' s
             pure (ps' × τ × close r s')
          (fst (head group) ↦ _) <$> clauses cs
@@ -277,15 +277,15 @@ instance WellFormed S.Stmt (WfResult VarCxt × E.Stmt) where
 wellFormedTop :: Name -> Cxt -> S.Stmt -> MayFail (Cxt × WfResult VarCxt × E.Stmt)
 wellFormedTop q cxt (S.Dataclass c αs b xψs) = do
    predefName cxt "dataclass"
-   let cxt_α = cxt `extend` typeParams αs
+   let cxt_αs = cxt `extend` typeParams αs
    let xs = fst <$> xψs
    when (length (nub xs) /= length xs) $ throwError $ "Duplicate field names in class: " <> c
-   for_ xψs (resolveType cxt_α <<< snd)
+   for_ xψs (resolveType cxt_αs <<< snd)
    base <- for b \ψ -> case ψ of
       S.NameTy (NonEmptyList (base :| Nil)) _ -> do
          cls <- maybe (throwError $ "Base of class " <> c <> " is not a class: " <> base) pure (classFor cxt base)
          when (cls.name /= snoc q base) $ throwError $ "Cannot extend imported class: " <> base
-         void $ resolveType cxt_α ψ
+         void $ resolveType cxt_αs ψ
          let clash = Set.fromFoldable xs ∩ Set.fromFoldable (fields cls)
          when (not Set.isEmpty clash)
             $ throwError
