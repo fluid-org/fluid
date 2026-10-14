@@ -1,0 +1,11 @@
+Test-Name,Doc-Sites,Doc-Sites-Own,Modules-With-Doc
+slicing/intermediates/conv.fld,2,0,lib/matrix_doc=2
+slicing/intermediates/edge_detect.fld,2,0,lib/matrix_doc=2
+slicing/intermediates/emboss.fld,2,0,lib/matrix_doc=2
+slicing/intermediates/gaussian.fld,2,0,lib/matrix_doc=2
+slicing/intermediates/dtw.fld,5,0,lib/dtw_doc=5
+slicing/intermediates/line_chart.fld,1,1,slicing/intermediates/line_chart=1
+slicing/intermediates/grouped_bar_chart.fld,1,1,slicing/intermediates/grouped_bar_chart=1
+slicing/intermediates/stacked_bar_chart.fld,1,1,slicing/intermediates/stacked_bar_chart=1
+slicing/intermediates/bar_chart_line_chart.fld,1,1,slicing/intermediates/bar_chart_line_chart=1
+slicing/intermediates/stacked_bar_scatter_plot.fld,2,2,slicing/intermediates/stacked_bar_scatter_plot=2

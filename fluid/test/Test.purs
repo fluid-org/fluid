@@ -25,7 +25,7 @@ import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
 import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
-import Test.Benchmark.Intermediate (probeStages)
+import Test.Benchmark.Intermediate (probeGraphStats)
 import Test.Benchmark.Util (BenchAcc(..))
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
@@ -43,7 +43,7 @@ tests = scratchpad
 -- docs/reports/intermediate-perf-notes.md.
 scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
 scratchpad =
-   [ "stages" × probeStages 20 bwdIntermediate_cases
+   [ "graph-stats" × probeGraphStats bwdIntermediate_cases
    ]
 
 benchmarkAll :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Int -> m Unit
