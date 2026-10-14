@@ -16,6 +16,7 @@ import Effect.Exception (Error)
 import File (class LoadFile, FileCxt(..))
 import Module.Web (runWebT)
 import Test.Specs.Bwd (bwd_cases)
+import Test.Specs.BwdIntermediate (bwdIntermediate_cases)
 import Test.Specs.IllFormed (illFormed_cases, purepy_cases)
 import Test.Specs.Comments (comments_cases)
 import Test.Specs.Desugar (desugar_cases)
@@ -24,6 +25,7 @@ import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
 import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
+import Test.Benchmark.Intermediate (probeStages)
 import Test.Benchmark.Util (BenchAcc(..))
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
@@ -34,10 +36,15 @@ main :: Effect Unit
 main = run (second (runWebT (FileCxt { fluidSrcPaths })) <$> tests)
 
 tests :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-tests = allTests
+tests = scratchpad
 
+-- Set tests = scratchpad to run the intermediate-value benchmarks. They report through the
+-- console, so capture the run and split it with script/util/extract-bench.mjs; see
+-- docs/reports/intermediate-perf-notes.md.
 scratchpad :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => TestSuite m
-scratchpad = [ "benchmark" × benchmarkAll 10 ]
+scratchpad =
+   [ "stages" × probeStages 20 bwdIntermediate_cases
+   ]
 
 benchmarkAll :: forall m. MonadAff m => MonadError Error m => MonadReader FileCxt m => LoadFile m => Int -> m Unit
 benchmarkAll n = do

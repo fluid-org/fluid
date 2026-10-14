@@ -1,0 +1,14 @@
+% Standalone wrapper, to view contraction-figure.tex on its own; a report \inputs the fragment
+% directly. Build: latexmk -pdf contraction-figure-preview.tex && pdfcrop ... contraction-figure.pdf
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm,paperwidth=19cm,paperheight=13cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage{amsmath,amssymb}
+\usepackage{float}
+\makeatletter\renewcommand{\fps@figure}{H}\makeatother
+\pagestyle{empty}
+
+\begin{document}
+\input{contraction-figure.tex}
+\end{document}

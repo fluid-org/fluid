@@ -1,0 +1,56 @@
+% Requires \usepackage{tikz} and \usetikzlibrary{arrows.meta} in the preamble.
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+   kept/.style = {circle, draw, thick, fill=black!8, minimum size=7mm, inner sep=0pt, font=\small},
+   drop/.style = {circle, draw=black!40, densely dashed, text=black!45, minimum size=7mm, inner sep=0pt, font=\small},
+   dep/.style  = {-{Stealth[length=4.5pt]}, draw=black!65},
+   ann/.style  = {font=\small, align=center}
+]
+
+% (a) uncontracted: chain of dropped vertices between inputs and outputs
+\node[kept] (o1) at (0,4.8) {$o_1$};
+\node[kept] (o2) at (1.5,4.8) {$o_2$};
+\node[kept] (o3) at (3,4.8) {$o_3$};
+\node[drop] (w)  at (1.5,3.6) {$w$};
+\node[drop] (v)  at (1.5,2.4) {$v$};
+\node[drop] (u)  at (1.5,1.2) {$u$};
+\node[kept] (i1) at (0,0) {$i_1$};
+\node[kept] (i2) at (1.5,0) {$i_2$};
+\node[kept] (i3) at (3,0) {$i_3$};
+
+\foreach \o in {o1,o2,o3} \draw[dep] (\o) -- (w);
+\draw[dep] (w) -- (v);
+\draw[dep] (v) -- (u);
+\foreach \i in {i1,i2,i3} \draw[dep] (u) -- (\i);
+
+\node[ann] at (1.5,-1.0) {(a) uncontracted\\$|E| = 8$, \ $o \rightsquigarrow i$ path $= 4$};
+
+% (b) contracted: u, v, w spliced out, each o wired to the frontier {i1,i2,i3}
+\begin{scope}[xshift=7cm]
+   \node[kept] (p1) at (0,4.8) {$o_1$};
+   \node[kept] (p2) at (1.5,4.8) {$o_2$};
+   \node[kept] (p3) at (3,4.8) {$o_3$};
+   \node[kept] (q1) at (0,0) {$i_1$};
+   \node[kept] (q2) at (1.5,0) {$i_2$};
+   \node[kept] (q3) at (3,0) {$i_3$};
+
+   \foreach \o in {p1,p2,p3} \foreach \i in {q1,q2,q3} \draw[dep] (\o) -- (\i);
+
+   \node[ann] at (1.5,-1.0) {(b) contracted\\$|E| = 9$, \ $o \rightsquigarrow i$ path $= 1$};
+\end{scope}
+
+\draw[-{Stealth[length=6pt]}, thick] (4.3,2.4) -- node[above, font=\small] {contract} (5.7,2.4);
+
+\end{tikzpicture}
+\caption{Contraction shortens input--output paths but can multiply edges. Edges point from a
+         vertex to the vertices it depends on, so backward slicing reads downwards. Solid
+         vertices are kept (inputs, outputs and \texttt{@doc}-annotated values); dashed
+         vertices are dropped. Dropping $\alpha$ splices it out by rewiring $\alpha$'s consumers
+         to $\alpha$'s frontier --- its nearest kept ancestors --- so in (b) every $o_j$ points
+         straight at $\{i_1,i_2,i_3\}$. The chain $w,v,u$ collapses to a single hop, but its
+         $3 + 2 + 3 = 8$ edges become $3 \times 3 = 9$. In general a chain of $L$ dropped
+         vertices between $p$ inputs and $s$ outputs replaces $p + s + L - 1$ edges with
+         $p \cdot s$, an increase whenever $p \cdot s > p + s + L - 1$.}
+\label{fig:contraction}
+\end{figure}

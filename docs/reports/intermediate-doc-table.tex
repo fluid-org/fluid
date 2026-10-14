@@ -1,0 +1,24 @@
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l r r r r r r r r r}
+\toprule
+ & \multicolumn{3}{c}{\texttt{@doc}} & \multicolumn{3}{c}{Stripped} & \multicolumn{3}{c}{Ratio (@doc / Stripped)} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+Example & {Eval (ms)} & {Demands (ms)} & {Suffices (ms)} & {Eval (ms)} & {Demands (ms)} & {Suffices (ms)} & {Eval} & {Demands} & {Suffices} \\
+\midrule
+\texttt{conv} & $368.4 \pm 22.4$ & $1.1 \pm 0.2$ & $2.7 \pm 0.9$ & $327.9 \pm 9.0$ & $0.8 \pm 0.07$ & $1.6 \pm 0.09$ & 1.124 & 1.305 & 1.655 \\
+\texttt{edge\_detect} & $955.6 \pm 45.6$ & $1.0 \pm 0.05$ & $2.1 \pm 0.1$ & $970.3 \pm 27.1$ & $0.9 \pm 0.03$ & $2.1 \pm 0.1$ & 0.985 & 1.135 & 0.986 \\
+\texttt{emboss} & $944.3 \pm 28.6$ & $2.1 \pm 0.07$ & $2.0 \pm 0.06$ & $927.2 \pm 22.5$ & $2.0 \pm 0.1$ & $1.9 \pm 0.07$ & 1.019 & 1.035 & 1.032 \\
+\texttt{gaussian} & $883.1 \pm 25.1$ & $2.0 \pm 0.04$ & $1.9 \pm 0.06$ & $874.9 \pm 23.4$ & $1.8 \pm 0.04$ & $2.0 \pm 0.08$ & 1.009 & 1.082 & 0.965 \\
+\texttt{dtw} & $510.7 \pm 15.8$ & $5.2 \pm 0.10$ & $38.8 \pm 0.5$ & $457.9 \pm 13.3$ & $4.9 \pm 0.08$ & $9.7 \pm 0.1$ & 1.115 & 1.070 & 4.005 \\
+\texttt{line\_chart} & $359.0 \pm 14.5$ & $31.5 \pm 1.4$ & $8.3 \pm 0.4$ & $336.6 \pm 14.1$ & $28.8 \pm 1.1$ & $7.1 \pm 0.4$ & 1.066 & 1.090 & 1.178 \\
+\texttt{grouped\_bar\_chart} & $309.6 \pm 10.3$ & $28.9 \pm 0.7$ & $9.0 \pm 0.4$ & $315.2 \pm 11.2$ & $30.1 \pm 1.1$ & $7.9 \pm 0.5$ & 0.982 & 0.959 & 1.137 \\
+\texttt{stacked\_bar\_chart} & $259.4 \pm 8.5$ & $16.0 \pm 0.8$ & $5.3 \pm 0.4$ & $264.1 \pm 10.0$ & $16.6 \pm 0.6$ & $5.4 \pm 0.4$ & 0.982 & 0.968 & 0.971 \\
+\texttt{bar\_chart\_line\_chart} & $2271.5 \pm 45.7$ & $2.6 \pm 0.2$ & $5.5 \pm 0.3$ & $2088.1 \pm 38.9$ & $2.2 \pm 0.1$ & $5.2 \pm 0.2$ & 1.088 & 1.198 & 1.046 \\
+\texttt{stacked\_bar\_scatter\_plot} & $1120.0 \pm 33.3$ & $6.4 \pm 0.3$ & $9.6 \pm 0.2$ & $1105.7 \pm 28.7$ & $6.1 \pm 0.2$ & $8.4 \pm 0.2$ & 1.013 & 1.059 & 1.139 \\
+\bottomrule
+\end{tabular}
+\caption{Slicing performance with and without \texttt{@doc}-annotated intermediate values. Each figure is a mean $\pm$ standard error over 10 runs. Ratio $> 1$ means the annotated version is slower.}
+\label{tab:doc-summary}
+\end{table}
