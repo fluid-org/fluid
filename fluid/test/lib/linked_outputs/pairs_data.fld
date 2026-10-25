@@ -1,1 +1,1 @@
-data: tuple[int, int] = 3, 7
+data: tuple[int, int] = @doc("data") (3, 7)

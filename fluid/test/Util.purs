@@ -19,7 +19,7 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval (Eval, evalProgram, visible)
+import Eval (Eval, documentedAs, evalProgram, visible)
 import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
 import File (class MonadLoad, File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
@@ -30,8 +30,7 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
-import Literal (Literal(..))
-import Val (class HasModuleStore, BaseVal(..), Val(..), moduleStore, val, withDoc)
+import Val (class HasModuleStore, Val, moduleStore, val, withDoc)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -92,8 +91,8 @@ depName file = case _ of
 deriv :: forall s. DepGraph Val s -> Eval -> VertexSpec -> Deriv
 deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
-   Input x -> case A.filter (\(_ × d) -> valAt g d == Val unit (Lit (Str x))) (Map.toUnfoldable docs) of
-      [ p × _ ] -> p
+   Input x -> case documentedAs g x of
+      [ p ] -> p
       _ -> error ("no vertex documented " <> show x)
    Intermediate n -> intermediates ! n
    Doc vertex -> get (deriv depGraph eval vertex) docs

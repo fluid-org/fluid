@@ -29,7 +29,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
+import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, valAt, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -487,6 +487,10 @@ type Eval =
 -- Documented vertices, their docs and the root.
 visible :: Eval -> Set Deriv
 visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
+
+-- Vertices documented with the name x.
+documentedAs :: forall s. DepGraph Val s -> String -> Array Deriv
+documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val unit (V.Lit (Str x))) g.docs))
 
 evalProgram
    :: forall m
