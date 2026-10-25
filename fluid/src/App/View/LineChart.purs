@@ -9,7 +9,7 @@ import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
-import App.View.Util.Scale (AxisTicks(..), Scales(..), Ticks(..), decimalPlaces, domain, resolveTicks, tickCount)
+import App.View.Util.Scale (AxisTicks(..), Scales(..), Ticks(..), decimalPlaces, domain, tickCount, tickValues)
 import Bind ((↦), (⟼))
 
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
@@ -163,14 +163,14 @@ instance Viewable LineChart Unit where
          let Point { x: xLabels, y: yLabels } = tickLabels
          x <- create_xAxis parent' (to range)
             { count: tickCount xTicks.spacing (toNumber (length (nub points.x)))
-            , values: resolveTicks xTicks.spacing (domain scales.x (extent points.x))
+            , values: tickValues xTicks.spacing (domain scales.x (extent points.x))
             , places: decimalPlaces xTicks.format
             }
             (unwrap range).height
             (contents xLabels)
          y <- create_yAxis parent' (to range)
             { count: tickCount yTicks.spacing 3.0
-            , values: resolveTicks yTicks.spacing (domain scales.y (extent points.y))
+            , values: tickValues yTicks.spacing (domain scales.y (extent points.y))
             , places: fromMaybe 1 (decimalPlaces yTicks.format)
             }
             (contents yLabels)

@@ -35,14 +35,14 @@ newtype AxisTicks = AxisTicks { spacing :: TickSpacing, format :: LabelFormat }
 newtype Ticks = Ticks { x :: AxisTicks, y :: AxisTicks }
 
 -- Tick values within domain; Nothing when d3 chooses
-resolveTicks :: TickSpacing -> Interval -> Maybe (Array Number)
-resolveTicks (Every step) { min, max } = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
+tickValues :: TickSpacing -> Interval -> Maybe (Array Number)
+tickValues (Every step) { min, max } = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
    where
    first = ceil (min / step - tolerance)
    last = floor (max / step + tolerance)
    -- Round-off in quotient
    tolerance = 1e-9
-resolveTicks _ _ = Nothing
+tickValues _ _ = Nothing
 
 -- Count hint for d3, given default
 tickCount :: TickSpacing -> Number -> Number
