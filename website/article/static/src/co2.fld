@@ -14,5 +14,5 @@ def chart(caption: str, scales: Scales) -> LineChart:
 MultiView([
   chart("CO2 concentration (ppm), y scale Auto", Scales(x=Auto(), y=Auto())),
   chart("CO2 concentration (ppm), y scale FromZero", Scales(x=Auto(), y=FromZero())),
-  chart("CO2 concentration (ppm), y scale Fixed(300, 450)", Scales(x=Auto(), y=Fixed(300, 450)))
+  chart("CO2 concentration (ppm), y scale Fixed(320, 400)", Scales(x=Auto(), y=Fixed(320, 400)))
 ])

@@ -1,6 +1,6 @@
 import {
    checkAttribute, checkAttributeContains, checkComputedStyle, checkCount, checkCountAtLeast,
-   checkTextContent, click, clickToggle, dispatchMouseDown, testURL, waitFor
+   checkTextContent, checkTopmost, click, clickToggle, dispatchMouseDown, testURL, waitFor
 } from "@fluid-org/fluid/script/webtest-lib.mjs"
 
 export const main = async () => {
@@ -9,7 +9,12 @@ export const main = async () => {
          const yTick = n => `#fig-output > svg:nth-of-type(${n}) g.y-axis .tick text`
          await checkTextContent(page, yTick(1), "350.0")
          await checkTextContent(page, yTick(2), "0.0")
-         await checkTextContent(page, yTick(3), "300.0")
+         await checkTextContent(page, yTick(3), "320.0")
+         // Points outside Fixed domain clipped
+         const point = n => `#fig-output > svg:nth-of-type(3) circle.linechart-point:nth-of-type(${n})`
+         await checkTopmost(page, point(1), false)
+         await checkTopmost(page, point(4), true)
+         await checkTopmost(page, point(8), false)
       }
    ])
 

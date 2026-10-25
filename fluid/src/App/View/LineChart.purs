@@ -6,7 +6,7 @@ import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, co
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
 import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
-import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setText, textHeight, textWidth, translate)
+import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
 import App.View.Util.Scale (Scales(..), domain)
@@ -15,7 +15,7 @@ import Bind ((↦), (⟼))
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
 import Data.Array (concat, elemIndex, mapWithIndex)
 import Data.Array.NonEmpty (NonEmptyArray, fromArray, nub)
-import Data.Foldable (length)
+import Data.Foldable (intercalate, length)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -126,8 +126,9 @@ instance Viewable LineChart Unit where
 
       g <- svg # create G [ translate { x: margin.left, y: margin.top } ]
       void $ createAxes interior g
-      createLines interior g
-      createPoints interior g
+      plotArea <- createPlotArea interior g
+      createLines interior plotArea
+      createPoints interior plotArea
       void $ svg
          # create Text
               [ "x" ⟼ width / 2
@@ -160,6 +161,24 @@ instance Viewable LineChart Unit where
          x <- create_xAxis parent' (to range) (nub points.x) (unwrap range).height (contents xLabels)
          y <- create_yAxis parent' (to range) 3.0 1 (contents yLabels)
          pure { x, y }
+
+      -- Nested viewport clipping data outside the axes, with room for a selected point at the edge; overflow
+      -- set inline to override website styles
+      createPlotArea :: Dimensions Int -> D3.Selection -> Effect D3.Selection
+      createPlotArea (Dimensions range) parent' =
+         parent'
+            # create SVG
+                 [ "x" ⟼ -pad
+                 , "y" ⟼ -pad
+                 , "width" ⟼ width'
+                 , "height" ⟼ height'
+                 , "viewBox" ↦ intercalate " " (show <$> [ -pad, -pad, width', height' ])
+                 ]
+            >>= setStyles [ "overflow" ↦ "hidden" ]
+         where
+         pad = point_smallRadius * 2
+         width' = range.width + 2 * pad
+         height' = range.height + 2 * pad
 
       createLines :: Dimensions Int -> D3.Selection -> Effect Unit
       createLines range parent' =
