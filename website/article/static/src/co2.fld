@@ -1,6 +1,6 @@
-from co2_data import co2
+from fluid.view import Dimensions, LineChart, LinePlot, MultiView, Point, TickLabels, Default, Scales, Auto, FromZero, Fixed, default_ticks
 
-from fluid.view import Dimensions, LineChart, LinePlot, MultiView, TickLabels, Default, Scales, Auto, FromZero, Fixed, default_ticks
+co2: list[tuple[int, int]] = [(1960, 315), (1970, 326), (1980, 339), (1990, 354), (2000, 369), (2010, 389), (2020, 412), (2025, 432)]
 
 def chart(caption: str, scales: Scales) -> LineChart:
   return LineChart(
@@ -9,11 +9,11 @@ def chart(caption: str, scales: Scales) -> LineChart:
     caption=caption,
     scales=scales,
     ticks=default_ticks,
-    plots=[LinePlot(name="CO2", points=co2)]
+    plots=[LinePlot(name="CO2", points=[Point(x=year, y=ppm) for (year, ppm) in co2])]
   )
 
 MultiView([
   chart("CO2 concentration (ppm), y scale Auto", Scales(x=Auto(), y=Auto())),
   chart("CO2 concentration (ppm), y scale FromZero", Scales(x=Auto(), y=FromZero())),
-  chart("CO2 concentration (ppm), y scale Fixed(300, 450)", Scales(x=Auto(), y=Fixed(300, 450)))
+  chart("CO2 concentration (ppm), y scale Fixed(320, 400)", Scales(x=Auto(), y=Fixed(320, 400)))
 ])

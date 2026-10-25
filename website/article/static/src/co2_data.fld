@@ -1,3 +1,0 @@
-from fluid.view import Point
-
-co2: list[Point] = [Point(x=1960, y=315), Point(x=1970, y=326), Point(x=1980, y=339), Point(x=1990, y=354), Point(x=2000, y=369), Point(x=2010, y=389), Point(x=2020, y=412), Point(x=2025, y=432)]

@@ -15,11 +15,11 @@ data Scale
 
 newtype Scales = Scales { x :: Scale, y :: Scale }
 
--- Domain of axis, given data range
-resolveScale :: Scale -> Interval -> Interval
-resolveScale Auto range = range
-resolveScale FromZero range = { min: 0.0, max: range.max }
-resolveScale (Fixed min max) _ = { min, max }
+-- Axis domain, given extent of data
+domain :: Scale -> Interval -> Interval
+domain Auto extent = extent
+domain FromZero extent = { min: min 0.0 extent.min, max: max 0.0 extent.max }
+domain (Fixed min max) _ = { min, max }
 
 data TickSpacing
    = AutoTicks
