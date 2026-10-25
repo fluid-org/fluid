@@ -9,7 +9,7 @@ import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
-import App.View.Util.Scale (Interval, Scales(..), resolveScale)
+import App.View.Util.Scale (Scales(..), domain)
 import Bind ((↦), (⟼))
 
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
@@ -226,17 +226,13 @@ instance Viewable LineChart Unit where
          entry_y :: Int -> Int
          entry_y i = i * lineHeight + 2 -- tweak to emulate vertical centering of text
 
-      domain :: Coord Interval
-      domain =
-         { x: resolveScale scales.x { min: minimum points.x, max: maximum points.x }
-         , y: resolveScale scales.y { min: minimum points.y, max: maximum points.y }
-         }
-
       to :: Dimensions Int -> Coord (Endo Number)
       to (Dimensions range) =
-         { x: scaleLinear domain.x { min: 0.0, max: toNumber range.width }
-         , y: scaleLinear domain.y { min: toNumber range.height, max: 0.0 }
+         { x: scaleLinear (domain scales.x (extent points.x)) { min: 0.0, max: toNumber range.width }
+         , y: scaleLinear (domain scales.y (extent points.y)) { min: toNumber range.height, max: 0.0 }
          }
+         where
+         extent xs = { min: minimum xs, max: maximum xs }
 
       points :: Coord (NonEmptyArray Number)
       points = { x: ps <#> unwrap >>> _.x >>> fst, y: ps <#> unwrap >>> _.y >>> fst }
