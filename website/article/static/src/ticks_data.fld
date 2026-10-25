@@ -1,5 +1,0 @@
-from fluid.view import Point
-
-co2: list[Point] = [Point(x=1958.2027, y=315.71), Point(x=1965.0411, y=320.04), Point(x=1970.125, y=325.68), Point(x=1975.375, y=331.15), Point(x=1980.2083, y=338.29), Point(x=1985.5417, y=345.8), Point(x=1990.0417, y=353.94), Point(x=1995.7083, y=361.88), Point(x=2000.2917, y=369.5), Point(x=2005.625, y=379.28), Point(x=2010.0417, y=388.45), Point(x=2015.375, y=401.3), Point(x=2020.125, y=413.42), Point(x=2024.9167, y=422.38)]
-
-monthly: list[Point] = [Point(x=2024.0, y=0.62), Point(x=2024.0833, y=0.55), Point(x=2024.1667, y=0.71), Point(x=2024.25, y=0.84), Point(x=2024.3333, y=0.97), Point(x=2024.4167, y=1.12), Point(x=2024.5, y=1.31), Point(x=2024.5833, y=1.24), Point(x=2024.6667, y=1.06), Point(x=2024.75, y=0.93), Point(x=2024.8333, y=0.78), Point(x=2024.9167, y=0.69)]
