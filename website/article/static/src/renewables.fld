@@ -7,4 +7,4 @@ class Renewable:
   energyType: str
   output: float
 
-renewables: list[Renewable] = load_json(list[Renewable], "../dataset/renewable_new.json")
+renewables: list[Renewable] = @doc("renewables") load_json(list[Renewable], "../dataset/renewable_new.json")

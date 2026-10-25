@@ -1,4 +1,4 @@
-filter: Matrix[int] = [| [
+filter: Matrix[int] = @doc("filter") [| [
     [-2, -1, 0],
     [-1, 1, 1],
     [0, 1, 2]

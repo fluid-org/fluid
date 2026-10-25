@@ -14,5 +14,5 @@ class Projection:
   lowLate: float
   highLate: float
 
-tableData: list[Projection] = load_json(list[Projection], "../../dataset/SPM/explainable-table.json")
-likelihoods: list[Likelihood] = load_json(list[Likelihood], "../../dataset/SPM/likelihoods.json")
+tableData: list[Projection] = @doc("tableData") load_json(list[Projection], "../../dataset/SPM/explainable-table.json")
+likelihoods: list[Likelihood] = @doc("likelihoods") load_json(list[Likelihood], "../../dataset/SPM/likelihoods.json")

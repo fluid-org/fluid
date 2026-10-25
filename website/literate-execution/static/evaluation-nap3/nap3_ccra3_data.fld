@@ -1,2 +1,2 @@
-nap3_actions: list[dict[str, str]] = load_json(list[dict[str, str]], "../dataset/ccra3-actions-for-nap3.json")
-ccra3_risks: list[dict[str, str]] = load_json(list[dict[str, str]], "../dataset/ccra3-risks.json")
+nap3_actions: list[dict[str, str]] = @doc("nap3_actions") load_json(list[dict[str, str]], "../dataset/ccra3-actions-for-nap3.json")
+ccra3_risks: list[dict[str, str]] = @doc("ccra3_risks") load_json(list[dict[str, str]], "../dataset/ccra3-risks.json")
