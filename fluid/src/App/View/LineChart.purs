@@ -6,15 +6,16 @@ import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, co
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
 import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
-import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setText, textHeight, textWidth, translate)
+import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
+import App.View.Util.Scale (Scales(..), domain)
 import Bind ((↦), (⟼))
 
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
 import Data.Array (concat, elemIndex, mapWithIndex)
 import Data.Array.NonEmpty (NonEmptyArray, fromArray, nub)
-import Data.Foldable (length)
+import Data.Foldable (intercalate, length)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
@@ -28,6 +29,7 @@ newtype LineChart = LineChart
    { size :: Dimensions (Selectable Int)
    , tickLabels :: Point Orientation
    , caption :: Selectable String
+   , scales :: Scales
    , plots :: Array LinePlot
    }
 
@@ -103,7 +105,7 @@ instance Viewable LineChart Unit where
          listElement j >>> arg cLinePlot f_points >>> listElement i >>> arg cLineChart f_plots
 
    createElement :: Unit -> LineChart -> D3.Selection -> Effect D3.Selection
-   createElement _ (LineChart { size, tickLabels, caption, plots }) parent = do
+   createElement _ (LineChart { size, tickLabels, caption, scales: Scales scales, plots }) parent = do
       svg <- parent # create SVG [ "width" ⟼ width, "height" ⟼ height ]
       { x: xAxisHeight, y: yAxisWidth } <- axisWidth svg
 
@@ -124,8 +126,9 @@ instance Viewable LineChart Unit where
 
       g <- svg # create G [ translate { x: margin.left, y: margin.top } ]
       void $ createAxes interior g
-      createLines interior g
-      createPoints interior g
+      plotArea <- createPlotArea interior g
+      createLines interior plotArea
+      createPoints interior plotArea
       void $ svg
          # create Text
               [ "x" ⟼ width / 2
@@ -158,6 +161,24 @@ instance Viewable LineChart Unit where
          x <- create_xAxis parent' (to range) (nub points.x) (unwrap range).height (contents xLabels)
          y <- create_yAxis parent' (to range) 3.0 1 (contents yLabels)
          pure { x, y }
+
+      -- Nested viewport clipping data outside the axes, with room for a selected point at the edge; overflow
+      -- set inline to override website styles
+      createPlotArea :: Dimensions Int -> D3.Selection -> Effect D3.Selection
+      createPlotArea (Dimensions range) parent' =
+         parent'
+            # create SVG
+                 [ "x" ⟼ -pad
+                 , "y" ⟼ -pad
+                 , "width" ⟼ width'
+                 , "height" ⟼ height'
+                 , "viewBox" ↦ intercalate " " (show <$> [ -pad, -pad, width', height' ])
+                 ]
+            >>= setStyles [ "overflow" ↦ "hidden" ]
+         where
+         pad = point_smallRadius * 2
+         width' = range.width + 2 * pad
+         height' = range.height + 2 * pad
 
       createLines :: Dimensions Int -> D3.Selection -> Effect Unit
       createLines range parent' =
@@ -224,17 +245,13 @@ instance Viewable LineChart Unit where
          entry_y :: Int -> Int
          entry_y i = i * lineHeight + 2 -- tweak to emulate vertical centering of text
 
-      min' :: Coord Number
-      min' = { x: minimum points.x, y: minimum points.y }
-
-      max' :: Coord Number
-      max' = { x: maximum points.x, y: maximum points.y }
-
       to :: Dimensions Int -> Coord (Endo Number)
       to (Dimensions range) =
-         { x: scaleLinear { min: min'.x, max: max'.x } { min: 0.0, max: toNumber range.width }
-         , y: scaleLinear { min: 0.0, max: max'.y } { min: toNumber range.height, max: 0.0 }
+         { x: scaleLinear (domain scales.x (extent points.x)) { min: 0.0, max: toNumber range.width }
+         , y: scaleLinear (domain scales.y (extent points.y)) { min: toNumber range.height, max: 0.0 }
          }
+         where
+         extent xs = { min: minimum xs, max: maximum xs }
 
       points :: Coord (NonEmptyArray Number)
       points = { x: ps <#> unwrap >>> _.x >>> fst, y: ps <#> unwrap >>> _.y >>> fst }

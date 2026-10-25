@@ -114,6 +114,18 @@ export async function checkCountAtLeast(page, selector, minimum) {
    testOutcome(pass, `${selector}: count >= ${minimum}${pass ? ` (got ${count})` : ` (got ${count})`}`)
 }
 
+// Whether element is topmost at its centre, and so neither covered nor clipped
+export async function checkTopmost(page, selector, expected) {
+   await waitFor(page, selector, { visible: false })
+   const topmost = await page.$eval(selector, el => {
+      el.scrollIntoView({ block: "center" })
+      const r = el.getBoundingClientRect()
+      return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === el
+   })
+   const pass = topmost === expected
+   testOutcome(pass, `${selector}: topmost == ${expected}${pass ? "" : ` (got ${topmost})`}`)
+}
+
 export async function getBoundingBox(page, selector) {
    return page.$eval(selector, el => {
       const r = el.getBoundingClientRect()

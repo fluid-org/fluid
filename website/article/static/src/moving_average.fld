@@ -1,6 +1,6 @@
 from methane_data import methane
 
-from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Rotated
+from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Rotated, Scales, Auto, FromZero
 from fluid.prelude import fsum, max, min, zip
 
 def nthPad[A](n: int, xs: list[A]) -> A:
@@ -16,6 +16,7 @@ LineChart(
   tickLabels=TickLabels(x=Rotated(), y=Default()),
   size=Dimensions(width=330, height=285),
   caption="SSP5-8.5 projected methane emissions (Agriculture)",
+  scales=Scales(x=Auto(), y=FromZero()),
   plots=[
     LinePlot(
       name="Moving average",

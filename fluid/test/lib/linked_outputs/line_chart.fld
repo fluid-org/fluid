@@ -1,4 +1,4 @@
-from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default
+from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Scales, Auto, FromZero
 from fluid.prelude import zip
 
 def series(type: str, country: str) -> list[Point]:
@@ -8,5 +8,6 @@ LineChart(
   tickLabels=TickLabels(x=Default(), y=Default()),
   caption="Change in renewable energy output of USA relative to China",
   size=Dimensions(width=330, height=285),
+  scales=Scales(x=Auto(), y=FromZero()),
   plots=[LinePlot(name=type, points=plot) for type in ["Bio", "Hydro", "Solar", "Wind"] for plot in [[Point(x=p1.x, y=p1.y / p2.y) for (p1, p2) in zip(series(type, "USA"), series(type, "China"))]]]
 )

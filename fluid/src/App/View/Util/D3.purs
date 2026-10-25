@@ -3,6 +3,7 @@ module App.View.Util.D3 where
 import Prelude
 
 import App.Util (Attrs, Dimensions)
+import App.View.Util.Scale (Interval)
 import Bind (Bind, (↦), (⟼))
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Generic.Rep (class Generic)
@@ -106,7 +107,7 @@ foreign import createChild :: Selection -> String -> Object String -> Effect Sel
 foreign import createText :: Selection -> String -> Effect Selection
 foreign import remove :: Selection -> Effect Unit
 foreign import colorScale :: forall a. String -> a -> String
-foreign import scaleLinear :: { min :: Number, max :: Number } -> { min :: Number, max :: Number } -> Endo Number
+foreign import scaleLinear :: Interval -> Interval -> Endo Number
 foreign import scaleBand :: Int -> Array String -> String -> Number
 foreign import bandwidth :: (String -> Number) -> Number
 -- Currently two different protocols for x and y axis; will subsume into something more general

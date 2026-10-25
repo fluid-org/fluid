@@ -17,6 +17,7 @@ import App.View.Text (Text(..))
 import App.View.Util (Filter(..), View, pack)
 import App.View.Util.Axes (Orientation, orientation)
 import App.View.Util.Point (Point(..))
+import App.View.Util.Scale (Scale(..), Scales(..))
 import Data.Array as A
 import Data.Array.NonEmpty (NonEmptyArray)
 import Bind (Name, Var)
@@ -24,7 +25,7 @@ import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.List (List)
 import Data.Tuple (fst, snd)
 
-import Types.Defs (cAxisLabels, cBarChart, cDimensions, cLineChart, cLinePlot, cLink, cMultiView, cParagraph, cPoint, cScatterPlot, cSegment, cStackedBar, cText, cTickLabels, f_caption, f_fragments, f_height, f_label, f_labels, f_legend, f_name, f_plots, f_points, f_segments, f_size, f_stackedBars, f_text, f_tickLabels, f_value, f_views, f_width, f_x, f_y, f_z)
+import Types.Defs (cAxisLabels, cAuto, cBarChart, cDimensions, cFixed, cFromZero, cLineChart, cLinePlot, cLink, cMultiView, cParagraph, cPoint, cScales, cScatterPlot, cSegment, cStackedBar, cText, cTickLabels, f_caption, f_fragments, f_height, f_label, f_labels, f_legend, f_max, f_min, f_name, f_plots, f_points, f_scales, f_segments, f_size, f_stackedBars, f_text, f_tickLabels, f_value, f_views, f_width, f_x, f_y, f_z)
 import Dict (Dict)
 import Link (Link(..))
 import Literal (Literal(..))
@@ -118,6 +119,7 @@ instance Reflect LineChart where
          { size: reflect options (attr f_size v)
          , tickLabels: reflect options (attr f_tickLabels v)
          , caption: P.unpack' string (attr f_caption v)
+         , scales: reflect options (attr f_scales v)
          , plots: reflect options (attr f_plots v)
          }
       _ -> typeError u "LineChart"
@@ -170,6 +172,19 @@ instance Reflect (Point Orientation) where
          , y: P.unpack' orientation (attr f_y v)
          }
       _ -> typeError u "TickLabels"
+
+instance Reflect Scales where
+   reflect options v@(Val _ u) = case u of
+      Obj c _ | c == cScales -> Scales { x: reflect options (attr f_x v), y: reflect options (attr f_y v) }
+      _ -> typeError u "Scales"
+
+instance Reflect Scale where
+   reflect _ v@(Val _ u) = case u of
+      Obj c _
+         | c == cAuto -> Auto
+         | c == cFromZero -> FromZero
+         | c == cFixed -> Fixed (fst (unpackIntOrNumber (attr f_min v))) (fst (unpackIntOrNumber (attr f_max v)))
+      _ -> typeError u "Scale"
 
 instance Reflect Segment where
    reflect _ v@(Val _ u) = case u of

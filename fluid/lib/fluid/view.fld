@@ -13,6 +13,28 @@ class Rotated(Orientation):
   pass
 
 @dataclass
+class Scale:
+  pass
+
+@dataclass
+class Auto(Scale):
+  pass
+
+@dataclass
+class FromZero(Scale):
+  pass
+
+@dataclass
+class Fixed(Scale):
+  min: float
+  max: float
+
+@dataclass
+class Scales:
+  x: Scale
+  y: Scale
+
+@dataclass
 class Dimensions:
   width: int
   height: int
@@ -64,6 +86,7 @@ class LineChart(View):
   size: Dimensions
   tickLabels: TickLabels
   caption: str
+  scales: Scales
   plots: list[LinePlot]
 
 @dataclass
