@@ -1,7 +1,16 @@
-from renewables import Renewable, renewables
+from dataclasses import dataclass
 
 from fluid.view import BarChart, Dimensions, LineChart, MultiView, LinePlot, Point, Segment, StackedBar, TickLabels, Default
 from fluid.prelude import fsum, zip
+
+@dataclass
+class Renewable:
+  year: int
+  country: str
+  energyType: str
+  output: float
+
+renewables: list[Renewable] = @doc("renewables") load_json(list[Renewable], "../dataset/renewable_new.json")
 
 def totalFor(c: str, rows: list[Renewable]) -> float:
   return fsum([row.output for row in rows if row.country == c])
