@@ -89,14 +89,13 @@ export function line (to) {
 
 // Axis with approximate tick count or exact tick values, and labels to given decimal places
 function axis (d3Axis) {
-   return nTicks => {
-      return tickValues => {
-         return decPlaces => {
+   return count => {
+      return values => {
+         return places => {
             return parent => {
                return () => {
-                  const axis = d3Axis.tickSizeOuter(0)
-                  const ticked = tickValues === null ? axis.ticks(nTicks) : axis.tickValues(tickValues)
-                  return parent.call(ticked.tickFormat(decPlaces === null ? d => d : d3.format(`.${decPlaces}f`)))
+                  const ticked = values === null ? d3Axis.ticks(count) : d3Axis.tickValues(values)
+                  return parent.call(ticked.tickSizeOuter(0).tickFormat(places === null ? d => d : d3.format(`.${places}f`)))
                }
             }
          }
