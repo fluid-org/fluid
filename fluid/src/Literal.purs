@@ -4,7 +4,7 @@ import Prelude hiding (absurd)
 
 import Data.Generic.Rep (class Generic)
 import Data.Int (toNumber)
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (fromMaybe, maybe)
 import Data.Number (isFinite, isNaN)
 import Data.Number.Format (precision, toStringWith)
 import Data.Show.Generic (genericShow)
@@ -45,16 +45,15 @@ showFloat x
    | not (isFinite x) = show x
    | otherwise =
         case split (Pattern "e") (toStringWith (precision 12) x) of
-           [ m ] -> withPoint (digits m)
-           [ m, e ] -> fromMaybe (digits m) (stripSuffix (Pattern ".") (digits m)) <> "e" <> e
+           [ m ] -> withPoint (trim m)
+           [ m, e ] -> trim m <> "e" <> e
            _ -> error absurd
         where
-        digits m
-           | contains (Pattern ".") m = dropZeros m
+        trim m
+           | contains (Pattern ".") m = dropPoint (dropZeros m)
            | otherwise = m
-
         dropZeros m = maybe m dropZeros (stripSuffix (Pattern "0") m)
-
-        withPoint m = case stripSuffix (Pattern ".") m of
-           Just n -> n <> ".0"
-           Nothing -> if contains (Pattern ".") m then m else m <> ".0"
+        dropPoint m = fromMaybe m (stripSuffix (Pattern ".") m)
+        withPoint m
+           | contains (Pattern ".") m = m
+           | otherwise = m <> ".0"
