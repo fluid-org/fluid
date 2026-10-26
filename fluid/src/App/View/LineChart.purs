@@ -5,13 +5,12 @@ import Prelude hiding (absurd)
 import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, colorShade, isPersistent, isPrimary, isSecondary, isTransient, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
-import App.View.Util.Axes (AxisTicks(..), TickLabels(..), Ticks(..), create_xAxis, create_yAxis, decimalPlaces, tickCount, tickValues)
+import App.View.Util.Axes (TickLabels(..), Ticks(..), create_xAxis, create_yAxis, d3Ticks)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
 import App.View.Util.Scale (Interval, Scales(..), domain)
 import Bind ((↦), (⟼))
-import Control.Alt ((<|>))
 
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
 import Data.Array (concat, elemIndex, mapWithIndex)
@@ -147,8 +146,6 @@ instance Viewable LineChart Unit where
       caption_class = "title-text"
       caption_height = textHeight caption_class (fst caption) * 2
       Dimensions { height, width } = size <#> fst
-      AxisTicks xTicks = ticks.x
-      AxisTicks yTicks = ticks.y
 
       axisWidth :: D3.Selection -> Effect (Coord Int)
       axisWidth parent' = do
@@ -161,21 +158,14 @@ instance Viewable LineChart Unit where
 
       createAxes :: Dimensions Int -> D3.Selection -> Effect (Coord D3.Selection)
       createAxes range parent' = do
-         let TickLabels { x: xLabels, y: yLabels } = tickLabels
-         x <- create_xAxis parent' (to range)
-            { count: tickCount xTicks.spacing (toNumber (length (nub points.x)))
-            , values: tickValues xTicks.spacing domains.x
-            , places: decimalPlaces xTicks.format
-            }
-            (unwrap range).height
-            xLabels
-         y <- create_yAxis parent' (to range)
-            { count: tickCount yTicks.spacing 3.0
-            , values: tickValues yTicks.spacing domains.y
-            , places: decimalPlaces yTicks.format <|> Just 1
-            }
-            yLabels
+         x <- create_xAxis parent' (to range) xTicks height xLabels
+         y <- create_yAxis parent' (to range) yTicks yLabels
          pure { x, y }
+         where
+         TickLabels { x: xLabels, y: yLabels } = tickLabels
+         Dimensions { height } = range
+         xTicks = d3Ticks ticks.x domains.x (toNumber (length (nub points.x))) Nothing
+         yTicks = d3Ticks ticks.y domains.y 3.0 (Just 1)
 
       -- Nested viewport clipping data outside the axes, with room for a selected point at the edge; overflow
       -- set inline to override website styles

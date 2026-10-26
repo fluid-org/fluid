@@ -7,6 +7,7 @@ import App.View.Util.D3 (Coord, ElementType(..), create, rotate, selectAll, setA
 import App.View.Util.D3 as D3
 import App.View.Util.Scale (Interval)
 import Bind ((↦))
+import Control.Alt ((<|>))
 import Data.Array (range)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
@@ -56,6 +57,10 @@ tickCount _ default = default
 decimalPlaces :: LabelFormat -> Maybe Int
 decimalPlaces (Decimals places) = Just places
 decimalPlaces AutoFormat = Nothing
+
+d3Ticks :: AxisTicks -> Interval -> Number -> Maybe Int -> D3.Ticks
+d3Ticks (AxisTicks { spacing, format }) dom count places =
+   { count: tickCount spacing count, values: tickValues spacing dom, places: decimalPlaces format <|> places }
 
 create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> D3.Ticks -> Int -> Orientation -> Effect D3.Selection
 create_xAxis parent' to ticks y =
