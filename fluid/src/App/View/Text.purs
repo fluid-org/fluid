@@ -2,7 +2,7 @@ module App.View.Text where
 
 import Prelude
 
-import App.Util (Attrs, Selectable, contents, isPersistent, isPrimary, isSecondary, isTransient, sel, selectionEventData')
+import App.Util (Attrs, Selectable, isPersistent, isPrimary, isSecondary, isTransient, sel, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
 import App.View.Util.D3 (create, setStyles, setText)
@@ -11,6 +11,7 @@ import Bind ((↦))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Tuple (uncurry)
 import Effect (Effect)
+import Primitive (dropAnnot)
 
 class Textual a where
    getText :: a -> Selectable String
@@ -23,7 +24,7 @@ instance Viewable Text Unit where
    createElement :: Unit -> Text -> D3.Selection -> Effect D3.Selection
    createElement _ text parent = do
       rootElement <- parent # create D3.Span []
-      rootElement # setText (contents $ getText text)
+      rootElement # setText (dropAnnot $ getText text)
 
    setSelection :: ObjArg -> Unit -> Text -> Select -> D3.Selection -> Effect Unit
    setSelection _ _ text redraw rootElement = do

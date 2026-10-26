@@ -2,7 +2,7 @@ module App.View.StackedBar where
 
 import Prelude
 
-import App.Util (Dimensions, Selectable, classes, contents)
+import App.Util (Dimensions, Selectable, classes)
 import App.Util.Selector (ObjArg)
 import App.View.Segment (Scales, Segment(..), SegmentContext)
 import App.View.Util (class Viewable, Select, createElement, setSelection)
@@ -17,6 +17,7 @@ import Data.Newtype (class Newtype)
 import Types.Defs (cStackedBar, f_segments)
 import Effect (Effect)
 import Util ((!))
+import Primitive (dropAnnot)
 
 newtype StackedBar = StackedBar
    { x :: Selectable String
@@ -30,7 +31,7 @@ type StackedBarContext =
    }
 
 barHeight :: StackedBar -> Number
-barHeight (StackedBar bar) = sum (map (\(Segment seg) -> contents seg.z) bar.segments)
+barHeight (StackedBar bar) = sum (map (\(Segment seg) -> dropAnnot seg.z) bar.segments)
 
 instance Viewable StackedBar StackedBarContext where
    isLeaf = const false
@@ -55,10 +56,10 @@ instance Viewable StackedBar StackedBarContext where
 segmentContext :: StackedBarContext -> StackedBar -> Int -> SegmentContext
 segmentContext { interior, scales, strokeWidth } (StackedBar { x, segments }) =
    \y_index ->
-      { interior, scales, strokeWidth, x: contents x, y: ys ! y_index, y_index }
+      { interior, scales, strokeWidth, x: dropAnnot x, y: ys ! y_index, y_index }
    where
    ys :: Array Number
-   ys = init (cons' 0.0 (scanl (+) 0.0 (segments # toArray <#> \(Segment seg) -> contents seg.z)))
+   ys = init (cons' 0.0 (scanl (+) 0.0 (segments # toArray <#> \(Segment seg) -> dropAnnot seg.z)))
 
 -- ======================
 -- boilerplate

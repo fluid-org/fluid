@@ -2,7 +2,7 @@ module App.View.ScatterPlot where
 
 import Prelude
 
-import App.Util (Selectable, classes, contents, isPrimary, isSecondary, selClasses, selClassesFor, selectionEventData')
+import App.Util (Selectable, classes, isPrimary, isSecondary, selClasses, selClassesFor, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, registerMouseListeners)
 import App.View.Util.Axes (AxisLabels(..))
@@ -23,6 +23,7 @@ import Effect (Effect, foreachE)
 import Foreign.Object (fromFoldable)
 import Lattice ((∨))
 import Util (Endo, type (×), (!))
+import Primitive (dropAnnot)
 
 newtype ScatterPlot = ScatterPlot
    { caption :: Selectable String
@@ -42,7 +43,7 @@ instance Viewable ScatterPlot Unit where
 
    createElement _ (ScatterPlot { caption, points, labels: AxisLabels labels }) parent = do
       let
-         vals = points <#> \(Point { x, y }) -> { x: contents x, y: contents y }
+         vals = points <#> \(Point { x, y }) -> { x: dropAnnot x, y: dropAnnot y }
          xMax = ceil (fromMaybe 0.0 (maximum (vals <#> _.x)))
          xMin = ceil (fromMaybe 0.0 (minimum (vals <#> _.x)))
          yMax = ceil (fromMaybe 0.0 (maximum (vals <#> _.y)))
@@ -87,8 +88,8 @@ instance Viewable ScatterPlot Unit where
       forWithIndex_ (range 0 (length points - 1)) \i _ -> do
          let
             Point { x, y } = points ! i
-            cx = scales.x (contents x)
-            cy = scales.y (contents y)
+            cx = scales.x (dropAnnot x)
+            cy = scales.y (dropAnnot y)
          circle <- pointsGrp # create Circle
             [ classes [ "scatterplot-point" ]
             , "cx" ⟼ cx
@@ -105,7 +106,7 @@ instance Viewable ScatterPlot Unit where
               , "dominant-baseline" ↦ "bottom"
               , "text-anchor" ↦ "middle"
               ]
-         >>= setText (contents caption)
+         >>= setText (dropAnnot caption)
 
       pure rootElement
 
