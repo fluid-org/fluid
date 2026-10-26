@@ -43,8 +43,8 @@ unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
 unpack' toFrom = unpack toFrom >>> either error identity
 
-dropAnnot :: forall d a. d × a -> d
-dropAnnot = fst
+dropα :: forall d a. d × a -> d
+dropα = fst
 
 pack :: forall d a. ToFrom d a -> d × a -> Val a
 pack toFrom (v × α) = Val α (toFrom.pack v)
@@ -306,7 +306,7 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
 
    eqMatrix :: MatrixRep a -> MatrixRep a -> MayFail (Boolean × Set a)
    eqMatrix (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
-      if dropAnnot (unpack' int i) == dropAnnot (unpack' int i') && dropAnnot (unpack' int j) == dropAnnot (unpack' int j') then eqElems αs (elems vss) (elems vss')
+      if dropα (unpack' int i) == dropα (unpack' int i') && dropα (unpack' int j) == dropα (unpack' int j') then eqElems αs (elems vss) (elems vss')
       else pure (false × αs)
       where
       αs = both ∪ Set.fromFoldable (root <$> [ i, j, i', j' ])

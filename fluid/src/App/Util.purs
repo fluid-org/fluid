@@ -24,7 +24,7 @@ import Effect.Class.Console (log)
 import Foreign.Object (Object, empty, fromFoldable, union)
 import Lattice (class BoundedJoinSemilattice, class BoundedMeetSemilattice, class JoinSemilattice, class MeetSemilattice, 𝔹, bot, neg, (∧), (∨))
 import Pretty (prettyP)
-import Primitive (as, dropAnnot, intOrNumber, unpack')
+import Primitive (as, dropα, intOrNumber, unpack')
 import Primitive as P
 import Test.Util.Debug (tracing)
 import Unsafe.Coerce (unsafeCoerce)
@@ -166,7 +166,7 @@ unpackIntOrNumber v = first as (unpack' intOrNumber v)
 
 -- Assumes fields are all of primitive type.
 dict :: forall a. (Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> a) -> Val (SelStates 𝕊) -> a
-dict toDict v = toDict (dropAnnot (unpack' P.dict v))
+dict toDict v = toDict (dropα (unpack' P.dict v))
 
 runAffs_ :: forall a. (a -> Effect Unit) -> Array (Aff a) -> Effect Unit
 runAffs_ f as = flip runAff_ (sequence as) case _ of

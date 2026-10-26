@@ -13,7 +13,7 @@ import Data.Newtype (class Newtype)
 import Data.Tuple (uncurry)
 import Effect (Effect)
 import Util (Endo)
-import Primitive (dropAnnot)
+import Primitive (dropα)
 
 newtype Segment = Segment
    { y :: Selectable String -- overloading of y here and in SegmentContext needs fixing
@@ -39,8 +39,8 @@ instance Viewable Segment SegmentContext where
       parent
          # create Rect
               [ "x" ⟼ scales.x x
-              , "y" ⟼ scales.y (dropAnnot z + y)
-              , "height" ⟼ max (toNumber (height - strokeWidth / 2) - scales.y (dropAnnot z)) 0.0
+              , "y" ⟼ scales.y (dropα z + y)
+              , "height" ⟼ max (toNumber (height - strokeWidth / 2) - scales.y (dropα z)) 0.0
               , "stroke-width" ⟼ strokeWidth
               , "width" ⟼ bandwidth scales.x
               , classes [ "bar" ]

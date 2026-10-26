@@ -23,7 +23,7 @@ import Effect (Effect, foreachE)
 import Foreign.Object (fromFoldable)
 import Lattice ((∨))
 import Util (Endo, type (×), (!))
-import Primitive (dropAnnot)
+import Primitive (dropα)
 
 newtype ScatterPlot = ScatterPlot
    { caption :: Selectable String
@@ -43,7 +43,7 @@ instance Viewable ScatterPlot Unit where
 
    createElement _ (ScatterPlot { caption, points, labels: AxisLabels labels }) parent = do
       let
-         vals = points <#> \(Point { x, y }) -> { x: dropAnnot x, y: dropAnnot y }
+         vals = points <#> \(Point { x, y }) -> { x: dropα x, y: dropα y }
          xMax = ceil (fromMaybe 0.0 (maximum (vals <#> _.x)))
          xMin = ceil (fromMaybe 0.0 (minimum (vals <#> _.x)))
          yMax = ceil (fromMaybe 0.0 (maximum (vals <#> _.y)))
@@ -88,8 +88,8 @@ instance Viewable ScatterPlot Unit where
       forWithIndex_ (range 0 (length points - 1)) \i _ -> do
          let
             Point { x, y } = points ! i
-            cx = scales.x (dropAnnot x)
-            cy = scales.y (dropAnnot y)
+            cx = scales.x (dropα x)
+            cy = scales.y (dropα y)
          circle <- pointsGrp # create Circle
             [ classes [ "scatterplot-point" ]
             , "cx" ⟼ cx
@@ -106,7 +106,7 @@ instance Viewable ScatterPlot Unit where
               , "dominant-baseline" ↦ "bottom"
               , "text-anchor" ↦ "middle"
               ]
-         >>= setText (dropAnnot caption)
+         >>= setText (dropα caption)
 
       pure rootElement
 

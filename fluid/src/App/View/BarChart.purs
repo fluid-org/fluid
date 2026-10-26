@@ -24,7 +24,7 @@ import Data.Number (ceil)
 import Data.Semigroup.Foldable (maximum)
 import Effect (Effect, foreachE)
 import Util ((!))
-import Primitive (dropAnnot)
+import Primitive (dropα)
 
 newtype BarChart = BarChart
    { caption :: Selectable String
@@ -65,9 +65,9 @@ instance Viewable BarChart Unit where
               , "dominant-baseline" ↦ "central"
               , "text-anchor" ↦ "middle"
               ]
-         >>= setText (dropAnnot caption)
+         >>= setText (dropα caption)
 
-      when (dropAnnot legend) $
+      when (dropα legend) $
          createLegend props.interior g
       pure g
 
@@ -149,9 +149,9 @@ barChartProps (BarChart { caption, size, stackedBars }) =
    }
    where
 
-   xs = stackedBars <#> \(StackedBar bar) -> dropAnnot bar.x
-   ys = (unwrap $ head stackedBars).segments <#> \(Segment seg) -> dropAnnot seg.y -- TODO: enforce uniformity across bars
-   Dimensions { width, height } = size <#> dropAnnot
+   xs = stackedBars <#> \(StackedBar bar) -> dropα bar.x
+   ys = (unwrap $ head stackedBars).segments <#> \(Segment seg) -> dropα seg.y -- TODO: enforce uniformity across bars
+   Dimensions { width, height } = size <#> dropα
 
    margin :: Margin
    -- previously some right margin hack to accommodate legend
@@ -166,11 +166,11 @@ barChartProps (BarChart { caption, size, stackedBars }) =
    scales = to interior
 
    caption_class = "title-text"
-   caption_height = textHeight caption_class (dropAnnot caption) * 2
+   caption_height = textHeight caption_class (dropα caption) * 2
 
    to :: Dimensions Int -> Scales
    to (Dimensions { width, height }) =
-      { x: scaleBand width $ (\(StackedBar bar) -> dropAnnot bar.x) <$> toArray stackedBars
+      { x: scaleBand width $ (\(StackedBar bar) -> dropα bar.x) <$> toArray stackedBars
       , y: scaleLinear { min: 0.0, max: y_max } { min: toNumber height, max: 0.0 }
       }
 

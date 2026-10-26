@@ -11,7 +11,7 @@ import Bind ((↦))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Tuple (uncurry)
 import Effect (Effect)
-import Primitive (dropAnnot)
+import Primitive (dropα)
 
 class Textual a where
    getText :: a -> Selectable String
@@ -24,7 +24,7 @@ instance Viewable Text Unit where
    createElement :: Unit -> Text -> D3.Selection -> Effect D3.Selection
    createElement _ text parent = do
       rootElement <- parent # create D3.Span []
-      rootElement # setText (dropAnnot $ getText text)
+      rootElement # setText (dropα $ getText text)
 
    setSelection :: ObjArg -> Unit -> Text -> Select -> D3.Selection -> Effect Unit
    setSelection _ _ text redraw rootElement = do

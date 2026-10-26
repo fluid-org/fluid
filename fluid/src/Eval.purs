@@ -36,7 +36,7 @@ import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binop, binopRel, boolean, dropAnnot, int, string, typeMismatch, unop, unopRel, unpack, unpack')
+import Primitive (binop, binopRel, boolean, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
 import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
@@ -204,7 +204,7 @@ eval inputs = case _ of
          V.Tuple _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
-            unless (0 <= i && i < dropAnnot (unpack' int m) && 0 <= j && j < dropAnnot (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
+            unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
             subscript v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
