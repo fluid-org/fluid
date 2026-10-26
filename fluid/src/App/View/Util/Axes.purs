@@ -2,7 +2,7 @@ module App.View.Util.Axes where
 
 import Prelude
 
-import App.Util (classes)
+import App.Util (Attrs, classes)
 import App.View.Util.D3 (Coord, ElementType(..), create, rotate, selectAll, setAttrs, setStyles, translate, xAxis, yAxis)
 import App.View.Util.D3 as D3
 import App.View.Util.Scale (Interval)
@@ -13,7 +13,7 @@ import Data.Foldable (for_)
 import Data.Int (ceil, floor, toNumber)
 import Data.List (List(..))
 import Data.Maybe (Maybe(..))
-import Data.Nullable (toNullable)
+import Data.Nullable (Nullable, toNullable)
 import Types.Defs (cDefault, cRotated)
 import Effect (Effect)
 import Primitive (ToFrom, typeMismatch)
@@ -58,24 +58,28 @@ decimalPlaces (Decimals places) = Just places
 decimalPlaces AutoFormat = Nothing
 
 create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> D3.Ticks -> Int -> Orientation -> Effect D3.Selection
-create_xAxis parent' to { count, values, places } y orient = do
-   x <- xAxis to count (toNullable values) (toNullable places) =<<
-      (parent' # create G [ classes [ "x-axis" ], translate { x: 0, y } ])
-   when (orient == Rotated) do
-      labels <- x # selectAll "text"
-      for_ labels $
-         setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ "start" ]
-   pure x
+create_xAxis parent' to ticks y =
+   createAxis parent' (xAxis to) [ classes [ "x-axis" ], translate { x: 0, y } ] "start" ticks
 
 create_yAxis :: forall a r. D3.Selection -> { y :: a -> Number | r } -> D3.Ticks -> Orientation -> Effect D3.Selection
-create_yAxis parent' to { count, values, places } orient = do
-   y <- yAxis to count (toNullable values) (toNullable places) =<<
-      (parent' # create G [ classes [ "y-axis" ] ])
+create_yAxis parent' to ticks =
+   createAxis parent' (yAxis to) [ classes [ "y-axis" ] ] "end" ticks
+
+createAxis
+   :: D3.Selection
+   -> (Number -> Nullable (Array Number) -> Nullable Int -> D3.Selection -> Effect D3.Selection)
+   -> Attrs
+   -> String
+   -> D3.Ticks
+   -> Orientation
+   -> Effect D3.Selection
+createAxis parent' axis attrs anchor { count, values, places } orient = do
+   sel <- axis count (toNullable values) (toNullable places) =<< (parent' # create G attrs)
    when (orient == Rotated) do
-      labels <- y # selectAll "text"
+      labels <- sel # selectAll "text"
       for_ labels $
-         setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ "end" ]
-   pure y
+         setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ anchor ]
+   pure sel
 
 -- ======================
 -- boilerplate
