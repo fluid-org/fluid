@@ -31,7 +31,7 @@ import Link (Link(..))
 import Literal (Literal(..))
 import Pretty (prettyP)
 import Primitive (boolean, int, string, typeError)
-import Primitive (unpack') as P
+import Primitive (unpack', unpackVal) as P
 import Util (type (×), absurd, error, head, nonEmpty, (×))
 import Util.Map (mapWithKey)
 import Val (BaseVal(..), DictRep(..), Val(..), ValWithDoc(..), attr)
@@ -161,16 +161,16 @@ instance Reflect (Point Number) where
 instance Reflect AxisLabels where
    reflect _ v@(Val _ u) = case u of
       Obj c _ | c == cAxisLabels -> AxisLabels
-         { x: fst (P.unpack' string (attr f_x v))
-         , y: fst (P.unpack' string (attr f_y v))
+         { x: P.unpackVal string (attr f_x v)
+         , y: P.unpackVal string (attr f_y v)
          }
       _ -> typeError u "AxisLabels"
 
 instance Reflect TickLabels where
    reflect _ v@(Val _ u) = case u of
       Obj c _ | c == cTickLabels -> TickLabels
-         { x: fst (P.unpack' orientation (attr f_x v))
-         , y: fst (P.unpack' orientation (attr f_y v))
+         { x: P.unpackVal orientation (attr f_x v)
+         , y: P.unpackVal orientation (attr f_y v)
          }
       _ -> typeError u "TickLabels"
 
@@ -204,7 +204,7 @@ instance Reflect TickSpacing where
    reflect _ v@(Val _ u) = case u of
       Obj c _
          | c == cAutoTicks -> AutoTicks
-         | c == cCount -> Count (fst (P.unpack' int (attr f_n v)))
+         | c == cCount -> Count (P.unpackVal int (attr f_n v))
          | c == cEvery ->
               let
                  step = fst (unpackIntOrNumber (attr f_step v))
@@ -216,7 +216,7 @@ instance Reflect LabelFormat where
    reflect _ v@(Val _ u) = case u of
       Obj c _
          | c == cAutoFormat -> AutoFormat
-         | c == cDecimals -> Decimals (fst (P.unpack' int (attr f_places v)))
+         | c == cDecimals -> Decimals (P.unpackVal int (attr f_places v))
       _ -> typeError u "LabelFormat"
 
 instance Reflect Segment where
