@@ -6,6 +6,7 @@ import App.Util (Attrs, Dimensions)
 import App.View.Util.Scale (Interval)
 import Bind (Bind, (↦), (⟼))
 import Data.Generic.Rep (class Generic)
+import Data.Maybe (Maybe)
 import Data.Newtype (unwrap)
 import Data.Nullable (Nullable)
 import Data.Show.Generic (genericShow)
@@ -26,6 +27,12 @@ type Margin =
 type Coord a =
    { x :: a
    , y :: a
+   }
+
+type Ticks =
+   { count :: Number -- approximate, for d3 to choose round values
+   , values :: Maybe (Array Number) -- exact positions, overriding count
+   , places :: Maybe Int -- decimal places of labels, else JavaScript's default number to string conversion
    }
 
 textWidth :: String -> String -> Int

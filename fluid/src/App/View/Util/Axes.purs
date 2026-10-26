@@ -9,7 +9,6 @@ import Bind ((↦))
 import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.List (List(..))
-import Data.Maybe (Maybe)
 import Data.Nullable (toNullable)
 import Types.Defs (cDefault, cRotated)
 import Effect (Effect)
@@ -39,13 +38,7 @@ orientation =
         v -> Left (typeMismatch v "Orientation")
    }
 
-type TickSpec =
-   { count :: Number -- approximate, for d3 to choose round values
-   , values :: Maybe (Array Number) -- exact positions, overriding count
-   , places :: Maybe Int -- decimal places of labels, else JavaScript's default number to string conversion
-   }
-
-create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> TickSpec -> Int -> Orientation -> Effect D3.Selection
+create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> D3.Ticks -> Int -> Orientation -> Effect D3.Selection
 create_xAxis parent' to { count, values, places } y orient = do
    x <- xAxis to count (toNullable values) (toNullable places) =<<
       (parent' # create G [ classes [ "x-axis" ], translate { x: 0, y } ])
@@ -55,7 +48,7 @@ create_xAxis parent' to { count, values, places } y orient = do
          setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ "start" ]
    pure x
 
-create_yAxis :: forall a r. D3.Selection -> { y :: a -> Number | r } -> TickSpec -> Orientation -> Effect D3.Selection
+create_yAxis :: forall a r. D3.Selection -> { y :: a -> Number | r } -> D3.Ticks -> Orientation -> Effect D3.Selection
 create_yAxis parent' to { count, values, places } orient = do
    y <- yAxis to count (toNullable values) (toNullable places) =<<
       (parent' # create G [ classes [ "y-axis" ] ])
