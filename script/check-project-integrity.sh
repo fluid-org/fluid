@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
-ORG="${1:?organisation}"
-REPO="${2:?repository}"
-PROJECT="${3:?project number}"
-ACTIVE="${4:?comma-separated Statuses whose issues must have a milestone}"
+if [ $# -ne 4 ]; then
+  echo "Usage: $0 <organisation> <repository> <project number> <comma-separated Statuses whose issues must have a milestone>" >&2
+  exit 1
+fi
+
+ORG="$1"
+REPO="$2"
+PROJECT="$3"
+ACTIVE="$4"
 ERRORS=0
 
 echo "Checking project integrity for $ORG/$REPO (project $PROJECT)..."
