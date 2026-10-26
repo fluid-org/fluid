@@ -43,7 +43,6 @@ unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
 unpack' toFrom = unpack toFrom >>> either error identity
 
--- Discard annotation, and with it any information it would show in the user interface
 dropAnnot :: forall d a. d × a -> d
 dropAnnot = fst
 
