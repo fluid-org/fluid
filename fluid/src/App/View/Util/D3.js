@@ -87,7 +87,6 @@ export function line (to) {
    }
 }
 
-// Axis with approximate tick count or exact tick values, and labels to given decimal places
 function axis (d3Axis) {
    return count => {
       return values => {
