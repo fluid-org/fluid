@@ -2,14 +2,14 @@ module App.View.LineChart where
 
 import Prelude hiding (absurd)
 
-import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, colorShade, contents, isPersistent, isPrimary, isSecondary, isTransient, selectionEventData')
+import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, colorShade, isPersistent, isPrimary, isSecondary, isTransient, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
-import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
+import App.View.Util.Axes (TickLabels(..), Ticks(..), create_xAxis, create_yAxis, d3Ticks)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
-import App.View.Util.Scale (Scales(..), domain)
+import App.View.Util.Scale (Interval, Scales(..), domain)
 import Bind ((↦), (⟼))
 
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
@@ -27,9 +27,10 @@ import Util (type (×), Endo, definitely', init, nonEmpty, tail, zipWith, (!), (
 
 newtype LineChart = LineChart
    { size :: Dimensions (Selectable Int)
-   , tickLabels :: Point Orientation
+   , tickLabels :: TickLabels
    , caption :: Selectable String
    , scales :: Scales
+   , ticks :: Ticks
    , plots :: Array LinePlot
    }
 
@@ -105,7 +106,7 @@ instance Viewable LineChart Unit where
          listElement j >>> arg cLinePlot f_points >>> listElement i >>> arg cLineChart f_plots
 
    createElement :: Unit -> LineChart -> D3.Selection -> Effect D3.Selection
-   createElement _ (LineChart { size, tickLabels, caption, scales: Scales scales, plots }) parent = do
+   createElement _ (LineChart { size, tickLabels, caption, scales: Scales scales, ticks: Ticks ticks, plots }) parent = do
       svg <- parent # create SVG [ "width" ⟼ width, "height" ⟼ height ]
       { x: xAxisHeight, y: yAxisWidth } <- axisWidth svg
 
@@ -157,10 +158,14 @@ instance Viewable LineChart Unit where
 
       createAxes :: Dimensions Int -> D3.Selection -> Effect (Coord D3.Selection)
       createAxes range parent' = do
-         let Point { x: xLabels, y: yLabels } = tickLabels
-         x <- create_xAxis parent' (to range) (nub points.x) (unwrap range).height (contents xLabels)
-         y <- create_yAxis parent' (to range) 3.0 1 (contents yLabels)
+         x <- create_xAxis parent' (to range) xTicks height xLabels
+         y <- create_yAxis parent' (to range) yTicks yLabels
          pure { x, y }
+         where
+         TickLabels { x: xLabels, y: yLabels } = tickLabels
+         Dimensions { height } = range
+         xTicks = d3Ticks ticks.x domains.x (toNumber (length (nub points.x))) Nothing
+         yTicks = d3Ticks ticks.y domains.y 3.0 (Just 1)
 
       -- Nested viewport clipping data outside the axes, with room for a selected point at the edge; overflow
       -- set inline to override website styles
@@ -247,9 +252,12 @@ instance Viewable LineChart Unit where
 
       to :: Dimensions Int -> Coord (Endo Number)
       to (Dimensions range) =
-         { x: scaleLinear (domain scales.x (extent points.x)) { min: 0.0, max: toNumber range.width }
-         , y: scaleLinear (domain scales.y (extent points.y)) { min: toNumber range.height, max: 0.0 }
+         { x: scaleLinear domains.x { min: 0.0, max: toNumber range.width }
+         , y: scaleLinear domains.y { min: toNumber range.height, max: 0.0 }
          }
+
+      domains :: Coord Interval
+      domains = { x: domain scales.x (extent points.x), y: domain scales.y (extent points.y) }
          where
          extent xs = { min: minimum xs, max: maximum xs }
 

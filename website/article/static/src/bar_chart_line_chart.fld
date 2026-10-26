@@ -1,6 +1,6 @@
 from renewables import Renewable, renewables
 
-from fluid.view import BarChart, Dimensions, LineChart, MultiView, LinePlot, Point, Segment, StackedBar, TickLabels, Default, Scales, Auto, FromZero
+from fluid.view import BarChart, Dimensions, LineChart, MultiView, LinePlot, Point, Segment, StackedBar, TickLabels, Default, Scales, Auto, FromZero, default_ticks
 from fluid.prelude import fsum, zip
 
 def totalFor(c: str, rows: list[Renewable]) -> float:
@@ -29,6 +29,7 @@ MultiView([
     size=Dimensions(width=330, height=285),
     caption="Renewables output of USA relative to China",
     scales=Scales(x=Auto(), y=FromZero()),
+    ticks=default_ticks,
     plots=[
      LinePlot(
        name=energyType,

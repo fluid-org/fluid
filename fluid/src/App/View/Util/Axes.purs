@@ -2,14 +2,19 @@ module App.View.Util.Axes where
 
 import Prelude
 
-import App.Util (classes)
-import App.View.Util.D3 (ElementType(..), create, rotate, selectAll, setAttrs, setStyles, translate, xAxis, yAxis)
+import App.Util (Attrs, classes)
+import App.View.Util.D3 (Coord, ElementType(..), create, rotate, selectAll, setAttrs, setStyles, translate, xAxis, yAxis)
 import App.View.Util.D3 as D3
+import App.View.Util.Scale (Interval)
 import Bind ((↦))
-import Data.Array.NonEmpty (NonEmptyArray)
+import Control.Alt ((<|>))
+import Data.Array (range)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
+import Data.Int (ceil, floor, toNumber)
 import Data.List (List(..))
+import Data.Maybe (Maybe(..))
+import Data.Nullable (Nullable, toNullable)
 import Types.Defs (cDefault, cRotated)
 import Effect (Effect)
 import Primitive (ToFrom, typeMismatch)
@@ -18,6 +23,68 @@ import Val (BaseVal(..))
 data Orientation
    = Default
    | Rotated
+
+newtype TickLabels = TickLabels (Coord Orientation)
+
+newtype AxisLabels = AxisLabels (Coord String)
+
+data TickSpacing
+   = AutoTicks
+   | Count Int
+   | Every Number
+
+data LabelFormat
+   = AutoFormat
+   | Decimals Int
+
+newtype AxisTicks = AxisTicks { spacing :: TickSpacing, format :: LabelFormat }
+
+newtype Ticks = Ticks { x :: AxisTicks, y :: AxisTicks }
+
+tickValues :: TickSpacing -> Interval -> Maybe (Array Number)
+tickValues (Every step) { min, max } = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
+   where
+   first = ceil (min / step - tolerance)
+   last = floor (max / step + tolerance)
+   -- Round-off in quotient
+   tolerance = 1e-9
+tickValues _ _ = Nothing
+
+tickCount :: TickSpacing -> Number -> Number
+tickCount (Count n) _ = toNumber n
+tickCount _ default = default
+
+decimalPlaces :: LabelFormat -> Maybe Int
+decimalPlaces (Decimals places) = Just places
+decimalPlaces AutoFormat = Nothing
+
+d3Ticks :: AxisTicks -> Interval -> Number -> Maybe Int -> D3.Ticks
+d3Ticks (AxisTicks { spacing, format }) dom count places =
+   { count: tickCount spacing count, values: tickValues spacing dom, places: decimalPlaces format <|> places }
+
+create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> D3.Ticks -> Int -> Orientation -> Effect D3.Selection
+create_xAxis parent' to ticks y =
+   createAxis parent' (xAxis to) [ classes [ "x-axis" ], translate { x: 0, y } ] "start" ticks
+
+create_yAxis :: forall a r. D3.Selection -> { y :: a -> Number | r } -> D3.Ticks -> Orientation -> Effect D3.Selection
+create_yAxis parent' to ticks =
+   createAxis parent' (yAxis to) [ classes [ "y-axis" ] ] "end" ticks
+
+createAxis
+   :: D3.Selection
+   -> (Number -> Nullable (Array Number) -> Nullable Int -> D3.Selection -> Effect D3.Selection)
+   -> Attrs
+   -> String
+   -> D3.Ticks
+   -> Orientation
+   -> Effect D3.Selection
+createAxis parent' axis attrs anchor { count, values, places } orient = do
+   sel <- axis count (toNullable values) (toNullable places) =<< (parent' # create G attrs)
+   when (orient == Rotated) do
+      labels <- sel # selectAll "text"
+      for_ labels $
+         setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ anchor ]
+   pure sel
 
 -- ======================
 -- boilerplate
@@ -37,24 +104,3 @@ orientation =
            | c == cRotated -> Right Rotated
         v -> Left (typeMismatch v "Orientation")
    }
-
-create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> NonEmptyArray a -> Int -> Orientation -> Effect D3.Selection
-create_xAxis parent' to ticks y orient = do
-   x <- xAxis to ticks =<<
-      (parent' # create G [ classes [ "x-axis" ], translate { x: 0, y } ])
-   when (orient == Rotated) do
-      labels <- x # selectAll "text"
-      for_ labels $
-         setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ "start" ]
-   pure x
-
--- numTicks is a "hint" only
-create_yAxis :: forall a r. D3.Selection -> { y :: a -> Number | r } -> Number -> Int -> Orientation -> Effect D3.Selection
-create_yAxis parent' to nTicks decPlaces orient = do
-   y <- yAxis to nTicks decPlaces =<<
-      (parent' # create G [ classes [ "y-axis" ] ])
-   when (orient == Rotated) do
-      labels <- y # selectAll "text"
-      for_ labels $
-         setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ "end" ]
-   pure y

@@ -18,6 +18,25 @@ export const main = async () => {
       }
    ])
 
+   await testURL("ticks", [
+      async page => {
+         const axis = (n, a) => `#fig-output > svg:nth-of-type(${n}) g.${a}-axis > g.tick`
+         await waitFor(page, axis(3, "y"))
+         const checkTicks = async (n, a, labels) => {
+            await checkCount(page, axis(n, a), labels.length)
+            for (const [k, label] of labels.entries())
+               await checkTextContent(page, `${axis(n, a)}:nth-of-type(${k + 1}) text`, label)
+         }
+         const years = ["1960", "1970", "1980", "1990", "2000", "2010", "2020"]
+         await checkTicks(1, "x", years)
+         await checkTicks(1, "y", ["300", "325", "350", "375", "400", "425", "450"])
+         await checkTicks(2, "x", ["2024.00", "2024.25", "2024.50", "2024.75"])
+         await checkTicks(2, "y", ["0.75", "1.00", "1.25"])
+         await checkTicks(3, "x", years)
+         await checkTicks(3, "y", ["320", "340", "360", "380", "400", "420"])
+      }
+   ])
+
    // Convolution: 5×5 output matrix
    const rows = 5, cols = 5
    await testURL("convolution", [

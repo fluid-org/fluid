@@ -87,26 +87,27 @@ export function line (to) {
    }
 }
 
-export function xAxis (to) {
-   return ticks => {
-      return parent => {
-         return () => {
-            return parent.call(d3.axisBottom(to.x).tickSizeOuter(0).ticks(ticks.length).tickFormat(d => d))
+function axis (d3Axis) {
+   return count => {
+      return values => {
+         return places => {
+            return parent => {
+               return () => {
+                  const ticked = values === null ? d3Axis.ticks(count) : d3Axis.tickValues(values)
+                  return parent.call(ticked.tickSizeOuter(0).tickFormat(places === null ? d => d : d3.format(`.${places}f`)))
+               }
+            }
          }
       }
    }
 }
 
+export function xAxis (to) {
+   return axis(d3.axisBottom(to.x))
+}
+
 export function yAxis (to) {
-   return nTicks => {
-      return decPlaces => {
-        return parent => {
-          return () => {
-              return parent.call(d3.axisLeft(to.y).tickSizeOuter(0).ticks(nTicks).tickFormat(d3.format(`.${decPlaces}f`)))
-          }
-        }
-      }
-   }
+   return axis(d3.axisLeft(to.y))
 }
 
 export function numericXAxis (scale) {

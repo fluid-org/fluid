@@ -35,6 +35,46 @@ class Scales:
   y: Scale
 
 @dataclass
+class TickSpacing:
+  pass
+
+@dataclass
+class AutoTicks(TickSpacing):
+  pass
+
+@dataclass
+class Count(TickSpacing):
+  n: int
+
+@dataclass
+class Every(TickSpacing):
+  step: float
+
+@dataclass
+class LabelFormat:
+  pass
+
+@dataclass
+class AutoFormat(LabelFormat):
+  pass
+
+@dataclass
+class Decimals(LabelFormat):
+  places: int
+
+@dataclass
+class AxisTicks:
+  spacing: TickSpacing
+  format: LabelFormat
+
+@dataclass
+class Ticks:
+  x: AxisTicks
+  y: AxisTicks
+
+default_ticks: Ticks = Ticks(x=AxisTicks(AutoTicks(), AutoFormat()), y=AxisTicks(AutoTicks(), AutoFormat()))
+
+@dataclass
 class Dimensions:
   width: int
   height: int
@@ -87,6 +127,7 @@ class LineChart(View):
   tickLabels: TickLabels
   caption: str
   scales: Scales
+  ticks: Ticks
   plots: list[LinePlot]
 
 @dataclass

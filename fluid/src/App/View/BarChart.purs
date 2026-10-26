@@ -2,15 +2,14 @@ module App.View.BarChart where
 
 import Prelude hiding (absurd)
 
-import App.Util (Dimensions(..), Selectable, classes, contents)
+import App.Util (Dimensions(..), Selectable, classes)
 import App.Util.Selector (ObjArg, listElement)
 import App.View.Segment (Segment(..), Scales, indexCol)
 import App.View.StackedBar (StackedBar(..), StackedBarContext, barHeight)
 import App.View.Util (class Viewable, Select, createElement, setSelection)
-import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
+import App.View.Util.Axes (TickLabels(..), create_xAxis, create_yAxis)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, addHatchPattern, create, scaleBand, scaleLinear, selectAll, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 as D3
-import App.View.Util.Point (Point(..))
 import Bind ((↦), (⟼))
 
 import Types.Defs (cBarChart, f_stackedBars)
@@ -19,16 +18,18 @@ import Data.Array.NonEmpty (NonEmptyArray, head, toArray)
 import Data.Foldable (length)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int (toNumber)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Number (ceil)
 import Data.Semigroup.Foldable (maximum)
 import Effect (Effect, foreachE)
 import Util ((!))
+import Primitive (dropα)
 
 newtype BarChart = BarChart
    { caption :: Selectable String
    , size :: Dimensions (Selectable Int)
-   , tickLabels :: Point Orientation
+   , tickLabels :: TickLabels
    , stackedBars :: NonEmptyArray StackedBar
    , legend :: Selectable Boolean
    }
@@ -64,9 +65,9 @@ instance Viewable BarChart Unit where
               , "dominant-baseline" ↦ "central"
               , "text-anchor" ↦ "middle"
               ]
-         >>= setText (contents caption)
+         >>= setText (dropα caption)
 
-      when (contents legend) $
+      when (dropα legend) $
          createLegend props.interior g
       pure g
 
@@ -75,10 +76,13 @@ instance Viewable BarChart Unit where
 
       createAxes :: D3.Selection -> Effect (Coord D3.Selection)
       createAxes parent' = do
-         let Point { x: xLabels, y: yLabels } = tickLabels
-         x <- create_xAxis parent' props.scales props.xs (unwrap props.interior).height (contents xLabels)
-         y <- create_yAxis parent' props.scales 3.0 0 (contents yLabels)
+         x <- create_xAxis parent' props.scales xTicks height xLabels
+         y <- create_yAxis parent' props.scales { count: 3.0, values: Nothing, places: Just 0 } yLabels
          pure { x, y }
+         where
+         TickLabels { x: xLabels, y: yLabels } = tickLabels
+         Dimensions { height } = props.interior
+         xTicks = { count: toNumber (length props.xs), values: Nothing, places: Nothing }
 
       createStackedBars :: D3.Selection -> Effect Unit
       createStackedBars parent' =
@@ -145,9 +149,9 @@ barChartProps (BarChart { caption, size, stackedBars }) =
    }
    where
 
-   xs = stackedBars <#> \(StackedBar bar) -> contents bar.x
-   ys = (unwrap $ head stackedBars).segments <#> \(Segment seg) -> contents seg.y -- TODO: enforce uniformity across bars
-   Dimensions { width, height } = size <#> contents
+   xs = stackedBars <#> \(StackedBar bar) -> dropα bar.x
+   ys = (unwrap $ head stackedBars).segments <#> \(Segment seg) -> dropα seg.y -- TODO: enforce uniformity across bars
+   Dimensions { width, height } = size <#> dropα
 
    margin :: Margin
    -- previously some right margin hack to accommodate legend
@@ -162,11 +166,11 @@ barChartProps (BarChart { caption, size, stackedBars }) =
    scales = to interior
 
    caption_class = "title-text"
-   caption_height = textHeight caption_class (contents caption) * 2
+   caption_height = textHeight caption_class (dropα caption) * 2
 
    to :: Dimensions Int -> Scales
    to (Dimensions { width, height }) =
-      { x: scaleBand width $ (\(StackedBar bar) -> contents bar.x) <$> toArray stackedBars
+      { x: scaleBand width $ (\(StackedBar bar) -> dropα bar.x) <$> toArray stackedBars
       , y: scaleLinear { min: 0.0, max: y_max } { min: toNumber height, max: 0.0 }
       }
 

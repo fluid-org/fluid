@@ -1,4 +1,4 @@
-from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Rotated, Scales, Auto, FromZero
+from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Rotated, Scales, Auto, FromZero, default_ticks
 
 def series(type: str) -> list[Point]:
   return [Point(x=row.year, y=row.emissions) for row in methane if row.type == type]
@@ -8,6 +8,7 @@ LineChart(
   tickLabels=TickLabels(x=Rotated(), y=Default()),
   caption="Sources of methane emissions for Africa and the Middle East (IPCC AR6)",
   scales=Scales(x=Auto(), y=FromZero()),
+  ticks=default_ticks,
   plots=[LinePlot(name=type, points=series(type)) for type in [
     "Agricultural Waste Burning",
     "Agriculture",

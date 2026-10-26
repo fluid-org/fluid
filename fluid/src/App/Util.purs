@@ -16,7 +16,7 @@ import Data.Show.Generic (genericShow)
 import Data.String (joinWith, length)
 import Data.String.CodeUnits (drop, take)
 import Data.Traversable (sequence, sequence_)
-import Data.Tuple (fst, snd)
+import Data.Tuple (snd)
 import Dict (Dict)
 import Effect (Effect)
 import Effect.Aff (Aff, runAff_)
@@ -24,7 +24,7 @@ import Effect.Class.Console (log)
 import Foreign.Object (Object, empty, fromFoldable, union)
 import Lattice (class BoundedJoinSemilattice, class BoundedMeetSemilattice, class JoinSemilattice, class MeetSemilattice, 𝔹, bot, neg, (∧), (∨))
 import Pretty (prettyP)
-import Primitive (as, intOrNumber, unpack', unpackVal)
+import Primitive (as, dropα, intOrNumber, unpack')
 import Primitive as P
 import Test.Util.Debug (tracing)
 import Unsafe.Coerce (unsafeCoerce)
@@ -66,9 +66,6 @@ selState false = Reactive
 selection :: forall a. 𝔹 -> a -> a -> Selection (SelState a)
 selection true _ _ = { persistent: Inert, transient: Inert }
 selection false b1 b2 = { persistent: Reactive b1, transient: Reactive b2 }
-
-contents :: forall a. Selectable a -> a
-contents = fst
 
 sel :: forall a. Selectable a -> SelStates 𝕊
 sel = snd
@@ -169,7 +166,7 @@ unpackIntOrNumber v = first as (unpack' intOrNumber v)
 
 -- Assumes fields are all of primitive type.
 dict :: forall a. (Dict (SelStates 𝕊 × Val (SelStates 𝕊)) -> a) -> Val (SelStates 𝕊) -> a
-dict toDict v = toDict (unpackVal P.dict v)
+dict toDict v = toDict (dropα (unpack' P.dict v))
 
 runAffs_ :: forall a. (a -> Effect Unit) -> Array (Aff a) -> Effect Unit
 runAffs_ f as = flip runAff_ (sequence as) case _ of

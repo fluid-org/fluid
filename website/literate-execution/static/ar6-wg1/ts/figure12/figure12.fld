@@ -1,7 +1,7 @@
 import fluid.stats
 from figure12_data import precip_std_extra_annual
 
-from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Scales, Auto, FromZero
+from fluid.view import Dimensions, LineChart, LinePlot, Point, TickLabels, Default, Scales, Auto, FromZero, default_ticks
 
 temps: list[str] = [ "1.5", "1.75", "2.0", "2.25", "2.5", "2.75", "3.0", "3.25",
     "3.5", "3.75", "4.0", "4.25", "4.5", "4.75", "5.0" ]
@@ -13,6 +13,7 @@ LineChart(
   size=Dimensions(width=530, height=285),
   caption="Hydrological change over extratropical land",
   scales=Scales(x=Auto(), y=FromZero()),
+  ticks=default_ticks,
   plots=[
     LinePlot(name="Precipitation annual mean", points=points)
   ]
