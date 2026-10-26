@@ -1,0 +1,3 @@
+xs: list[int] = @doc("xs") [3, 1, 2]
+
+sorted(xs)

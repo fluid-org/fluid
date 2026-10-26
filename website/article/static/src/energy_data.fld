@@ -21,5 +21,5 @@ class Renewable:
   output: float
   capacity: float
 
-nonRenewables: list[NonRenewable] = load_json(list[NonRenewable], "../dataset/non_renewables.json")
-renewables: list[Renewable] = load_json(list[Renewable], "../dataset/renewable.json")
+nonRenewables: list[NonRenewable] = @doc("nonRenewables") load_json(list[NonRenewable], "../dataset/non_renewables.json")
+renewables: list[Renewable] = @doc("renewables") load_json(list[Renewable], "../dataset/renewable.json")

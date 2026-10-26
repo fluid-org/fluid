@@ -6,7 +6,7 @@ paragraph_cases :: Array TestSpec
 paragraph_cases =
    [ { file: "paragraph/basic.fld"
      , fwd_expect:
-          """Paragraph(["Hello", "there,", Paragraph(["Alice"]), "!"])"""
+          """Paragraph(["Hello there, ", Paragraph(["Alice"]), "!"])"""
      }
    , { file: "paragraph/explicit.fld"
      , fwd_expect:

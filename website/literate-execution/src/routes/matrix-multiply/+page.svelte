@@ -4,7 +4,7 @@
 	let showDataPane = false;
 
 	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
+		fluidSrcPath: ['../lib'],
 		inputs: ['a', 'b', 'c'],
 		query: true,
 		linking: false
@@ -12,7 +12,10 @@
 
 	const src = `from fluid.matrix import mat_mul
 from fluid.view import MultiView
-from matrixMultiply.matrices import a, b, c
+
+a: Matrix[int] = @doc("a") [| [[1, 2, 3], [4, 5, 6]][i][j] for (i, j) in (2, 3) |]
+b: Matrix[int] = @doc("b") [| [[7, 8], [9, 10], [11, 12]][i][j] for (i, j) in (3, 2) |]
+c: Matrix[int] = @doc("c") [| [[0, -1], [1, 0]][i][j] for (i, j) in (2, 2) |]
 
 MultiView([
   mat_mul(mat_mul(a, b), c),

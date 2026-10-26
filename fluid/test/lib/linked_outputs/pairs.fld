@@ -1,4 +1,4 @@
-from linked_outputs.pairs_data import data
+data: tuple[int, int] = @doc("data") (3, 7)
 
 q: int = 1
 

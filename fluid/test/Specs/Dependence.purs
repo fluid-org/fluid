@@ -83,9 +83,9 @@ dep_cases =
      }
    , { file: "dependence/doc_this.fld"
      , queries:
-          [ Bwd (Doc Output) (\arg -> arg cParagraph f_fragments (listElement 2 select))
-               "⸨1⸩\n⸨2⸩\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
-          , Fwd (Input "x") (\_ -> select) "⸨1⸩\n2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+          [ Bwd (Doc Output) (\arg -> arg cParagraph f_fragments (listElement 1 select))
+               "⸨1⸩\n⸨2⸩\n@doc(Paragraph([\"Sum is \", ⸨3⸩])) ⸨3⸩"
+          , Fwd (Input "x") (\_ -> select) "⸨1⸩\n2\n@doc(Paragraph([\"Sum is \", ⸨3⸩])) ⸨3⸩"
           ]
      }
    , { file: "dependence/matrix/matmul.fld"
@@ -167,7 +167,12 @@ dep_cases =
      }
    , { file: "dependence/divide.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "⸨362⸩\n⸨9⸩\n⸨40.22222222222222⸩"
+          [ Bwd Output (\_ -> select) "⸨362⸩\n⸨9⸩\n⸨40.2222222222⸩"
+          ]
+     }
+   , { file: "dependence/sorted.fld"
+     , queries:
+          [ Bwd Output (\_ -> listElement 0 select) "[⟪3⟫, ⸨1⸩, ⟪2⟫]\n[⸨1⸩, 2, 3]"
           ]
      }
    , { file: "dependence/multiply.fld"

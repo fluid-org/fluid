@@ -24,13 +24,14 @@ import Data.Tuple (uncurry)
 import Data.Traversable (foldr)
 import Literal (Literal(..))
 import Parse.Number (float, integer)
-import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, lexeme, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
+import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, lookAhead, many, many1, notFollowedBy, option, optionMaybe, sepBy1, try, (<?>))
 import Parsing.Expr (Operator(..)) as P
 import Parsing.Expr (OperatorTable, buildExprParser)
 import Parsing.Indent (runIndent, sameOrIndented, withPos)
-import Parsing.String (eof, satisfy)
+import Parsing.String (char, eof, satisfy)
+import Parsing.String.Basic (skipSpaces)
 import Operator (Operator(..), assoc, binopSymbol, comparisons, levels, unopSymbol)
 import Expr (Binop(..), Pattern(..))
 import SExpr (Branch, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeDef(..), TypeExpr(..), VarDef(..), VarDefs)
@@ -399,10 +400,12 @@ expr = context "expr" $ cond <?> "expression"
          lit :: Parser Expr
          lit = literal <#> Lit
 
+         -- Text between the unquotes keeps its spacing, each run of whitespace as a single space
          paragraph :: Parser Expr
          paragraph = do
             delim "f\"\"\""
-            es <- many $ lexeme paragraphElem
+            es <- many paragraphElem
+            skipSpaces
             delim "\"\"\""
             pure $ Paragraph es
             where
@@ -410,19 +413,21 @@ expr = context "expr" $ cond <?> "expression"
             paragraphElem = paragraphToken <|> unquote
                where
                paragraphToken :: Parser ParagraphElem
-               paragraphToken = do
-                  cs <- some paragraphLetter
-                  pure $ Token (SCU.fromCharArray cs)
-
+               paragraphToken = Token <<< SCU.fromCharArray <$> some (paragraphLetter <|> spaces)
                   where
                   -- TODO: allow escaped `"` and `{`
                   paragraphLetter :: Parser Char
-                  paragraphLetter = satisfy $ \c -> (c /= '"' && c /= '{' && not (isSpace (codePointFromChar c)))
+                  paragraphLetter = satisfy \c -> c /= '"' && c /= '{' && not (space c)
+
+                  -- Whitespace before the closing quotes isn't text
+                  spaces :: Parser Char
+                  spaces = ' ' <$ try (some (satisfy space) <* notFollowedBy (delim "\"\"\""))
+
+                  space :: Char -> Boolean
+                  space = isSpace <<< codePointFromChar
 
                unquote :: Parser ParagraphElem
-               unquote = defer $ \_ -> do
-                  e <- braces (opTree)
-                  pure $ Unquote e
+               unquote = defer \_ -> Unquote <$> (delim '{' *> opTree <* char '}')
 
          dict :: Parser Expr
          dict = context "dict" do

@@ -16,9 +16,9 @@ import Dict (Dict)
 import Expr (Binop(BitOr), Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
-import Literal (Literal(..))
+import Literal (Literal(..), showFloat)
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
-import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep', string, vsep)
+import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
 import SExpr (Branch, Case, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeDef(..), TypeExpr(..), VarDef(..), VarDefs)
 import Types as T
@@ -266,7 +266,7 @@ instance Pretty T.Primitive where
 
 instance Pretty Literal where
    pretty (Int n) = number n
-   pretty (Float n) = number n
+   pretty (Float n) = text (showFloat n)
    pretty (Str s) = string s
    pretty (Bool true) = text "True"
    pretty (Bool false) = text "False"
@@ -302,7 +302,7 @@ instance Pretty (Expr × Expr) where
          )
 
 instance Pretty (List ParagraphElem) where
-   pretty xs = text "f\"\"\"" <> hsep (pretty <$> xs) <> text "\"\"\""
+   pretty xs = text "f\"\"\"" <> sep (pretty <$> xs) <> text "\"\"\""
 
 instance Pretty ParagraphElem where
    pretty (Token str) = text str

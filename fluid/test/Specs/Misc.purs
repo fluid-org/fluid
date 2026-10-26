@@ -27,13 +27,14 @@ misc_cases =
      , fwd_expect: "[[1, -2, -2, 1], [2, -1, 1, -2], [1, -1, -1, 1], [2, 2, -2, -2]]"
      }
    , { file: "tuples.fld", fwd_expect: """[0, 4, 6, 2, 3, True, 3, (1, "a"), [2, 3, 4], True]""" }
+   , { file: "compare_nan.fld", fwd_expect: "[False, False, False, False, False, False]" }
    , { file: "eq_nan.fld", fwd_expect: "[False, True, False, True, False]" }
    , { file: "elif.fld", fwd_expect: """["much more", "more", "less", "much less"]""" }
    , { file: "factorial.fld", fwd_expect: "40320" }
    , { file: "filter.fld", fwd_expect: "[8, 7]" }
    , { file: "dependence/qcut.fld"
      , fwd_expect:
-          """[([1.01, 1.05], 0.051000000000000156), ([1.07, 1.09, 1.22, 1.23, 1.24, 1.24, 1.25, 1.32, 1.32, 1.35, 1.39, 1.47, 1.57, 1.72], 0.6639999999999999), ([1.73, 1.75, 1.76, 1.83, 1.87, 1.94, 2.04, 2.14, 2.18, 2.36, 2.37, 2.38, 2.52, 2.54], 0.8464999999999998), ([2.61, 2.67], 0.09850000000000003)]"""
+          """[([1.01, 1.05], 0.051), ([1.07, 1.09, 1.22, 1.23, 1.24, 1.24, 1.25, 1.32, 1.32, 1.35, 1.39, 1.47, 1.57, 1.72], 0.664), ([1.73, 1.75, 1.76, 1.83, 1.87, 1.94, 2.04, 2.14, 2.18, 2.36, 2.37, 2.38, 2.52, 2.54], 0.8465), ([2.61, 2.67], 0.0985)]"""
      }
    , { file: "first_class_constr.fld", fwd_expect: "[[10], [12], [20]]" }
    , { file: "flatten.fld"
@@ -107,6 +108,7 @@ misc_cases =
    , { file: "records.fld", fwd_expect: "{\"a\": [2], \"b\": [6, 7], \"c\": 7, \"d\": [[5]], \"e\": 7}" }
    , { file: "reverse.fld", fwd_expect: "[2, 1]" }
    , { file: "round.fld", fwd_expect: "(2, 4, -2, 3, -7)" }
+   , { file: "show_float.fld", fwd_expect: "[1.0, 100.0, 2.5, 0.3, 0.333333333333, 1e+21, 1e-7, -0.5]" }
    , { file: "ternary/basic_false.fld", fwd_expect: "6" }
    , { file: "ternary/basic_true.fld", fwd_expect: "5" }
    , { file: "ternary/condition_parenthesised.fld", fwd_expect: "10" }
@@ -119,5 +121,6 @@ misc_cases =
    , { file: "ternary/right_assoc_false.fld", fwd_expect: "3" }
    , { file: "ternary/right_assoc_true.fld", fwd_expect: "1" }
    , { file: "ternary/untaken_branch.fld", fwd_expect: "3" }
+   , { file: "sorted.fld", fwd_expect: """([1, 2, 3], [1, 2, 2.5], ["a", "b", "c"], [])""" }
    , { file: "zero_arg.fld", fwd_expect: "\"hello\"" }
    ]

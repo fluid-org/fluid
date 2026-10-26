@@ -2,4 +2,4 @@ import fluid.view
 
 name: fluid.view.Paragraph = f"""Alice"""
 
-f"""Hello there, {name} !"""
+f"""Hello there, {name}!"""

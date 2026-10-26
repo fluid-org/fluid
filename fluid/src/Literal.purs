@@ -1,11 +1,15 @@
 module Literal where
 
-import Prelude
+import Prelude hiding (absurd)
 
 import Data.Generic.Rep (class Generic)
 import Data.Int (toNumber)
-import Data.Number (isNaN)
+import Data.Maybe (fromMaybe, maybe)
+import Data.Number (isFinite, isNaN)
+import Data.Number.Format (precision, toStringWith)
 import Data.Show.Generic (genericShow)
+import Data.String (Pattern(..), contains, split, stripSuffix)
+import Util (absurd, error)
 
 data Literal
    = Int Int
@@ -33,3 +37,23 @@ instance Eq Literal where
 derive instance Generic Literal _
 instance Show Literal where
    show = genericShow
+
+-- Float to 12 significant digits, with trailing zeros dropped, ".0" on an integral value and an exponent for a
+-- very large or small magnitude
+showFloat :: Number -> String
+showFloat x
+   | not (isFinite x) = show x
+   | otherwise =
+        case split (Pattern "e") (toStringWith (precision 12) x) of
+           [ m ] -> withPoint (trim m)
+           [ m, e ] -> trim m <> "e" <> e
+           _ -> error absurd
+        where
+        trim m
+           | contains (Pattern ".") m = dropPoint (dropZeros m)
+           | otherwise = m
+        dropZeros m = maybe m dropZeros (stripSuffix (Pattern "0") m)
+        dropPoint m = fromMaybe m (stripSuffix (Pattern ".") m)
+        withPoint m
+           | contains (Pattern ".") m = m
+           | otherwise = m <> ".0"
