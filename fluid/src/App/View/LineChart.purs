@@ -9,15 +9,16 @@ import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
-import App.View.Util.Scale (AxisTicks(..), Scales(..), Ticks(..), decimalPlaces, domain, tickCount, tickValues)
+import App.View.Util.Scale (AxisTicks(..), Interval, Scales(..), Ticks(..), decimalPlaces, domain, tickCount, tickValues)
 import Bind ((↦), (⟼))
+import Control.Alt ((<|>))
 
 import Types.Defs (cLineChart, cLinePlot, f_plots, f_points)
 import Data.Array (concat, elemIndex, mapWithIndex)
 import Data.Array.NonEmpty (NonEmptyArray, fromArray, nub)
 import Data.Foldable (intercalate, length)
 import Data.Int (toNumber)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
 import Data.Semigroup.Foldable (maximum, minimum)
 import Data.Tuple (fst, snd, uncurry)
@@ -163,15 +164,15 @@ instance Viewable LineChart Unit where
          let Point { x: xLabels, y: yLabels } = tickLabels
          x <- create_xAxis parent' (to range)
             { count: tickCount xTicks.spacing (toNumber (length (nub points.x)))
-            , values: tickValues xTicks.spacing (domain scales.x (extent points.x))
+            , values: tickValues xTicks.spacing domains.x
             , places: decimalPlaces xTicks.format
             }
             (unwrap range).height
             (contents xLabels)
          y <- create_yAxis parent' (to range)
             { count: tickCount yTicks.spacing 3.0
-            , values: tickValues yTicks.spacing (domain scales.y (extent points.y))
-            , places: fromMaybe 1 (decimalPlaces yTicks.format)
+            , values: tickValues yTicks.spacing domains.y
+            , places: decimalPlaces yTicks.format <|> Just 1
             }
             (contents yLabels)
          pure { x, y }
@@ -261,11 +262,14 @@ instance Viewable LineChart Unit where
 
       to :: Dimensions Int -> Coord (Endo Number)
       to (Dimensions range) =
-         { x: scaleLinear (domain scales.x (extent points.x)) { min: 0.0, max: toNumber range.width }
-         , y: scaleLinear (domain scales.y (extent points.y)) { min: toNumber range.height, max: 0.0 }
+         { x: scaleLinear domains.x { min: 0.0, max: toNumber range.width }
+         , y: scaleLinear domains.y { min: toNumber range.height, max: 0.0 }
          }
 
-      extent xs = { min: minimum xs, max: maximum xs }
+      domains :: Coord Interval
+      domains = { x: domain scales.x (extent points.x), y: domain scales.y (extent points.y) }
+         where
+         extent xs = { min: minimum xs, max: maximum xs }
 
       points :: Coord (NonEmptyArray Number)
       points = { x: ps <#> unwrap >>> _.x >>> fst, y: ps <#> unwrap >>> _.y >>> fst }

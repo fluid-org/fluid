@@ -112,7 +112,7 @@ foreign import scaleBand :: Int -> Array String -> String -> Number
 foreign import bandwidth :: (String -> Number) -> Number
 -- Currently two different protocols for x and y axis; will subsume into something more general
 foreign import xAxis :: forall a r. { x :: a -> Number | r } -> Number -> Nullable (Array Number) -> Nullable Int -> Selection -> Effect Selection
-foreign import yAxis :: forall a r. { y :: a -> Number | r } -> Number -> Nullable (Array Number) -> Int -> Selection -> Effect Selection
+foreign import yAxis :: forall a r. { y :: a -> Number | r } -> Number -> Nullable (Array Number) -> Nullable Int -> Selection -> Effect Selection
 foreign import numericXAxis :: Endo Number -> Selection -> Effect Selection
 foreign import numericYAxis :: Endo Number -> Selection -> Effect Selection
 foreign import isEmpty :: Selection -> Effect Boolean

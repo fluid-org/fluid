@@ -87,13 +87,14 @@ export function line (to) {
    }
 }
 
-export function xAxis (to) {
+// Axis with approximate tick count or exact tick values, and labels to given decimal places
+function axis (d3Axis) {
    return nTicks => {
       return tickValues => {
          return decPlaces => {
             return parent => {
                return () => {
-                  const axis = d3.axisBottom(to.x).tickSizeOuter(0)
+                  const axis = d3Axis.tickSizeOuter(0)
                   const ticked = tickValues === null ? axis.ticks(nTicks) : axis.tickValues(tickValues)
                   return parent.call(ticked.tickFormat(decPlaces === null ? d => d : d3.format(`.${decPlaces}f`)))
                }
@@ -103,20 +104,12 @@ export function xAxis (to) {
    }
 }
 
+export function xAxis (to) {
+   return axis(d3.axisBottom(to.x))
+}
+
 export function yAxis (to) {
-   return nTicks => {
-      return tickValues => {
-         return decPlaces => {
-            return parent => {
-               return () => {
-                  const axis = d3.axisLeft(to.y).tickSizeOuter(0)
-                  const ticked = tickValues === null ? axis.ticks(nTicks) : axis.tickValues(tickValues)
-                  return parent.call(ticked.tickFormat(d3.format(`.${decPlaces}f`)))
-               }
-            }
-         }
-      }
-   }
+   return axis(d3.axisLeft(to.y))
 }
 
 export function numericXAxis (scale) {

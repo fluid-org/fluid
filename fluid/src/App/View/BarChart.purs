@@ -81,7 +81,7 @@ instance Viewable BarChart Unit where
             { count: toNumber (length props.xs), values: Nothing, places: Nothing }
             (unwrap props.interior).height
             (contents xLabels)
-         y <- create_yAxis parent' props.scales { count: 3.0, values: Nothing, places: 0 } (contents yLabels)
+         y <- create_yAxis parent' props.scales { count: 3.0, values: Nothing, places: Just 0 } (contents yLabels)
          pure { x, y }
 
       createStackedBars :: D3.Selection -> Effect Unit
