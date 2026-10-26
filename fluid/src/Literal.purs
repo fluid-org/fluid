@@ -38,8 +38,8 @@ derive instance Generic Literal _
 instance Show Literal where
    show = genericShow
 
--- Float as Python's %.12g prints it, but with ".0" on an integral value: 12 significant digits, trailing zeros
--- dropped, exponent for a very large or small magnitude
+-- Float to 12 significant digits, with trailing zeros dropped, ".0" on an integral value and an exponent for a
+-- very large or small magnitude
 showFloat :: Number -> String
 showFloat x
    | not (isFinite x) = show x

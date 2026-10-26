@@ -107,6 +107,7 @@ misc_cases =
    , { file: "records.fld", fwd_expect: "{\"a\": [2], \"b\": [6, 7], \"c\": 7, \"d\": [[5]], \"e\": 7}" }
    , { file: "reverse.fld", fwd_expect: "[2, 1]" }
    , { file: "round.fld", fwd_expect: "(2, 4, -2, 3, -7)" }
+   , { file: "show_float.fld", fwd_expect: "[1.0, 100.0, 2.5, 0.3, 0.333333333333, 1e+21, 1e-7, -0.5]" }
    , { file: "ternary/basic_false.fld", fwd_expect: "6" }
    , { file: "ternary/basic_true.fld", fwd_expect: "5" }
    , { file: "ternary/condition_parenthesised.fld", fwd_expect: "10" }

@@ -480,7 +480,6 @@ load q = do
 
 type Eval =
    { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
-   , inputs :: Dict Deriv
    , root :: Deriv
    }
 
@@ -507,4 +506,4 @@ evalProgram inputs classes s =
       p × g <- flip runStateT depGraph do
          env <- traverse gvalAt inputs
          fst <<< asReturns <$> evalStmt { ctrl: Nil, env } s
-      pure { g, inputs, root: p }
+      pure { g, root: p }
