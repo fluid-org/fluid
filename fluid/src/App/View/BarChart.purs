@@ -7,10 +7,9 @@ import App.Util.Selector (ObjArg, listElement)
 import App.View.Segment (Segment(..), Scales, indexCol)
 import App.View.StackedBar (StackedBar(..), StackedBarContext, barHeight)
 import App.View.Util (class Viewable, Select, createElement, setSelection)
-import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
+import App.View.Util.Axes (TickLabels(..), create_xAxis, create_yAxis)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, addHatchPattern, create, scaleBand, scaleLinear, selectAll, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 as D3
-import App.View.Util.Point (Point(..))
 import Bind ((↦), (⟼))
 
 import Types.Defs (cBarChart, f_stackedBars)
@@ -29,7 +28,7 @@ import Util ((!))
 newtype BarChart = BarChart
    { caption :: Selectable String
    , size :: Dimensions (Selectable Int)
-   , tickLabels :: Point Orientation
+   , tickLabels :: TickLabels
    , stackedBars :: NonEmptyArray StackedBar
    , legend :: Selectable Boolean
    }
@@ -76,12 +75,12 @@ instance Viewable BarChart Unit where
 
       createAxes :: D3.Selection -> Effect (Coord D3.Selection)
       createAxes parent' = do
-         let Point { x: xLabels, y: yLabels } = tickLabels
+         let TickLabels { x: xLabels, y: yLabels } = tickLabels
          x <- create_xAxis parent' props.scales
             { count: toNumber (length props.xs), values: Nothing, places: Nothing }
             (unwrap props.interior).height
-            (contents xLabels)
-         y <- create_yAxis parent' props.scales { count: 3.0, values: Nothing, places: Just 0 } (contents yLabels)
+            xLabels
+         y <- create_yAxis parent' props.scales { count: 3.0, values: Nothing, places: Just 0 } yLabels
          pure { x, y }
 
       createStackedBars :: D3.Selection -> Effect Unit

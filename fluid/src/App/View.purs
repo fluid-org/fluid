@@ -15,7 +15,7 @@ import App.View.StackedBar (StackedBar(..))
 import App.View.TableView (TableView(..), arrayDictToArray2, headers)
 import App.View.Text (Text(..))
 import App.View.Util (Filter(..), View, pack)
-import App.View.Util.Axes (AxisTicks(..), LabelFormat(..), Orientation, TickSpacing(..), Ticks(..), orientation)
+import App.View.Util.Axes (AxisLabels(..), AxisTicks(..), LabelFormat(..), TickLabels(..), TickSpacing(..), Ticks(..), orientation)
 import App.View.Util.Point (Point(..))
 import App.View.Util.Scale (Scale(..), Scales(..))
 import Data.Array as A
@@ -158,19 +158,19 @@ instance Reflect (Point Number) where
          }
       _ -> typeError u "Point"
 
-instance Reflect (Point String) where
+instance Reflect AxisLabels where
    reflect _ v@(Val _ u) = case u of
-      Obj c _ | c == cAxisLabels -> Point
-         { x: P.unpack' string (attr f_x v)
-         , y: P.unpack' string (attr f_y v)
+      Obj c _ | c == cAxisLabels -> AxisLabels
+         { x: fst (P.unpack' string (attr f_x v))
+         , y: fst (P.unpack' string (attr f_y v))
          }
       _ -> typeError u "AxisLabels"
 
-instance Reflect (Point Orientation) where
+instance Reflect TickLabels where
    reflect _ v@(Val _ u) = case u of
-      Obj c _ | c == cTickLabels -> Point
-         { x: P.unpack' orientation (attr f_x v)
-         , y: P.unpack' orientation (attr f_y v)
+      Obj c _ | c == cTickLabels -> TickLabels
+         { x: fst (P.unpack' orientation (attr f_x v))
+         , y: fst (P.unpack' orientation (attr f_y v))
          }
       _ -> typeError u "TickLabels"
 

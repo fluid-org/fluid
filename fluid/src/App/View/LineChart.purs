@@ -2,10 +2,10 @@ module App.View.LineChart where
 
 import Prelude hiding (absurd)
 
-import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, colorShade, contents, isPersistent, isPrimary, isSecondary, isTransient, selectionEventData')
+import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, colorShade, isPersistent, isPrimary, isSecondary, isTransient, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
-import App.View.Util.Axes (AxisTicks(..), Orientation, Ticks(..), create_xAxis, create_yAxis, decimalPlaces, tickCount, tickValues)
+import App.View.Util.Axes (AxisTicks(..), TickLabels(..), Ticks(..), create_xAxis, create_yAxis, decimalPlaces, tickCount, tickValues)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
@@ -28,7 +28,7 @@ import Util (type (×), Endo, definitely', init, nonEmpty, tail, zipWith, (!), (
 
 newtype LineChart = LineChart
    { size :: Dimensions (Selectable Int)
-   , tickLabels :: Point Orientation
+   , tickLabels :: TickLabels
    , caption :: Selectable String
    , scales :: Scales
    , ticks :: Ticks
@@ -161,20 +161,20 @@ instance Viewable LineChart Unit where
 
       createAxes :: Dimensions Int -> D3.Selection -> Effect (Coord D3.Selection)
       createAxes range parent' = do
-         let Point { x: xLabels, y: yLabels } = tickLabels
+         let TickLabels { x: xLabels, y: yLabels } = tickLabels
          x <- create_xAxis parent' (to range)
             { count: tickCount xTicks.spacing (toNumber (length (nub points.x)))
             , values: tickValues xTicks.spacing domains.x
             , places: decimalPlaces xTicks.format
             }
             (unwrap range).height
-            (contents xLabels)
+            xLabels
          y <- create_yAxis parent' (to range)
             { count: tickCount yTicks.spacing 3.0
             , values: tickValues yTicks.spacing domains.y
             , places: decimalPlaces yTicks.format <|> Just 1
             }
-            (contents yLabels)
+            yLabels
          pure { x, y }
 
       -- Nested viewport clipping data outside the axes, with room for a selected point at the edge; overflow

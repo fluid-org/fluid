@@ -5,6 +5,7 @@ import Prelude
 import App.Util (Selectable, classes, contents, isPrimary, isSecondary, selClasses, selClassesFor, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, registerMouseListeners)
+import App.View.Util.Axes (AxisLabels(..))
 import App.View.Util.D3 (ElementType(..), create, numericXAxis, numericYAxis, scaleLinear, setText, translate)
 import App.View.Util.D3 as D3
 import App.View.Util.Point (Point(..))
@@ -26,7 +27,7 @@ import Util (Endo, type (×), (!))
 newtype ScatterPlot = ScatterPlot
    { caption :: Selectable String
    , points :: Array (Point Number)
-   , labels :: Point String
+   , labels :: AxisLabels
    }
 
 type Scales = { x :: Endo Number, y :: Endo Number }
@@ -39,7 +40,7 @@ renderAxes scales height rootElement = do
 instance Viewable ScatterPlot Unit where
    isLeaf = const false
 
-   createElement _ (ScatterPlot { caption, points, labels: Point labels }) parent = do
+   createElement _ (ScatterPlot { caption, points, labels: AxisLabels labels }) parent = do
       let
          vals = points <#> \(Point { x, y }) -> { x: contents x, y: contents y }
          xMax = ceil (fromMaybe 0.0 (maximum (vals <#> _.x)))
@@ -72,7 +73,7 @@ instance Viewable ScatterPlot Unit where
               , "y" ⟼ height + 25
               , "style" ↦ "text-anchor: end; font-size: 10px"
               ]
-         >>= setText (contents labels.x)
+         >>= setText labels.x
       void $ rootElement
          # create Text
               [ "transform" ↦ "rotate(-90)"
@@ -80,7 +81,7 @@ instance Viewable ScatterPlot Unit where
               , "y" ⟼ negate margin.left + 20
               , "style" ↦ "text-anchor: end; font-size: 10px"
               ]
-         >>= setText (contents labels.y)
+         >>= setText labels.y
 
       pointsGrp <- rootElement # create G []
       forWithIndex_ (range 0 (length points - 1)) \i _ -> do

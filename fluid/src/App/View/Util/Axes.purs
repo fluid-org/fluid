@@ -3,7 +3,7 @@ module App.View.Util.Axes where
 import Prelude
 
 import App.Util (classes)
-import App.View.Util.D3 (ElementType(..), create, rotate, selectAll, setAttrs, setStyles, translate, xAxis, yAxis)
+import App.View.Util.D3 (Coord, ElementType(..), create, rotate, selectAll, setAttrs, setStyles, translate, xAxis, yAxis)
 import App.View.Util.D3 as D3
 import App.View.Util.Scale (Interval)
 import Bind ((↦))
@@ -22,6 +22,10 @@ import Val (BaseVal(..))
 data Orientation
    = Default
    | Rotated
+
+newtype TickLabels = TickLabels (Coord Orientation)
+
+newtype AxisLabels = AxisLabels (Coord String)
 
 data TickSpacing
    = AutoTicks
