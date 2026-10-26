@@ -134,8 +134,6 @@ len =
       Nothing -> Left (typeMismatch u "Sized")
    depRel _ = Left "Single argument expected"
 
--- Stable merge sort by less-than, with each element under control of the comparisons made by each merge up to
--- its selection
 sorted :: ForeignOp
 sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: pureRel depRel })
