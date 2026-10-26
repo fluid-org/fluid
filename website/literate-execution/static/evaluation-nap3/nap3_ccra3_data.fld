@@ -1,2 +1,3 @@
+# Every second action of the full dataset, and the risks those actions reference, to keep page load short
 nap3_actions: list[dict[str, str]] = @doc("nap3_actions") load_json(list[dict[str, str]], "../dataset/ccra3-actions-for-nap3.json")
 ccra3_risks: list[dict[str, str]] = @doc("ccra3_risks") load_json(list[dict[str, str]], "../dataset/ccra3-risks.json")
