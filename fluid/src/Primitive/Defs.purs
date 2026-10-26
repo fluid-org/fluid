@@ -11,7 +11,7 @@ import Data.Argonaut.Decode (parseJson)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldM, foldl, for_)
+import Data.Foldable (foldM, foldl)
 import Data.Int (ceil, floor, toNumber)
 import Data.Int (quot, rem) as I
 import Data.Int as Int
@@ -31,7 +31,7 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, traverse)
 import Data.Lazy (defer, force)
-import Data.Tuple (fst, snd, uncurry)
+import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
@@ -40,12 +40,13 @@ import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (apply) as Dep
+import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import DepGraph (zeros)
-import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
 import Literal (Literal(..), showFloat)
-import Primitive (int, intOrNumber, number, operand, ordering, string, typeMismatch, unary, union1)
-import Util (MayFail, cons, type (+), type (×), definitely, definitely', definitelyRight, orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
+import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
+import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
 import Pretty (prettyP)
@@ -133,21 +134,34 @@ len =
       Nothing -> Left (typeMismatch u "Sized")
    depRel _ = Left "Single argument expected"
 
--- Every position of the result depends on every element, since perturbing any one could reorder them
+-- Stable merge sort by less-than, with each element under control of the comparisons made by each merge up to
+-- its selection
 sorted :: ForeignOp
 sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α (List vs) : Nil) = do
-      xs <- traverse (\(Val _ u) -> operand u) vs
-      for_ (Array.zip xs (Array.drop 1 xs)) (uncurry ordering) -- adjacent elements comparable, so all are
-      pure (Val β (List (relabel <$> Array.sortBy (\(x × _) (y × _) -> definitelyRight (ordering x y)) (Array.zip xs vs))))
-      where
-      β = foldl (+) α (root <$> vs)
-      relabel (_ × Val _ u) = Val β u
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val α (List vs) : Nil) = sort (L.fromFoldable vs) <#> \vs' -> Val α (List (Array.fromFoldable vs'))
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
+
+   sort :: forall a. DepSemiring a => List (Val a) -> MayFail (List (Val a))
+   sort vs
+      | L.length vs < 2 = pure vs
+      | otherwise = join (merge zero <$> sort (L.take n vs) <*> sort (L.drop n vs))
+           where
+           n = L.length vs / 2
+
+   merge :: forall a. DepSemiring a => a -> List (Val a) -> List (Val a) -> MayFail (List (Val a))
+   merge β Nil vs' = pure (withCtrl β <$> vs')
+   merge β vs Nil = pure (withCtrl β <$> vs)
+   merge β (v : vs) (v' : vs') = binopRel Lt v' v >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
+      where
+      take true β' = (withCtrl β' v' : _) <$> merge β' (v : vs) vs'
+      take false β' = (withCtrl β' v : _) <$> merge β' vs (v' : vs')
+
+   withCtrl :: forall a. DepSemiring a => a -> Val a -> Val a
+   withCtrl β (Val α u) = Val (α + ctrlWeight * β) u
 
 exit :: ForeignOp
 exit =
