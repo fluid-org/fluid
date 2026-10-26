@@ -43,9 +43,9 @@ unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
 unpack' toFrom = unpack toFrom >>> either error identity
 
--- Datum without its annotation.
-unpackVal :: forall d a. ToFrom d a -> Val a -> d
-unpackVal toFrom = unpack' toFrom >>> fst
+-- Discard annotation, and with it any information it would show in the user interface
+dropAnnot :: forall d a. d × a -> d
+dropAnnot = fst
 
 pack :: forall d a. ToFrom d a -> d × a -> Val a
 pack toFrom (v × α) = Val α (toFrom.pack v)
@@ -307,7 +307,7 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
 
    eqMatrix :: MatrixRep a -> MatrixRep a -> MayFail (Boolean × Set a)
    eqMatrix (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
-      if unpackVal int i == unpackVal int i' && unpackVal int j == unpackVal int j' then eqElems αs (elems vss) (elems vss')
+      if dropAnnot (unpack' int i) == dropAnnot (unpack' int i') && dropAnnot (unpack' int j) == dropAnnot (unpack' int j') then eqElems αs (elems vss) (elems vss')
       else pure (false × αs)
       where
       αs = both ∪ Set.fromFoldable (root <$> [ i, j, i', j' ])
