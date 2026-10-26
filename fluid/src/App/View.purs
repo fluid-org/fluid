@@ -205,12 +205,12 @@ instance Reflect TickSpacing where
       Obj c _
          | c == cAutoTicks -> AutoTicks
          | c == cCount -> Count (P.dropα (P.unpack' int (attr f_n v)))
-         | c == cEvery ->
-              let
-                 step = P.dropα (unpackIntOrNumber (attr f_step v))
-              in
-                 if step > 0.0 then Every step else error ("Every step must be positive; got " <> show step)
+         | c == cEvery -> every (P.dropα (unpackIntOrNumber (attr f_step v)))
       _ -> typeError u "TickSpacing"
+      where
+      every step
+         | step > 0.0 = Every step
+         | otherwise = error ("Every step must be positive; got " <> show step)
 
 instance Reflect LabelFormat where
    reflect _ v@(Val _ u) = case u of
