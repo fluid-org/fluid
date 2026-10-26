@@ -36,7 +36,7 @@ newtype AxisTicks = AxisTicks { spacing :: TickSpacing, format :: LabelFormat }
 
 newtype Ticks = Ticks { x :: AxisTicks, y :: AxisTicks }
 
--- Tick values within domain; Nothing when d3 chooses
+-- Tick values within domain, for spacing by a fixed step
 tickValues :: TickSpacing -> Interval -> Maybe (Array Number)
 tickValues (Every step) { min, max } = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
    where
