@@ -57,25 +57,6 @@ decimalPlaces :: LabelFormat -> Maybe Int
 decimalPlaces (Decimals places) = Just places
 decimalPlaces AutoFormat = Nothing
 
--- ======================
--- boilerplate
--- ======================
-
-derive instance Eq Orientation
-
--- Hefty amount of boilerplate just for a type isomorphic to Bool :-o
-orientation :: forall a. ToFrom Orientation a
-orientation =
-   { pack: case _ of
-        Default -> Obj cDefault Nil
-        Rotated -> Obj cRotated Nil
-   , unpack: case _ of
-        Obj c Nil
-           | c == cDefault -> Right Default
-           | c == cRotated -> Right Rotated
-        v -> Left (typeMismatch v "Orientation")
-   }
-
 create_xAxis :: forall a r. D3.Selection -> { x :: a -> Number | r } -> D3.Ticks -> Int -> Orientation -> Effect D3.Selection
 create_xAxis parent' to { count, values, places } y orient = do
    x <- xAxis to count (toNullable values) (toNullable places) =<<
@@ -95,3 +76,22 @@ create_yAxis parent' to { count, values, places } orient = do
       for_ labels $
          setAttrs [ rotate 45 ] >=> setStyles [ "text-anchor" ↦ "end" ]
    pure y
+
+-- ======================
+-- boilerplate
+-- ======================
+
+derive instance Eq Orientation
+
+-- Hefty amount of boilerplate just for a type isomorphic to Bool :-o
+orientation :: forall a. ToFrom Orientation a
+orientation =
+   { pack: case _ of
+        Default -> Obj cDefault Nil
+        Rotated -> Obj cRotated Nil
+   , unpack: case _ of
+        Obj c Nil
+           | c == cDefault -> Right Default
+           | c == cRotated -> Right Rotated
+        v -> Left (typeMismatch v "Orientation")
+   }
