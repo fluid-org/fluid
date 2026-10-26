@@ -214,7 +214,9 @@ binop op (Val α u) (Val β u') = do
       | otherwise = both
 
    comparison :: (Ordering -> Boolean) -> Operand -> Operand -> MayFail (BaseVal a × Set a)
-   comparison f x y = ordering x y <#> \o -> Lit (Bool (f o)) × both
+   comparison f x y
+      | isNan x || isNan y = pure (Lit (Bool false) × both)
+      | otherwise = ordering x y <#> \o -> Lit (Bool (f o)) × both
 
    arith :: (Int -> Int -> Int) -> (Number -> Number -> Number) -> Operand -> Operand -> MayFail (BaseVal a)
    arith f _ (Left m) (Left n) = pure (Lit (Int (f m n)))
@@ -230,6 +232,10 @@ binop op (Val α u) (Val β u') = do
    isZero (Left 0) = true
    isZero (Right (Left 0.0)) = true
    isZero _ = false
+
+   isNan :: Operand -> Boolean
+   isNan (Right (Left r)) = N.isNaN r
+   isNan _ = false
 
 type Operand = Int + Number + String
 

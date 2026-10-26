@@ -1,0 +1,3 @@
+inf: float = 1e200 * 1e200
+x: float = inf - inf
+[x < 1.0, x <= 1.0, x > 1.0, x >= 1.0, 1.0 < x, 1.0 > x]
