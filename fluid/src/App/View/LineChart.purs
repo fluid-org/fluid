@@ -5,11 +5,11 @@ import Prelude hiding (absurd)
 import App.Util (Attrs, Dimensions(..), SelStates, Selectable, 𝕊, classes, colorShade, contents, isPersistent, isPrimary, isSecondary, isTransient, selectionEventData')
 import App.Util.Selector (ObjArg, ViewSelSetter, listElement)
 import App.View.Util (class Viewable, Select, registerMouseListeners)
-import App.View.Util.Axes (Orientation, create_xAxis, create_yAxis)
+import App.View.Util.Axes (AxisTicks(..), Orientation, Ticks(..), create_xAxis, create_yAxis, decimalPlaces, tickCount, tickValues)
 import App.View.Util.D3 (Coord, ElementType(..), Margin, colorScale, create, datum, dimensions, line, remove, scaleLinear, selectAll, setAttrs, setDatum, setStyles, setText, textHeight, textWidth, translate)
 import App.View.Util.D3 (Selection) as D3
 import App.View.Util.Point (Point(..))
-import App.View.Util.Scale (AxisTicks(..), Interval, Scales(..), Ticks(..), decimalPlaces, domain, tickCount, tickValues)
+import App.View.Util.Scale (Interval, Scales(..), domain)
 import Bind ((↦), (⟼))
 import Control.Alt ((<|>))
 
