@@ -16,11 +16,12 @@ import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
+import Rules (Rule)
 import Lattice (class DepSemiring, Lineage(..))
 import Util (type (×), (×))
 import Util.Map (get, maplet)
 
-newtype Deriv = Deriv Int
+newtype Deriv = Deriv Int --graph vertex identifier
 
 type Pos = Int -- index under the position ordering of a value
 
@@ -37,6 +38,7 @@ scale :: forall f s. Functor f => Semiring s => s -> f s -> f s
 scale a = map (mul a)
 
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
+--lift2 takes a two-argument function and applies it to values wrapped inside an applicative
 plus = lift2 add
 
 -- Linear map between free semimodules over the positions of a and b.
@@ -44,13 +46,17 @@ type Rel a b = a -> b
 
 sumRel :: forall a f s. Apply f => Semiring s => Rel a (f s) -> Rel a (f s) -> Rel a (f s)
 sumRel r r' x = r x `plus` r' x
+--sumRel r r' = \x -> plus (r x) (r' x)
 
 -- Pair present exactly when its weight is non-zero.
 newtype SparseRel s = SparseRel
    { out :: Map Pos (Map Pos s) -- source ↦ labelled target neighbours
    , in_ :: Map Pos (Map Pos s) -- target ↦ labelled source neighbours, the lineage
    }
+--given a dependency edge between two structured values, SparseRel maps the position-specific dependencies
+--s is the type of dependency weight stored on each connection, here it will be DepKind
 
+--build SparseRel from just in_ representation
 sparseRel :: forall s. Map Pos (Map Pos s) -> SparseRel s
 sparseRel in_ = SparseRel { out, in_ }
    where
@@ -58,25 +64,32 @@ sparseRel in_ = SparseRel { out, in_ }
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
 type Labelling a = Map Deriv a
+--edge from p to q is stored under edges[q][p]
 type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
 
 -- Vertices labelled by values of shape f; edges labelled by dependence relations, parallel edges summed.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
-   , vals :: Labelling (f Unit)
+   , vals :: Labelling (f Unit) --value structure
+   , rules :: Labelling (Rule (f Unit) Deriv) 
+      --"a vertex not recorded by eval is a leaf named by its value"
+      --each vertex carries K[p_1,...,p_n]
    , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
-   , edges :: Edges (Rel (f s) (f s))
+   , edges :: Edges (Rel (f s) (f s)) 
+   --f s is a value structure annotated with weights of type s
+   --edges[q][p] stores a function taking value of p annotated with dependency weights and produces value of q annotated with dependency weights
    }
 
 emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
+emptyGraph = { size: 0, vals: Map.empty, rules: Map.empty, docs: Map.empty, edges: Map.empty }
 
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
 valAt g p = get p g.vals
 
+--allocates a new vertex
 deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> m Deriv
 deriv v = do
-   size <- gets _.size
+   size <- gets _.size --size <- gets (\g -> g.size)
    let p = Deriv size
    modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals }
    pure p
@@ -86,7 +99,12 @@ attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 
 addEdge :: forall f s m. MonadState (DepGraph f s) m => Apply f => Semiring s => Deriv -> Deriv -> Rel (f s) (f s) -> m Unit
 addEdge p q r =
+   --sets edges[q][p] to r; if edge already exists, combine relations using sumRel
    modify_ \g -> g { edges = alter (Just <<< insertWith (flip sumRel) p r <<< fromMaybe Map.empty) q g.edges }
+
+addRule :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Rule (f Unit) Deriv -> m Unit
+addRule p rule = modify_ \g -> g { rules = Map.insert p rule g.rules }
+
 
 -- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
 type VisibleGraph (f :: Type -> Type) s =

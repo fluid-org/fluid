@@ -62,6 +62,9 @@ instance DepSemiring DepKind where
 
 -- Trivial extension of s by weighted combinations of positions k: the product of two combinations is zero.
 newtype Lineage k s = Lineage (s × M.Map k s)
+-- concrete k = (Deriv × Pos)
+--M.Map k s maps each source node+pos to their corrosponding weights
+--also contains a weight ???
 
 instance (Ord k, DepSemiring s) => Semiring (Lineage k s) where
    zero = Lineage (zero × M.empty)

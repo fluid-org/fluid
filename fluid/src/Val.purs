@@ -33,10 +33,11 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
+import DepGraph (DepGraph, Labelling, Rel, addEdge, addRule, deriv, emptyGraph, scale, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
+import Rules as R
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -72,6 +73,7 @@ data BaseVal a
 root :: forall a. Val a -> a
 root (Val α _) = α
 
+--applies a f to ONE LAYER of nested Vals inside a BaseVal
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
 overChildren _ (Opaque q) = Opaque q
@@ -222,30 +224,42 @@ withCtrl ctrl section v =
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 constructed ctrl = withCtrl ctrl \(Val _ u) -> Val one (zeros u)
 
-record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, inEdges } = do
+-- record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
+-- record { val: v, inEdges } = do
+--    p <- deriv v
+--    for_ inEdges \(q × r) -> addEdge q p r
+--    pure (p × v)
+
+--temporary fallback
+-- record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
+-- record v = recordWithRule { context: R.ValueLeaf v.val, premises: Nil } v
+
+record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => R.Rule (Raw Val) Dep.Deriv -> GVal s -> m (Dep.Deriv × Raw Val)
+record rule {val: v, inEdges } = do
    p <- deriv v
+   addRule p rule
    for_ inEdges \(q × r) -> addEdge q p r
    pure (p × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
-deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-deliver ctrl v = record (withCtrl ctrl unitSection v)
+deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => R.Rule (Raw Val) Dep.Deriv -> Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
+deliver rule ctrl v = record rule (withCtrl ctrl unitSection v)
 
-construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-construct ctrl v = record (constructed ctrl v)
+construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => R.Rule (Raw Val) Dep.Deriv -> Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
+construct rule ctrl v = record rule (constructed ctrl v)
 
 constructWith
    :: forall t m s
     . Traversable t
    => MonadState (DepGraph Val s) m
    => DepSemiring s
-   => Ctrl s
+   => R.Rule (Raw Val) Dep.Deriv
+   -> Ctrl s
    -> (forall a. t (Val a) -> BaseVal a)
    -> t (GVal s)
    -> m (Dep.Deriv × Raw Val)
-constructWith ctrl mk vs =
-   construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
+constructWith rule ctrl mk vs =
+   construct rule ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary

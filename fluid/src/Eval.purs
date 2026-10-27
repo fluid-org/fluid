@@ -36,6 +36,7 @@ import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
+import Rules as R
 import Primitive (binop, binopRel, boolean, int, string, typeMismatch, unop, unopRel, unpack, unpackVal)
 import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
@@ -134,8 +135,14 @@ eval
    -> Expr
    -> m (Deriv × Raw Val)
 eval inputs = case _ of
-   Var x -> deliver inputs.ctrl (get x inputs.env)
-   Lit ℓ -> construct inputs.ctrl { val: Val unit (V.Lit ℓ), inEdges: Nil }
+   Var x -> deliver 
+               { context: R.Variable x, premises: Nil }
+               inputs.ctrl 
+               (get x inputs.env)
+   Lit ℓ -> construct 
+               { context: R.Literal ℓ, premises: Nil }
+               inputs.ctrl 
+               { val: Val unit (V.Lit ℓ), inEdges: Nil }
    Dictionary ees -> do
       kvs <- for ees \(Pair e e') -> evalEntry inputs e e'
       dictionary inputs.ctrl kvs
@@ -144,11 +151,23 @@ eval inputs = case _ of
       kvs <- for cs \inputs' -> evalEntry inputs' e e'
       dictionary ctrl kvs
    List es -> do
-      vs <- traverse (eval inputs >>> map gval) es
-      constructWith inputs.ctrl (A.fromFoldable >>> V.List) vs
+      results <- traverse (eval inputs) es
+      constructWith
+         { context: R.ListLiteral (map (const R.Hole) results)
+         , premises: map fst results
+         }
+         inputs.ctrl
+         (A.fromFoldable >>> V.List)
+         (map gval results)
    Tuple es -> do
-      vs <- traverse (eval inputs >>> map gval) es
-      constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) vs
+      results <- traverse (eval inputs) es
+      constructWith
+         { context: R.TupleLiteral (map (const R.Hole) results)
+         , premises: map fst results
+         }
+         inputs.ctrl
+         (A.fromFoldable >>> V.Tuple)
+         (map gval results)
    ListComp e gs -> do
       cs × ctrl <- qualifiers inputs gs
       vs <- for cs \inputs' -> gval <$> eval inputs' e
@@ -179,7 +198,11 @@ eval inputs = case _ of
 
       mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
       mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
-   Lambda d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
+   Lambda d -> 
+      construct 
+         { context: R.Lambda d, premises: Nil }
+         inputs.ctrl 
+         (closure (restrict (fv d) inputs.env) empty d)
    Type τ -> construct inputs.ctrl { val: Val unit (V.Fun (V.Type τ)), inEdges: Nil }
    Attribute e x -> do
       v <- gval <$> eval inputs e
@@ -219,31 +242,88 @@ eval inputs = case _ of
       p <- withMsg "Module member" $ lookup' x ρ_q
       gvalAt p >>= deliver inputs.ctrl
    App e es -> do
-      f <- gval <$> eval inputs e
-      vs <- traverse (eval inputs >>> map gval) es
-      withMsg ("In " <> funName e) $ apply inputs.ctrl f vs
+      fn <- eval inputs e
+      args <- traverse (eval inputs) es
+      callee <- withMsg ("In " <> funName e) $ apply inputs.ctrl (gval fn) (map gval args)
+
+      record
+         { context: R.Application R.Hole (map (const R.Hole) args) R.Hole
+         , premises: fst fn : (map fst args <> (fst callee : Nil))
+         }
+         (gval callee)
+      
    BinOp e op e' -> do
-      v <- gval <$> eval inputs e
-      v' <- gval <$> eval inputs e'
+      left <- eval inputs e
+      right <- eval inputs e'
+      let 
+         v = gval left
+         v' = gval right
       u <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v.val v'.val) <#> fst
       let depRel x y = definitelyRight (binopRel op x y)
-      deliver inputs.ctrl
+      deliver 
+         { context: R.Binary op R.Hole R.Hole
+         , premises: fst left : fst right : Nil
+         }
+         inputs.ctrl
          { val: Val unit u
          , inEdges: via (\x -> depRel x (zeros v'.val)) v <> via (\y -> depRel (zeros v.val) y) v'
          }
    UnOp op e -> do
-      v <- gval <$> eval inputs e
+      operand <- eval inputs e
+      let v = gval operand
       u <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v.val) <#> fst
-      deliver inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v }
+      deliver 
+         { context: R.Unary op R.Hole
+         , premises: fst operand : Nil
+         }
+         inputs.ctrl 
+         { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v }
    And e e' -> do
-      { holds, ctrl, value } <- condition inputs e
-      if holds then eval (inputs { ctrl = ctrl }) e' else pure value
+      { holds, ctrl, value:left } <- condition inputs e
+      if holds then do
+         right <- eval (inputs { ctrl = ctrl }) e'
+         record
+            { context: R.AndFull R.Hole R.Hole
+            , premises: fst left : fst right : Nil
+            }
+            (gval right)
+      else
+         record
+            { context: R.AndShort R.Hole e'
+            , premises: fst left : Nil
+            }
+            (gval left)
    Or e e' -> do
-      { holds, ctrl, value } <- condition inputs e
-      if holds then pure value else eval (inputs { ctrl = ctrl }) e'
+      { holds, ctrl, value:left } <- condition inputs e
+      if holds then
+         record
+            { context: R.OrShort R.Hole e'
+            , premises: fst left : Nil
+            }
+            (gval left)
+      else do
+         right <- eval (inputs { ctrl = ctrl }) e'
+         record
+            { context: R.OrFull R.Hole R.Hole
+            , premises: fst left : fst right : Nil
+            }
+            (gval right)
    Cond e1 e e2 -> do
-      { holds, ctrl } <- condition inputs e
-      eval (inputs { ctrl = ctrl }) (if holds then e1 else e2)
+      { holds, ctrl, value } <- condition inputs e
+      if holds then do
+         chosen <- eval (inputs { ctrl = ctrl }) e1
+         record
+            { context: R.CondTrue R.Hole R.Hole e2
+            , premises: fst value : fst chosen : Nil
+            }
+            (gval chosen)
+      else do
+         chosen <- eval (inputs { ctrl = ctrl }) e2
+         record
+            { context: R.CondFalse R.Hole e1 R.Hole
+            , premises: fst value : fst chosen : Nil
+            }
+            (gval chosen)
    DocExpr e e' -> do
       r <- eval inputs e'
       doc <- eval (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
