@@ -22,6 +22,7 @@ import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
+import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
 import Dict (Dict)
@@ -43,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, recordValue, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -171,12 +172,18 @@ eval inputs = case _ of
    ListComp e gs -> do
       cs × ctrl <- qualifiers inputs gs
       vs <- for cs \inputs' -> gval <$> eval inputs' e
-      constructWith ctrl (A.fromFoldable >>> V.List) vs
+      constructWithValue ctrl (A.fromFoldable >>> V.List) vs
    Constr c es -> do
       classes <- askClasses
       checkArity c (length es) classes
-      vs <- traverse (eval inputs >>> map gval) es
-      constructWith inputs.ctrl (V.Obj c <<< zip (fieldNames classes c)) vs
+      results <- traverse (eval inputs) es
+      constructWith
+         { context: R.ObjectConstructor c (map (const R.Hole) results)
+         , premises: map fst results
+         }
+         inputs.ctrl
+         (V.Obj c <<< zip (fieldNames classes c))
+         (map gval results)
    Matrix e (x × y) e' -> do
       dims <- gval <$> eval inputs e'
       i' × j' <- case dims.val of
@@ -188,7 +195,7 @@ eval inputs = case _ of
       vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
          let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
          gval <$> eval (inputs { env = inputs.env <+> ρ' }) e
-      constructWith inputs.ctrl mat (product (Compose vss) (Identity dims))
+      constructWithValue inputs.ctrl mat (product (Compose vss) (Identity dims))
       where
       index :: GVal s -> Int -> Int -> GVal s
       index dims k n =
@@ -203,13 +210,16 @@ eval inputs = case _ of
          { context: R.Lambda d, premises: Nil }
          inputs.ctrl 
          (closure (restrict (fv d) inputs.env) empty d)
-   Type τ -> construct inputs.ctrl { val: Val unit (V.Fun (V.Type τ)), inEdges: Nil }
+   Type τ -> do
+      let value = Val unit (V.Fun (V.Type τ))
+      construct (R.valueRule value) inputs.ctrl { val: value, inEdges: Nil }
    Attribute e x -> do
       v <- gval <$> eval inputs e
       case v.val of
          Val _ (V.Obj c xvs) -> do
             i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-            deliver (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v }
+            let value = field i v.val
+            deliver (R.valueRule value) (inputs.ctrl <> via root v) { val: value, inEdges: via (field i) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
    Subscript e e' -> do
       v@{ val: Val _ u } <- gval <$> eval inputs e
@@ -235,16 +245,18 @@ eval inputs = case _ of
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
       subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Deriv × Raw Val)
       subscript v v' select consumed =
-         deliver (inputs.ctrl <> via consumed v <> via sum v') { val: select v.val, inEdges: via select v }
+         let value = select v.val
+         in deliver (R.valueRule value) (inputs.ctrl <> via consumed v <> via sum v') { val: value, inEdges: via select v }
    ModMember q x -> do
       { modules } <- moduleStore
       let ρ_q = definitely' (loadedEnv (get q modules))
       p <- withMsg "Module member" $ lookup' x ρ_q
-      gvalAt p >>= deliver inputs.ctrl
+      v <- gvalAt p
+      deliver (R.valueRule v.val) inputs.ctrl v
    App e es -> do
       fn <- eval inputs e
       args <- traverse (eval inputs) es
-      callee <- withMsg ("In " <> funName e) $ apply inputs.ctrl (gval fn) (map gval args)
+      callee <- withMsg ("In " <> funName e) $ apply inputs.ctrl fn args
 
       record
          { context: R.Application R.Hole (map (const R.Hole) args) R.Hole
@@ -437,53 +449,82 @@ apply
    :: forall m s
     . MonadEval s m
    => Ctrl s
-   -> GVal s
-   -> List (GVal s)
+   -> (Deriv × Raw Val)
+   -> List (Deriv × Raw Val)
    -> m (Deriv × Raw Val)
-apply ctrl f@{ val: Val _ u } vs = case u of
-   V.Fun (V.Partial φ us) ->
-      apply ctrl { val: Val unit (V.Fun φ), inEdges: via partialFun f }
-         (mapWithIndex (\i val -> { val, inEdges: via (partialArg i) f }) us <> vs)
-   V.Fun φ -> do
-      n <- arity'
-      let k = length vs
-      if k < n then construct ctrl partial
-      else if k == n then call φ vs
-      else call φ (take n vs) >>= \r -> apply ctrl (gval r) (drop n vs)
-      where
-      arity' :: m Int
-      arity' = case φ of
-         V.Closure _ _ (Def xs _) -> pure (length xs)
-         V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-         V.Type (T.ClassTy c _) -> askClasses >>= arity c
-         V.Type τ -> throw ("Not callable: " <> prettyP τ)
-         V.Partial _ _ -> error absurd
-
-      -- Partial application of f to vs, with root and function depending on those of f, and arguments depending on vs.
-      partial :: GVal s
-      partial =
-         { val: Val unit (V.Fun (V.Partial φ (_.val <$> vs)))
-         , inEdges: via (\x -> Val (root x) (V.Fun (V.Partial (fun x) (zeros <<< _.val <$> vs)))) f
-              <> viaAll (V.Partial (zeros φ) >>> V.Fun >>> Val zero) vs
-         }
-   _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
+apply ctrl fn args = hlp (gval fn) args
+   --e.g. p = f(1); p(2)
+   --fn = vertex for p
+   --args = [vertex for 2]
+   --φ = underlying f
+   --hlpArgs = [vertex for stored 1, vertex for 2]
    where
-   -- Applying a function consumes its root.
-   call :: V.Fun Unit -> List (GVal s) -> m (Deriv × Raw Val)
-   call φ vs' = case φ of
-      V.Closure (Env ρ1) ds (Def xs s) -> do
-         let
-            ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
-            ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
-            ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
-         asReturns <$> evalStmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
-      V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp ctrl' vs'
-      V.Type (T.ClassTy c _) ->
-         askClasses >>= \classes -> constructWith ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
-      V.Type _ -> error absurd
-      V.Partial _ _ -> error absurd
+   hlp :: GVal s -> List (Deriv × Raw Val) -> m (Deriv × Raw Val)
+   hlp f@{ val: Val _ u } hlpArgs = case u of
+      V.Fun (V.Partial φ us) -> do
+         storedArgs <- 
+            traverseWithIndex
+            (\i value -> recordValue { val: value, inEdges: via (partialArg i) f })
+            us
+         hlp { val: Val unit (V.Fun φ), inEdges: via partialFun f } (storedArgs <> hlpArgs)
+      V.Fun φ -> do
+         n <- arity'
+         let k = length hlpArgs
+
+         if k < n then 
+            construct 
+               { context: R.PartialApplication R.Hole (map (const R.Hole) args)
+               , premises: singleton (fst fn) <> map fst args
+               }
+               ctrl 
+               partial
+         else if k == n then call φ hlpArgs
+         else do
+            result <- call φ (take n hlpArgs)
+            apply ctrl result (drop n hlpArgs)
+         where
+         vs = map gval hlpArgs
+         arity' :: m Int
+         arity' = case φ of
+            V.Closure _ _ (Def xs _) -> pure (length xs)
+            V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
+            V.Type (T.ClassTy c _) -> askClasses >>= arity c
+            V.Type τ -> throw ("Not callable: " <> prettyP τ)
+            V.Partial _ _ -> error absurd
+
+         -- Partial application of f to vs, with root and function depending on those of f, and arguments depending on vs.
+         partial :: GVal s
+         partial =
+            { val: Val unit (V.Fun (V.Partial φ (_.val <$> vs)))
+            , inEdges: via (\x -> Val (root x) (V.Fun (V.Partial (fun x) (zeros <<< _.val <$> vs)))) f
+               <> viaAll (V.Partial (zeros φ) >>> V.Fun >>> Val zero) vs
+            }
+      _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
       where
-      ctrl' = via root f
+      -- Applying a function consumes its root.
+      call :: V.Fun Unit -> List (Deriv × Raw Val) -> m (Deriv × Raw Val)
+      call φ args' = case φ of
+         V.Closure (Env ρ1) ds (Def xs s) -> do
+            let
+               ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
+               ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
+               ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs (map gval args'))
+            asReturns <$> evalStmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
+         V.Prim (ForeignOp (name × ForeignOp' { depOp })) -> 
+            depOp { name, premises: map fst args' } ctrl' (map gval args')
+         V.Type (T.ClassTy c _) -> do
+            classes <- askClasses
+            constructWith
+               { context: R.ObjectConstructor c (map (const R.Hole) args')
+               , premises: map fst args'
+               }
+               ctrl'
+               (V.Obj c <<< zip (fieldNames classes c))
+               (map gval args')
+         V.Type _ -> error absurd
+         V.Partial _ _ -> error absurd
+         where
+         ctrl' = via root f
 
 evalModule
    :: forall m s
@@ -500,7 +541,7 @@ evalModule ρ0 q (Module ιs s) = do
    ρ' × _ <- asAssigns <$> evalStmt { ctrl: Nil, env: ρ } s
    let xs = L.fromFoldable (assigns s)
    ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Val unit V.Unbound))) xs
-   members <- traverse (record >>> map fst) ρ'
+   members <- traverse (recordValue >>> map fst) ρ'
    pure (ρ_subMods <+> ρ_unbound <+> members)
 
 -- Bind imported members, and names of imported modules to module values.

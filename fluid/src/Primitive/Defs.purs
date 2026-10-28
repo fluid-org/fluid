@@ -49,12 +49,13 @@ import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
 import Pretty (prettyP)
+import Rules as R
 import Types (Primitive(..), Type(..), baseType) as T
 import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, primitiveRule, pureRel, record, recordValue, root, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -154,12 +155,12 @@ loadJson =
    ForeignOp ("load_json" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ctrl vs@({ val: Val _ (Fun (Type τ)) } : { val: Val _ (Lit (Str path)) } : Nil) = do
+   depOp primitive ctrl vs@({ val: Val _ (Fun (Type τ)) } : { val: Val _ (Lit (Str path)) } : Nil) = do
       classes <- askClasses
       json <- loadJsonFile path
       v <- orThrow (jsonVal classes τ json)
-      fromRel (\us -> ctrlWeight * foldl add zero (root <$> us) <$ v) ctrl vs
-   depOp _ _ = throw "Type and string expected"
+      fromRel (\us -> ctrlWeight * foldl add zero (root <$> us) <$ v) primitive ctrl vs
+   depOp _ _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
 loadJsonFile path = do
@@ -281,15 +282,19 @@ foldl_with_index =
    ForeignOp ("foldl_with_index" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp ctrl (g : v : d : Nil) = do
-      f <- gval <$> deliver ctrl g
-      r <- deliver ctrl v
-      foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
+   depOp primitive ctrl (g : v : d : Nil) = do
+      f <- deliver (R.valueRule g.val) ctrl g
+      r <- deliver (R.valueRule v.val) ctrl v
+      result <- foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
+      record (primitiveRule primitive) (gval result)
       where
-      step f acc (k × _) = Dep.apply ctrl f (key : gval acc : entryValue k d : Nil)
+      step f acc (k × _) = do
+         keyArg <- recordValue key
+         valueArg <- recordValue (entryValue k d)
+         Dep.apply ctrl f (keyArg : acc : valueArg : Nil)
          where
          key = { val: Val unit (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d }
-   depOp _ _ = throw "Function, value and dictionary expected"
+   depOp _ _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
 get =
@@ -314,26 +319,29 @@ dict_intersectionWith =
    ForeignOp ("dict_intersectionWith" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp ctrl (g : d1 : d2 : Nil) = do
-      f <- gval <$> deliver ctrl g
+   depOp primitive ctrl (g : d1 : d2 : Nil) = do
+      f <- deliver (R.valueRule g.val) ctrl g
       results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (Dict.toUnfoldable (dictEntries d1.val))) \(k × _) -> do
-         r <- Dep.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil)
+         left <- recordValue (entryValue k d1)
+         right <- recordValue (entryValue k d2)
+         r <- Dep.apply ctrl f (left : right : Nil)
          pure (k × gval r)
-      construct ctrl (dictFrom (d1 : d2 : Nil) results)
-   depOp _ _ = throw "Function and two dictionaries expected"
+      construct (primitiveRule primitive) ctrl (dictFrom (d1 : d2 : Nil) results)
+   depOp _ _ _ = throw "Function and two dictionaries expected"
 
 dict_map :: ForeignOp
 dict_map =
    ForeignOp ("dict_map" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ctrl (g : d : Nil) = do
-      f <- gval <$> deliver ctrl g
+   depOp primitive ctrl (g : d : Nil) = do
+      f <- deliver (R.valueRule g.val) ctrl g
       results <- for (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val))) \(k × _) -> do
-         r <- Dep.apply ctrl f (singleton (entryValue k d))
+         arg <- recordValue (entryValue k d)
+         r <- Dep.apply ctrl f (singleton arg)
          pure (k × gval r)
-      construct ctrl (dictFrom (singleton d) results)
-   depOp _ _ = throw "Function and dictionary expected"
+      construct (primitiveRule primitive) ctrl (dictFrom (singleton d) results)
+   depOp _ _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. String -> GVal s -> GVal s
 entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> snd) d }

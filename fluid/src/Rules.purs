@@ -2,10 +2,9 @@ module Rules where
 
 import Prelude
 
-import Data.Either (Either(..))
 import Data.Foldable (sum)
-import Data.List (List, length)
-import Bind (Var)
+import Data.List (List(..))
+import Bind (Var, Name)
 import Expr (Binop, Unop, Expr, Def)
 import Literal (Literal)
 
@@ -31,12 +30,22 @@ data RuleContext v
         (RuleContext v) --function closure
         (List (RuleContext v)) --arguments in eval order
         (RuleContext v) --function callee
+    | PartialApplication (RuleContext v) (List (RuleContext v))
+
+    | PrimitiveOp String (List (RuleContext v))
+    
+    | ObjectConstructor Name (List (RuleContext v))
+
     | ValueLeaf v
 
 type Rule v a =
     { context :: RuleContext v
     , premises :: List a --subderiv nodes
     }
+
+--use also as closed fallback context for values without an evaluator rule yet
+valueRule :: forall v a. v -> Rule v a
+valueRule val = { context: ValueLeaf val, premises: Nil }
 
 contextArity :: forall v. RuleContext v -> Int
 contextArity = case _ of
@@ -57,7 +66,12 @@ contextArity = case _ of
     TupleLiteral children -> sum (map contextArity children)
 
     Lambda _ -> 0
-    Application fun args callee ->
-        contextArity fun + sum (map contextArity args) + contextArity callee
+    Application fun args callee -> contextArity fun + sum (map contextArity args) + contextArity callee
+    PartialApplication fun args -> contextArity fun + sum (map contextArity args)
+    
+    PrimitiveOp _ args -> sum (map contextArity args)
+
+    ObjectConstructor _ args -> sum (map contextArity args)
+
     ValueLeaf _ -> 0
 

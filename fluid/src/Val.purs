@@ -1,4 +1,5 @@
-module Val where
+module Val
+where
 
 import Prelude hiding (absurd, append)
 
@@ -241,6 +242,9 @@ record rule {val: v, inEdges } = do
    for_ inEdges \(q × r) -> addEdge q p r
    pure (p × v)
 
+recordValue :: forall m s. MonadEval s m => GVal s -> m (Dep.Deriv × Raw Val)
+recordValue v = record (R.valueRule v.val) v
+
 -- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => R.Rule (Raw Val) Dep.Deriv -> Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
 deliver rule ctrl v = record rule (withCtrl ctrl unitSection v)
@@ -261,6 +265,19 @@ constructWith
 constructWith rule ctrl mk vs =
    construct rule ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
 
+--preserve value-named recording for constructors not yet given rule contexts
+constructWithValue
+   :: forall t m s
+    . Traversable t
+   => MonadState (DepGraph Val s) m
+   => DepSemiring s
+   => Ctrl s
+   -> (forall a. t (Val a) -> BaseVal a)
+   -> t (GVal s)
+   -> m (Dep.Deriv × Raw Val)
+constructWithValue ctrl mk vs =
+   constructWith (R.valueRule (Val unit (mk (_.val <$> vs)))) ctrl mk vs
+
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
    :: forall m s
@@ -270,7 +287,7 @@ dictionary
    -> List (String × GVal s × GVal s)
    -> m (Dep.Deriv × Raw Val)
 dictionary ctrl kvs =
-   constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
+   constructWithValue ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
    where
    mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
    mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> root key × v))
@@ -295,23 +312,35 @@ instance
    ) =>
    MonadEval s m
 
+type PrimitiveRule =
+   { name :: String
+   , premises :: List Dep.Deriv
+   }
+
+primitiveRule :: PrimitiveRule -> R.Rule (Raw Val) Dep.Deriv
+primitiveRule primitive =
+   { context: R.PrimitiveOp primitive.name (map (const R.Hole) primitive.premises)
+   , premises: primitive.premises
+   }
+
 type DepOp =
-   forall m s
-    . MonadEval s m
-   => Ctrl s
+   forall m s. MonadEval s m
+   => PrimitiveRule
+   -> Ctrl s
    -> List (GVal s)
    -> m (Dep.Deriv × Raw Val)
 
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
+fromRel g primitive ctrl vs = 
+   deliver (primitiveRule primitive) ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
-pureRel f ctrl vs = do
-   _ <- orThrow (f (_.val <$> vs))
-   fromRel (f >>> definitelyRight) ctrl vs
+pureRel f primitive ctrl vs = do
+   _ <- orThrow (f (_.val <$> vs)) --orThrow (f (map (\v -> v.val) vs))
+   fromRel (f >>> definitelyRight) primitive ctrl vs
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
