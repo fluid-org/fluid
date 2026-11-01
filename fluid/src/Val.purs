@@ -15,9 +15,8 @@ import Data.Array (cons, fromFoldable, length, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, fold, foldMapDefaultL, foldl, foldrDefault, for_)
+import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
 import Data.Functor.Compose (Compose(..))
-import Data.Lazy (defer, force)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -25,15 +24,14 @@ import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
-import Data.Profunctor.Strong (second)
 import Data.Tuple (snd)
-import Data.Traversable (class Traversable, mapAccumL, sequenceDefault, traverse)
+import Data.Traversable (class Traversable, sequenceDefault, traverse)
 import Dict (Dict)
 import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (DepGraph, Labelling, Rel, addEdge, deriv, emptyGraph, scale, valAt, zeros)
+import DepGraph (Dep, DepGraph, Labelling, at, deriv, emptyGraph, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -152,29 +150,32 @@ instance (Monad m, HasModuleStore m, Monoid w) => HasModuleStore (WriterT w m) w
    moduleStore = lift moduleStore
    modifyModuleStore = lift <<< modifyModuleStore
 
-type InEdges s = List (Dep.Deriv × Rel (Val s) (Val s))
 -- Value together with its dependence on values already in the graph.
-type GVal s = { val :: Raw Val, inEdges :: InEdges s }
+type GVal s = { val :: Raw Val, dep :: Dep Val s (Val s) }
 -- Dependence of the control input on values already in the graph.
-type Ctrl s = List (Dep.Deriv × Rel (Val s) s)
+type Ctrl s = Dep Val s s
 
--- Weight 1 at every position except beneath the root of a closure.
-unitSection :: forall s. Semiring s => Raw Val -> Val s
-unitSection (Val _ u) = Val one case u of
+-- Apply f at every position except beneath the root of a closure.
+overSection :: forall s. (s -> s) -> Endo (Val s)
+overSection f (Val α u) = Val (f α) case u of
    Lit ℓ -> Lit ℓ
-   Obj c xvs -> Obj c (map unitSection <$> xvs)
-   List vs -> List (unitSection <$> vs)
-   Tuple vs -> Tuple (unitSection <$> vs)
-   Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
-   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
-   Fun φ -> Fun (zeros φ)
+   Obj c xvs -> Obj c (map (overSection f) <$> xvs)
+   List vs -> List (overSection f <$> vs)
+   Tuple vs -> Tuple (overSection f <$> vs)
+   Dictionary (DictRep d) -> Dictionary (DictRep ((\(β × v) -> f β × overSection f v) <$> d))
+   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map (overSection f)) vss × overSection f i × overSection f j))
+   Fun φ -> Fun φ
    Opaque q -> Opaque q
    Module q -> Module q
    Unbound -> Unbound
    TypeAlias αs τ -> TypeAlias αs τ
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = { val: v, inEdges: singleton (p × identity) }
+gval (p × v) = { val: v, dep: at p }
+
+-- Value with no dependence.
+constant :: forall s. Semiring s => Raw Val -> GVal s
+constant v = { val: v, dep: pure (zeros v) }
 
 -- Vertex with the vertex of its doc, if any.
 type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
@@ -201,36 +202,27 @@ gvalAt :: forall m s. MonadState (DepGraph Val s) m => Dep.Deriv -> m (GVal s)
 gvalAt p = gets \g -> gval (p × valAt g p)
 
 -- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s b. Rel (Val s) b -> GVal s -> List (Dep.Deriv × Rel (Val s) b)
-via r v = second (r <<< _) <$> v.inEdges
+via :: forall s b. (Val s -> b) -> GVal s -> Dep Val s b
+via r v = r <$> v.dep
 
 -- Dependence on values already in the graph of a value that depends on vs by r.
-viaAll :: forall t s. Traversable t => Semiring s => Rel (t (Val s)) (Val s) -> t (GVal s) -> InEdges s
-viaAll r vs = fold (ivs <#> \(i × v) -> via (\x -> r (force zs <#> \(j × z) -> if i == j then x else z)) v)
-   where
-   ivs = (mapAccumL (\i v -> { accum: i + 1, value: i × v }) 0 vs).value
-   zs = defer \_ -> map (zeros <<< _.val) <$> ivs
+viaAll :: forall t s. Traversable t => (t (Val s) -> Val s) -> t (GVal s) -> Dep Val s (Val s)
+viaAll r vs = r <$> traverse _.dep vs
 
--- Adds dependence on control at weight c to the positions of v in the section of its value.
-withCtrl :: forall s. DepSemiring s => Ctrl s -> (Raw Val -> Val s) -> GVal s -> GVal s
-withCtrl ctrl section v =
-   v { inEdges = v.inEdges <> (ctrl <#> second \r x -> scale (ctrlWeight * r x) (force section')) }
-   where
-   section' = defer \_ -> section v.val
+-- Adds dependence on control at weight c, by adding the control weight at positions of v with addCtrl.
+withCtrl :: forall s. DepSemiring s => Ctrl s -> (s -> Endo (Val s)) -> GVal s -> GVal s
+withCtrl ctrl addCtrl v = v { dep = lift2 (\c -> addCtrl (ctrlWeight * c)) ctrl v.dep }
 
 -- Constructed value: root depends on control at weight c.
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-constructed ctrl = withCtrl ctrl \(Val _ u) -> Val one (zeros u)
+constructed ctrl = withCtrl ctrl \c (Val α u) -> Val (α + c) u
 
-record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, inEdges } = do
-   p <- deriv v
-   for_ inEdges \(q × r) -> addEdge q p r
-   pure (p × v)
+record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
+record { val: v, dep } = deriv v dep <#> (_ × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-deliver ctrl v = record (withCtrl ctrl unitSection v)
+deliver ctrl v = record (withCtrl ctrl (\c -> overSection (_ + c)) v)
 
 construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
 construct ctrl v = record (constructed ctrl v)
@@ -245,7 +237,7 @@ constructWith
    -> t (GVal s)
    -> m (Dep.Deriv × Raw Val)
 constructWith ctrl mk vs =
-   construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
+   construct ctrl { val: Val unit (mk (_.val <$> vs)), dep: viaAll (mk >>> Val zero) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
@@ -291,7 +283,7 @@ type DepOp =
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
+fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), dep: viaAll g vs }
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
