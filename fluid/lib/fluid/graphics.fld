@@ -1,7 +1,7 @@
 from typing import Callable
 from dataclasses import dataclass
 from math import floor
-from fluid.prelude import ceil_to_nearest, compose, curry, fmax, foldl, log_base, map, maximum, prod, scanl, snd, tail, zip
+from fluid.prelude import ceil_to_nearest, compose, curry, fmax, foldl, log_base, map, prod, scanl, snd, tail, zip
 
 type Colour = str
 type Colours = list[Colour]
@@ -207,7 +207,7 @@ def stack_right(sep: float, gs: list[GraphicsElement]) -> list[GraphicsElement]:
   return map(scale_to_width(1 - sep), space_right(sep / 2, 1, gs))
 
 def group_right(sep: float, gs: list[GraphicsElement]) -> GraphicsElement:
-  return Viewport(x=0, y=0, width=len(gs), height=maximum(map(height, gs)), fill="none", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=Group(stack_right(sep, gs)))
+  return Viewport(x=0, y=0, width=len(gs), height=max(map(height, gs)), fill="none", margin=0, scale=Scale(1, 1), translate=Translate(0, 0), g=Group(stack_right(sep, gs)))
 
 # Heuristic saying how often to place a tick on an axis of length n.
 def tick_every(n: float) -> float:
@@ -292,7 +292,7 @@ def line_chart(with_axes: bool, colours: Colours, x_start: float, data: list[tup
 
   lines: list[GraphicsElement] = [plot(n, colours[n]) for n in range(0, n_cat)]
   x_finish: float = xs[-1]
-  y_finish: float = maximum([maximum([v for (_, v) in kvs]) for (_, kvs) in data])
+  y_finish: float = max([max([v for (_, v) in kvs]) for (_, kvs) in data])
 
   if with_axes:
     x_axis, x_finish_ = axis(Horiz(), 0, x_start, x_finish)
@@ -304,7 +304,7 @@ def line_chart(with_axes: bool, colours: Colours, x_start: float, data: list[tup
 def categorical_chart[A](plot_value: Callable[[Colours, list[A]], list[GraphicsElement]], with_axes: bool, colours: Colours, sep: float, data: list[tuple[Cat, A]]) -> GraphicsElement:
   gs: list[GraphicsElement] = stack_right(sep, plot_value(colours, [kvs for (_, kvs) in data]))
   w: int = len(gs)
-  h: float = maximum(map(height, gs))
+  h: float = max(map(height, gs))
 
   if with_axes:
     x_axis: GraphicsElement = cat_axis(Horiz(), 0, [x for (x, _) in data])

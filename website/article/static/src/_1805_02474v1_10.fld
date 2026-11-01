@@ -3,7 +3,6 @@ from util import insertionSort, findIndex, findWhere, model
 from dataset.scigen._1805_02474v1_10 import Model, tableData
 
 import fluid.view
-from fluid.prelude import minimum
 
 model_BiLSTM: Model = model("BiLSTM", tableData)
 model_LSTM: Model = model("LSTM", tableData)
@@ -12,7 +11,7 @@ model_3_stacked_BiLSTM: Model = model("3 stacked BiLSTM", tableData)
 model_S_LSTM: Model = model("S-LSTM", tableData)
 model_CNN: Model = model("CNN", tableData)
 model_3_stacked_CNN: Model = model("3 stacked CNN", tableData)
-mostEfficient: Model = findWhere(lambda r: r.time_s == minimum([y.time_s for y in tableData]), tableData)
+mostEfficient: Model = findWhere(lambda r: r.time_s == min([y.time_s for y in tableData]), tableData)
 
 f"""As shown in Table 3, BiLSTM gives significantly
    {trendWord(model_BiLSTM.acc, model_LSTM.acc, betterWorse)}
