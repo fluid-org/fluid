@@ -76,6 +76,8 @@ predefined = M.fromFoldable
         [ extern print_ × generalise (callable [ T.object ] T.none)
         , extern len × generalise (callable [ T.PrimitiveTy T.Sized ] T.int)
         , extern sorted × generalise (callable [ T.ListTy (var "T") ] (T.ListTy (var "T")))
+        , extern min_ × generalise (callable [ T.ListTy (var "T") ] (var "T"))
+        , extern max_ × generalise (callable [ T.ListTy (var "T") ] (var "T"))
         , unary "round" { i: intOrNumber, o: int, fwd: identity `union1` round } × generalise (callable [ T.float ] T.int)
         , extern dims × generalise (callable [ matrix (var "T") ] T.intPair)
         , extern loadJson × generalise (callable [ T.TypeTy (var "T"), T.str ] (var "T"))
@@ -160,6 +162,26 @@ sorted =
 
    withCtrl :: forall a. DepSemiring a => a -> Val a -> Val a
    withCtrl β (Val α u) = Val (α + ctrlWeight * β) u
+
+min_ :: ForeignOp
+min_ = extremum "min" Lt
+
+max_ :: ForeignOp
+max_ = extremum "max" Gt
+
+extremum :: String -> Binop -> ForeignOp
+extremum id op =
+   ForeignOp (id × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   where
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val _ (List vs) : Nil) = case Array.uncons vs of
+      Nothing -> Left ("ValueError: " <> id <> "() iterable argument is empty")
+      Just { head, tail } -> foldM step (head × zero) tail <#> \(Val α u × β) -> Val (α + ctrlWeight * β) u
+   depRel (Val _ u : Nil) = Left (typeMismatch u "list")
+   depRel _ = Left "Single argument expected"
+
+   step :: forall a. DepSemiring a => Val a × a -> Val a -> MayFail (Val a × a)
+   step (v × β) v' = binopRel op v' v >>= unpack boolean <#> \(b × γ) -> (if b then v' else v) × (β + γ)
 
 exit :: ForeignOp
 exit =
