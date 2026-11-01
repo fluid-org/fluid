@@ -36,8 +36,7 @@ zeros = map (const zero)
 
 type Labelling a = Map Deriv a
 
--- In-edges of a vertex: its source vertices, with its weights as a function of the weights at every vertex, linear in
--- those at the sources.
+-- In-edges of a vertex: its source vertices, with its dependence on them as a linear function of their weights.
 newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s) -> b))
 
 sources :: forall f s b. InEdges f s b -> Set Deriv
