@@ -1,9 +1,10 @@
 module Test.Specs.LinkedOutputs where
 
 import App.Util.Selector (barSegment, eachElement, envVal, field, valOf, listElement, matrixDims, matrixElement, none, topα, tupleElement, (>.>), select, select')
+import App.View.Util (Filter(..))
 import Data.Maybe (Maybe(..))
 
-import Types.Defs (cBarChart, cLineChart, cLinePlot, cMultiView, cPoint, cScatterPlot, f_plots, f_points, f_stackedBars, f_views, f_y)
+import Types.Defs (cBarChart, cLineChart, cLinePlot, cMultiView, cPoint, cScatterPlot, f_caption, f_plots, f_points, f_stackedBars, f_views, f_y)
 import Test.Util (at, fluidSrcPaths)
 import Test.Util.Suite (TestLinkedOutputsSpec)
 
@@ -179,6 +180,20 @@ linkedOutputs_cases =
      , out_expect: \_ -> at "(⸨3⸩, ⸨True⸩)"
      , inert_expect: \_ -> Nothing
      , file: "dependence/output_not_source.fld"
+     }
+   -- Caption depends on no input, so the selection links to nothing; the case measures loading the figure.
+   , { spec:
+          { fluidSrcPaths
+          , inputs: [ "nap3_actions", "ccra3_risks" ]
+          , query: true
+          , ignoreInputs: none
+          , linking: true
+          , rowFilter: Just Relevant
+          }
+     , δ_out: \arg -> arg cMultiView f_views (listElement 1 (arg cBarChart f_caption select))
+     , out_expect: \arg -> arg cMultiView f_views (listElement 1 (arg cBarChart f_caption select))
+     , inert_expect: \_ -> Nothing
+     , file: "linked_outputs/nap3.fld"
      }
    , linkedOutputs_spec1
    , linkedOutputs_spec2

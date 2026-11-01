@@ -66,7 +66,7 @@ selected s = selStates (isInert s) (isPersistent s) (isTransient s)
 linkedOutputsTest :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
-   fig0 <- loadFig spec fluidSrc
+   fig0 <- logTimeWhen timing.loadFig (file <> " loadFig") \_ -> loadFig spec fluidSrc
    let arg = objArg
    let fig = selectOutput (valOf (δ_out arg)) fig0
    v <- logTimeWhen timing.selectionResult file \_ ->
@@ -81,7 +81,7 @@ linkedOutputsSuite testSpecs = testSpecs <#> (_.file &&& (linkedOutputsTest >>> 
 linkedInputsTest :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestLinkedInputsSpec -> m Fig
 linkedInputsTest { spec, δ_in, in_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
-   fig <- loadFig spec fluidSrc <#> uncurry selectInput (valOf <$> δ_in)
+   fig <- logTimeWhen timing.loadFig (file <> " loadFig") (\_ -> loadFig spec fluidSrc) <#> uncurry selectInput (valOf <$> δ_in)
    ρ <- logTimeWhen timing.selectionResult file \_ ->
       pure (selectionResult fig).ρ
    checkSelection in_expect (selected <$> ρ)
