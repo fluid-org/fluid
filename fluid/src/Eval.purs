@@ -367,7 +367,7 @@ apply ctrl f@{ val: Val _ u } vs = case u of
    V.Fun φ -> do
       n <- arity'
       let k = length vs
-      if k < n then construct ctrl partial
+      if k < n then construct ctrl (partial unit)
       else if k == n then call φ vs
       else call φ (take n vs) >>= \r -> apply ctrl (gval r) (drop n vs)
       where
@@ -380,8 +380,8 @@ apply ctrl f@{ val: Val _ u } vs = case u of
          V.Partial _ _ -> error absurd
 
       -- Partial application of f to vs, with root and function depending on those of f, and arguments depending on vs.
-      partial :: GVal s
-      partial =
+      partial :: Unit -> GVal s
+      partial _ =
          { val: Val unit (V.Fun (V.Partial φ (_.val <$> vs)))
          , inEdges: via (\x -> Val (root x) (V.Fun (V.Partial (fun x) (zeros <<< _.val <$> vs)))) f
               <> viaAll (V.Partial (zeros φ) >>> V.Fun >>> Val zero) vs

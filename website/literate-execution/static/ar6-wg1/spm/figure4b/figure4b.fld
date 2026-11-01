@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from fluid.stats import find_percentile, cut
 
 from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Link
-from fluid.prelude import fsum, map, maximum, minimum
+from fluid.prelude import fsum, map
 
 @dataclass
 class Emission:
@@ -39,7 +39,7 @@ def mkBarChart(scenName: str, table: list[Emission]) -> BarChart:
   )
 
 def mkHistogram(xs: list[float], name: str, nbins: int) -> BarChart:
-  binWidth: float = (maximum(xs) - minimum(xs)) / nbins
+  binWidth: float = (max(xs) - min(xs)) / nbins
 
   return BarChart(
     caption="Histogram of distribution of " + name,

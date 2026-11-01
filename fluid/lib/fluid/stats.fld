@@ -1,7 +1,7 @@
 from typing import Callable
 from dataclasses import dataclass
 from math import floor, ceil
-from fluid.prelude import filter, maximum, minimum
+from fluid.prelude import filter
 
 @dataclass
 class Likelihood:
@@ -26,14 +26,14 @@ def accum_bins(data: list[float], edges: list[float]) -> list[tuple[list[float],
   return [([x for x in data if (i == 0 or edges[i] < x) and x <= edges[i + 1]], edges[i + 1] - edges[i]) for i in range(0, len(edges) - 1)]
 
 def cut(xs: list[float], nbins: int) -> list[tuple[list[float], float]]:
-  low: float = minimum(xs)
-  binwidth: float = (maximum(xs) - low) / nbins
+  low: float = min(xs)
+  binwidth: float = (max(xs) - low) / nbins
   edges: list[float] = [low + x * binwidth for x in range(0, nbins + 1)]
 
   return accum_bins(xs, edges)
 
 def qcut(xs: list[float], qs: list[float]) -> list[tuple[list[float], float]]:
-  low, high = minimum(xs), maximum(xs)
+  low, high = min(xs), max(xs)
   edges: list[float] = [low] + [find_percentile(x, xs) for x in qs] + [high]
 
   return accum_bins(xs, edges)
