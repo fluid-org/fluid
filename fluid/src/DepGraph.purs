@@ -36,28 +36,15 @@ zeros = map (const zero)
 
 type Labelling a = Map Deriv a
 
--- Shapes with a section: the positions outside the environment of any closure.
-class HasSection (f :: Type -> Type) where
-   overSection :: forall s. (s -> s) -> f s -> f s
-
--- Weights at a vertex: a value, with a control weight to add at every position of its section.
-type Weights f s = { val :: f s, ctrl :: Maybe s }
-
-noCtrl :: forall f s. f s -> Weights f s
-noCtrl val = { val, ctrl: Nothing }
-
-expand :: forall f s. HasSection f => Semiring s => Weights f s -> f s
-expand { val, ctrl } = maybe val (\c -> overSection (_ + c) val) ctrl
-
 -- In-edges of a vertex: its source vertices, with its weights as a function of the weights at every vertex, linear in
 -- those at the sources.
-newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (Weights f s) -> b))
+newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s) -> b))
 
 sources :: forall f s b. InEdges f s b -> Set Deriv
 sources (InEdges (ps × _)) = ps
 
 -- Weights at a vertex.
-at :: forall f s. Deriv -> InEdges f s (Weights f s)
+at :: forall f s. Deriv -> InEdges f s (f s)
 at p = InEdges (Set.singleton p × get p)
 
 instance Functor (InEdges f s) where
@@ -93,7 +80,7 @@ type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
    , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
-   , inEdges :: Labelling (InEdges f s (Weights f s))
+   , inEdges :: Labelling (InEdges f s (f s))
    }
 
 emptyGraph :: forall f s. DepGraph f s
@@ -102,7 +89,7 @@ emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
 valAt g p = get p g.vals
 
-deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (Weights f s) -> m Deriv
+deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
 deriv v inEdges = do
    size <- gets _.size
    let p = Deriv size
@@ -122,7 +109,6 @@ type VisibleGraph (f :: Type -> Type) s =
 materialise
    :: forall f s
     . Traversable f
-   => HasSection f
    => DepSemiring s
    => DepGraph f (Lineage (Deriv × Pos) s)
    -> Set Deriv
@@ -134,8 +120,8 @@ materialise g visible =
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
-         { weightsAt: Map.insert p (noCtrl (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v)) weightsAt
-         , rels: Map.insert p (sparseRel <$> edgesInto (expand weights)) rels
+         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
+         , rels: Map.insert p (sparseRel <$> edgesInto weights) rels
          }
       else { weightsAt: Map.insert p weights weightsAt, rels }
       where
