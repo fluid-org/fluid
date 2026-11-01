@@ -39,9 +39,6 @@ type Labelling a = Map Deriv a
 -- In-edges of a vertex: its source vertices, with its dependence on them as a linear function of their weights.
 newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s) -> b))
 
-sources :: forall f s b. InEdges f s b -> Set Deriv
-sources (InEdges (ps × _)) = ps
-
 -- Weights at a vertex.
 at :: forall f s. Deriv -> InEdges f s (f s)
 at p = InEdges (Set.singleton p × get p)
@@ -184,15 +181,15 @@ queries g = { fwd: fwd g, bwd: bwd g }
 bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step (p × rels) ws = case lookup p ws of
+   step (p × sources) ws = case lookup p ws of
       Nothing -> ws
-      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applyRel r.in_ w) ws') ws rels
+      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applyRel r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
 fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step ws (p × rels) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws rels
+   step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
    into p ws (SparseRel r) w = add' p (applyRel r.out w) ws
 
 -- ======================

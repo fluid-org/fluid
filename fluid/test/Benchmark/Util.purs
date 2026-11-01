@@ -17,7 +17,7 @@ import Data.Tuple (snd)
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Class.Console (log)
-import DepGraph (DepGraph, sources)
+import DepGraph (DepGraph, InEdges(..))
 import Util (type (×), EffectError, Thunk, debug, force, (×), singleton)
 
 logAs :: forall m. MonadEffect m => String -> String -> m Unit
@@ -82,7 +82,7 @@ recordDepGraphSize :: forall f s m. MonadWriter BenchRow m => DepGraph f s -> m 
 recordDepGraphSize g =
    tell $ BenchRow $ Map.fromFoldable
       [ "Dep-Vertices" × singleton (toNumber (Map.size g.vals))
-      , "Dep-Edges" × singleton (toNumber (sum (Set.size <<< sources <$> Map.values g.inEdges)))
+      , "Dep-Edges" × singleton (toNumber (sum (Map.values g.inEdges <#> \(InEdges (ps × _)) -> Set.size ps)))
       ]
 
 divRow :: BenchRow -> Int -> BenchRow
