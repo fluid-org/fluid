@@ -104,7 +104,7 @@ type VisibleGraph (f :: Type -> Type) s =
    , edges :: Labelling (Labelling (SparseRel s)) -- target ↦ source ↦ dependence relation
    }
 
--- Relies on dependence running from earlier to later vertices in evaluation order.
+-- Relies on edges running from earlier to later vertices in evaluation order.
 materialise
    :: forall f s
     . Traversable f
