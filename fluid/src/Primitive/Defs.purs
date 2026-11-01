@@ -54,7 +54,8 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import DepGraph (noCtrl)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, project, pureRel, root, scalarVia, weights)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -338,7 +339,7 @@ foldl_with_index =
       where
       step f acc (k × _) = Dep.apply ctrl f (key : gval acc : entryValue k d : Nil)
          where
-         key = { val: Val unit (Lit (Str k)), dep: via (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d }
+         key = { val: Val unit (Lit (Str k)), dep: scalarVia (dictEntry k >>> fst) d <#> \α -> noCtrl (Val α (Lit (Str k))) }
    depOp _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
@@ -386,13 +387,13 @@ dict_map =
    depOp _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. String -> GVal s -> GVal s
-entryValue k d = { val: snd (dictEntry k d.val), dep: via (dictEntry k >>> snd) d }
+entryValue k d = { val: snd (dictEntry k d.val), dep: project (dictEntry k >>> snd) d }
 
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
 dictFrom ds kvs =
    { val: Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-   , dep: lift2 dict (traverse _.dep ds) (traverse (\(k × v) -> (k × _) <$> v.dep) kvs)
+   , dep: noCtrl <$> lift2 dict (traverse weights ds) (traverse (\(k × v) -> (k × _) <$> weights v) kvs)
    }
    where
    dict xs kvs' = Val (foldl add zero (root <$> xs))
