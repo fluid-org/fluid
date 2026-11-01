@@ -339,7 +339,7 @@ foldl_with_index =
       where
       step f acc (k × _) = Dep.apply ctrl f (key : gval acc : entryValue k d : Nil)
          where
-         key = { val: Val unit (Lit (Str k)), dep: scalarVia (dictEntry k >>> fst) d <#> \α -> noCtrl (Val α (Lit (Str k))) }
+         key = { val: Val unit (Lit (Str k)), inEdges: scalarVia (dictEntry k >>> fst) d <#> \α -> noCtrl (Val α (Lit (Str k))) }
    depOp _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
@@ -387,13 +387,13 @@ dict_map =
    depOp _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. String -> GVal s -> GVal s
-entryValue k d = { val: snd (dictEntry k d.val), dep: project (dictEntry k >>> snd) d }
+entryValue k d = { val: snd (dictEntry k d.val), inEdges: project (dictEntry k >>> snd) d }
 
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
 dictFrom ds kvs =
    { val: Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-   , dep: noCtrl <$> lift2 dict (traverse weights ds) (traverse (\(k × v) -> (k × _) <$> weights v) kvs)
+   , inEdges: noCtrl <$> lift2 dict (traverse weights ds) (traverse (\(k × v) -> (k × _) <$> weights v) kvs)
    }
    where
    dict xs kvs' = Val (foldl add zero (root <$> xs))

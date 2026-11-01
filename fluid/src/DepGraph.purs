@@ -49,30 +49,31 @@ noCtrl val = { val, ctrl: Nothing }
 expand :: forall f s. HasSection f => Semiring s => Weights f s -> f s
 expand { val, ctrl } = maybe val (\c -> overSection (_ + c) val) ctrl
 
--- Dependence on the source vertices: a function of the weights at every vertex, linear in those at the sources.
-newtype Dep (f :: Type -> Type) s b = Dep (Set Deriv × (Labelling (Weights f s) -> b))
+-- In-edges of a vertex: its source vertices, with its weights as a function of the weights at every vertex, linear in
+-- those at the sources.
+newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (Weights f s) -> b))
 
-sources :: forall f s b. Dep f s b -> Set Deriv
-sources (Dep (ps × _)) = ps
+sources :: forall f s b. InEdges f s b -> Set Deriv
+sources (InEdges (ps × _)) = ps
 
 -- Weights at a vertex.
-at :: forall f s. Deriv -> Dep f s (Weights f s)
-at p = Dep (Set.singleton p × get p)
+at :: forall f s. Deriv -> InEdges f s (Weights f s)
+at p = InEdges (Set.singleton p × get p)
 
-instance Functor (Dep f s) where
-   map h (Dep (ps × r)) = Dep (ps × (h <<< r))
+instance Functor (InEdges f s) where
+   map h (InEdges (ps × r)) = InEdges (ps × (h <<< r))
 
-instance Apply (Dep f s) where
-   apply (Dep (ps × h)) (Dep (ps' × r)) = Dep ((ps ∪ ps') × \ws -> h ws (r ws))
+instance Apply (InEdges f s) where
+   apply (InEdges (ps × h)) (InEdges (ps' × r)) = InEdges ((ps ∪ ps') × \ws -> h ws (r ws))
 
-instance Applicative (Dep f s) where
-   pure b = Dep (Set.empty × const b)
+instance Applicative (InEdges f s) where
+   pure b = InEdges (Set.empty × const b)
 
 -- Sum of scalar dependences.
-instance Semiring b => Semigroup (Dep f s b) where
+instance Semiring b => Semigroup (InEdges f s b) where
    append = lift2 add
 
-instance Semiring b => Monoid (Dep f s b) where
+instance Semiring b => Monoid (InEdges f s b) where
    mempty = pure zero
 
 -- Pair present exactly when its weight is non-zero.
@@ -92,20 +93,20 @@ type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
    , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
-   , deps :: Labelling (Dep f s (Weights f s))
+   , inEdges :: Labelling (InEdges f s (Weights f s))
    }
 
 emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, deps: Map.empty }
+emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
 
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
 valAt g p = get p g.vals
 
-deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dep f s (Weights f s) -> m Deriv
-deriv v dep = do
+deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (Weights f s) -> m Deriv
+deriv v inEdges = do
    size <- gets _.size
    let p = Deriv size
-   modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, deps = Map.insert p dep g.deps }
+   modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, inEdges = Map.insert p inEdges g.inEdges }
    pure p
 
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
@@ -138,7 +139,7 @@ materialise g visible =
          }
       else { weightsAt: Map.insert p weights weightsAt, rels }
       where
-      Dep (_ × rel) = get p g.deps
+      InEdges (_ × rel) = get p g.inEdges
       weights = rel weightsAt
 
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.

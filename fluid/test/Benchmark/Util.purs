@@ -82,7 +82,7 @@ recordDepGraphSize :: forall f s m. MonadWriter BenchRow m => DepGraph f s -> m 
 recordDepGraphSize g =
    tell $ BenchRow $ Map.fromFoldable
       [ "Dep-Vertices" × singleton (toNumber (Map.size g.vals))
-      , "Dep-Edges" × singleton (toNumber (sum (Set.size <<< sources <$> Map.values g.deps)))
+      , "Dep-Edges" × singleton (toNumber (sum (Set.size <<< sources <$> Map.values g.inEdges)))
       ]
 
 divRow :: BenchRow -> Int -> BenchRow

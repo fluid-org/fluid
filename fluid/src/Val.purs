@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class HasSection, Dep, DepGraph, Labelling, Weights, at, deriv, emptyGraph, expand, noCtrl, overSection, sources, valAt, zeros)
+import DepGraph (class HasSection, InEdges, DepGraph, Labelling, Weights, at, deriv, emptyGraph, expand, noCtrl, overSection, sources, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -151,9 +151,9 @@ instance (Monad m, HasModuleStore m, Monoid w) => HasModuleStore (WriterT w m) w
    modifyModuleStore = lift <<< modifyModuleStore
 
 -- Value together with its dependence on values already in the graph.
-type GVal s = { val :: Raw Val, dep :: Dep Val s (Weights Val s) }
+type GVal s = { val :: Raw Val, inEdges :: InEdges Val s (Weights Val s) }
 -- Dependence of the control input on values already in the graph.
-type Ctrl s = Dep Val s s
+type Ctrl s = InEdges Val s s
 
 instance HasSection Val where
    overSection f (Val α u) = Val (f α) case u of
@@ -170,11 +170,11 @@ instance HasSection Val where
       TypeAlias αs τ -> TypeAlias αs τ
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = { val: v, dep: at p }
+gval (p × v) = { val: v, inEdges: at p }
 
 -- Value with no dependence.
 constant :: forall s. Semiring s => Raw Val -> GVal s
-constant v = { val: v, dep: pure (noCtrl (zeros v)) }
+constant v = { val: v, inEdges: pure (noCtrl (zeros v)) }
 
 -- Vertex with the vertex of its doc, if any.
 type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
@@ -200,41 +200,41 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 gvalAt :: forall m s. MonadState (DepGraph Val s) m => Dep.Deriv -> m (GVal s)
 gvalAt p = gets \g -> gval (p × valAt g p)
 
-weights :: forall s. Semiring s => GVal s -> Dep Val s (Val s)
-weights v = expand <$> v.dep
+weights :: forall s. Semiring s => GVal s -> InEdges Val s (Val s)
+weights v = expand <$> v.inEdges
 
 -- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s. Semiring s => (Val s -> Val s) -> GVal s -> Dep Val s (Weights Val s)
+via :: forall s. Semiring s => (Val s -> Val s) -> GVal s -> InEdges Val s (Weights Val s)
 via r v = noCtrl <<< r <$> weights v
 
 -- Dependence on values already in the graph of a value that depends on vs by r.
-viaAll :: forall t s. Traversable t => Semiring s => (t (Val s) -> Val s) -> t (GVal s) -> Dep Val s (Weights Val s)
+viaAll :: forall t s. Traversable t => Semiring s => (t (Val s) -> Val s) -> t (GVal s) -> InEdges Val s (Weights Val s)
 viaAll r vs = noCtrl <<< r <$> traverse weights vs
 
 -- Dependence of a projection r of v within its section, which keeps the control weight of v.
-project :: forall s. (forall a. Val a -> Val a) -> GVal s -> Dep Val s (Weights Val s)
-project r v = v.dep <#> \w -> w { val = r w.val }
+project :: forall s. (forall a. Val a -> Val a) -> GVal s -> InEdges Val s (Weights Val s)
+project r v = v.inEdges <#> \w -> w { val = r w.val }
 
 -- Dependence of a projection r of v beneath the root of a closure, outside the section of v.
-projectBeneath :: forall s. (forall a. Val a -> Val a) -> GVal s -> Dep Val s (Weights Val s)
-projectBeneath r v = v.dep <#> \w -> noCtrl (r w.val)
+projectBeneath :: forall s. (forall a. Val a -> Val a) -> GVal s -> InEdges Val s (Weights Val s)
+projectBeneath r v = v.inEdges <#> \w -> noCtrl (r w.val)
 
 -- Scalar dependence on v by r, a sum of positions in the section of v, so with its control weight added once.
-scalarVia :: forall s. Semiring s => (Val s -> s) -> GVal s -> Dep Val s s
-scalarVia r v = v.dep <#> \w -> maybe identity add w.ctrl (r w.val)
+scalarVia :: forall s. Semiring s => (Val s -> s) -> GVal s -> InEdges Val s s
+scalarVia r v = v.inEdges <#> \w -> maybe identity add w.ctrl (r w.val)
 
 -- Add dependence on control at weight c, placed by addCtrl, unless the control has no sources and so is zero.
 withCtrl :: forall s. DepSemiring s => Ctrl s -> (s -> Endo (Weights Val s)) -> GVal s -> GVal s
 withCtrl ctrl addCtrl v
    | Set.isEmpty (sources ctrl) = v
-   | otherwise = v { dep = lift2 (\c -> addCtrl (ctrlWeight * c)) ctrl v.dep }
+   | otherwise = v { inEdges = lift2 (\c -> addCtrl (ctrlWeight * c)) ctrl v.inEdges }
 
 -- Constructed value: root depends on control at weight c.
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 constructed ctrl = withCtrl ctrl \c w -> w { val = let Val α u = w.val in Val (α + c) u }
 
 record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, dep } = deriv v dep <#> (_ × v)
+record { val: v, inEdges } = deriv v inEdges <#> (_ × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
@@ -253,7 +253,7 @@ constructWith
    -> t (GVal s)
    -> m (Dep.Deriv × Raw Val)
 constructWith ctrl mk vs =
-   construct ctrl { val: Val unit (mk (_.val <$> vs)), dep: viaAll (mk >>> Val zero) vs }
+   construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
 dictionary
@@ -299,7 +299,7 @@ type DepOp =
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), dep: viaAll g vs }
+fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
