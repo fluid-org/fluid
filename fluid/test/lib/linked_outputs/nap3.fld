@@ -2,7 +2,7 @@ from math import ceil, floor
 from dataset.nap3 import nap3_actions, ccra3_risks
 
 from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Rotated, Link
-from fluid.prelude import fsum, maximum, nub
+from fluid.prelude import fsum, nub
 
 eval_scores: list[str] = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
@@ -53,7 +53,7 @@ def proportion(x: float, y: float) -> float:
   return 0 if y == 0 else x / y
 
 def max_with_score(actions: list[StackedBar], eval_score: str) -> float:
-  return maximum([
+  return max([
     proportion(actions_with_score(action_counts, eval_score), total_actions(action_counts))
     for StackedBar(x=_, segments=action_counts) in actions
   ])
