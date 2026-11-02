@@ -34,6 +34,12 @@ mapPositions h = traverse (\_ -> state \n -> h n × (n + 1)) >>> flip evalState 
 zeros :: forall f a s. Functor f => Semiring s => f a -> f s
 zeros = map (const zero)
 
+scale :: forall f s. Functor f => Semiring s => s -> f s -> f s
+scale a = map (mul a)
+
+plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
+plus = lift2 add
+
 type Labelling a = Map Deriv a
 
 -- In-edges of a vertex: its source vertices, with its dependence on them as a linear function of their weights.

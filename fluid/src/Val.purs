@@ -17,6 +17,7 @@ import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
 import Data.Functor.Compose (Compose(..))
+import Data.Lazy (defer, force)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -31,7 +32,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, valAt, zeros)
+import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, plus, scale, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -155,16 +156,16 @@ type GVal s = { val :: Raw Val, inEdges :: InEdges Val s (Val s) }
 -- Dependence of the control input on values already in the graph.
 type Ctrl s = InEdges Val s s
 
--- Apply f at every position except beneath the root of a closure.
-overSection :: forall s. (s -> s) -> Endo (Val s)
-overSection f (Val α u) = Val (f α) case u of
+-- Weight 1 at every position except beneath the root of a closure.
+unitSection :: forall s. Semiring s => Raw Val -> Val s
+unitSection (Val _ u) = Val one case u of
    Lit ℓ -> Lit ℓ
-   Obj c xvs -> Obj c (map (overSection f) <$> xvs)
-   List vs -> List (overSection f <$> vs)
-   Tuple vs -> Tuple (overSection f <$> vs)
-   Dictionary (DictRep d) -> Dictionary (DictRep ((\(β × v) -> f β × overSection f v) <$> d))
-   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map (overSection f)) vss × overSection f i × overSection f j))
-   Fun φ -> Fun φ
+   Obj c xvs -> Obj c (map unitSection <$> xvs)
+   List vs -> List (unitSection <$> vs)
+   Tuple vs -> Tuple (unitSection <$> vs)
+   Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
+   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
+   Fun φ -> Fun (zeros φ)
    Opaque q -> Opaque q
    Module q -> Module q
    Unbound -> Unbound
@@ -209,20 +210,23 @@ via r v = r <$> v.inEdges
 viaAll :: forall t s. Traversable t => (t (Val s) -> Val s) -> t (GVal s) -> InEdges Val s (Val s)
 viaAll r vs = r <$> traverse _.inEdges vs
 
--- Adds dependence on control at weight c, by adding the control weight at positions of v with addCtrl.
-withCtrl :: forall s. DepSemiring s => Ctrl s -> (s -> Endo (Val s)) -> GVal s -> GVal s
-withCtrl ctrl addCtrl v = v { inEdges = lift2 (\c -> addCtrl (ctrlWeight * c)) ctrl v.inEdges }
+-- Adds dependence on control at weight c to the positions of v in the section of its value.
+withCtrl :: forall s. DepSemiring s => Ctrl s -> (Raw Val -> Val s) -> GVal s -> GVal s
+withCtrl ctrl section v =
+   v { inEdges = lift2 (\c w -> w `plus` scale (ctrlWeight * c) (force section')) ctrl v.inEdges }
+   where
+   section' = defer \_ -> section v.val
 
 -- Constructed value: root depends on control at weight c.
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-constructed ctrl = withCtrl ctrl \c (Val α u) -> Val (α + c) u
+constructed ctrl = withCtrl ctrl \(Val _ u) -> Val one (zeros u)
 
 record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
 record { val: v, inEdges } = derivWith v inEdges <#> (_ × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-deliver ctrl v = record (withCtrl ctrl (\c -> overSection (_ + c)) v)
+deliver ctrl v = record (withCtrl ctrl unitSection v)
 
 construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
 construct ctrl v = record (constructed ctrl v)
