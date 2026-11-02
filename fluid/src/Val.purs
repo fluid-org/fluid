@@ -314,13 +314,14 @@ instance
 
 type PrimitiveRule =
    { name :: String
+   , function :: Dep.Deriv
    , premises :: List Dep.Deriv
    }
 
 primitiveRule :: PrimitiveRule -> R.Rule (Raw Val) Dep.Deriv
 primitiveRule primitive =
-   { context: R.PrimitiveOp primitive.name (map (const R.Hole) primitive.premises)
-   , premises: primitive.premises
+   { context: R.PrimitiveOp primitive.name R.Hole (map (const R.Hole) primitive.premises)
+   , premises: primitive.function : primitive.premises
    }
 
 type DepOp =
@@ -333,7 +334,7 @@ type DepOp =
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g primitive ctrl vs = 
+fromRel g primitive ctrl vs =
    deliver (primitiveRule primitive) ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
 -- Dependence relation of a primitive without effects, checked at the argument values.

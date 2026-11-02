@@ -141,6 +141,6 @@ ruleSummary = case _ of
    R.Lambda _ -> "Lambda"
    R.Application _ _ _ -> "Application"
    R.PartialApplication _ _ -> "PartialApplication"
-   R.PrimitiveOp name _ -> "PrimitiveOp " <> show name
+   R.PrimitiveOp name _ _ -> "PrimitiveOp " <> show name
    R.ObjectConstructor name _ -> "ObjectConstructor " <> dottedName name
    R.ValueLeaf _ -> "ValueLeaf"

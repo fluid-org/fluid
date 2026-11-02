@@ -32,7 +32,7 @@ data RuleContext v
         (RuleContext v) --function callee
     | PartialApplication (RuleContext v) (List (RuleContext v))
 
-    | PrimitiveOp String (List (RuleContext v))
+    | PrimitiveOp String (RuleContext v) (List (RuleContext v))
     
     | ObjectConstructor Name (List (RuleContext v))
 
@@ -69,9 +69,8 @@ contextArity = case _ of
     Application fun args callee -> contextArity fun + sum (map contextArity args) + contextArity callee
     PartialApplication fun args -> contextArity fun + sum (map contextArity args)
     
-    PrimitiveOp _ args -> sum (map contextArity args)
+    PrimitiveOp _ fun args -> contextArity fun + sum (map contextArity args)
 
     ObjectConstructor _ args -> sum (map contextArity args)
 
     ValueLeaf _ -> 0
-

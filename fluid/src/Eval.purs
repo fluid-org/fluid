@@ -22,7 +22,6 @@ import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
-import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (fst, snd)
 import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
 import Dict (Dict)
@@ -44,7 +43,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, recordValue, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialFun, partialArg, record, recordValue, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -256,13 +255,7 @@ eval inputs = case _ of
    App e es -> do
       fn <- eval inputs e
       args <- traverse (eval inputs) es
-      callee <- withMsg ("In " <> funName e) $ apply inputs.ctrl fn args
-
-      record
-         { context: R.Application R.Hole (map (const R.Hole) args) R.Hole
-         , premises: fst fn : (map fst args <> (fst callee : Nil))
-         }
-         (gval callee)
+      withMsg ("In " <> funName e) $ apply inputs.ctrl fn args
       
    BinOp e op e' -> do
       left <- eval inputs e
@@ -452,38 +445,43 @@ apply
    -> (Deriv × Raw Val)
    -> List (Deriv × Raw Val)
    -> m (Deriv × Raw Val)
-apply ctrl fn args = hlp (gval fn) args
-   --e.g. p = f(1); p(2)
-   --fn = vertex for p
-   --args = [vertex for 2]
-   --φ = underlying f
-   --hlpArgs = [vertex for stored 1, vertex for 2]
+apply ctrl fn args = hlp 0 (gval fn) (map gval args)
    where
-   hlp :: GVal s -> List (Deriv × Raw Val) -> m (Deriv × Raw Val)
-   hlp f@{ val: Val _ u } hlpArgs = case u of
-      V.Fun (V.Partial φ us) -> do
-         storedArgs <- 
-            traverseWithIndex
-            (\i value -> recordValue { val: value, inEdges: via (partialArg i) f })
-            us
-         hlp { val: Val unit (V.Fun φ), inEdges: via partialFun f } (storedArgs <> hlpArgs)
+   application :: List (Deriv × Raw Val) -> (Deriv × Raw Val) -> m (Deriv × Raw Val)
+   application used callee = record
+      { context: R.Application R.Hole (map (const R.Hole) used) R.Hole
+      , premises: fst fn : (map fst used <> singleton (fst callee))
+      }
+      (gval callee)
+
+   hlp :: Int -> GVal s -> List (GVal s) -> m (Deriv × Raw Val)
+   --stored: number of bound arguments unpacked so far
+   hlp stored f@{ val: Val _ u } vs = case u of
+      V.Fun (V.Partial φ us) ->
+         --φ is base function, us is packed arguments
+         let
+            storedArgs = mapWithIndex (\i value -> { val: value, inEdges: via (partialArg i) f }) us --unpack us
+            underlying = { val: Val unit (V.Fun φ), inEdges: via partialFun f }
+         --run hlp again with the base function φ, using unpacked and new args
+         in hlp (stored + length us) underlying (storedArgs <> vs)
       V.Fun φ -> do
          n <- arity'
-         let k = length hlpArgs
-
-         if k < n then 
-            construct 
+         let k = length vs
+         if k < n then
+            construct
                { context: R.PartialApplication R.Hole (map (const R.Hole) args)
-               , premises: singleton (fst fn) <> map fst args
+               , premises: fst fn : map fst args
                }
-               ctrl 
-               partial
-         else if k == n then call φ hlpArgs
+               ctrl partial
+         else if k == n then do
+            callee <- call φ vs
+            application args callee
          else do
-            result <- call φ (take n hlpArgs)
-            apply ctrl result (drop n hlpArgs)
+            let consumed = max 0 (n - stored) --additional arguments newly consumed for THIS function
+            callee <- call φ (take n vs) --consume everything needed for THIS function
+            result <- application (take consumed args) callee
+            apply ctrl result (drop consumed args) --keep going with resulting function and remaining arguments
          where
-         vs = map gval hlpArgs
          arity' :: m Int
          arity' = case φ of
             V.Closure _ _ (Def xs _) -> pure (length xs)
@@ -502,28 +500,31 @@ apply ctrl fn args = hlp (gval fn) args
       _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
       where
       -- Applying a function consumes its root.
-      call :: V.Fun Unit -> List (Deriv × Raw Val) -> m (Deriv × Raw Val)
-      call φ args' = case φ of
+      call :: V.Fun Unit -> List (GVal s) -> m (Deriv × Raw Val)
+      call φ vs' = case φ of
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
                ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
                ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
-               ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs (map gval args'))
+               ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
             asReturns <$> evalStmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
-         V.Prim (ForeignOp (name × ForeignOp' { depOp })) -> 
-            depOp { name, premises: map fst args' } ctrl' (map gval args')
+         V.Prim (ForeignOp (name × ForeignOp' { depOp })) ->
+            depOp { name, function: fst fn, premises: map fst supplied } ctrl' vs'
          V.Type (T.ClassTy c _) -> do
             classes <- askClasses
-            constructWith
-               { context: R.ObjectConstructor c (map (const R.Hole) args')
-               , premises: map fst args'
-               }
-               ctrl'
-               (V.Obj c <<< zip (fieldNames classes c))
-               (map gval args')
+            if stored == 0 then
+               constructWith
+                  { context: R.ObjectConstructor c (map (const R.Hole) supplied)
+                  , premises: map fst supplied
+                  }
+                  ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
+            else
+               --can't currently handle partial as vs holds all values but supplied contains vertices only for newly supplied fields
+               constructWithValue ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
          where
+         supplied = take (max 0 (length vs' - stored)) args
          ctrl' = via root f
 
 evalModule
