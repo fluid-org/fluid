@@ -40,8 +40,6 @@ scale a = map (mul a)
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
 
-type Labelling a = Map Deriv a
-
 -- In-edges of a vertex: its source vertices, with its dependence on them as a linear function of their weights.
 newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s) -> b))
 
@@ -77,6 +75,9 @@ sparseRel in_ = SparseRel { out, in_ }
    out = fromFoldableWith Map.union
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
+type Labelling a = Map Deriv a
+type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
+
 -- Vertices labelled by values of shape f, each with the dependence of its weights on those at earlier vertices.
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
@@ -107,7 +108,7 @@ attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 -- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
 type VisibleGraph (f :: Type -> Type) s =
    { vals :: Labelling (f Unit)
-   , edges :: Labelling (Labelling (SparseRel s)) -- target ↦ source ↦ dependence relation
+   , edges :: Edges (SparseRel s)
    }
 
 -- Relies on edges running from earlier to later vertices in evaluation order.
