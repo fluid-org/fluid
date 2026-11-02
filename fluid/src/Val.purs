@@ -213,7 +213,7 @@ viaAll r vs = r <$> traverse _.inEdges vs
 -- Adds dependence on control at weight c to the positions of v in the section of its value.
 withCtrl :: forall s. DepSemiring s => Ctrl s -> (Raw Val -> Val s) -> GVal s -> GVal s
 withCtrl ctrl section v =
-   v { inEdges = lift2 (\c w -> w `plus` scale (ctrlWeight * c) (force section')) ctrl v.inEdges }
+   v { inEdges = lift2 plus v.inEdges (ctrl <#> \c -> scale (ctrlWeight * c) (force section')) }
    where
    section' = defer \_ -> section v.val
 
