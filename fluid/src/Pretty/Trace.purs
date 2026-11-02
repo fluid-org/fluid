@@ -143,4 +143,5 @@ ruleSummary = case _ of
    R.PartialApplication _ _ -> "PartialApplication"
    R.PrimitiveOp name _ _ -> "PrimitiveOp " <> show name
    R.ObjectConstructor name _ -> "ObjectConstructor " <> dottedName name
+   R.Subscript _ _ -> "Subscript"
    R.ValueLeaf _ -> "ValueLeaf"

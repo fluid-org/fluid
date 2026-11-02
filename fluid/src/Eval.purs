@@ -221,31 +221,35 @@ eval inputs = case _ of
             deliver (R.valueRule value) (inputs.ctrl <> via root v) { val: value, inEdges: via (field i) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
    Subscript e e' -> do
-      v@{ val: Val _ u } <- gval <$> eval inputs e
-      v'@{ val: Val _ u' } <- gval <$> eval inputs e'
+      container <- eval inputs e
+      idx <- eval inputs e'
+      let
+         v@{ val: Val _ u } = gval container
+         v'@{ val: Val _ u' } = gval idx
+         rule = { context: R.Subscript R.Hole R.Hole, premises: fst container : fst idx : Nil }
       case u, u' of
          V.Dictionary (DictRep d), V.Lit (Str s) -> do
             _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
-            subscript v v' (dictEntry s >>> snd) (\z -> root z + fst (dictEntry s z))
+            subscript rule v v' (dictEntry s >>> snd) (\z -> root z + fst (dictEntry s z))
          V.Dictionary _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected str"
          _, V.Lit (Int i) | Just n <- elementCount v.val -> do
             let i' = if i < 0 then n + i else i
             unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
-            subscript v v' (element i') root
+            subscript rule v v' (element i') root
          V.List _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Tuple _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
             unless (0 <= i && i < unpackVal int m && 0 <= j && j < unpackVal int n) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
-            subscript v v' (matrixElement i j) root
+            subscript rule v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
       where
       -- Element selected from the container, depending at weight c on the consumed positions and the index.
-      subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Deriv × Raw Val)
-      subscript v v' select consumed =
+      subscript :: R.Rule (Raw Val) Deriv -> GVal s -> GVal s -> (forall a. Val a -> Val a) -> Rel (Val s) s -> m (Deriv × Raw Val)
+      subscript rule v v' select consumed =
          let value = select v.val
-         in deliver (R.valueRule value) (inputs.ctrl <> via consumed v <> via sum v') { val: value, inEdges: via select v }
+         in deliver rule (inputs.ctrl <> via consumed v <> via sum v') { val: value, inEdges: via select v }
    ModMember q x -> do
       { modules } <- moduleStore
       let ρ_q = definitely' (loadedEnv (get q modules))

@@ -36,6 +36,9 @@ data RuleContext v
     
     | ObjectConstructor Name (List (RuleContext v))
 
+                --container     --idx
+    | Subscript (RuleContext v) (RuleContext v)
+
     | ValueLeaf v
 
 type Rule v a =
@@ -72,5 +75,7 @@ contextArity = case _ of
     PrimitiveOp _ fun args -> contextArity fun + sum (map contextArity args)
 
     ObjectConstructor _ args -> sum (map contextArity args)
+
+    Subscript container idx -> contextArity container + contextArity idx
 
     ValueLeaf _ -> 0
