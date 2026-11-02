@@ -213,12 +213,16 @@ eval inputs = case _ of
       let value = Val unit (V.Fun (V.Type τ))
       construct (R.valueRule value) inputs.ctrl { val: value, inEdges: Nil }
    Attribute e x -> do
-      v <- gval <$> eval inputs e
+      targ <- eval inputs e
+      let v = gval targ
       case v.val of
          Val _ (V.Obj c xvs) -> do
             i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
             let value = field i v.val
-            deliver (R.valueRule value) (inputs.ctrl <> via root v) { val: value, inEdges: via (field i) v }
+            deliver
+               { context: R.Attribute x R.Hole, premises: singleton (fst targ) }
+               (inputs.ctrl <> via root v)
+               { val: value, inEdges: via (field i) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
    Subscript e e' -> do
       container <- eval inputs e

@@ -144,4 +144,5 @@ ruleSummary = case _ of
    R.PrimitiveOp name _ _ -> "PrimitiveOp " <> show name
    R.ObjectConstructor name _ -> "ObjectConstructor " <> dottedName name
    R.Subscript _ _ -> "Subscript"
+   R.Attribute x _ -> "Attribute " <> show x
    R.ValueLeaf _ -> "ValueLeaf"

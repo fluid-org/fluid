@@ -38,6 +38,8 @@ data RuleContext v
 
                 --container     --idx
     | Subscript (RuleContext v) (RuleContext v)
+    
+    | Attribute Var (RuleContext v)
 
     | ValueLeaf v
 
@@ -77,5 +79,6 @@ contextArity = case _ of
     ObjectConstructor _ args -> sum (map contextArity args)
 
     Subscript container idx -> contextArity container + contextArity idx
+    Attribute _ receiver -> contextArity receiver
 
     ValueLeaf _ -> 0
