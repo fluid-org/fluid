@@ -24,10 +24,12 @@ checkingDefaults =
    }
 
 type TimingConfig =
-   { selectionResult :: Boolean
+   { loadFig :: Boolean
+   , selectionResult :: Boolean
    }
 
 timingDefaults :: TimingConfig
 timingDefaults =
-   { selectionResult: false
+   { loadFig: false
+   , selectionResult: false
    }

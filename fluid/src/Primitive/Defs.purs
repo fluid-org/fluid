@@ -3,6 +3,7 @@ module Primitive.Defs where
 import Prelude hiding (absurd, apply, div, mod, top)
 
 import Bind (Bind, Name, Var, dottedName, qual, varName)
+import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Alt ((<|>))
 import Data.Argonaut.Core (Json, caseJson, isNull, stringify, toArray, toBoolean, toObject, toString)
@@ -30,7 +31,6 @@ import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, traverse)
-import Data.Lazy (defer, force)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
@@ -42,7 +42,6 @@ import Effect.Exception (Error)
 import Eval (apply) as Dep
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
-import DepGraph (zeros)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
 import Literal (Literal(..), showFloat)
 import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
@@ -393,12 +392,11 @@ entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> s
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
 dictFrom ds kvs =
    { val: Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-   , inEdges: L.concat (ds <#> via \x -> Val (root x) (Dictionary (DictRep (Dict.mapWithKey (\k (_ × zu) -> fst (dictEntry k x) × zu) (force zd)))))
-        <> L.concat (kvs <#> \(k × v) -> via (\y -> dict (Map.insert k (zero × y) (force zd))) v)
+   , inEdges: lift2 dict (traverse _.inEdges ds) (traverse (\(k × v) -> (k × _) <$> v.inEdges) kvs)
    }
    where
-   zd = defer \_ -> D.fromFoldable (kvs <#> \(k × v) -> k × (zero × zeros v.val))
-   dict = DictRep >>> Dictionary >>> Val zero
+   dict xs kvs' = Val (foldl add zero (root <$> xs))
+      (Dictionary (DictRep (D.fromFoldable (kvs' <#> \(k × v) -> k × (foldl add zero (fst <<< dictEntry k <$> xs) × v)))))
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot
