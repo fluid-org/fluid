@@ -30,7 +30,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Deriv, Pos, attachDoc, valAt)
+import DepGraph (DepGraph, Deriv, Pos, attachDoc, deriv, valAt)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -415,7 +415,7 @@ evalModule ρ0 q (Module ιs s) = do
    ρ <- traverse gvalAt ρ_imp
    ρ' × _ <- asAssigns <$> evalStmt { ctrl: mempty, env: ρ } s
    let xs = L.fromFoldable (assigns s)
-   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (fst <$> record (constant (Val unit V.Unbound)))) xs
+   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Val unit V.Unbound))) xs
    members <- traverse (record >>> map fst) ρ'
    pure (ρ_subMods <+> ρ_unbound <+> members)
 
@@ -451,7 +451,7 @@ evalImport enclosing ρ = case _ of
          pure (ρ' <+> maplet x (get x ρ_q))
 
 moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
-moduleVal q = fst <$> record (constant (Val unit (V.Module q)))
+moduleVal q = deriv (Val unit (V.Module q))
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)

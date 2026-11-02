@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, at, deriv, emptyGraph, valAt, zeros)
+import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -218,7 +218,7 @@ constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 constructed ctrl = withCtrl ctrl \c (Val α u) -> Val (α + c) u
 
 record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, inEdges } = deriv v inEdges <#> (_ × v)
+record { val: v, inEdges } = derivWith v inEdges <#> (_ × v)
 
 -- Value delivered rather than constructed: every position depends on control at weight c.
 deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)

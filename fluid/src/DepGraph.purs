@@ -85,8 +85,11 @@ emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
 valAt g p = get p g.vals
 
-deriv :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
-deriv v inEdges = do
+deriv :: forall f s m. MonadState (DepGraph f s) m => Functor f => Semiring s => f Unit -> m Deriv
+deriv v = derivWith v (pure (zeros v))
+
+derivWith :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
+derivWith v inEdges = do
    size <- gets _.size
    let p = Deriv size
    modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, inEdges = Map.insert p inEdges g.inEdges }
