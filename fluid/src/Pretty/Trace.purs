@@ -57,16 +57,16 @@ renderTrace { g, root } =
    reachable seen Nil = seen
    reachable seen (p : pending)
       | Set.member p seen = reachable seen pending
-      | otherwise = reachable (Set.insert p seen) ((ruleAt p).premises <> pending)
+      | otherwise = reachable (Set.insert p seen) (R.premises (ruleAt p) <> pending)
 
    row :: Deriv -> TraceRow
    row p =
       let rule = ruleAt p
       in
          { vertex: show p
-         , rule: abbreviate 64 (ruleSummary rule.context)
+         , rule: abbreviate 64 (ruleSummary rule)
          , value: valueSummary (valAt g p)
-         , premises: show (Array.fromFoldable rule.premises)
+         , premises: show (Array.fromFoldable (R.premises rule))
          }
 
 padRight :: Int -> String -> String
@@ -123,9 +123,8 @@ abbreviate limit value =
    let prefix = String.take (limit + 1) value
    in if String.length prefix > limit then String.take (limit - 1) prefix <> "…" else prefix
 
-ruleSummary :: R.RuleContext (Val Unit) -> String
+ruleSummary :: forall a. R.Rule (Val Unit) a -> String
 ruleSummary = case _ of
-   R.Hole -> "Hole"
    R.Variable x -> "Variable " <> show x
    R.Literal literal -> "Literal " <> literalSummary literal
    R.Binary op _ _ -> "Binary " <> show (binopSymbol op)

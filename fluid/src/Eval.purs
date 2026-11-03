@@ -135,14 +135,8 @@ eval
    -> Expr
    -> m (Deriv × Raw Val)
 eval inputs = case _ of
-   Var x -> deliver 
-               { context: R.Variable x, premises: Nil }
-               inputs.ctrl 
-               (get x inputs.env)
-   Lit ℓ -> construct 
-               { context: R.Literal ℓ, premises: Nil }
-               inputs.ctrl 
-               { val: Val unit (V.Lit ℓ), inEdges: Nil }
+   Var x -> deliver (R.Variable x) inputs.ctrl (get x inputs.env)
+   Lit ℓ -> construct (R.Literal ℓ) inputs.ctrl { val: Val unit (V.Lit ℓ), inEdges: Nil }
    Dictionary ees -> do
       kvs <- for ees \(Pair e e') -> evalEntry inputs e e'
       dictionary inputs.ctrl kvs
@@ -153,18 +147,14 @@ eval inputs = case _ of
    List es -> do
       results <- traverse (eval inputs) es
       constructWith
-         { context: R.ListLiteral (map (const R.Hole) results)
-         , premises: map fst results
-         }
+         (R.ListLiteral (map fst results))
          inputs.ctrl
          (A.fromFoldable >>> V.List)
          (map gval results)
    Tuple es -> do
       results <- traverse (eval inputs) es
       constructWith
-         { context: R.TupleLiteral (map (const R.Hole) results)
-         , premises: map fst results
-         }
+         (R.TupleLiteral (map fst results))
          inputs.ctrl
          (A.fromFoldable >>> V.Tuple)
          (map gval results)
@@ -177,9 +167,7 @@ eval inputs = case _ of
       checkArity c (length es) classes
       results <- traverse (eval inputs) es
       constructWith
-         { context: R.ObjectConstructor c (map (const R.Hole) results)
-         , premises: map fst results
-         }
+         (R.ObjectConstructor c (map fst results))
          inputs.ctrl
          (V.Obj c <<< zip (fieldNames classes c))
          (map gval results)
@@ -206,7 +194,7 @@ eval inputs = case _ of
       mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
    Lambda d -> 
       construct 
-         { context: R.Lambda d, premises: Nil }
+         (R.Lambda d)
          inputs.ctrl 
          (closure (restrict (fv d) inputs.env) empty d)
    Type τ -> do
@@ -220,7 +208,7 @@ eval inputs = case _ of
             i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
             let value = field i v.val
             deliver
-               { context: R.Attribute x R.Hole, premises: singleton (fst targ) }
+               (R.Attribute x (fst targ))
                (inputs.ctrl <> via root v)
                { val: value, inEdges: via (field i) v }
          _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
@@ -230,7 +218,7 @@ eval inputs = case _ of
       let
          v@{ val: Val _ u } = gval container
          v'@{ val: Val _ u' } = gval idx
-         rule = { context: R.Subscript R.Hole R.Hole, premises: fst container : fst idx : Nil }
+         rule = R.Subscript (fst container) (fst idx)
       case u, u' of
          V.Dictionary (DictRep d), V.Lit (Str s) -> do
             _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
@@ -274,9 +262,7 @@ eval inputs = case _ of
       u <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v.val v'.val) <#> fst
       let depRel x y = definitelyRight (binopRel op x y)
       deliver 
-         { context: R.Binary op R.Hole R.Hole
-         , premises: fst left : fst right : Nil
-         }
+         (R.Binary op (fst left) (fst right))
          inputs.ctrl
          { val: Val unit u
          , inEdges: via (\x -> depRel x (zeros v'.val)) v <> via (\y -> depRel (zeros v.val) y) v'
@@ -286,57 +272,31 @@ eval inputs = case _ of
       let v = gval operand
       u <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v.val) <#> fst
       deliver 
-         { context: R.Unary op R.Hole
-         , premises: fst operand : Nil
-         }
+         (R.Unary op (fst operand))
          inputs.ctrl 
          { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v }
    And e e' -> do
       { holds, ctrl, value:left } <- condition inputs e
       if holds then do
          right <- eval (inputs { ctrl = ctrl }) e'
-         record
-            { context: R.AndFull R.Hole R.Hole
-            , premises: fst left : fst right : Nil
-            }
-            (gval right)
+         record (R.AndFull (fst left) (fst right)) (gval right)
       else
-         record
-            { context: R.AndShort R.Hole e'
-            , premises: fst left : Nil
-            }
-            (gval left)
+         record (R.AndShort (fst left) e') (gval left)
    Or e e' -> do
       { holds, ctrl, value:left } <- condition inputs e
       if holds then
-         record
-            { context: R.OrShort R.Hole e'
-            , premises: fst left : Nil
-            }
-            (gval left)
+         record (R.OrShort (fst left) e') (gval left)
       else do
          right <- eval (inputs { ctrl = ctrl }) e'
-         record
-            { context: R.OrFull R.Hole R.Hole
-            , premises: fst left : fst right : Nil
-            }
-            (gval right)
+         record (R.OrFull (fst left) (fst right)) (gval right)
    Cond e1 e e2 -> do
       { holds, ctrl, value } <- condition inputs e
       if holds then do
          chosen <- eval (inputs { ctrl = ctrl }) e1
-         record
-            { context: R.CondTrue R.Hole R.Hole e2
-            , premises: fst value : fst chosen : Nil
-            }
-            (gval chosen)
+         record (R.CondTrue (fst value) (fst chosen) e2) (gval chosen)
       else do
          chosen <- eval (inputs { ctrl = ctrl }) e2
-         record
-            { context: R.CondFalse R.Hole e1 R.Hole
-            , premises: fst value : fst chosen : Nil
-            }
-            (gval chosen)
+         record (R.CondFalse (fst value) e1 (fst chosen)) (gval chosen)
    DocExpr e e' -> do
       r <- eval inputs e'
       doc <- eval (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
@@ -456,11 +416,7 @@ apply
 apply ctrl fn args = hlp 0 (gval fn) (map gval args)
    where
    application :: List (Deriv × Raw Val) -> (Deriv × Raw Val) -> m (Deriv × Raw Val)
-   application used callee = record
-      { context: R.Application R.Hole (map (const R.Hole) used) R.Hole
-      , premises: fst fn : (map fst used <> singleton (fst callee))
-      }
-      (gval callee)
+   application used callee = record (R.Application (fst fn) (map fst used) (fst callee)) (gval callee)
 
    hlp :: Int -> GVal s -> List (GVal s) -> m (Deriv × Raw Val)
    --stored: number of bound arguments unpacked so far
@@ -476,11 +432,7 @@ apply ctrl fn args = hlp 0 (gval fn) (map gval args)
          n <- arity'
          let k = length vs
          if k < n then
-            construct
-               { context: R.PartialApplication R.Hole (map (const R.Hole) args)
-               , premises: fst fn : map fst args
-               }
-               ctrl partial
+            construct (R.PartialApplication (fst fn) (map fst args)) ctrl partial
          else if k == n then do
             callee <- call φ vs
             application args callee
@@ -522,9 +474,7 @@ apply ctrl fn args = hlp 0 (gval fn) (map gval args)
             classes <- askClasses
             if stored == 0 then
                constructWith
-                  { context: R.ObjectConstructor c (map (const R.Hole) supplied)
-                  , premises: map fst supplied
-                  }
+                  (R.ObjectConstructor c (map fst supplied))
                   ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
             else
                --can't currently handle partial as vs holds all values but supplied contains vertices only for newly supplied fields

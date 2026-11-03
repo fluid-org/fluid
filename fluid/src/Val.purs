@@ -231,10 +231,6 @@ constructed ctrl = withCtrl ctrl \(Val _ u) -> Val one (zeros u)
 --    for_ inEdges \(q × r) -> addEdge q p r
 --    pure (p × v)
 
---temporary fallback
--- record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => GVal s -> m (Dep.Deriv × Raw Val)
--- record v = recordWithRule { context: R.ValueLeaf v.val, premises: Nil } v
-
 record :: forall m s. MonadState (DepGraph Val s) m => Semiring s => R.Rule (Raw Val) Dep.Deriv -> GVal s -> m (Dep.Deriv × Raw Val)
 record rule {val: v, inEdges } = do
    p <- deriv v
@@ -319,10 +315,7 @@ type PrimitiveRule =
    }
 
 primitiveRule :: PrimitiveRule -> R.Rule (Raw Val) Dep.Deriv
-primitiveRule primitive =
-   { context: R.PrimitiveOp primitive.name R.Hole (map (const R.Hole) primitive.premises)
-   , premises: primitive.function : primitive.premises
-   }
+primitiveRule primitive = R.PrimitiveOp primitive.name primitive.function primitive.premises
 
 type DepOp =
    forall m s. MonadEval s m

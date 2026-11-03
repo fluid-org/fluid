@@ -2,83 +2,45 @@ module Rules where
 
 import Prelude
 
-import Data.Foldable (sum)
-import Data.List (List(..))
-import Bind (Var, Name)
-import Expr (Binop, Unop, Expr, Def)
+import Bind (Name, Var)
+import Data.Foldable (class Foldable, foldr, sum)
+import Data.List (List(..), (:))
+import Data.Traversable (class Traversable)
+import Expr (Binop, Def, Expr, Unop)
 import Literal (Literal)
 
-data RuleContext v
-    = Hole
-    | Variable Var
-    | Literal Literal
-    | Binary Binop (RuleContext v) (RuleContext v)
-    | Unary Unop (RuleContext v)
 
-    | AndShort (RuleContext v) Expr --first false
-    | AndFull (RuleContext v) (RuleContext v)
-    | OrShort (RuleContext v) Expr --first true
-    | OrFull (RuleContext v) (RuleContext v)
-    | CondTrue (RuleContext v) (RuleContext v) Expr
-    | CondFalse (RuleContext v) Expr (RuleContext v)
+data Rule v a
+   = Variable Var
+   | Literal Literal
+   | Binary Binop a a
+   | Unary Unop a
+   | AndShort a Expr
+   | AndFull a a
+   | OrShort a Expr
+   | OrFull a a
+   | CondTrue a a Expr
+   | CondFalse a Expr a
+   | ListLiteral (List a)
+   | TupleLiteral (List a)
+   | Lambda Def
+   | Application a (List a) a --function closure, args, callee
+   | PartialApplication a (List a)
+   | PrimitiveOp String a (List a)
+   | ObjectConstructor Name (List a)
+   | Subscript a a
+   | Attribute Var a
+   | ValueLeaf v
 
-    | ListLiteral (List (RuleContext v))
-    | TupleLiteral (List (RuleContext v))
+derive instance Functor (Rule v)
+derive instance Foldable (Rule v)
+derive instance Traversable (Rule v)
 
-    | Lambda Def
-    | Application
-        (RuleContext v) --function closure
-        (List (RuleContext v)) --arguments in eval order
-        (RuleContext v) --function callee
-    | PartialApplication (RuleContext v) (List (RuleContext v))
+-- Field order is premise order: application visits the function, arguments,
+-- then callee. Repeated references remain separate argument positions.
+premises :: forall v a. Rule v a -> List a
+premises = foldr (:) Nil
 
-    | PrimitiveOp String (RuleContext v) (List (RuleContext v))
-    
-    | ObjectConstructor Name (List (RuleContext v))
-
-                --container     --idx
-    | Subscript (RuleContext v) (RuleContext v)
-    
-    | Attribute Var (RuleContext v)
-
-    | ValueLeaf v
-
-type Rule v a =
-    { context :: RuleContext v
-    , premises :: List a --subderiv nodes
-    }
-
---use also as closed fallback context for values without an evaluator rule yet
+-- Fallback for values without an evaluator rule yet.
 valueRule :: forall v a. v -> Rule v a
-valueRule val = { context: ValueLeaf val, premises: Nil }
-
-contextArity :: forall v. RuleContext v -> Int
-contextArity = case _ of
-    Hole -> 1
-    Variable _ -> 0
-    Literal _ -> 0
-    Binary _ left right -> contextArity left + contextArity right
-    Unary _ operand -> contextArity operand
-
-    AndShort left _ -> contextArity left
-    AndFull left right -> contextArity left + contextArity right
-    OrShort left _ -> contextArity left
-    OrFull left right -> contextArity left + contextArity right
-    CondTrue condition chosen _ -> contextArity condition + contextArity chosen
-    CondFalse condition _ chosen -> contextArity condition + contextArity chosen
-
-    ListLiteral children -> sum (map contextArity children)
-    TupleLiteral children -> sum (map contextArity children)
-
-    Lambda _ -> 0
-    Application fun args callee -> contextArity fun + sum (map contextArity args) + contextArity callee
-    PartialApplication fun args -> contextArity fun + sum (map contextArity args)
-    
-    PrimitiveOp _ fun args -> contextArity fun + sum (map contextArity args)
-
-    ObjectConstructor _ args -> sum (map contextArity args)
-
-    Subscript container idx -> contextArity container + contextArity idx
-    Attribute _ receiver -> contextArity receiver
-
-    ValueLeaf _ -> 0
+valueRule = ValueLeaf

@@ -72,8 +72,6 @@ type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit) --value structure
    , rules :: Labelling (Rule (f Unit) Deriv) 
-      --"a vertex not recorded by eval is a leaf named by its value"
-      --each vertex carries K[p_1,...,p_n]
    , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
    , edges :: Edges (Rel (f s) (f s)) 
    --f s is a value structure annotated with weights of type s
