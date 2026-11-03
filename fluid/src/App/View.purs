@@ -25,7 +25,7 @@ import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.List (List)
 import Data.Tuple (fst, snd)
 
-import Types.Defs (cAutoFormat, cAutoTicks, cAxisLabels, cAuto, cAxisTicks, cBarChart, cCount, cDecimals, cDimensions, cEvery, cFixed, cFromZero, cLineChart, cLinePlot, cLink, cMultiView, cPadded, cParagraph, cPoint, cScales, cScatterPlot, cSegment, cStackedBar, cText, cTickLabels, cTicks, f_caption, f_format, f_fraction, f_fragments, f_height, f_label, f_labels, f_legend, f_max, f_min, f_n, f_name, f_places, f_plots, f_points, f_scales, f_segments, f_size, f_spacing, f_stackedBars, f_step, f_text, f_tickLabels, f_ticks, f_value, f_views, f_width, f_x, f_y, f_z)
+import Types.Defs (cAutoFormat, cAutoTicks, cAxisLabels, cAuto, cAxisTicks, cBarChart, cCount, cDecimals, cDimensions, cEvery, cFixed, cFromZero, cLineChart, cLinePlot, cLink, cMultiView, cPadded, cParagraph, cPoint, cScales, cScatterPlot, cSegment, cStackedBar, cText, cTickLabels, cTicks, f_caption, f_format, f_fragments, f_height, f_label, f_labels, f_legend, f_margin, f_max, f_min, f_n, f_name, f_places, f_plots, f_points, f_scales, f_segments, f_size, f_spacing, f_stackedBars, f_step, f_text, f_tickLabels, f_ticks, f_value, f_views, f_width, f_x, f_y, f_z)
 import Dict (Dict)
 import Link (Link(..))
 import Literal (Literal(..))
@@ -185,12 +185,12 @@ instance Reflect Scale where
          | c == cAuto -> Auto
          | c == cFromZero -> FromZero
          | c == cFixed -> Fixed (P.dropα (unpackIntOrNumber (attr f_min v))) (P.dropα (unpackIntOrNumber (attr f_max v)))
-         | c == cPadded -> padded (P.dropα (unpackIntOrNumber (attr f_fraction v)))
+         | c == cPadded -> padded (P.dropα (unpackIntOrNumber (attr f_margin v)))
       _ -> typeError u "Scale"
       where
-      padded fraction
-         | fraction >= 0.0 = Padded fraction
-         | otherwise = error ("Padded fraction must not be negative; got " <> show fraction)
+      padded margin
+         | margin >= 0.0 = Padded margin
+         | otherwise = error ("Padded margin must not be negative; got " <> show margin)
 
 instance Reflect Ticks where
    reflect options v@(Val _ u) = case u of

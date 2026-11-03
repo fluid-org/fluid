@@ -31,7 +31,7 @@ class Fixed(Scale):
 
 @dataclass
 class Padded(Scale):
-  fraction: float
+  margin: float
 
 @dataclass
 class Scales:

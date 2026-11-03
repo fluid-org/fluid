@@ -19,8 +19,8 @@ domain :: Scale -> Interval -> Interval
 domain Auto extent = extent
 domain FromZero extent = { min: min 0.0 extent.min, max: max 0.0 extent.max }
 domain (Fixed min max) _ = { min, max }
--- Extent widened at both ends by fraction of its width; unit width if zero
-domain (Padded fraction) { min, max } = { min: min - fraction * width, max: max + fraction * width }
+-- Extent widened at both ends by margin times its width; unit width if zero
+domain (Padded margin) { min, max } = { min: min - margin * width, max: max + margin * width }
    where
    width
       | max > min = max - min
