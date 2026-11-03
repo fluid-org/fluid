@@ -44,7 +44,7 @@ newtype Ticks = Ticks { x :: AxisTicks, y :: AxisTicks }
 
 tickValues :: TickSpacing -> Interval -> Maybe (Array Number)
 tickValues (Every step) { min, max }
-   | step <= 0.0 = error ("Every step " <> show step <> " is not positive")
+   | step <= 0.0 = error ("Every has step " <> show step <> ", which is not positive")
    | otherwise = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
         where
         first = ceil (min / step - tolerance)
