@@ -2,6 +2,8 @@ module App.View.Util.Scale where
 
 import Prelude
 
+import Util (error)
+
 type Interval = { min :: Number, max :: Number }
 
 data Scale
@@ -17,9 +19,11 @@ domain :: Scale -> Interval -> Interval
 domain Auto extent = extent
 domain FromZero extent = { min: min 0.0 extent.min, max: max 0.0 extent.max }
 domain (Fixed min max) _ = { min, max }
-domain (Padded margin) { min, max } = { min: min - margin * width, max: max + margin * width }
-   where
-   width = max - min
+domain (Padded margin) { min, max }
+   | margin >= 0.0 = { min: min - margin * width, max: max + margin * width }
+   | otherwise = error ("Padded margin " <> show margin <> " is negative")
+        where
+        width = max - min
 
 -- ======================
 -- boilerplate

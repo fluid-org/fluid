@@ -185,12 +185,8 @@ instance Reflect Scale where
          | c == cAuto -> Auto
          | c == cFromZero -> FromZero
          | c == cFixed -> Fixed (P.dropα (unpackIntOrNumber (attr f_min v))) (P.dropα (unpackIntOrNumber (attr f_max v)))
-         | c == cPadded -> padded (P.dropα (unpackIntOrNumber (attr f_margin v)))
+         | c == cPadded -> Padded (P.dropα (unpackIntOrNumber (attr f_margin v)))
       _ -> typeError u "Scale"
-      where
-      padded margin
-         | margin >= 0.0 = Padded margin
-         | otherwise = error ("Padded margin must not be negative; got " <> show margin)
 
 instance Reflect Ticks where
    reflect options v@(Val _ u) = case u of
