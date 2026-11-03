@@ -30,6 +30,10 @@ class Fixed(Scale):
   max: float
 
 @dataclass
+class Padded(Scale):
+  margin: float
+
+@dataclass
 class Scales:
   x: Scale
   y: Scale

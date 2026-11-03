@@ -14,7 +14,7 @@
 	<div></div>
 	<div class="flex-left-align">
 		<h3>CO2 concentration</h3>
-		<p>Illustrative CO2 concentration with the y scale set to Auto, FromZero and Fixed.</p>
+		<p>Illustrative CO2 concentration with the y scale set to Auto, FromZero, Fixed and Padded.</p>
 	</div>
 
 	<div></div>

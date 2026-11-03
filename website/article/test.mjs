@@ -15,6 +15,10 @@ export const main = async () => {
          await checkTopmost(page, point(1), false)
          await checkTopmost(page, point(4), true)
          await checkTopmost(page, point(8), false)
+         // Padded(0.05) extends data range 315 to 432 to 309.15 to 437.85, so ticks every 5 start at 310 and end at 435
+         const paddedTick = which => `#fig-output > svg:nth-of-type(4) g.y-axis > g.tick:${which}-of-type text`
+         await checkTextContent(page, paddedTick("first"), "310.0")
+         await checkTextContent(page, paddedTick("last"), "435.0")
       }
    ])
 

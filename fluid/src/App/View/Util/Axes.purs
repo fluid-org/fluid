@@ -18,6 +18,7 @@ import Data.Nullable (Nullable, toNullable)
 import Types.Defs (cDefault, cRotated)
 import Effect (Effect)
 import Primitive (ToFrom, typeMismatch)
+import Util (error)
 import Val (BaseVal(..))
 
 data Orientation
@@ -42,12 +43,14 @@ newtype AxisTicks = AxisTicks { spacing :: TickSpacing, format :: LabelFormat }
 newtype Ticks = Ticks { x :: AxisTicks, y :: AxisTicks }
 
 tickValues :: TickSpacing -> Interval -> Maybe (Array Number)
-tickValues (Every step) { min, max } = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
-   where
-   first = ceil (min / step - tolerance)
-   last = floor (max / step + tolerance)
-   -- Round-off in quotient
-   tolerance = 1e-9
+tickValues (Every step) { min, max }
+   | step <= 0.0 = error ("Every has step " <> show step <> ", which is not positive")
+   | otherwise = Just (if first > last then [] else range first last <#> toNumber >>> (_ * step))
+        where
+        first = ceil (min / step - tolerance)
+        last = floor (max / step + tolerance)
+        -- Round-off in quotient
+        tolerance = 1e-9
 tickValues _ _ = Nothing
 
 tickCount :: TickSpacing -> Number -> Number
