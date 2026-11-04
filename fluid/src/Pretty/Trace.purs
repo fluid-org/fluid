@@ -137,6 +137,7 @@ ruleSummary = case _ of
    R.CondFalse _ _ _ -> "CondFalse"
    R.ListLiteral _ -> "ListLiteral"
    R.TupleLiteral _ -> "TupleLiteral"
+   R.ListComp _ _ _ -> "ListComp"
    R.Lambda _ -> "Lambda"
    R.Application _ _ _ -> "Application"
    R.PartialApplication _ _ -> "PartialApplication"
