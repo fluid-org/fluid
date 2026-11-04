@@ -36,7 +36,7 @@ data Rule v a
    | ValueLeaf v
 
 --comprehensions execute in two phases:
---1. qualifiers evaluate generator sources and guards, producing a tree QualifierRun Deriv (Inputs s)
+--1. qualifiers evaluate generator sources, guards and decls, producing a tree QualifierRun Deriv (Inputs s)
 --        where type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 --2. evaluate the source body at each Yield, replacing each Inputs s with a Deriv
 
@@ -47,6 +47,7 @@ data QualifierRun q b
    = GeneratorRun q (List (Maybe (QualifierRun q b)))
    | GuardPassed q (QualifierRun q b)
    | GuardFailed q
+   | DeclRun q (QualifierRun q b)
    | Yield b
 
 --with q fixed, ordinary traversal visits only the body positions
@@ -87,6 +88,7 @@ listCompQualifierPremises = case _ of
    GeneratorRun source branches -> source : foldMap branchPremises branches
    GuardPassed condition rest -> condition : listCompQualifierPremises rest
    GuardFailed condition -> condition : Nil
+   DeclRun value rest -> value : listCompQualifierPremises rest
    Yield _ -> Nil
    where
    branchPremises :: Maybe (QualifierRun q b) -> List q
@@ -99,6 +101,7 @@ listCompBodyPremises = case _ of
    GeneratorRun _ branches -> foldMap branchPremises branches
    GuardPassed _ rest -> listCompBodyPremises rest
    GuardFailed _ -> Nil
+   DeclRun _ rest -> listCompBodyPremises rest
    Yield body -> body : Nil
    where
    branchPremises :: Maybe (QualifierRun q b) -> List b

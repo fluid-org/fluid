@@ -3,6 +3,7 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon, varThis)
+import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.State (runStateT)
 import Data.Array as A
@@ -10,34 +11,34 @@ import Data.Either (either)
 import Data.Foldable (elem, fold, foldM, foldl, sum)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
-import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
+import Data.Identity (Identity(..))
 import Data.List (List(..), concat, drop, elemIndex, length, take, zip, (:))
 import Data.List as L
-import Data.List.NonEmpty (head, last, snoc, unsnoc)
 import Data.List.NonEmpty (fromList, toList) as NEL
+import Data.List.NonEmpty (head, last, snoc, unsnoc)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Number (e)
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
+import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
-import Types (Type(..)) as T
-import Rules as R
 import Primitive (binop, binopRel, boolean, int, string, typeMismatch, unop, unopRel, unpack, unpackVal)
+import Rules as R
+import Types (Type(..)) as T
 import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
@@ -141,9 +142,9 @@ eval inputs = case _ of
       kvs <- for ees \(Pair e e') -> evalEntry inputs e e'
       dictionary inputs.ctrl kvs
    DictComp e e' gs -> do
-      cs × ctrl <- qualifiers inputs gs
-      kvs <- for cs \inputs' -> evalEntry inputs' e e'
-      dictionary ctrl kvs
+      run × ctrl <- qualifiers inputs gs
+      entries <- traverse (\inputs' -> evalEntry inputs' e e') run
+      dictionary ctrl (R.listCompBodyPremises entries)
    List es -> do
       results <- traverse (eval inputs) es
       constructWith
@@ -159,9 +160,14 @@ eval inputs = case _ of
          (A.fromFoldable >>> V.Tuple)
          (map gval results)
    ListComp e gs -> do
-      cs × ctrl <- qualifiers inputs gs
-      vs <- for cs \inputs' -> gval <$> eval inputs' e
-      constructWithValue ctrl (A.fromFoldable >>> V.List) vs
+      stage1Run × ctrl <- qualifiers inputs gs
+      evalTraversed <- traverse (\inputs' -> eval inputs' e) stage1Run --R.QualifierRun Deriv (Deriv × Raw Val)
+      let stage2Run = map fst evalTraversed
+      constructWith
+         (R.ListComp e gs stage2Run)
+         ctrl
+         (A.fromFoldable >>> V.List)
+         (map gval (R.listCompBodyPremises evalTraversed)) --get Derivs out of leaves and turn into GVals 
    Constr c es -> do
       classes <- askClasses
       checkArity c (length es) classes
@@ -327,34 +333,53 @@ condition inputs e = do
    holds × _ <- orThrow (unpack boolean val)
    pure { holds, ctrl: singleton (p × root), value: p × val }
 
--- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
--- short by a failed guard or an element that does not match.
+
+--[x + y for x in xs if p(x) for y in ys]
+--corresponds roughly to:
+--e = x + y
+--gs = [ Generator x xs, Guard (p(x)), Generator y ys ]
+--starts with the entry inputs fed into eval, as we recurse through qualifiers we add to the env and ctrl
 qualifiers
    :: forall m s
     . MonadEval s m
    => Inputs s
    -> List Qualifier
-   -> m (List (Inputs s) × Ctrl s)
-qualifiers inputs Nil = pure (singleton inputs × inputs.ctrl)
+   -> m (R.QualifierRun Deriv (Inputs s) × Ctrl s)
+qualifiers inputs Nil = pure (R.Yield inputs × inputs.ctrl)
 qualifiers inputs (Guard e : gs) = do
-   { holds, ctrl } <- condition inputs e
-   if holds then qualifiers (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
+   { holds, ctrl, value } <- condition inputs e
+   if holds then do
+      rest × finalCtrl <- qualifiers (inputs { ctrl = ctrl }) gs
+      pure (R.GuardPassed (fst value) rest × finalCtrl)
+   else
+      pure (R.GuardFailed (fst value) × ctrl)
+--QUALIFER ENTRY POINT
 qualifiers inputs (Generator p e : gs) = do
-   v <- gval <$> eval inputs e
+   src <- eval inputs e --source arr Deriv
+   let v = gval src
    n <- case elementCount v.val of
       Just n -> pure n
       Nothing -> throw ("Found " <> prettyP v.val <> ", expected list, tuple, str or dict")
    classes <- askClasses
-   fold <$> for (L.take n (L.range 0 n)) \i -> do
-      let u = { val: element i v.val, inEdges: via (element i) v }
-      case dispatch classes (singleton (p × unit)) u Nil of
-         Nothing × ctrl -> pure (Nil × (via lengthDep v <> ctrl))
-         Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> ctrl }) gs
+   results <- for (L.take n (L.range 0 n)) \i -> do
+      let u = { val: element i v.val, inEdges: via (element i) v } --selects ith element of source arr
+      case dispatch classes (singleton (p × unit)) u Nil of 
+         Nothing × ctrl -> pure (Nothing × (via lengthDep v <> ctrl)) --pattern mismatch, return Nothing branch
+         Just (ρ' × _) × ctrl -> do
+            rest × finalCtrl <- qualifiers
+               (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> ctrl })
+               gs
+            pure (Just rest × finalCtrl) --go deeper into the qualifiers FOR THIS PARTICULAR ELEMENT BRANCH
+   let
+      branches = map fst results
+      finalCtrl = fold (map snd results)
+   pure (R.GeneratorRun (fst src) branches × finalCtrl)
 qualifiers inputs (Decl p e : gs) = do
-   v <- gval <$> eval inputs e
+   src <- eval inputs e
    classes <- askClasses
-   ρ' × ctrl <- destructure classes p v inputs.ctrl
-   qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) gs
+   ρ' × ctrl <- destructure classes p (gval src) inputs.ctrl
+   rest × finalCtrl <- qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) gs
+   pure (R.DeclRun (fst src) rest × finalCtrl)
 
 evalStmt
    :: forall m s
