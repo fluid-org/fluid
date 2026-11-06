@@ -9,7 +9,7 @@ Notes for issue #964. Companion to the generated tables in this directory:
 | `intermediate-doc-table.tex` | report-ready: one table, Eval/Demands/Suffices grouped under each arm, mean ± standard error |
 | `intermediate-contracted-tables.tex` | report-ready: three tables (eval slowdown, demands speedup, demanded-by speedup), following the ESOP 2025 paper's presentation |
 
-All were last generated 2026-08-12 at n = 10 over the ten fixtures in
+All were last generated 2026-11-06 (see *Results, 2026-11-06*; the 2026-08-12 versions are in git history) at n = 10 over the ten fixtures in
 `Test.Specs.BwdIntermediate.bwdIntermediate_cases`. The CSVs give mean and standard
 error per cell. The bare `.tex` files are raw one-row-per-fixture fragments, all metrics
 side by side (22 columns for the contracted arm) with `°`/`ᶜ` in the column names, which
@@ -55,6 +55,30 @@ Karma's `client.mocha.timeout` is 600000ms. The contracted arm takes ~3m10s at n
 raise the timeout if adding fixtures or iterations. One n = 10 run of both arms in the
 same browser page stalled indefinitely after the doc arm completed — zero CPU for 29
 minutes, no mocha timeout — and has not been diagnosed or reproduced since.
+
+## Results, 2026-11-06
+
+Regenerated after `ContractT` stopped resolving sources in `extend`. Sources are now resolved
+in `freezeContracted`, in creation order, against the final kept set, so a component kept after
+its consumers were recorded is cited by all of them (before, consumers recorded earlier cited its
+frontier instead). Same machine and Chrome 150.0.7871.124 as 2026-08-12; uncontracted times drifted
+5–25% since then, so compare within a run only. `graph-stats/graph-stats.csv` and `slice-stats.csv`
+regenerated too (`doc-sites.csv` is unaffected).
+
+- Uncontracted graphs and contracted vertex counts are unchanged. Contracted edges fall in five
+  fixtures (dtw 13,252 → 12,292, the others by 1–2%); the largest contracted out-degree is still
+  13–45.
+- Demands slices grow (conv 32 → 34, edge_detect 29 → 31, emboss/gaussian 45 → 49, dtw 68 → 75).
+  dtw's contracted `DemBy-Dir` slice has 7,897 edges, now fewer than the uncontracted 8,131 (it
+  was 8,839).
+- dtw's `DemBy-Dir` is 2.19s uncontracted, 277ms contracted (7.9×). Every other contracted query
+  is under 50ms.
+- Eval is slower contracted in 6 of 10 fixtures (0.85–1.29 slowdown at n = 10).
+- `intermediate-contracted-n30.csv`: conv, bar_chart_line_chart and stacked_bar_scatter_plot
+  rerun at n = 30, the three Demands ratios below 1 at n = 10. Demands speedups 0.96, 0.95 and
+  1.07, none significant (Welch's t-test, p = 0.74, 0.64, 0.24). Eval in the same run: conv
+  0.98 (p = 0.32), bar_chart_line_chart 1.06 (p < 0.001), stacked_bar_scatter_plot 1.00
+  (p = 0.85), so per-fixture Eval differences at n = 10 are within run-to-run noise.
 
 ## Results, 2026-08-12
 

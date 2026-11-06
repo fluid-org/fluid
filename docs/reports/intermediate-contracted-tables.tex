@@ -5,16 +5,16 @@
 \toprule
 Example & Uncontracted & Contracted & Slowdown \\
 \midrule
-\texttt{conv} & $204.4 \pm 5.2$ & $236.5 \pm 7.0$ & 1.157 \\
-\texttt{edge\_detect} & $664.7 \pm 14.9$ & $661.6 \pm 8.5$ & 0.995 \\
-\texttt{emboss} & $641.9 \pm 15.0$ & $678.9 \pm 19.8$ & 1.058 \\
-\texttt{gaussian} & $621.8 \pm 16.7$ & $667.6 \pm 13.6$ & 1.074 \\
-\texttt{dtw} & $203.7 \pm 5.0$ & $252.1 \pm 8.0$ & 1.238 \\
-\texttt{line\_chart} & $134.2 \pm 6.4$ & $138.8 \pm 4.0$ & 1.034 \\
-\texttt{grouped\_bar\_chart} & $98.7 \pm 2.9$ & $115.0 \pm 4.5$ & 1.165 \\
-\texttt{stacked\_bar\_chart} & $57.3 \pm 0.6$ & $82.9 \pm 4.4$ & 1.447 \\
-\texttt{bar\_chart\_line\_chart} & $1761.3 \pm 22.7$ & $1867.1 \pm 31.9$ & 1.060 \\
-\texttt{stacked\_bar\_scatter\_plot} & $802.6 \pm 11.7$ & $916.5 \pm 22.2$ & 1.142 \\
+\texttt{conv} & $181.0 \pm 3.1$ & $209.5 \pm 8.1$ & 1.157 \\
+\texttt{edge\_detect} & $579.1 \pm 7.1$ & $569.7 \pm 9.7$ & 0.984 \\
+\texttt{emboss} & $532.3 \pm 12.5$ & $541.2 \pm 8.4$ & 1.017 \\
+\texttt{gaussian} & $523.4 \pm 11.6$ & $508.3 \pm 7.5$ & 0.971 \\
+\texttt{dtw} & $176.0 \pm 3.0$ & $187.5 \pm 4.0$ & 1.065 \\
+\texttt{line\_chart} & $96.7 \pm 0.9$ & $110.3 \pm 1.7$ & 1.140 \\
+\texttt{grouped\_bar\_chart} & $91.5 \pm 1.8$ & $77.6 \pm 0.5$ & 0.848 \\
+\texttt{stacked\_bar\_chart} & $54.1 \pm 0.4$ & $69.8 \pm 2.7$ & 1.289 \\
+\texttt{bar\_chart\_line\_chart} & $1685.3 \pm 26.6$ & $1698.0 \pm 14.4$ & 1.008 \\
+\texttt{stacked\_bar\_scatter\_plot} & $861.5 \pm 24.8$ & $775.9 \pm 18.1$ & 0.901 \\
 \bottomrule
 \end{tabular}
 \caption{Evaluation time (ms), over 10 runs. Slowdown is Contracted / Uncontracted: contraction does extra bookkeeping at every retained allocation.}
@@ -28,16 +28,16 @@ Example & Uncontracted & Contracted & Slowdown \\
 \toprule
 Example & Uncontracted & Contracted & Speedup \\
 \midrule
-\texttt{conv} & $0.5 \pm 0.04$ & $0.6 \pm 0.1$ & 0.797 \\
-\texttt{edge\_detect} & $0.6 \pm 0.04$ & $0.6 \pm 0.04$ & 1.055 \\
-\texttt{emboss} & $1.5 \pm 0.2$ & $0.7 \pm 0.07$ & 2.096 \\
-\texttt{gaussian} & $1.2 \pm 0.02$ & $0.8 \pm 0.1$ & 1.417 \\
-\texttt{dtw} & $4.7 \pm 0.08$ & $1.2 \pm 0.2$ & 3.797 \\
-\texttt{line\_chart} & $25.5 \pm 1.4$ & $12.9 \pm 0.7$ & 1.984 \\
-\texttt{grouped\_bar\_chart} & $24.4 \pm 1.2$ & $10.5 \pm 0.8$ & 2.318 \\
-\texttt{stacked\_bar\_chart} & $11.6 \pm 0.4$ & $8.5 \pm 0.8$ & 1.368 \\
-\texttt{bar\_chart\_line\_chart} & $1.2 \pm 0.1$ & $1.2 \pm 0.1$ & 1.060 \\
-\texttt{stacked\_bar\_scatter\_plot} & $2.4 \pm 0.2$ & $2.8 \pm 0.6$ & 0.865 \\
+\texttt{conv} & $0.4 \pm 0.03$ & $0.5 \pm 0.10$ & 0.788 \\
+\texttt{edge\_detect} & $0.6 \pm 0.06$ & $0.6 \pm 0.1$ & 1.036 \\
+\texttt{emboss} & $1.9 \pm 0.5$ & $0.8 \pm 0.1$ & 2.416 \\
+\texttt{gaussian} & $1.1 \pm 0.1$ & $0.6 \pm 0.03$ & 1.767 \\
+\texttt{dtw} & $4.2 \pm 0.3$ & $1.0 \pm 0.08$ & 4.048 \\
+\texttt{line\_chart} & $20.2 \pm 0.2$ & $10.2 \pm 0.2$ & 1.983 \\
+\texttt{grouped\_bar\_chart} & $23.2 \pm 0.8$ & $7.2 \pm 0.2$ & 3.228 \\
+\texttt{stacked\_bar\_chart} & $10.9 \pm 0.08$ & $7.0 \pm 0.5$ & 1.565 \\
+\texttt{bar\_chart\_line\_chart} & $1.1 \pm 0.1$ & $1.1 \pm 0.08$ & 0.991 \\
+\texttt{stacked\_bar\_scatter\_plot} & $2.4 \pm 0.2$ & $2.6 \pm 0.4$ & 0.894 \\
 \bottomrule
 \end{tabular}
 \caption{Backward slicing time (ms), over 10 runs. Speedup is Uncontracted / Contracted.}
@@ -53,16 +53,16 @@ Example & Uncontracted & Contracted & Speedup \\
 \cmidrule(lr){2-4} \cmidrule(lr){5-7}
 Example & Uncontracted & Contracted & Speedup & Uncontracted & Contracted & Speedup \\
 \midrule
-\texttt{conv} & $39.6 \pm 1.0$ & $3.9 \pm 0.2$ & 10.058 & $45.9 \pm 1.3$ & $3.2 \pm 0.2$ & 14.264 \\
-\texttt{edge\_detect} & $108.8 \pm 3.5$ & $9.8 \pm 0.3$ & 11.150 & $176.3 \pm 4.6$ & $3.1 \pm 0.1$ & 57.631 \\
-\texttt{emboss} & $217.3 \pm 6.4$ & $11.4 \pm 0.6$ & 19.112 & $122.4 \pm 4.6$ & $3.3 \pm 0.1$ & 36.982 \\
-\texttt{gaussian} & $219.3 \pm 7.9$ & $11.7 \pm 0.6$ & 18.771 & $124.4 \pm 3.6$ & $3.5 \pm 0.08$ & 35.246 \\
-\texttt{dtw} & $2478.8 \pm 44.5$ & $331.4 \pm 11.2$ & 7.480 & $37.0 \pm 1.2$ & $13.9 \pm 1.1$ & 2.660 \\
-\texttt{line\_chart} & $39.2 \pm 0.7$ & $11.0 \pm 0.5$ & 3.558 & $13.1 \pm 0.6$ & $4.2 \pm 0.2$ & 3.085 \\
-\texttt{grouped\_bar\_chart} & $43.6 \pm 0.9$ & $11.6 \pm 0.6$ & 3.755 & $11.2 \pm 0.5$ & $6.6 \pm 0.4$ & 1.704 \\
-\texttt{stacked\_bar\_chart} & $17.4 \pm 0.1$ & $10.5 \pm 0.7$ & 1.660 & $7.7 \pm 0.2$ & $5.8 \pm 0.3$ & 1.326 \\
-\texttt{bar\_chart\_line\_chart} & $8.0 \pm 0.8$ & $1.6 \pm 0.04$ & 4.969 & $643.7 \pm 11.3$ & $13.0 \pm 0.2$ & 49.589 \\
-\texttt{stacked\_bar\_scatter\_plot} & $4.1 \pm 0.2$ & $3.7 \pm 0.3$ & 1.107 & $300.9 \pm 8.4$ & $44.9 \pm 1.0$ & 6.706 \\
+\texttt{conv} & $35.8 \pm 2.0$ & $3.5 \pm 0.3$ & 10.087 & $39.1 \pm 0.7$ & $2.7 \pm 0.1$ & 14.707 \\
+\texttt{edge\_detect} & $93.7 \pm 2.7$ & $8.5 \pm 0.4$ & 11.031 & $152.4 \pm 2.5$ & $2.5 \pm 0.08$ & 60.237 \\
+\texttt{emboss} & $179.7 \pm 2.7$ & $10.1 \pm 0.5$ & 17.793 & $106.3 \pm 4.2$ & $3.1 \pm 0.1$ & 34.503 \\
+\texttt{gaussian} & $182.3 \pm 5.7$ & $9.4 \pm 0.4$ & 19.376 & $103.1 \pm 2.8$ & $2.9 \pm 0.1$ & 35.671 \\
+\texttt{dtw} & $2192.2 \pm 43.3$ & $277.3 \pm 4.8$ & 7.907 & $33.7 \pm 1.1$ & $10.9 \pm 0.8$ & 3.087 \\
+\texttt{line\_chart} & $33.4 \pm 0.3$ & $8.7 \pm 0.08$ & 3.818 & $10.3 \pm 0.1$ & $3.4 \pm 0.08$ & 3.012 \\
+\texttt{grouped\_bar\_chart} & $41.3 \pm 0.6$ & $9.1 \pm 0.5$ & 4.556 & $11.0 \pm 0.4$ & $4.7 \pm 0.2$ & 2.338 \\
+\texttt{stacked\_bar\_chart} & $16.7 \pm 0.1$ & $8.3 \pm 0.5$ & 2.018 & $7.2 \pm 0.2$ & $5.4 \pm 0.1$ & 1.334 \\
+\texttt{bar\_chart\_line\_chart} & $7.0 \pm 0.3$ & $1.6 \pm 0.03$ & 4.494 & $594.9 \pm 12.1$ & $12.7 \pm 0.2$ & 46.655 \\
+\texttt{stacked\_bar\_scatter\_plot} & $4.2 \pm 0.1$ & $3.6 \pm 0.3$ & 1.166 & $319.8 \pm 12.2$ & $40.9 \pm 1.6$ & 7.815 \\
 \bottomrule
 \end{tabular}
 \caption{Demanded-by time (ms), over 10 runs, computed directly and as the dual of sufficiency. Speedup is Uncontracted / Contracted.}

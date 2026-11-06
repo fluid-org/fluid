@@ -4,9 +4,9 @@ import Prelude hiding (map)
 
 import Control.Monad.Except (class MonadError, lift)
 import Control.Monad.State (StateT, modify, modify_, runStateT)
-import Data.Foldable (foldMap)
+import Data.Foldable (foldMap, foldl)
 import Data.Identity (Identity)
-import Data.List (List(..), filter, range, (:))
+import Data.List (List(..), filter, range, reverse, (:))
 import Data.Map (Map)
 import Data.Map as M
 import Data.Maybe (fromMaybe)
@@ -73,7 +73,7 @@ instance Monad m => MonadWithGraph (WithGraphT m) where
 -- consumers to the union of α's producers' frontiers, preserving reachability and fwd's conjunction.
 type ContractRec =
    { edges :: List HyperEdge -- all vertices, reverse creation order; filtered on freeze
-   , resolved :: Map Vertex (Set Vertex) -- frontiers of vertices dropped at creation
+   , resolved :: Map Vertex (Set Vertex) -- frontiers of dropped vertices; filled on freeze
    , kept :: Set Vertex -- seeded with inputs, extended as retained values are allocated
    }
 
@@ -94,15 +94,10 @@ frontier s β
    | keep s β = Set.singleton β
    | otherwise = fromMaybe (Set.singleton β) (M.lookup β s.resolved)
 
+-- Sources are left unresolved until freeze, when the kept set is final: a component kept after its
+-- consumers were recorded is then cited by all of them.
 instance Monad m => MonadWithGraph (ContractT m) where
-   extend dv@(DVertex (α × _)) βs = modify_ $ over ContractState \s ->
-      let
-         βs' = foldMap (frontier s) βs
-      in
-         s
-            { edges = (dv × βs') : s.edges
-            , resolved = if keep s α then s.resolved else M.insert α βs' s.resolved
-            }
+   extend dv βs = modify_ $ over ContractState \s -> s { edges = (dv × βs) : s.edges }
 
 instance Monad m => MonadAlloc (ContractAllocT m) where
    fresh = lift fresh
@@ -136,9 +131,18 @@ freezeContracted
 freezeContracted outputs m αs = do
    a × ContractState s <- runStateT m (initialContractState αs)
    let
+      -- In creation order, so every source is resolved before its consumers. Resolution uses the kept
+      -- set of evaluation; outputs join only for the filter, so an undocumented output stays a sink.
+      resolve (s' × es) (dv@(DVertex (α × _)) × βs) =
+         let
+            βs' = foldMap (frontier s') βs
+            s'' = if keep s' α then s' else s' { resolved = M.insert α βs' s'.resolved }
+         in
+            s'' × ((dv × βs') : es)
+      _ × edges = foldl resolve (s × Nil) (reverse s.edges)
       kept = s.kept `Set.union` outputs a
       retained (DVertex (α × _) × _) = α ∈ kept
-   pure (fromEdgeList αs (filter retained s.edges) × a)
+   pure (fromEdgeList αs (filter retained edges) × a)
 
 alloc :: forall m f. MonadAlloc m => Traversable f => Raw f -> m (f Vertex)
 alloc = traverse (const fresh)
