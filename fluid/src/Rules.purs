@@ -9,6 +9,7 @@ import Data.Maybe (Maybe(..))
 import Data.Traversable (class Traversable)
 import Expr (Binop, Def, Expr, Qualifier, Unop)
 import Literal (Literal)
+import Util.Pair (Pair(..))
 
 
 data Rule v a
@@ -24,6 +25,8 @@ data Rule v a
    | CondFalse a Expr a
    | ListLiteral (List a)
    | TupleLiteral (List a)
+   --key/value premises in source order
+   | DictionaryLiteral (List (Pair a))
    --retain source syntax in case some bodies or qualifier suffixes never ran
    | ListComp Expr (List Qualifier) (QualifierRun a a)
    | Lambda Def
@@ -70,6 +73,7 @@ premises = case _ of
    CondFalse condition _ chosen -> condition : chosen : Nil
    ListLiteral children -> children
    TupleLiteral children -> children
+   DictionaryLiteral entries -> foldMap (\(Pair k v) -> k : v : Nil) entries
    ListComp _ _ run -> listCompQualifierPremises run <> listCompBodyPremises run
    Lambda _ -> Nil
    Application fun args callee -> fun : (args <> (callee : Nil))

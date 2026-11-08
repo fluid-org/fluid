@@ -279,10 +279,25 @@ dictionary
    :: forall m s
     . MonadState (DepGraph Val s) m
    => DepSemiring s
+   => R.Rule (Raw Val) Dep.Deriv
+   -> Ctrl s
+   -> List (String × GVal s × GVal s)
+   -> m (Dep.Deriv × Raw Val)
+dictionary rule ctrl kvs =
+   constructWith rule ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
+   where
+   mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
+   mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> root key × v))
+
+--value-only fallback for dictionary forms without an explicit rule yet
+dictionaryWithValue
+   :: forall m s
+    . MonadState (DepGraph Val s) m
+   => DepSemiring s
    => Ctrl s
    -> List (String × GVal s × GVal s)
    -> m (Dep.Deriv × Raw Val)
-dictionary ctrl kvs =
+dictionaryWithValue ctrl kvs =
    constructWithValue ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
    where
    mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a

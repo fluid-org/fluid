@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialFun, partialArg, record, recordValue, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, dictionaryWithValue, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialFun, partialArg, record, recordValue, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -139,12 +139,16 @@ eval inputs = case _ of
    Var x -> deliver (R.Variable x) inputs.ctrl (get x inputs.env)
    Lit ℓ -> construct (R.Literal ℓ) inputs.ctrl { val: Val unit (V.Lit ℓ), inEdges: Nil }
    Dictionary ees -> do
-      kvs <- for ees \(Pair e e') -> evalEntry inputs e e'
-      dictionary inputs.ctrl kvs
+      entries <- for ees \(Pair e e') -> evalEntry inputs e e'
+      let
+         rule = R.DictionaryLiteral (map (\(_ × k × v) -> Pair (fst k) (fst v)) entries) --Pairs of Deriv keys and values
+         kvs = map (\(s × k × v) -> s × gval k × gval v) entries
+      dictionary rule inputs.ctrl kvs
    DictComp e e' gs -> do
       run × ctrl <- qualifiers inputs gs
       entries <- traverse (\inputs' -> evalEntry inputs' e e') run
-      dictionary ctrl (R.listCompBodyPremises entries)
+      let kvs = map (\(s × k × v) -> s × gval k × gval v) (R.listCompBodyPremises entries)
+      dictionaryWithValue ctrl kvs
    List es -> do
       results <- traverse (eval inputs) es
       constructWith
@@ -309,12 +313,12 @@ eval inputs = case _ of
       attachDoc (fst r) (fst doc)
       pure r
    where
-   evalEntry :: Inputs s -> Expr -> Expr -> m (String × GVal s × GVal s)
+   evalEntry :: Inputs s -> Expr -> Expr -> m (String × (Deriv × Raw Val) × (Deriv × Raw Val))
    evalEntry inputs' e e' = do
-      k <- eval inputs' e
-      s <- orThrow (unpack string (snd k)) <#> fst
-      u <- eval inputs' e'
-      pure (s × gval k × gval u)
+      k <- eval inputs' e --Deriv node for key (must be string)
+      s <- orThrow (unpack string (snd k)) <#> fst --get string of key
+      u <- eval inputs' e' --Deriv node for value
+      pure (s × k × u)
 
    funName :: Expr -> String
    funName (Var x) = quoted x
