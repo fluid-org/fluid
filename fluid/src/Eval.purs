@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, dictionaryWithValue, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialFun, partialArg, record, recordValue, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, construct, constructWith, constructWithValue, constructed, deliver, dictEntry, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialFun, partialArg, record, recordValue, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -141,14 +141,16 @@ eval inputs = case _ of
    Dictionary ees -> do
       entries <- for ees \(Pair e e') -> evalEntry inputs e e'
       let
-         rule = R.DictionaryLiteral (map (\(_ × k × v) -> Pair (fst k) (fst v)) entries) --Pairs of Deriv keys and values
+         rule = R.DictLiteral (map (\(_ × k × v) -> Pair (fst k) (fst v)) entries) --Pairs of Deriv keys and values
          kvs = map (\(s × k × v) -> s × gval k × gval v) entries
       dictionary rule inputs.ctrl kvs
    DictComp e e' gs -> do
-      run × ctrl <- qualifiers inputs gs
-      entries <- traverse (\inputs' -> evalEntry inputs' e e') run
-      let kvs = map (\(s × k × v) -> s × gval k × gval v) (R.listCompBodyPremises entries)
-      dictionaryWithValue ctrl kvs
+      stage1Run × ctrl <- qualifiers inputs gs
+      evalTraversed <- traverse (\inputs' -> evalEntry inputs' e e') stage1Run
+      let
+         stage2Run = map (\(_ × k × v) -> Pair (fst k) (fst v)) evalTraversed
+         kvs = map (\(s × k × v) -> s × gval k × gval v) (R.compBodyPremises evalTraversed)
+      dictionary (R.DictComp e e' gs stage2Run) ctrl kvs
    List es -> do
       results <- traverse (eval inputs) es
       constructWith
@@ -171,7 +173,7 @@ eval inputs = case _ of
          (R.ListComp e gs stage2Run)
          ctrl
          (A.fromFoldable >>> V.List)
-         (map gval (R.listCompBodyPremises evalTraversed)) --get Derivs out of leaves and turn into GVals 
+         (map gval (R.compBodyPremises evalTraversed)) --get Derivs out of leaves and turn into GVals 
    Constr c es -> do
       classes <- askClasses
       checkArity c (length es) classes

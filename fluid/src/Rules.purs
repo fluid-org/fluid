@@ -26,7 +26,9 @@ data Rule v a
    | ListLiteral (List a)
    | TupleLiteral (List a)
    --key/value premises in source order
-   | DictionaryLiteral (List (Pair a))
+   | DictLiteral (List (Pair a))
+   --retain source key, value exprs and qualifiers list
+   | DictComp Expr Expr (List Qualifier) (QualifierRun a (Pair a))
    --retain source syntax in case some bodies or qualifier suffixes never ran
    | ListComp Expr (List Qualifier) (QualifierRun a a)
    | Lambda Def
@@ -73,8 +75,9 @@ premises = case _ of
    CondFalse condition _ chosen -> condition : chosen : Nil
    ListLiteral children -> children
    TupleLiteral children -> children
-   DictionaryLiteral entries -> foldMap (\(Pair k v) -> k : v : Nil) entries
-   ListComp _ _ run -> listCompQualifierPremises run <> listCompBodyPremises run
+   DictLiteral entries -> foldMap (\(Pair k v) -> k : v : Nil) entries
+   DictComp _ _ _ run -> compQualifierPremises run <> foldMap (\(Pair key value) -> key : value : Nil) (compBodyPremises run)
+   ListComp _ _ run -> compQualifierPremises run <> compBodyPremises run
    Lambda _ -> Nil
    Application fun args callee -> fun : (args <> (callee : Nil))
    PartialApplication fun args -> fun : args
@@ -87,30 +90,30 @@ premises = case _ of
 --TWO PHASE LISTCOMP COLLECION TO MAINTAIN EXECUTION ORDER
 
 --phase 1: collect generator-source and guard references, skipping bodies
-listCompQualifierPremises :: forall q b. QualifierRun q b -> List q
-listCompQualifierPremises = case _ of
+compQualifierPremises :: forall q b. QualifierRun q b -> List q
+compQualifierPremises = case _ of
    GeneratorRun source branches -> source : foldMap branchPremises branches
-   GuardPassed condition rest -> condition : listCompQualifierPremises rest
+   GuardPassed condition rest -> condition : compQualifierPremises rest
    GuardFailed condition -> condition : Nil
-   DeclRun value rest -> value : listCompQualifierPremises rest
+   DeclRun value rest -> value : compQualifierPremises rest
    Yield _ -> Nil
    where
    branchPremises :: Maybe (QualifierRun q b) -> List q
    branchPremises Nothing = Nil
-   branchPremises (Just run) = listCompQualifierPremises run
+   branchPremises (Just run) = compQualifierPremises run
 
 --phase 2: collect successful bodies, skipping qualifiers
-listCompBodyPremises :: forall q b. QualifierRun q b -> List b
-listCompBodyPremises = case _ of
+compBodyPremises :: forall q b. QualifierRun q b -> List b
+compBodyPremises = case _ of
    GeneratorRun _ branches -> foldMap branchPremises branches
-   GuardPassed _ rest -> listCompBodyPremises rest
+   GuardPassed _ rest -> compBodyPremises rest
    GuardFailed _ -> Nil
-   DeclRun _ rest -> listCompBodyPremises rest
+   DeclRun _ rest -> compBodyPremises rest
    Yield body -> body : Nil
    where
    branchPremises :: Maybe (QualifierRun q b) -> List b
    branchPremises Nothing = Nil
-   branchPremises (Just run) = listCompBodyPremises run
+   branchPremises (Just run) = compBodyPremises run
 
 
 valueRule :: forall v a. v -> Rule v a
