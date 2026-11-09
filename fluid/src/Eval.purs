@@ -184,24 +184,34 @@ eval inputs = case _ of
          (V.Obj c <<< zip (fieldNames classes c))
          (map gval results)
    Matrix e (x × y) e' -> do
-      dims <- gval <$> eval inputs e'
+      --[| f(i,j) for (i, j) in (m, n) |] is an m x n matrix 
+      --e is comp body
+      --x and y are row/col iterators
+      --e' is dims tuple
+      dimsResult <- eval inputs e'
+      let dims = gval dimsResult
+
       i' × j' <- case dims.val of
          Val _ (V.Tuple [ Val _ (V.Lit (Int i')), Val _ (V.Lit (Int j')) ]) -> pure (i' × j')
          Val _ u -> throw (typeMismatch u "pair of int")
       check
-         (i' × j' >= 1 × 1)
+         (i' >= 1 && j' >= 1)
          ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
-      vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
+
+      vssResults <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
          let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
-         gval <$> eval (inputs { env = inputs.env <+> ρ' }) e
-      constructWithValue inputs.ctrl mat (product (Compose vss) (Identity dims))
+         eval (inputs { env = inputs.env <+> ρ' }) e
+      let vss = map (map gval) vssResults
+
+      constructWith 
+         (R.Matrix (fst dimsResult) (map (map fst) vssResults))
+         inputs.ctrl mat (product (Compose vss) (Identity dims))
       where
       index :: GVal s -> Int -> Int -> GVal s
       index dims k n =
          { val: Val unit (V.Lit (Int n))
          , inEdges: via (\p -> Val (ctrlWeight * root (element k p)) (V.Lit (Int n))) dims
          }
-
       mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
       mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
    Lambda d -> 

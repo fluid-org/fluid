@@ -4,7 +4,7 @@ import Prelude
 
 import Bind (Name, Var)
 import Data.Foldable (class Foldable, foldMap)
-import Data.List (List(..), (:))
+import Data.List (List(..), (:), fromFoldable)
 import Data.Maybe (Maybe(..))
 import Data.Traversable (class Traversable)
 import Expr (Binop, Def, Expr, Qualifier, Unop)
@@ -35,8 +35,9 @@ data Rule v a
    | Application a (List a) a --function closure, args, callee
    | PartialApplication a (List a)
    | PrimitiveOp String a (List a)
-   | ObjectConstructor Name (List a)
+   | Matrix a (Array (Array a)) --dims and elements
    | Subscript a a
+   | ObjectConstructor Name (List a)
    | Attribute Var a
    | ValueLeaf v
 
@@ -82,8 +83,9 @@ premises = case _ of
    Application fun args callee -> fun : (args <> (callee : Nil))
    PartialApplication fun args -> fun : args
    PrimitiveOp _ fun args -> fun : args
-   ObjectConstructor _ args -> args
+   Matrix dims rows -> dims : foldMap fromFoldable rows --from Array to List
    Subscript container index -> container : index : Nil
+   ObjectConstructor _ args -> args
    Attribute _ receiver -> receiver : Nil
    ValueLeaf _ -> Nil
 
