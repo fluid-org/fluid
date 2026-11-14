@@ -2,11 +2,16 @@ module Fluid where
 
 import Prelude
 
+import App.Fig.Build (figData, optionsFromJson)
+import App.Fig.Codec (encodeFigData)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
-import Data.Argonaut.Core (stringifyWithIndent)
+import Data.Argonaut.Core (stringify, stringifyWithIndent)
+import Data.Argonaut.Decode (decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
+import Data.Argonaut.Parser (jsonParser)
 import Data.Array as Array
+import Data.Bifunctor (lmap)
 import Data.Foldable (for_)
 import Data.List.Types (NonEmptyList)
 import Data.Set as Set
@@ -18,6 +23,7 @@ import Data.String (Pattern(..), joinWith, split, stripPrefix)
 import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Aff (Aff, Error, message, runAff_, try)
+import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log, logShow)
 import Eval (evalProgram)
@@ -28,7 +34,7 @@ import Module (Config, ParseFailure(..), loadTopLevel, prepConfig, prepModule)
 import Module.Defs (ModuleName)
 import Module.Node (NodeT, runNodeT)
 import Node.Encoding (Encoding(..))
-import Node.FS.Aff (writeTextFile)
+import Node.FS.Aff (readTextFile, writeTextFile)
 import Node.Process (exit')
 import Options.Applicative (Parser, command, execParser, fullDesc, header, help, helper, long, metavar, progDesc, short, some, strArgument, strOption, subparser, switch, (<**>))
 import Options.Applicative.Builder (info)
@@ -36,7 +42,7 @@ import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
 import Expr (Module) as E
 import SExpr (Import(..)) as S
-import Util (type (×), orElse, (×))
+import Util (type (×), orElse, orThrow, (×))
 import DepGraph (valAt)
 
 type FileArgs =
@@ -46,7 +52,13 @@ type FileArgs =
    , asModule :: Boolean -- as module rather than program
    }
 
-data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Manifest (NonEmptyList String)
+type BuildArgs =
+   { file :: FileArgs
+   , spec :: String -- file holding figure options as JSON
+   , out :: String
+   }
+
+data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Build BuildArgs | Manifest (NonEmptyList String)
 
 parseFileArgs :: Parser FileArgs
 parseFileArgs = ado
@@ -56,6 +68,13 @@ parseFileArgs = ado
    asModule <- switch (long "module" <> short 'm' <> help "Treat the file as a module rather than a program")
    in { local, fileName, fluidSrcPaths, asModule }
 
+parseBuildArgs :: Parser BuildArgs
+parseBuildArgs = ado
+   file <- parseFileArgs
+   spec <- strOption (long "spec" <> short 's' <> help "JSON file of figure options")
+   out <- strOption (long "out" <> short 'o' <> help "File to write the figure data to")
+   in { file, spec, out }
+
 parseManifest :: Parser (NonEmptyList String)
 parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write manifests under"))
 
@@ -64,6 +83,7 @@ commandParser = subparser
    ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse a file and print it back"))
         <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check a file statically, with the exit codes of a PurePy checker"))
         <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate a file, printing its value; exit 1 on failure"))
+        <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Evaluate a file and write the data of its figure, to draw and query without evaluating"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
@@ -77,6 +97,14 @@ dispatchCommand (Check args) = report args (stages args (const (pure Nothing)))
 dispatchCommand (Evaluate args) = report args $ stages args case _ of
    AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, root } -> Just (prettyP (valAt g root))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
+dispatchCommand (Build { file, spec, out }) = report file do
+   fluidSrc <- loadFile (srcPaths file.local file.fluidSrcPaths) (File file.fileName)
+   options <- liftAff (readTextFile UTF8 spec)
+      >>= (jsonParser >=> (decodeJson >>> lmap printJsonDecodeError)) >>> orThrow
+      <#> optionsFromJson
+   json <- figData options fluidSrc >>= encodeFigData >>> orThrow
+   liftAff (writeTextFile UTF8 out (stringify json))
+   pure (exitCode.accepted × Nothing)
 dispatchCommand (Manifest dirs) = for_ dirs (writeManifests <<< Folder)
 
 -- Print message, if any, and exit with code.
