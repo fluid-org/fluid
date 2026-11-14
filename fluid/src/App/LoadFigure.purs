@@ -2,48 +2,23 @@ module App.LoadFigure where
 
 import Prelude hiding (absurd)
 
-import App.Fig (drawFig, drawFile, loadFig)
-import App.Util.Selector (eachElement, envVal, field, valOf, select, none, (>.>))
-import App.View.Util (Filter, Options)
+import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
+import App.Fig (drawFig)
+import App.Fig.Build (JsonOptions, loadFig, optionsFromJson)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError)
 import Data.Array (head, last)
 import Data.Either (Either(..))
-import Data.Foldable (foldr)
-import Data.Maybe (Maybe, maybe)
 import Data.String (split, Pattern(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (message)
-import Foreign.Object (Object)
-import Foreign.Object as Object
-import File (File(..), Folder(..), emptyFileCxt, loadFileFromPath, withRoots)
+import File (File(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Module.Web (runWebT)
-import Util (error, orElse, whenever, (×))
-
--- TODO: remove this extra type
-type JsonOptions =
-   { fluidSrcPath :: Array String
-   , inputs :: Array String
-   , query :: Boolean
-   , ignoreInputs :: Maybe (Object (Array String)) -- input ↦ columns
-   , linking :: Boolean
-   , rowFilter :: Maybe Filter
-   }
-
-optionsFromJson :: JsonOptions -> Options
-optionsFromJson spec@{ inputs, query, ignoreInputs, linking, rowFilter } =
-   { fluidSrcPaths: Folder <$> spec.fluidSrcPath
-   , inputs
-   , query
-   , ignoreInputs: foldr (>.>) none $ (maybe [] Object.toUnfoldable ignoreInputs) <#> \(x × ks) ->
-        envVal x (valOf (eachElement (foldr (>.>) none (ks <#> \k -> field k select))))
-   , linking
-   , rowFilter
-   }
+import Util (type (×), Endo, error, orElse, whenever, (×))
 
 loadFigure :: Json -> String -> String -> Effect Unit
 loadFigure jsonSpec divId srcFile = launchAff_ do
@@ -74,3 +49,14 @@ loadCode file = launchAff_ do
    liftEffect $ drawFile (File filename × fluidSrc)
    where
    nonEmpty s = whenever (s /= "") s
+
+drawFile :: File × String -> Effect Unit
+drawFile (File fileName × src) =
+   addEditorView (codeMirrorDiv fileName) >>= setContents src
+
+codeMirrorDiv :: Endo String
+codeMirrorDiv = ("codemirror-" <> _)
+
+setContents :: String -> EditorView -> Effect Unit
+setContents s ed =
+   dispatch ed =<< update ed.state [ { changes: { from: 0, to: getContentsLength ed, insert: s } } ]

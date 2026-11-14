@@ -2,17 +2,15 @@ module App.Fig where
 
 import Prelude hiding (absurd, compare)
 
-import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
-import App.Util.Selector (objArg, envVal, sel𝔹, ViewSetter)
+import App.Util.Selector (objArg, envVal, ViewSetter)
 import App.View (viewWithDoc)
 import App.View.ViewWithDoc (drawView)
-import App.View.Util (Direction(..), Fig, Options, HTMLId, QueryResult, View)
+import App.View.Util (Direction(..), Fig, Filter, HTMLId, QueryResult, View)
 import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
-import Classes (class HasClasses)
 import Control.Apply (lift2)
-import Dict (fromFoldable) as D
+import Dict (Dict)
 import Data.Foldable (or)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map as Map
@@ -21,20 +19,17 @@ import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (for, for_, sequence_)
+import Data.Traversable (for_, sequence_)
 import Data.Tuple (fst)
 import Effect (Effect)
-import Eval (documentedAs, evalProgram, visible)
-import File (class MonadLoad, File(..))
-import DepGraph (ConjugatePair, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
+import DepGraph (ConjugatePair, Deriv, Labelling, Pos, VisibleGraph, dimap, mapPositions, mask, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
-import Module (prepConfig, throwParseFailure)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
-import Util (type (×), Endo, quoted, spyWhen, throw, (×))
+import Util (type (×), Endo, spyWhen, (×))
 import Util.Map (get, insert, lookup, mapWithKey, values)
 import Util.Set ((\\), (∈), (∪))
-import Val (class HasModuleStore, EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val, withDoc)
+import Val (DerivWithDoc, EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val)
 
 str
    :: { output :: String -- pseudo-variable to use as name of output view
@@ -132,13 +127,9 @@ drawFig divId fig = do
    where
    { v, ρ, ι } = selectionResult fig
    arg = objArg
-   options = { rowFilter: fig.spec.rowFilter }
+   options = { rowFilter: fig.rowFilter }
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
    prefix = divId <> "-" <> str.intermediate
-
-drawFile :: File × String -> Effect Unit
-drawFile (File fileName × src) =
-   addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
 -- Queries over Boolean selections.
 boolean
@@ -146,96 +137,83 @@ boolean
    -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
-loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
-loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
-   config@{ s } <- throwParseFailure (prepConfig fluidSrc)
-   eval@{ g: g@{ docs }, root } <- evalProgram config.inputs config.classes config.e
-   -- Each input is the value documented with its name, shown without that doc
-   ins <- D.fromFoldable <$> for inputs \x -> case documentedAs g x of
-      [ p ] -> pure (x × (p × Nothing))
-      _ -> throw ("No unique value documented " <> quoted x)
-   let
-      out = withDoc g root
-      inputVertices = Set.fromFoldable (fst <$> values ins)
-      shown = Set.insert root inputVertices
-      ιs =
-         if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs)
-         else Map.empty
+-- Visible graph of a program with the vertices shown in a figure, from which the figure is drawn and queried.
+type FigData =
+   { graph :: VisibleGraph Val DepKind
+   , ins :: Dict DerivWithDoc -- input name ↦ vertex
+   , out :: DerivWithDoc
+   , ιs :: Labelling DerivWithDoc -- documented intermediates
+   , ignored :: Labelling (Set Pos) -- input positions left out of linked queries
+   , linking :: Boolean
+   }
 
-      graph = materialise g (visible eval)
-      everything = map (const true) <$> graph.vals
-      nothing = map (const false) <$> graph.vals
-      ignored = unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
+figure :: Maybe Filter -> FigData -> Fig
+figure rowFilter { graph, ins, out, ιs, ignored, linking } =
+   { rowFilter
+   , ρ: pairSel <$> toρ nothing <*> toρ nothing
+   , v: pairSel <$> toV nothing <*> toV nothing
+   , ι: Map.empty
+   , linkedOutputs
+   , linkedInputs
+   , linkIntermediates
+   , dir: { persistent: LinkedOutputs, transient: LinkedOutputs }
+   , in_views: ins $> Nothing
+   , out_view: Nothing
+   , intermediate_views: Map.empty
+   , inertι: ιs <#> \p -> (&&) <$> val inertUnmasked.bwd p <*> val inertUnmasked.fwd p
+   }
+   where
+   inputVertices = Set.fromFoldable (fst <$> values ins)
+   everything = map (const true) <$> graph.vals
+   nothing = map (const false) <$> graph.vals
 
-      -- Over the graph as it is, and restricted to data positions less the ignored ones.
-      unmasked = boolean (queries graph)
-      masked = boolean $ queries $ graph # mask \p v ->
-         maybe (dataPositions v) (lift2 (\b b' -> b && not b') (dataPositions v)) (Map.lookup p ignored)
+   -- Over the graph as it is, and restricted to data positions less the ignored ones.
+   unmasked = boolean (queries graph)
+   masked = boolean $ queries $ graph # mask \p v ->
+      maybe (dataPositions v) (\is -> lift2 (\b b' -> b && not b') (dataPositions v) (mapPositions (_ ∈ is) v))
+         (Map.lookup p ignored)
 
-      -- Positions which the output does not depend on, and which do not depend on any input.
-      inert
-         :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
-         -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
-      inert { fwd, bwd } =
-         { bwd: map not <$> bwd (unval out (val everything out))
-         , fwd: map not <$> fwd (Map.filterKeys (_ ∈ inputVertices) everything)
-         }
-      inertMasked = inert masked
-      inertUnmasked = inert unmasked
-
-      toρ :: Labelling (Val 𝔹) -> EnvWithDocs (SelState 𝔹)
-      toρ m = EnvWithDocs (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
-
-      toV :: Labelling (Val 𝔹) -> ValWithDoc (SelState 𝔹)
-      toV m = selState <$> val inertMasked.fwd out <*> val m out
-
-      toι :: Labelling (Val 𝔹) -> Labelling (ValWithDoc 𝔹)
-      toι m = Map.filter or (ιs <#> val m)
-
-      fromρ :: EnvWithDocs (SelState 𝔹) -> Labelling (Val 𝔹)
-      fromρ ρ = unvals ins (to𝔹 <$> ρ)
-
-      fromV :: ValWithDoc (SelState 𝔹) -> Labelling (Val 𝔹)
-      fromV v = unval out (to𝔹 <$> v)
-
-      linkedInputs :: SelectionType -> EnvWithDocs (SelStates 𝔹) -> QueryResult
-      linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
-         where
-         sel = ρ <#> projSel selType
-         deps = masked.fwd (fromρ sel)
-         v = toV deps
-
-      linkedOutputs :: SelectionType -> ValWithDoc (SelStates 𝔹) -> QueryResult
-      linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
-         where
-         sel = v <#> projSel selType
-         deps = masked.bwd (fromV sel)
-         ρ = toρ deps
-
-      linkIntermediates :: Labelling (ValWithDoc (SelStates 𝔹)) -> QueryResult
-      linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
-         where
-         sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
-
-   pure
-      { spec: options
-      , s
-      , ρ: pairSel <$> toρ nothing <*> toρ nothing
-      , v: pairSel <$> toV nothing <*> toV nothing
-      , ι: Map.empty
-      , linkedOutputs
-      , linkedInputs
-      , linkIntermediates
-      , dir: { persistent: LinkedOutputs, transient: LinkedOutputs }
-      , in_views: ins $> Nothing
-      , out_view: Nothing
-      , intermediate_views: Map.empty
-      , inertι: ιs <#> \p -> (&&) <$> val inertUnmasked.bwd p <*> val inertUnmasked.fwd p
+   -- Positions which the output does not depend on, and which do not depend on any input.
+   inert
+      :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
+      -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
+   inert { fwd, bwd } =
+      { bwd: map not <$> bwd (unval out (val everything out))
+      , fwd: map not <$> fwd (Map.filterKeys (_ ∈ inputVertices) everything)
       }
+   inertMasked = inert masked
+   inertUnmasked = inert unmasked
 
-codeMirrorDiv :: Endo String
-codeMirrorDiv = ("codemirror-" <> _)
+   toρ :: Labelling (Val 𝔹) -> EnvWithDocs (SelState 𝔹)
+   toρ m = EnvWithDocs (ins <#> \p -> selState <$> val inertMasked.bwd p <*> val m p)
 
-loadCode :: String -> EditorView -> Effect Unit
-loadCode s ed =
-   dispatch ed =<< update ed.state [ { changes: { from: 0, to: getContentsLength ed, insert: s } } ]
+   toV :: Labelling (Val 𝔹) -> ValWithDoc (SelState 𝔹)
+   toV m = selState <$> val inertMasked.fwd out <*> val m out
+
+   toι :: Labelling (Val 𝔹) -> Labelling (ValWithDoc 𝔹)
+   toι m = Map.filter or (ιs <#> val m)
+
+   fromρ :: EnvWithDocs (SelState 𝔹) -> Labelling (Val 𝔹)
+   fromρ ρ = unvals ins (to𝔹 <$> ρ)
+
+   fromV :: ValWithDoc (SelState 𝔹) -> Labelling (Val 𝔹)
+   fromV v = unval out (to𝔹 <$> v)
+
+   linkedInputs :: SelectionType -> EnvWithDocs (SelStates 𝔹) -> QueryResult
+   linkedInputs selType ρ = (if linking then toρ (masked.bwd (fromV v)) else sel) × v × toι deps
+      where
+      sel = ρ <#> projSel selType
+      deps = masked.fwd (fromρ sel)
+      v = toV deps
+
+   linkedOutputs :: SelectionType -> ValWithDoc (SelStates 𝔹) -> QueryResult
+   linkedOutputs selType v = ρ × (if linking then toV (masked.fwd (fromρ ρ)) else sel) × toι deps
+      where
+      sel = v <#> projSel selType
+      deps = masked.bwd (fromV sel)
+      ρ = toρ deps
+
+   linkIntermediates :: Labelling (ValWithDoc (SelStates 𝔹)) -> QueryResult
+   linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
+      where
+      sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
