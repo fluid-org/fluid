@@ -5,6 +5,7 @@ import Prelude hiding (absurd)
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
 import App.Fig (drawFig)
 import App.Fig.Build (JsonOptions, loadFig, optionsFromJson)
+import App.Placeholder (figureFailed, figureLoaded)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError)
@@ -35,12 +36,6 @@ loadFigureSrc options divId fluidSrc = flip runAff_ load case _ of
       Right spec -> do
          let figSpec@{ fluidSrcPaths } = optionsFromJson spec
          runWebT emptyFileCxt (withRoots fluidSrcPaths (loadFig figSpec fluidSrc))
-
--- Remove the placeholder shown until the figure loads; its absence tells the web tests the page has settled
-foreign import figureLoaded :: String -> Effect Unit
-
--- Replace the placeholder by the error
-foreign import figureFailed :: String -> String -> Effect Unit
 
 loadCode :: String -> Effect Unit
 loadCode file = launchAff_ do
