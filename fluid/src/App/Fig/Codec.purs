@@ -2,7 +2,7 @@ module App.Fig.Codec where
 
 import Prelude hiding (absurd)
 
-import App.Fig (FigData)
+import App.Fig (FigGraph)
 import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromString, jsonNull)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
@@ -29,7 +29,7 @@ type DerivWithDocRep = Int × Maybe Int
 -- Dependence relation as target position ↦ source position ↦ weight.
 type RelRep = Array (Pos × Array (Pos × Int))
 
-type FigDataRep =
+type FigGraphRep =
    { vals :: Array (Int × Json)
    , edges :: Array (Int × Array (Int × RelRep)) -- target ↦ source ↦ relation
    , ins :: Array (String × DerivWithDocRep)
@@ -39,8 +39,8 @@ type FigDataRep =
    , linking :: Boolean
    }
 
-encodeFigData :: FigData -> MayFail Json
-encodeFigData { graph, ins, out, ιs, ignored, linking } = do
+encodeFigGraph :: FigGraph -> MayFail Json
+encodeFigGraph { graph, ins, out, ιs, ignored, linking } = do
    vals <- traverse (\(Deriv p × v) -> (p × _) <$> encodeVal v) (Map.toUnfoldable graph.vals)
    pure $ encodeJson
       ( { vals
@@ -50,7 +50,7 @@ encodeFigData { graph, ins, out, ιs, ignored, linking } = do
         , intermediates: labelling encodeDeriv ιs
         , ignored: labelling Set.toUnfoldable ignored
         , linking
-        } :: FigDataRep
+        } :: FigGraphRep
       )
    where
    labelling :: forall a b. (a -> b) -> Labelling a -> Array (Int × b)
@@ -62,9 +62,9 @@ encodeFigData { graph, ins, out, ιs, ignored, linking } = do
    encodeRel :: SparseRel DepKind -> RelRep
    encodeRel (SparseRel { in_ }) = Map.toUnfoldable (in_ <#> (map encodeDepKind >>> Map.toUnfoldable))
 
-decodeFigData :: Json -> MayFail FigData
-decodeFigData json = do
-   rep :: FigDataRep <- lmap printJsonDecodeError (decodeJson json)
+decodeFigGraph :: Json -> MayFail FigGraph
+decodeFigGraph json = do
+   rep :: FigGraphRep <- lmap printJsonDecodeError (decodeJson json)
    vals <- traverse (\(p × v) -> (Deriv p × _) <$> decodeVal v) rep.vals
    pure
       { graph: { vals: Map.fromFoldable vals, edges: edges rep.edges }

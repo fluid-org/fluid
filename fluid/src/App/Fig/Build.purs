@@ -2,7 +2,7 @@ module App.Fig.Build where
 
 import Prelude
 
-import App.Fig (FigData, figure)
+import App.Fig (FigGraph, figure)
 import App.Util.Selector (eachElement, envVal, field, none, select, sel𝔹, valOf, (>.>))
 import App.View.Util (Fig, Filter, Options)
 import Classes (class HasClasses)
@@ -47,8 +47,8 @@ optionsFromJson spec@{ inputs, query, ignoreInputs, linking, rowFilter } =
    }
 
 -- Evaluate a program and keep the visible part of its dependence graph.
-figData :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigData
-figData { inputs, linking, query, ignoreInputs } fluidSrc = do
+figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigGraph
+figGraph { inputs, linking, query, ignoreInputs } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, root } <- evalProgram config.inputs config.classes config.e
    -- Each input is the value documented with its name, shown without that doc
@@ -71,4 +71,4 @@ figData { inputs, linking, query, ignoreInputs } fluidSrc = do
       }
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
-loadFig options fluidSrc = figure options.rowFilter <$> figData options fluidSrc
+loadFig options fluidSrc = figure options.rowFilter <$> figGraph options fluidSrc

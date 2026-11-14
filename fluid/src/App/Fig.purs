@@ -138,7 +138,7 @@ boolean
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
 -- Visible graph of a program with the vertices shown in a figure, from which the figure is drawn and queried.
-type FigData =
+type FigGraph =
    { graph :: VisibleGraph Val DepKind
    , ins :: Dict DerivWithDoc -- input name ↦ vertex
    , out :: DerivWithDoc
@@ -147,7 +147,7 @@ type FigData =
    , linking :: Boolean
    }
 
-figure :: Maybe Filter -> FigData -> Fig
+figure :: Maybe Filter -> FigGraph -> Fig
 figure rowFilter { graph, ins, out, ιs, ignored, linking } =
    { rowFilter
    , ρ: pairSel <$> toρ nothing <*> toρ nothing

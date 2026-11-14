@@ -3,8 +3,8 @@ module Test.Util.Suite where
 import Prelude
 
 import App.Fig (figure, selectInput, selectOutput, selectionResult)
-import App.Fig.Build (figData)
-import App.Fig.Codec (decodeFigData, encodeFigData)
+import App.Fig.Build (figGraph)
+import App.Fig.Codec (decodeFigGraph, encodeFigGraph)
 import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
 import App.Util.Selector (ObjArg, objArg, sel𝔹, valOf)
 import App.View.Util (Fig, Options)
@@ -67,10 +67,10 @@ depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName f
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)
 
--- Figure from its serialised data, as loaded from a file.
+-- Figure from its serialised graph, as loaded from a file.
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
 loadFig spec fluidSrc =
-   figData spec fluidSrc >>= (encodeFigData >=> (stringify >>> jsonParser) >=> decodeFigData) >>> orThrow
+   figGraph spec fluidSrc >>= (encodeFigGraph >=> (stringify >>> jsonParser) >=> decodeFigGraph) >>> orThrow
       <#> figure spec.rowFilter
 
 linkedOutputsTest :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestLinkedOutputsSpec -> m Fig

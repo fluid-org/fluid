@@ -2,8 +2,8 @@ module Fluid where
 
 import Prelude
 
-import App.Fig.Build (figData, optionsFromJson)
-import App.Fig.Codec (encodeFigData)
+import App.Fig.Build (figGraph, optionsFromJson)
+import App.Fig.Codec (encodeFigGraph)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Data.Argonaut.Core (stringify, stringifyWithIndent)
@@ -72,7 +72,7 @@ parseBuildArgs :: Parser BuildArgs
 parseBuildArgs = ado
    file <- parseFileArgs
    spec <- strOption (long "spec" <> short 's' <> help "JSON file of figure options")
-   out <- strOption (long "out" <> short 'o' <> help "File to write the figure data to")
+   out <- strOption (long "out" <> short 'o' <> help "File to write the figure graph to")
    in { file, spec, out }
 
 parseManifest :: Parser (NonEmptyList String)
@@ -83,7 +83,7 @@ commandParser = subparser
    ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse a file and print it back"))
         <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check a file statically, with the exit codes of a PurePy checker"))
         <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate a file, printing its value; exit 1 on failure"))
-        <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Evaluate a file and write the data of its figure, to draw and query without evaluating"))
+        <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Evaluate a file and write its figure graph, to draw and query without evaluating"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
@@ -102,7 +102,7 @@ dispatchCommand (Build { file, spec, out }) = report file do
    options <- liftAff (readTextFile UTF8 spec)
       >>= (jsonParser >=> (decodeJson >>> lmap printJsonDecodeError)) >>> orThrow
       <#> optionsFromJson
-   json <- figData options fluidSrc >>= encodeFigData >>> orThrow
+   json <- figGraph options fluidSrc >>= encodeFigGraph >>> orThrow
    liftAff (writeTextFile UTF8 out (stringify json))
    pure (exitCode.accepted × Nothing)
 dispatchCommand (Manifest dirs) = for_ dirs (writeManifests <<< Folder)

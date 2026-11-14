@@ -1,4 +1,4 @@
 .svelte-kit/
 build/
 */static/**/manifest.json
-*/static/data/
+*/static/graph/

@@ -1,9 +1,9 @@
-module App.LoadFigureData where
+module App.LoadFigureGraph where
 
 import Prelude
 
 import App.Fig (drawFig, figure)
-import App.Fig.Codec (decodeFigData)
+import App.Fig.Codec (decodeFigGraph)
 import App.Placeholder (figureFailed, figureLoaded)
 import App.View.Util (Filter)
 import Data.Argonaut.Core (Json)
@@ -19,14 +19,14 @@ import Effect.Exception (message)
 import File (File(..), loadFileFromPath)
 import Util (orElse, orThrow)
 
--- Draw a figure from the data written by the build command, without evaluating its program.
-loadFigureData :: Json -> String -> String -> Effect Unit
-loadFigureData options divId file = flip runAff_ load case _ of
+-- Draw a figure from the graph written by the build command, without evaluating its program.
+loadFigureGraph :: Json -> String -> String -> Effect Unit
+loadFigureGraph options divId file = flip runAff_ load case _ of
    Left err -> log (show err) *> figureFailed divId (message err)
    Right fig -> drawFig divId fig *> figureLoaded divId
    where
    load = do
       { rowFilter } :: { rowFilter :: Maybe Filter } <- orThrow (lmap printJsonDecodeError (decodeJson options))
       loadFileFromPath (File file) >>= orElse ("File not found: " <> file)
-         >>= (jsonParser >=> decodeFigData) >>> orThrow
+         >>= (jsonParser >=> decodeFigGraph) >>> orThrow
          <#> figure rowFilter

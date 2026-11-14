@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { loadFigureData } from '../../output-es/App.LoadFigureData';
+	import { loadFigureGraph } from '../../output-es/App.LoadFigureGraph';
 	import { onMount } from 'svelte';
 	import './view-styles.css';
 
-	let { spec, data } = $props();
+	let { spec, graph } = $props();
 
 	onMount(() => {
-		loadFigureData(spec)('fig')(data)();
+		loadFigureGraph(spec)('fig')(graph)();
 	});
 </script>
 
