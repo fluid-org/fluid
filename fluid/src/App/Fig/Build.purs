@@ -25,7 +25,7 @@ import Util.Map (values)
 import Util.Set ((∈))
 import Val (class HasModuleStore, EnvWithDocs(..), unvals, val, withDoc)
 
--- TODO: remove this extra type
+-- Options in the form decoded from JSON; delete once the options are decoded directly
 type JsonOptions =
    { fluidSrcPath :: Array String
    , inputs :: Array String
