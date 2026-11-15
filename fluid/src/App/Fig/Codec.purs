@@ -105,7 +105,7 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Field names of each class with an object in the given value.
+-- Field names of each class instantiated in the given value.
 classes :: Val Unit -> Classes
 classes (Val _ u) = case u of
    Obj c xvs -> O.insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (O.unions (classes <<< snd <$> xvs))
