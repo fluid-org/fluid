@@ -5,8 +5,9 @@
 	"type": "module",
 	"scripts": {
 		"manifest": "yarn fluid manifest static",
-		"dev": "yarn manifest && vite dev",
-		"build": "yarn manifest && vite build",
+		"figure-graph": "mkdir -p static/graph && cd static/src && fluid build -f bar_chart_line_chart.fld -p ../src -p ../lib -s ../../src/lib/spec/renewables-linked.json -o ../graph/renewables-linked.json",
+		"dev": "yarn manifest && yarn figure-graph && vite dev",
+		"build": "yarn manifest && yarn figure-graph && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

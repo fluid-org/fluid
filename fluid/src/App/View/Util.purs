@@ -19,7 +19,6 @@ import Effect (Effect)
 import File (Folder)
 import DepGraph (Labelling)
 import Lattice (𝔹, (∨))
-import SExpr as S
 import Util (type (×), Endo, (×))
 import Util.Map (toUnfoldable, values)
 import Util.Set (size)
@@ -117,8 +116,7 @@ type Options =
 data Direction = LinkedInputs | LinkedOutputs | Intermediates
 
 type Fig =
-   { spec :: Options
-   , s :: S.Stmt
+   { rowFilter :: Maybe Filter
    , ρ :: EnvWithDocs (SelStates 𝔹)
    , v :: ValWithDoc (SelStates 𝔹)
    , ι :: Labelling (ValWithDoc (SelStates 𝔹))

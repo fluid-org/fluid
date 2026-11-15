@@ -1,15 +1,8 @@
 <script>
 	import { DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import spec from '$lib/spec/renewables-linked.json';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		inputs: ['renewables'],
-		ignoreInputs: { renewables: ['year', 'country'] },
-		query: false,
-		linking: true
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;

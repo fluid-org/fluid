@@ -2,13 +2,17 @@ module Test.Util.Suite where
 
 import Prelude
 
-import App.Fig (loadFig, selectInput, selectOutput, selectionResult)
+import App.Fig (figure, selectInput, selectOutput, selectionResult)
+import App.Fig.Build (figGraph)
+import App.Fig.Codec (decodeFigGraph, encodeFigGraph)
 import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
 import App.Util.Selector (ObjArg, objArg, sel𝔹, valOf)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import Classes (class HasClasses)
 import Control.Monad.Error.Class (catchError)
+import Data.Argonaut.Core (stringify)
+import Data.Argonaut.Parser (jsonParser)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Maybe (Maybe)
@@ -22,7 +26,7 @@ import Module (prepConfig, throwParseFailure)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
 import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
-import Util (type (×), throw, (×))
+import Util (type (×), orThrow, throw, (×))
 import Val (class HasModuleStore, Val, EnvWithDocs)
 
 -- benchmarks parameterised on number of iterations
@@ -62,6 +66,12 @@ depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName f
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)
+
+-- Build a figure from the figure graph after a round trip through JSON
+loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
+loadFig spec fluidSrc =
+   figGraph spec fluidSrc >>= (encodeFigGraph >=> (stringify >>> jsonParser) >=> decodeFigGraph) >>> orThrow
+      <#> figure spec.rowFilter
 
 linkedOutputsTest :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
