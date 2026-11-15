@@ -1,0 +1,6 @@
+{
+	"program": "static/src/co2.fld",
+	"fluidSrcPath": ["../src", "../lib"],
+	"query": false,
+	"linking": false
+}

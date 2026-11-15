@@ -3,6 +3,7 @@ module App.Fig.Codec where
 import Prelude hiding (absurd)
 
 import App.Fig (FigGraph)
+import App.View.Util (Filter)
 import Bind (FieldName, Name, dottedName)
 import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
@@ -47,10 +48,11 @@ type FigGraphRep =
    , intermediates :: Array (Int × DerivWithDocRep)
    , ignored :: Array (Int × Array Pos)
    , linking :: Boolean
+   , rowFilter :: Maybe Filter
    }
 
 encodeFigGraph :: FigGraph -> MayFail Json
-encodeFigGraph { graph, ins, out, ιs, ignored, linking } = do
+encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    vals <- traverse (\(Deriv p × v) -> (p × _) <$> encodeVal v) (Map.toUnfoldable graph.vals)
    pure $ encodeJson
       ( { classes: unions (classes <$> Map.values graph.vals)
@@ -61,6 +63,7 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking } = do
         , intermediates: labelling encodeDeriv ιs
         , ignored: labelling Set.toUnfoldable ignored
         , linking
+        , rowFilter
         } :: FigGraphRep
       )
    where
@@ -84,6 +87,7 @@ decodeFigGraph json = do
       , ιs: labelling decodeDeriv rep.intermediates
       , ignored: labelling Set.fromFoldable rep.ignored
       , linking: rep.linking
+      , rowFilter: rep.rowFilter
       }
    where
    labelling :: forall a b. (a -> b) -> Array (Int × a) -> Labelling b

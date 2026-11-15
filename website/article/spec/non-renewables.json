@@ -1,0 +1,9 @@
+{
+	"program": "static/src/non_renewables.fld",
+	"fluidSrcPath": ["../src", "../lib"],
+	"ignoreInputs": {
+		"nonRenewables": ["year", "country"]
+	},
+	"query": false,
+	"linking": true
+}

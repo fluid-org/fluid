@@ -1,6 +1,6 @@
 {
+	"program": "static/src/methane.fld",
 	"fluidSrcPath": ["../src", "../lib"],
-	"ignoreInputs": { "renewables": ["year", "country"] },
 	"query": false,
 	"linking": true
 }

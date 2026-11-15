@@ -1,0 +1,10 @@
+{
+	"program": "static/src/energyscatter.fld",
+	"fluidSrcPath": ["../src", "../lib"],
+	"ignoreInputs": {
+		"renewables": ["year", "country"],
+		"nonRenewables": ["year", "country"]
+	},
+	"query": false,
+	"linking": true
+}

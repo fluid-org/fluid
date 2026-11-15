@@ -1,13 +1,7 @@
 <script>
-	import { CodeMirror, DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import { CodeMirror, DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		query: true,
-		linking: false
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
@@ -30,7 +24,7 @@
 
 	<div class="flex-left-align">
 		<div class="flex-top-align">
-			<Figure {spec} fld="../src/convolution.fld" />
+			<FigureGraph graph="../graph/convolution.json" />
 			<div></div>
 		</div>
 		<CodeMirror name="convolution" src="../src/convolution.fld" />

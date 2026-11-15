@@ -47,10 +47,9 @@ optionsFromJson spec@{ query, ignoreInputs, linking, rowFilter } =
    , rowFilter
    }
 
--- Build a figure graph by evaluating a program. Take as inputs the documented vertices independent of every
--- visible vertex. Never take the root as an input.
+-- Take documented leaves of visible graph (other than root) as inputs of figure
 figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigGraph
-figGraph { linking, query, ignoreInputs } fluidSrc = do
+figGraph { linking, query, ignoreInputs, rowFilter } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, root } <- evalProgram config.inputs config.classes config.e
    let
@@ -74,7 +73,8 @@ figGraph { linking, query, ignoreInputs } fluidSrc = do
            else Map.empty
       , ignored: selected <$> unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
       , linking
+      , rowFilter
       }
 
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
-loadFig options fluidSrc = figure options.rowFilter <$> figGraph options fluidSrc
+loadFig options fluidSrc = figure <$> figGraph options fluidSrc

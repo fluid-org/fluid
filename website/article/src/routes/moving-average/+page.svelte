@@ -1,14 +1,8 @@
 <script>
-	import { DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
    import { text } from 'stream/consumers';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		query: false,
-		linking: false
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
@@ -45,7 +39,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../src/moving_average.fld" />
+		<FigureGraph graph="../graph/moving-average.json" />
 	</div>
 </Grid>
 

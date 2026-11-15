@@ -71,7 +71,7 @@ selected s = selStates (isInert s) (isPersistent s) (isTransient s)
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
 loadFig spec fluidSrc =
    figGraph spec fluidSrc >>= (encodeFigGraph >=> (stringify >>> jsonParser) >=> decodeFigGraph) >>> orThrow
-      <#> figure spec.rowFilter
+      <#> figure
 
 linkedOutputsTest :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do

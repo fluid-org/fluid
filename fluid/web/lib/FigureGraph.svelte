@@ -2,7 +2,7 @@
 	import { loadFigureGraph } from '../../output-es/App.LoadFigureGraph';
 	import FigureContainer from './FigureContainer.svelte';
 
-	let { spec, graph } = $props();
+	let { graph } = $props();
 </script>
 
-<FigureContainer draw={(divId) => loadFigureGraph(spec)(divId)(graph)()} />
+<FigureContainer draw={(divId) => loadFigureGraph(divId)(graph)()} />
