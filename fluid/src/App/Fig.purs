@@ -137,7 +137,7 @@ boolean
    -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
--- Data sufficient to draw and query a figure without parser or evaluator.
+-- Data sufficient to draw and query a figure without parser or evaluator
 type FigGraph =
    { graph :: VisibleGraph Val DepKind
    , ins :: Dict DerivWithDoc -- input name ↦ vertex
@@ -167,13 +167,13 @@ figure rowFilter { graph, ins, out, ιs, ignored, linking } =
    everything = map (const true) <$> graph.vals
    nothing = map (const false) <$> graph.vals
 
-   -- Over the graph as it is, and restricted to data positions less the ignored ones.
+   -- Queries over the whole graph; queries restricted to data positions other than ignored positions
    unmasked = boolean (queries graph)
    masked = boolean $ queries $ graph # mask \p v ->
       maybe (dataPositions v) (\is -> lift2 (\b b' -> b && not b') (dataPositions v) (mapPositions (_ ∈ is) v))
          (Map.lookup p ignored)
 
-   -- Positions which the output does not depend on, and which do not depend on any input.
+   -- Positions not reached backwards from the output; positions not reached forwards from any input
    inert
       :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
       -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }

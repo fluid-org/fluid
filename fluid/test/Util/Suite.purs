@@ -67,7 +67,7 @@ depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName f
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)
 
--- Figure from its serialised graph, as loaded from a file.
+-- Build a figure from the figure graph after a round trip through JSON
 loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
 loadFig spec fluidSrc =
    figGraph spec fluidSrc >>= (encodeFigGraph >=> (stringify >>> jsonParser) >=> decodeFigGraph) >>> orThrow

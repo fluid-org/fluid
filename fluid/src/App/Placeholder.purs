@@ -4,7 +4,8 @@ import Prelude
 
 import Effect (Effect)
 
--- Remove the placeholder shown until the figure loads; its absence tells the web tests the page has settled
+-- Remove the placeholder shown until the figure loads; the web tests take the page as settled once the
+-- placeholder is gone
 foreign import figureLoaded :: String -> Effect Unit
 
 -- Replace the placeholder by the error

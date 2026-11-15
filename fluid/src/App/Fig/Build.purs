@@ -46,12 +46,12 @@ optionsFromJson spec@{ inputs, query, ignoreInputs, linking, rowFilter } =
    , rowFilter
    }
 
--- Evaluate a program and keep the visible part of its dependence graph.
+-- Build figure graph by evaluating a program
 figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigGraph
 figGraph { inputs, linking, query, ignoreInputs } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, root } <- evalProgram config.inputs config.classes config.e
-   -- Each input is the value documented with its name, shown without that doc
+   -- Look up each input as the unique vertex documented with the input name; show inputs without docs
    ins <- D.fromFoldable <$> for inputs \x -> case documentedAs g x of
       [ p ] -> pure (x × (p × Nothing))
       _ -> throw ("No unique value documented " <> quoted x)

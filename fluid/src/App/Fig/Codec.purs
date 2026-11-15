@@ -33,7 +33,7 @@ import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
 
 type DerivWithDocRep = Int × Maybe Int
 
--- Dependence relation as target position ↦ source position ↦ weight.
+-- Dependence relation as target position ↦ source position ↦ weight
 type RelRep = Array (Pos × Array (Pos × Int))
 
 type Classes = Object (Array FieldName) -- class ↦ field names
@@ -108,7 +108,7 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Collect field names by class from the objects within the given value.
+-- Collect field names by class from the objects within the given value
 classes :: Val Unit -> Classes
 classes (Val _ u) = case u of
    Obj c xvs -> insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (unions (classes <<< snd <$> xvs))
@@ -118,8 +118,9 @@ classes (Val _ u) = case u of
    Matrix (MatrixRep (vss × _ × _)) -> unions (unions <<< map classes <$> vss)
    _ -> empty
 
--- List as array, finite float other than negative zero as number, string as string, Boolean as Boolean and
--- None as null; any other value as a JSON object with the name of its kind as the only key.
+-- Encode a value as JSON. A list maps to an array. A literal maps to a JSON literal, except for ints,
+-- non-finite floats and negative zero. Every other value maps to an object with the name of its kind as the
+-- only key.
 encodeVal :: Val Unit -> MayFail Json
 encodeVal (Val _ u) = case u of
    Lit (Int n) -> pure (tagged "int" (encodeJson n))
