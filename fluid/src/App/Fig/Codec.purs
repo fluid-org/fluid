@@ -22,10 +22,13 @@ import Data.Tuple (fst, snd)
 import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), sparseRel)
 import Dict (Dict(..))
 import Dict as D
+import Foreign.Object (Object)
 import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
 import Util (type (×), MayFail, absurd, definitely', error, (×))
+import Util.Map (insert, lookup, maplet, toUnfoldable)
+import Util.Set (empty, unions)
 import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
 
 type DerivWithDocRep = Int × Maybe Int
@@ -33,7 +36,7 @@ type DerivWithDocRep = Int × Maybe Int
 -- Dependence relation as target position ↦ source position ↦ weight.
 type RelRep = Array (Pos × Array (Pos × Int))
 
-type Classes = O.Object (Array FieldName) -- class ↦ field names
+type Classes = Object (Array FieldName) -- class ↦ field names
 
 type FigGraphRep =
    { classes :: Classes
@@ -50,7 +53,7 @@ encodeFigGraph :: FigGraph -> MayFail Json
 encodeFigGraph { graph, ins, out, ιs, ignored, linking } = do
    vals <- traverse (\(Deriv p × v) -> (p × _) <$> encodeVal v) (Map.toUnfoldable graph.vals)
    pure $ encodeJson
-      ( { classes: O.unions (classes <$> Map.values graph.vals)
+      ( { classes: unions (classes <$> Map.values graph.vals)
         , vals
         , edges: labelling (labelling encodeRel) graph.edges
         , ins: map encodeDeriv <$> D.toArrayWithKey (×) ins
@@ -105,15 +108,15 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Field names of each class instantiated in the given value.
+-- Classes of objects within the given value, each class with its field names.
 classes :: Val Unit -> Classes
 classes (Val _ u) = case u of
-   Obj c xvs -> O.insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (O.unions (classes <<< snd <$> xvs))
-   List vs -> O.unions (classes <$> vs)
-   Tuple vs -> O.unions (classes <$> vs)
-   Dictionary (DictRep (Dict d)) -> O.unions (classes <<< snd <$> d)
-   Matrix (MatrixRep (vss × _ × _)) -> O.unions (O.unions <<< map classes <$> vss)
-   _ -> O.empty
+   Obj c xvs -> insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (unions (classes <<< snd <$> xvs))
+   List vs -> unions (classes <$> vs)
+   Tuple vs -> unions (classes <$> vs)
+   Dictionary (DictRep (Dict d)) -> unions (classes <<< snd <$> d)
+   Matrix (MatrixRep (vss × _ × _)) -> unions (unions <<< map classes <$> vss)
+   _ -> empty
 
 -- List as array, finite float other than negative zero as number, string as string, Boolean as Boolean and
 -- None as null; any other value as a JSON object with the name of its kind as the only key.
@@ -143,7 +146,7 @@ encodeVal (Val _ u) = case u of
    TypeAlias _ _ -> Left "Type alias in value shown in figure"
    where
    tagged :: String -> Json -> Json
-   tagged tag = O.singleton tag >>> fromObject
+   tagged tag = maplet tag >>> fromObject
 
    float :: String -> Json
    float = fromString >>> tagged "float"
@@ -158,7 +161,7 @@ decodeVal cs = val
       (lit <<< Float)
       (lit <<< Str)
       (\vs -> Val unit <<< List <$> traverse val vs)
-      ( O.toUnfoldable >>> case _ of
+      ( toUnfoldable >>> case _ of
            [ tag × json' ] -> Val unit <$> tagged tag json'
            _ -> Left "Object with other than one key"
       )
@@ -182,13 +185,13 @@ decodeVal cs = val
       "-0" -> pure (Lit (Float ((-1.0) / infinity)))
       s -> Left ("Float " <> s)
    tagged "object" json = do
-      { "class": c, fields } :: { "class" :: String, fields :: O.Object Json } <- decode json
-      xs <- note ("Class " <> c <> " without field names") (O.lookup c cs)
+      { "class": c, fields } :: { "class" :: String, fields :: Object Json } <- decode json
+      xs <- note ("Class " <> c <> " without field names") (lookup c cs)
       Obj (name c) <<< L.fromFoldable <$> for xs \x ->
-         (x × _) <$> (note ("Object of class " <> c <> " without field " <> x) (O.lookup x fields) >>= val)
+         (x × _) <$> (note ("Object of class " <> c <> " without field " <> x) (lookup x fields) >>= val)
    tagged "tuple" vs = Tuple <$> (decode vs >>= traverse val)
    tagged "dict" kvs = do
-      d :: O.Object Json <- decode kvs
+      d :: Object Json <- decode kvs
       Dictionary <<< DictRep <<< Dict <<< map (unit × _) <$> traverse val d
    tagged "matrix" json = do
       { elements, rows, columns } :: { elements :: Array (Array Json), rows :: Json, columns :: Json } <- decode json
