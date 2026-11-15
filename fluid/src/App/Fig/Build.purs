@@ -56,11 +56,11 @@ figGraph { linking, query, ignoreInputs } fluidSrc = do
    let
       graph = materialise g (visible eval)
       leaves = Map.filterKeys (\p -> p /= root && isEmpty (get p graph.edges)) g.docs
-   named <- for (Map.toUnfoldable leaves :: Array _) \(p × d) -> case valAt g d of
+   named :: Array _ <- for (Map.toUnfoldable leaves) \(p × d) -> case valAt g d of
       Val _ (Lit (Str x)) -> pure (x × (p × Nothing))
       v -> throw ("Doc " <> prettyP v <> " of an input is not a string")
-   for_ (A.head (A.difference (fst <$> named) (A.nub (fst <$> named)))) \x ->
-      throw ("Two inputs documented as " <> quoted x)
+   let names = fst <$> named
+   for_ (A.head (A.difference names (A.nub names))) \x -> throw ("Two inputs documented as " <> quoted x)
    let
       ins = D.fromFoldable named
       shown = Set.insert root (Map.keys leaves)
