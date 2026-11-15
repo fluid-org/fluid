@@ -1,11 +1,7 @@
 <script>
-	import { Figure, Grid } from '@fluid-org/fluid';
+	import { FigureGraph, Grid } from '@fluid-org/fluid';
+	import spec from '$lib/spec/ticks.json';
 
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		query: false,
-		linking: false
-	};
 </script>
 
 <Grid>
@@ -22,6 +18,6 @@
 	<div></div>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../src/ticks.fld" />
+		<FigureGraph {spec} graph="../graph/ticks.json" />
 	</div>
 </Grid>

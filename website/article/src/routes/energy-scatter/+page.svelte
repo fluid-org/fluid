@@ -1,14 +1,8 @@
 <script>
-	import { DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
+	import spec from '$lib/spec/energy-scatter.json';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		ignoreInputs: { renewables: ['year', 'country'], nonRenewables: ['year', 'country'] },
-		query: false,
-		linking: true
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
@@ -29,6 +23,6 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../src/energyscatter.fld" />
+		<FigureGraph {spec} graph="../graph/energy-scatter.json" />
 	</div>
 </Grid>

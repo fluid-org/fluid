@@ -1,0 +1,7 @@
+{
+	"program": "static/evaluation-nap3/figure1-simplified/figure1.fld",
+	"fluidSrcPath": ["..", "../../lib"],
+	"query": true,
+	"linking": false,
+	"rowFilter": "Relevant"
+}
