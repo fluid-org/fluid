@@ -47,8 +47,7 @@ optionsFromJson spec@{ query, ignoreInputs, linking, rowFilter } =
    , rowFilter
    }
 
--- Build a figure graph by evaluating a program. Take as inputs the documented vertices independent of every
--- visible vertex. Never take the root as an input.
+-- Take documented leaves of visible graph (other than root) as inputs of figure
 figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigGraph
 figGraph { linking, query, ignoreInputs, rowFilter } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
