@@ -3,13 +3,12 @@ module App.Fig.Codec where
 import Prelude hiding (absurd)
 
 import App.Fig (FigGraph)
-import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromString, jsonNull)
+import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
 import Data.Array as A
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), note)
-import Data.List (List)
 import Data.List as L
 import Data.List.NonEmpty as NEL
 import Data.Map as Map
@@ -17,8 +16,11 @@ import Data.Maybe (Maybe)
 import Data.Number (infinity, isFinite, isNaN, nan)
 import Data.Set as Set
 import Data.Traversable (traverse)
+import Data.Tuple (snd)
 import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), sparseRel)
+import Dict (Dict(..))
 import Dict as D
+import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
 import Util (type (×), MayFail, absurd, error, (×))
@@ -97,37 +99,38 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Finite float other than negative zero as number, string as string, Boolean as Boolean and None as null;
--- any other value as an array headed by a tag.
+-- List as array, finite float other than negative zero as number, string as string, Boolean as Boolean and
+-- None as null; any other value as an object with the name of its kind as the only key.
 encodeVal :: Val Unit -> MayFail Json
 encodeVal (Val _ u) = case u of
-   Lit (Int n) -> pure (tagged "i" [ encodeJson n ])
+   Lit (Int n) -> pure (tagged "int" (encodeJson n))
    Lit (Float x)
-      | x == 0.0 && 1.0 / x < 0.0 -> pure (tagged "f" [ fromString "-0" ])
+      | x == 0.0 && 1.0 / x < 0.0 -> pure (float "-0")
       | isFinite x -> pure (fromNumber x)
-      | otherwise -> pure (tagged "f" [ fromString (if isNaN x then "nan" else if x > 0.0 then "inf" else "-inf") ])
+      | otherwise -> pure (float (if isNaN x then "nan" else if x > 0.0 then "inf" else "-inf"))
    Lit (Str s) -> pure (fromString s)
    Lit (Bool b) -> pure (fromBoolean b)
    Lit None -> pure jsonNull
    Obj c xvs -> do
-      fields <- traverse (\(x × v) -> (\v' -> fromArray [ fromString x, v' ]) <$> encodeVal v) (A.fromFoldable xvs)
-      pure (tagged "o" [ encodeJson (A.fromFoldable c), fromArray fields ])
-   List vs -> tagged "l" <$> traverse encodeVal vs
-   Tuple vs -> tagged "t" <$> traverse encodeVal vs
-   Dictionary (DictRep d) ->
-      tagged "d" <$> traverse (\(k × _ × v) -> (\v' -> fromArray [ fromString k, v' ]) <$> encodeVal v)
-         (D.toArrayWithKey (×) d)
+      fields <- traverse (traverse encodeVal) (A.fromFoldable xvs)
+      pure (tagged "object" (encodeJson { "class": A.fromFoldable c, fields }))
+   List vs -> fromArray <$> traverse encodeVal vs
+   Tuple vs -> tagged "tuple" <<< fromArray <$> traverse encodeVal vs
+   Dictionary (DictRep (Dict d)) -> tagged "dict" <<< fromObject <$> traverse (snd >>> encodeVal) d
    Matrix (MatrixRep (vss × i × j)) -> do
-      rows <- traverse (traverse encodeVal >>> map fromArray) vss
-      tagged "m" <$> ((\i' j' -> [ fromArray rows, i', j' ]) <$> encodeVal i <*> encodeVal j)
-   Opaque q -> pure (tagged "q" [ encodeJson (A.fromFoldable q) ])
-   Module q -> pure (tagged "M" [ encodeJson (A.fromFoldable q) ])
-   Unbound -> pure (tagged "u" [])
+      elements <- traverse (traverse encodeVal) vss
+      (\rows columns -> tagged "matrix" (encodeJson { elements, rows, columns })) <$> encodeVal i <*> encodeVal j
+   Opaque q -> pure (tagged "opaque" (encodeJson (A.fromFoldable q)))
+   Module q -> pure (tagged "module" (encodeJson (A.fromFoldable q)))
+   Unbound -> pure (tagged "unbound" jsonNull)
    Fun _ -> Left "Function in value shown in figure"
    TypeAlias _ _ -> Left "Type alias in value shown in figure"
    where
-   tagged :: String -> Array Json -> Json
-   tagged tag = A.cons (fromString tag) >>> fromArray
+   tagged :: String -> Json -> Json
+   tagged tag = O.singleton tag >>> fromObject
+
+   float :: String -> Json
+   float = fromString >>> tagged "float"
 
 decodeVal :: Json -> MayFail (Val Unit)
 decodeVal = caseJson
@@ -135,8 +138,11 @@ decodeVal = caseJson
    (lit <<< Bool)
    (lit <<< Float)
    (lit <<< Str)
-   (\js -> note "Empty array" (A.uncons js) >>= \{ head, tail } -> decode head >>= \tag -> Val unit <$> tagged tag tail)
-   (const (Left "Object"))
+   (\vs -> Val unit <<< List <$> traverse decodeVal vs)
+   ( O.toUnfoldable >>> case _ of
+        [ tag × json ] -> Val unit <$> tagged tag json
+        _ -> Left "Object with other than one key"
+   )
    where
    lit :: Literal -> MayFail (Val Unit)
    lit = pure <<< Val unit <<< Lit
@@ -144,33 +150,29 @@ decodeVal = caseJson
    decode :: forall a. DecodeJson a => Json -> MayFail a
    decode = decodeJson >>> lmap printJsonDecodeError
 
-   pair :: Json -> MayFail (String × Val Unit)
-   pair json = decode json >>= case _ of
-      [ k, v ] -> (×) <$> decode k <*> decodeVal v
-      _ -> Left "Pair expected"
-
    name :: Json -> MayFail (NEL.NonEmptyList String)
    name json = (decode json :: MayFail (Array String)) >>= (NEL.fromFoldable >>> note "Empty name")
 
-   tagged :: String -> Array Json -> MayFail (BaseVal Unit)
-   tagged "i" [ n ] = Lit <<< Int <$> decode n
-   tagged "f" [ x ] = decode x >>= case _ of
+   tagged :: String -> Json -> MayFail (BaseVal Unit)
+   tagged "int" n = Lit <<< Int <$> decode n
+   tagged "float" x = decode x >>= case _ of
       "nan" -> pure (Lit (Float nan))
       "inf" -> pure (Lit (Float infinity))
       "-inf" -> pure (Lit (Float (-infinity)))
       "-0" -> pure (Lit (Float ((-1.0) / infinity)))
       s -> Left ("Float " <> s)
-   tagged "o" [ c, fields ] = Obj <$> name c <*> (decode fields >>= traverse pair <#> toList)
-   tagged "l" vs = List <$> traverse decodeVal vs
-   tagged "t" vs = Tuple <$> traverse decodeVal vs
-   tagged "d" kvs = Dictionary <<< DictRep <<< D.fromFoldable <<< map (map (unit × _)) <$> traverse pair kvs
-   tagged "m" [ rows, i, j ] = do
-      vss <- decode rows >>= traverse (traverse decodeVal)
-      (\i' j' -> Matrix (MatrixRep (vss × i' × j'))) <$> decodeVal i <*> decodeVal j
-   tagged "q" [ q ] = Opaque <$> name q
-   tagged "M" [ q ] = Module <$> name q
-   tagged "u" [] = pure Unbound
+   tagged "object" json = do
+      { "class": c, fields } :: { "class" :: Json, fields :: Array (String × Json) } <- decode json
+      Obj <$> name c <*> (L.fromFoldable <$> traverse (traverse decodeVal) fields)
+   tagged "tuple" vs = Tuple <$> (decode vs >>= traverse decodeVal)
+   tagged "dict" kvs = do
+      d :: O.Object Json <- decode kvs
+      Dictionary <<< DictRep <<< Dict <<< map (unit × _) <$> traverse decodeVal d
+   tagged "matrix" json = do
+      { elements, rows, columns } :: { elements :: Array (Array Json), rows :: Json, columns :: Json } <- decode json
+      vss <- traverse (traverse decodeVal) elements
+      (\i j -> Matrix (MatrixRep (vss × i × j))) <$> decodeVal rows <*> decodeVal columns
+   tagged "opaque" q = Opaque <$> name q
+   tagged "module" q = Module <$> name q
+   tagged "unbound" _ = pure Unbound
    tagged tag _ = Left ("Tag " <> tag)
-
-   toList :: forall a. Array a -> List a
-   toList = L.fromFoldable
