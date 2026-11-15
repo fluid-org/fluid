@@ -3,9 +3,8 @@ module App.LoadFigure where
 import Prelude hiding (absurd)
 
 import App.CodeMirror (EditorView, addEditorView, dispatch, getContentsLength, update)
-import App.Fig (drawFig)
+import App.Fig (drawLoaded)
 import App.Fig.Build (JsonOptions, loadFig, optionsFromJson)
-import App.Placeholder (figureFailed, figureLoaded)
 import Data.Argonaut.Core (Json)
 import Data.Argonaut.Decode (decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError)
@@ -15,8 +14,6 @@ import Data.String (split, Pattern(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_, runAff_)
 import Effect.Class (liftEffect)
-import Effect.Class.Console (log)
-import Effect.Exception (message)
 import File (File(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Module.Web (runWebT)
 import Util (type (×), Endo, error, orElse, whenever, (×))
@@ -27,9 +24,7 @@ loadFigure jsonSpec divId srcFile = launchAff_ do
    liftEffect $ loadFigureSrc jsonSpec divId fluidSrc
 
 loadFigureSrc :: Json -> String -> String -> Effect Unit
-loadFigureSrc options divId fluidSrc = flip runAff_ load case _ of
-   Left err -> log (show err) *> figureFailed divId (message err)
-   Right fig -> drawFig divId fig *> figureLoaded divId
+loadFigureSrc options divId fluidSrc = runAff_ (drawLoaded divId) load
    where
    load = case decodeJson options :: Either JsonDecodeError JsonOptions of
       Left err -> error ("JSON decoding failed with " <> show err)

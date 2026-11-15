@@ -2,15 +2,16 @@ module App.Fig where
 
 import Prelude hiding (absurd, compare)
 
-import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
+import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, classes, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
 import App.Util.Selector (objArg, envVal, ViewSetter)
 import App.View (viewWithDoc)
 import App.View.ViewWithDoc (drawView)
 import App.View.Util (Direction(..), Fig, Filter, HTMLId, QueryResult, View)
-import App.View.Util.D3 (remove, rootSelect)
+import App.View.Util.D3 (remove, rootSelect, setAttrs, setText)
 import Bind (Var)
 import Control.Apply (lift2)
 import Dict (Dict)
+import Data.Either (Either, either)
 import Data.Foldable (or)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map as Map
@@ -22,6 +23,8 @@ import Data.Set as Set
 import Data.Traversable (for_, sequence_)
 import Data.Tuple (fst)
 import Effect (Effect)
+import Effect.Class.Console (log)
+import Effect.Exception (Error, message)
 import DepGraph (ConjugatePair, Deriv, Labelling, Pos, VisibleGraph, dimap, mapPositions, mask, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Pretty (prettyP)
@@ -130,6 +133,14 @@ drawFig divId fig = do
    options = { rowFilter: fig.rowFilter }
    redraw = (_ $ fig { ι = ι }) >>> drawFig divId
    prefix = divId <> "-" <> str.intermediate
+
+-- Replace the placeholder shown during loading by the figure or the loading error
+drawLoaded :: HTMLId -> Either Error Fig -> Effect Unit
+drawLoaded divId = either failed loaded
+   where
+   placeholder = rootSelect ("#" <> divId <> " > .fig-loading")
+   failed err = log (show err) *> void (placeholder >>= setAttrs [ classes [ "fig-error" ] ] >>= setText (message err))
+   loaded fig = drawFig divId fig *> (placeholder >>= remove)
 
 -- Queries over Boolean selections.
 boolean

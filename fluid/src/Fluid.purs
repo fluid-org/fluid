@@ -83,7 +83,7 @@ commandParser = subparser
    ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse a file and print it back"))
         <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check a file statically, with the exit codes of a PurePy checker"))
         <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate a file, printing its value; exit 1 on failure"))
-        <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Evaluate a file and write its figure graph, to draw and query without evaluating"))
+        <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Write the figure graph of a file"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
