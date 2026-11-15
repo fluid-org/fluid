@@ -137,7 +137,7 @@ boolean
    -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
--- Data sufficient to draw and query a figure without evaluating its program.
+-- Data sufficient to draw and query a figure without parser or evaluator.
 type FigGraph =
    { graph :: VisibleGraph Val DepKind
    , ins :: Dict DerivWithDoc -- input name ↦ vertex
