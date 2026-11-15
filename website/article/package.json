@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"manifest": "yarn fluid manifest static",
-		"figure-graph": "mkdir -p static/graph && cd static/src && yarn fluid build -f bar_chart_line_chart.fld -p ../src -p ../lib -s ../../src/lib/spec/renewables-linked.json -o ../graph/renewables-linked.json",
+		"figure-graph": "mkdir -p static/graph && cd static/src && fluid build -f bar_chart_line_chart.fld -p ../src -p ../lib -s ../../src/lib/spec/renewables-linked.json -o ../graph/renewables-linked.json",
 		"dev": "yarn manifest && yarn figure-graph && vite dev",
 		"build": "yarn manifest && yarn figure-graph && vite build",
 		"preview": "vite preview",
