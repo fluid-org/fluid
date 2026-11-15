@@ -2,7 +2,7 @@ from math import ceil
 from nap3_ccra3_data import nap3_actions, ccra3_risks
 
 from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Link
-from fluid.prelude import fsum, nub
+from fluid.prelude import fsum, intersperse, join, nub
 
 eval_scores: list[str] = [ "Significantly addressed", "Recognised but not addressed",
     "Not addressed", "Minimally addressed", "Fully addressed" ]
