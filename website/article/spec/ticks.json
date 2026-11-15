@@ -1,6 +1,5 @@
 {
 	"program": "static/src/ticks.fld",
 	"fluidSrcPath": ["../src", "../lib"],
-	"query": false,
 	"linking": false
 }

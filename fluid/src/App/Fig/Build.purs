@@ -31,16 +31,14 @@ import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), unvals,
 -- Options in the form decoded from JSON; delete once the options are decoded directly
 type JsonOptions =
    { fluidSrcPath :: Array String
-   , query :: Boolean
    , ignoreInputs :: Maybe (Object (Array String)) -- input ↦ columns
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
 
 optionsFromJson :: JsonOptions -> Options
-optionsFromJson spec@{ query, ignoreInputs, linking, rowFilter } =
+optionsFromJson spec@{ ignoreInputs, linking, rowFilter } =
    { fluidSrcPaths: Folder <$> spec.fluidSrcPath
-   , query
    , ignoreInputs: foldr (>.>) none $ (maybe [] Object.toUnfoldable ignoreInputs) <#> \(x × ks) ->
         envVal x (valOf (eachElement (foldr (>.>) none (ks <#> \k -> field k select))))
    , linking
@@ -49,7 +47,7 @@ optionsFromJson spec@{ query, ignoreInputs, linking, rowFilter } =
 
 -- Take documented leaves of visible graph (other than root) as inputs of figure
 figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigGraph
-figGraph { linking, query, ignoreInputs, rowFilter } fluidSrc = do
+figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, root } <- evalProgram config.inputs config.classes config.e
    let
@@ -68,9 +66,7 @@ figGraph { linking, query, ignoreInputs, rowFilter } fluidSrc = do
       { graph
       , ins
       , out: withDoc g root
-      , ιs:
-           if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) g.docs)
-           else Map.empty
+      , ιs: mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) g.docs)
       , ignored: selected <$> unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
       , linking
       , rowFilter
