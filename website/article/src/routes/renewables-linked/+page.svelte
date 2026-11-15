@@ -4,7 +4,6 @@
 
 	let showDataPane = false;
 
-
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
 	};
