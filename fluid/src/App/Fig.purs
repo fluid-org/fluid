@@ -137,7 +137,7 @@ boolean
    -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
--- Visible graph of a program with the vertices shown in a figure, from which the figure is drawn and queried.
+-- Data sufficient to draw and query a figure without evaluating its program.
 type FigGraph =
    { graph :: VisibleGraph Val DepKind
    , ins :: Dict DerivWithDoc -- input name ↦ vertex
