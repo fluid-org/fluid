@@ -1,6 +1,5 @@
 <script>
 	import { FigureGraph, Grid } from '@fluid-org/fluid';
-	import spec from '$lib/spec/ticks.json';
 
 </script>
 
@@ -18,6 +17,6 @@
 	<div></div>
 
 	<div class="flex-left-align">
-		<FigureGraph {spec} graph="../graph/ticks.json" />
+		<FigureGraph graph="../graph/ticks.json" />
 	</div>
 </Grid>

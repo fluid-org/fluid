@@ -9,8 +9,9 @@ import App.View.Util.D3 as D3
 import Bind ((↦))
 import Data.Argonaut.Decode (class DecodeJson, JsonDecodeError(..))
 import Data.Argonaut.Decode.Decoders (decodeString)
-import Data.Either (Either(..))
-import Data.Foldable (all, sequence_)
+import Data.Argonaut.Encode (class EncodeJson, encodeJson)
+import Data.Either (note)
+import Data.Foldable (all, find, sequence_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe)
 import Data.Tuple (fst, snd)
@@ -139,11 +140,14 @@ type QueryResult = EnvWithDocs (SelState 𝔹) × ValWithDoc (SelState 𝔹) × 
 derive instance Eq Direction
 derive instance Eq Filter
 
-instance decodeJsonFilter :: DecodeJson Filter where
-   decodeJson json = do
-      s <- decodeString json
-      case s of
-         "Everything" -> pure Everything
-         "Interactive" -> pure Interactive
-         "Relevant" -> pure Relevant
-         _ -> Left $ TypeMismatch $ "Unknown Filter: " <> s
+instance Show Filter where
+   show Everything = "Everything"
+   show Interactive = "Interactive"
+   show Relevant = "Relevant"
+
+instance DecodeJson Filter where
+   decodeJson json = decodeString json >>= \s ->
+      note (TypeMismatch ("Unknown Filter: " <> s)) (find (show >>> (_ == s)) [ Everything, Interactive, Relevant ])
+
+instance EncodeJson Filter where
+   encodeJson = show >>> encodeJson

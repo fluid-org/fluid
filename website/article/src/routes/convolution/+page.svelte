@@ -1,6 +1,5 @@
 <script>
 	import { CodeMirror, DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
-	import spec from '$lib/spec/convolution.json';
 
 	let showDataPane = false;
 
@@ -25,7 +24,7 @@
 
 	<div class="flex-left-align">
 		<div class="flex-top-align">
-			<FigureGraph {spec} graph="../graph/convolution.json" />
+			<FigureGraph graph="../graph/convolution.json" />
 			<div></div>
 		</div>
 		<CodeMirror name="convolution" src="../src/convolution.fld" />

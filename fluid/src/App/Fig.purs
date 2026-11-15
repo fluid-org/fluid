@@ -156,10 +156,11 @@ type FigGraph =
    , ιs :: Labelling DerivWithDoc -- documented intermediates
    , ignored :: Labelling (Set Pos) -- input positions left out of linked queries
    , linking :: Boolean
+   , rowFilter :: Maybe Filter
    }
 
-figure :: Maybe Filter -> FigGraph -> Fig
-figure rowFilter { graph, ins, out, ιs, ignored, linking } =
+figure :: FigGraph -> Fig
+figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
    { rowFilter
    , ρ: pairSel <$> toρ nothing <*> toρ nothing
    , v: pairSel <$> toV nothing <*> toV nothing

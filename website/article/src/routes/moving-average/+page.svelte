@@ -1,6 +1,5 @@
 <script>
 	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
-	import spec from '$lib/spec/moving-average.json';
    import { text } from 'stream/consumers';
 
 	let showDataPane = false;
@@ -40,7 +39,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<FigureGraph {spec} graph="../graph/moving-average.json" />
+		<FigureGraph graph="../graph/moving-average.json" />
 	</div>
 </Grid>
 

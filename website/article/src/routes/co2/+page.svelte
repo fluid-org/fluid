@@ -1,6 +1,5 @@
 <script>
 	import { FigureGraph, Grid } from '@fluid-org/fluid';
-	import spec from '$lib/spec/co2.json';
 
 </script>
 
@@ -15,6 +14,6 @@
 	<div></div>
 
 	<div class="flex-left-align">
-		<FigureGraph {spec} graph="../graph/co2.json" />
+		<FigureGraph graph="../graph/co2.json" />
 	</div>
 </Grid>

@@ -1,6 +1,5 @@
 <script>
 	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
-	import spec from '$lib/spec/energy-scatter.json';
 
 	let showDataPane = false;
 
@@ -23,6 +22,6 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<FigureGraph {spec} graph="../graph/energy-scatter.json" />
+		<FigureGraph graph="../graph/energy-scatter.json" />
 	</div>
 </Grid>
