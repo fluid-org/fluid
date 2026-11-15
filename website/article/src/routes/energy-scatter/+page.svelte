@@ -5,7 +5,6 @@
 
 	const spec = {
 		fluidSrcPath: ['../src', '../lib'],
-		inputs: ['nonRenewables', 'renewables'],
 		ignoreInputs: { renewables: ['year', 'country'], nonRenewables: ['year', 'country'] },
 		query: false,
 		linking: true

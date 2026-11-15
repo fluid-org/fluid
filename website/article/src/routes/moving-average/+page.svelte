@@ -6,7 +6,6 @@
 
 	const spec = {
 		fluidSrcPath: ['../src', '../lib'],
-		inputs: ['methane'],
 		query: false,
 		linking: false
 	};

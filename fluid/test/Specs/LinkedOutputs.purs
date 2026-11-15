@@ -11,7 +11,6 @@ linkedOutputs_spec1 :: TestLinkedOutputsSpec
 linkedOutputs_spec1 =
    { spec:
         { fluidSrcPaths
-        , inputs: [ "renewables" ]
         , query: false
         , ignoreInputs: envVal "renewables" (valOf (eachElement (field "year" select >.> field "country" select)))
         , linking: true
@@ -38,7 +37,6 @@ linkedOutputs_spec2 :: TestLinkedOutputsSpec
 linkedOutputs_spec2 =
    { spec:
         { fluidSrcPaths
-        , inputs: [ "nonRenewables" ]
         , query: false
         , ignoreInputs: envVal "nonRenewables" (valOf (eachElement (field "year" select >.> field "country" select)))
         , linking: true
@@ -63,7 +61,6 @@ movingAverages_spec :: TestLinkedOutputsSpec
 movingAverages_spec =
    { spec:
         { fluidSrcPaths
-        , inputs: [ "methane" ]
         , query: false
         , ignoreInputs: none
         , linking: true
@@ -79,7 +76,6 @@ linkedOutputs_cases :: Array TestLinkedOutputsSpec
 linkedOutputs_cases =
    [ { spec:
           { fluidSrcPaths
-          , inputs: [ "data" ]
           , query: false
           , ignoreInputs: none
           , linking: true
@@ -92,8 +88,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-
-          , inputs: [ "data" ]
           , query: false
           , ignoreInputs: none
           , linking: true
@@ -130,7 +124,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , inputs: [ "xs", "n", "ys", "m" ]
           , query: false
           , ignoreInputs: none
           , linking: true
@@ -143,7 +136,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , inputs: [ "types", "data" ]
           , query: false
           , ignoreInputs: none
           , linking: true
@@ -156,7 +148,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , inputs: [ "seq1", "seq2" ]
           , query: false
           , ignoreInputs: none
           , linking: true
@@ -169,7 +160,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , inputs: [ "x", "n" ]
           , query: false
           , ignoreInputs: none
           , linking: true

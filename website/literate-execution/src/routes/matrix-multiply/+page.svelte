@@ -5,7 +5,6 @@
 
 	const spec = {
 		fluidSrcPath: ['../lib'],
-		inputs: ['a', 'b', 'c'],
 		query: true,
 		linking: false
 	};

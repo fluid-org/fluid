@@ -5,7 +5,6 @@
 
 	const spec = {
 		fluidSrcPath: ['..', '../../../lib'],
-		inputs: ['nap3_actions', 'ccra3_risks'],
 		query: true,
 		linking: true,
 		rowFilter: 'Relevant'
