@@ -4,7 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"figure-graph": "fluid build -o static/graph src/lib/spec/*.json",
+		"figure-graph": "fluid build -o static/graph spec/*.json",
 		"dev": "yarn figure-graph && vite dev",
 		"build": "yarn figure-graph && vite build",
 		"preview": "vite preview",

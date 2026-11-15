@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"manifest": "yarn fluid manifest static",
-		"figure-graph": "fluid build -o static/graph src/lib/spec/*.json",
+		"figure-graph": "fluid build -o static/graph spec/*.json",
 		"dev": "yarn manifest && yarn figure-graph && vite dev",
 		"build": "yarn manifest && yarn figure-graph && vite build",
 		"preview": "vite preview",
