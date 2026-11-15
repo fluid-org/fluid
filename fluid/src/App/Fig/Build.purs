@@ -51,7 +51,7 @@ figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options
 figGraph { inputs, linking, query, ignoreInputs } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, root } <- evalProgram config.inputs config.classes config.e
-   -- Look up each input as the unique vertex documented with the input name; show inputs without docs
+   -- Look up each input as the unique vertex documented with the input name
    ins <- D.fromFoldable <$> for inputs \x -> case documentedAs g x of
       [ p ] -> pure (x × (p × Nothing))
       _ -> throw ("No unique value documented " <> quoted x)

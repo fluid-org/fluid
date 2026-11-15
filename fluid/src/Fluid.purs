@@ -72,7 +72,7 @@ parseBuildArgs :: Parser BuildArgs
 parseBuildArgs = ado
    file <- parseFileArgs
    spec <- strOption (long "spec" <> short 's' <> help "JSON file of figure options")
-   out <- strOption (long "out" <> short 'o' <> help "File to write the figure graph to")
+   out <- strOption (long "out" <> short 'o' <> help "Output file for the figure graph")
    in { file, spec, out }
 
 parseManifest :: Parser (NonEmptyList String)
