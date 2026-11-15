@@ -18,11 +18,6 @@ import File (File(..), emptyFileCxt, loadFileFromPath, withRoots)
 import Module.Web (runWebT)
 import Util (type (×), Endo, error, orElse, whenever, (×))
 
-loadFigure :: Json -> String -> String -> Effect Unit
-loadFigure jsonSpec divId srcFile = launchAff_ do
-   fluidSrc <- loadFileFromPath (File srcFile) >>= orElse ("File not found: " <> srcFile)
-   liftEffect $ loadFigureSrc jsonSpec divId fluidSrc
-
 loadFigureSrc :: Json -> String -> String -> Effect Unit
 loadFigureSrc options divId fluidSrc = runAff_ (drawLoaded divId) load
    where

@@ -148,7 +148,7 @@ export async function checkWidthApprox(page, selector, expected, tolerance = 5) 
    testOutcome(pass, `${selector}: width ≈ ${expected}${pass ? "" : ` (got ${Math.round(box.width)})`}`)
 }
 
-// No figure still loading; loadFigure removes the placeholder after hydration
+// No figure still loading; drawing a figure removes the placeholder after hydration
 const READY = "body:not(:has(.fig-loading))"
 
 export async function waitForReady(page, timeout = TIMEOUT) {
