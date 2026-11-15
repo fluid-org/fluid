@@ -26,7 +26,7 @@ import Effect.Aff (Aff, Error, message, runAff_, try)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log, logShow)
 import Eval (evalProgram)
-import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, modulePath, withClasses, withRoots)
+import File (File(..), Folder(..), emptyFileCxt, fileCxtIn, loadFile, loadManifest, modulePath, withClasses, withRoots)
 import Classes (ClassTable)
 import Data.Map (Map)
 import Module (Config, ParseFailure(..), loadTopLevel, prepConfig, prepModule)
@@ -35,8 +35,8 @@ import Module.Node (NodeT, runNodeT)
 import Node.Encoding (Encoding(..))
 import Node.FS.Aff (mkdir', readTextFile, writeTextFile)
 import Node.FS.Perms (permsAll)
-import Node.Path (basenameWithoutExt, dirname, resolve)
-import Node.Process (chdir, cwd, exit')
+import Node.Path (basenameWithoutExt, concat, dirname)
+import Node.Process (exit')
 import Options.Applicative (Parser, command, execParser, fullDesc, header, help, helper, long, metavar, progDesc, short, some, strArgument, strOption, subparser, switch, (<**>))
 import Options.Applicative.Builder (info)
 import Parse (parseModule, parseProgram)
@@ -97,22 +97,16 @@ dispatchCommand (Evaluate args) = report args $ stages args case _ of
    AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, root } -> Just (prettyP (valAt g root))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
 dispatchCommand (Build { specs, out }) = do
-   dir <- liftEffect cwd
    mkdir' out { recursive: true, mode: permsAll }
    for_ specs \spec -> withMsg spec do
-      spec' <- liftEffect (resolve [ dir ] spec)
-      json <- readTextFile UTF8 spec' >>= jsonParser >>> orThrow
+      json <- readTextFile UTF8 spec >>= jsonParser >>> orThrow
       { program } :: { program :: String } <- decode json
       options :: JsonOptions <- decode json
-      program' <- liftEffect (resolve [ dir ] program)
-      -- Resolve paths in options and program against the directory of the program
-      liftEffect (chdir (dirname program'))
-      fluidSrc <- readTextFile UTF8 program'
+      fluidSrc <- readTextFile UTF8 program
       let options'@{ fluidSrcPaths } = optionsFromJson options
-      graph <- runNodeT emptyFileCxt $ withRoots fluidSrcPaths $
+      graph <- runNodeT (fileCxtIn (Folder (dirname program))) $ withRoots fluidSrcPaths $
          figGraph options' fluidSrc >>= encodeFigGraph >>> orThrow
-      out' <- liftEffect (resolve [ dir, out ] (basenameWithoutExt spec' ".json" <> ".json"))
-      writeTextFile UTF8 out' (stringify graph)
+      writeTextFile UTF8 (concat [ out, basenameWithoutExt spec ".json" <> ".json" ]) (stringify graph)
    where
    decode :: forall a. DecodeJson a => Json -> Aff a
    decode = decodeJson >>> lmap printJsonDecodeError >>> orThrow
