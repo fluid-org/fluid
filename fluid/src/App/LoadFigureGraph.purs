@@ -19,7 +19,7 @@ import Effect.Exception (message)
 import File (File(..), loadFileFromPath)
 import Util (orElse, orThrow)
 
--- Draw a figure from the graph written by the build command, without parser or evaluator
+-- Draw a figure from a figure graph file
 loadFigureGraph :: Json -> String -> String -> Effect Unit
 loadFigureGraph options divId file = flip runAff_ load case _ of
    Left err -> log (show err) *> figureFailed divId (message err)
