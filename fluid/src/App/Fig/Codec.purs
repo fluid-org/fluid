@@ -97,12 +97,13 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Finite float as number, string as string, Boolean as Boolean and None as null; any other value as an array
--- headed by a tag.
+-- Finite float other than negative zero as number, string as string, Boolean as Boolean and None as null;
+-- any other value as an array headed by a tag.
 encodeVal :: Val Unit -> MayFail Json
 encodeVal (Val _ u) = case u of
    Lit (Int n) -> pure (tagged "i" [ encodeJson n ])
    Lit (Float x)
+      | x == 0.0 && 1.0 / x < 0.0 -> pure (tagged "f" [ fromString "-0" ])
       | isFinite x -> pure (fromNumber x)
       | otherwise -> pure (tagged "f" [ fromString (if isNaN x then "nan" else if x > 0.0 then "inf" else "-inf") ])
    Lit (Str s) -> pure (fromString s)
@@ -157,6 +158,7 @@ decodeVal = caseJson
       "nan" -> pure (Lit (Float nan))
       "inf" -> pure (Lit (Float infinity))
       "-inf" -> pure (Lit (Float (-infinity)))
+      "-0" -> pure (Lit (Float ((-1.0) / infinity)))
       s -> Left ("Float " <> s)
    tagged "o" [ c, fields ] = Obj <$> name c <*> (decode fields >>= traverse pair <#> toList)
    tagged "l" vs = List <$> traverse decodeVal vs
