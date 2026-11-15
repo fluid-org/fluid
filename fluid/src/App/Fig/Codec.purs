@@ -3,6 +3,7 @@ module App.Fig.Codec where
 import Prelude hiding (absurd)
 
 import App.Fig (FigGraph)
+import Bind (FieldName, Name, dottedName)
 import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
@@ -15,15 +16,16 @@ import Data.Map as Map
 import Data.Maybe (Maybe)
 import Data.Number (infinity, isFinite, isNaN, nan)
 import Data.Set as Set
-import Data.Traversable (traverse)
-import Data.Tuple (snd)
+import Data.String (Pattern(..), split)
+import Data.Traversable (for, traverse)
+import Data.Tuple (fst, snd)
 import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
-import Util (type (×), MayFail, absurd, error, (×))
+import Util (type (×), MayFail, absurd, definitely', error, (×))
 import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
 
 type DerivWithDocRep = Int × Maybe Int
@@ -31,8 +33,11 @@ type DerivWithDocRep = Int × Maybe Int
 -- Dependence relation as target position ↦ source position ↦ weight.
 type RelRep = Array (Pos × Array (Pos × Int))
 
+type Classes = O.Object (Array FieldName) -- class ↦ field names
+
 type FigGraphRep =
-   { vals :: Array (Int × Json)
+   { classes :: Classes
+   , vals :: Array (Int × Json)
    , edges :: Array (Int × Array (Int × RelRep)) -- target ↦ source ↦ relation
    , ins :: Array (String × DerivWithDocRep)
    , out :: DerivWithDocRep
@@ -45,7 +50,8 @@ encodeFigGraph :: FigGraph -> MayFail Json
 encodeFigGraph { graph, ins, out, ιs, ignored, linking } = do
    vals <- traverse (\(Deriv p × v) -> (p × _) <$> encodeVal v) (Map.toUnfoldable graph.vals)
    pure $ encodeJson
-      ( { vals
+      ( { classes: O.unions (classes <$> Map.values graph.vals)
+        , vals
         , edges: labelling (labelling encodeRel) graph.edges
         , ins: map encodeDeriv <$> D.toArrayWithKey (×) ins
         , out: encodeDeriv out
@@ -67,7 +73,7 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking } = do
 decodeFigGraph :: Json -> MayFail FigGraph
 decodeFigGraph json = do
    rep :: FigGraphRep <- lmap printJsonDecodeError (decodeJson json)
-   vals <- traverse (\(p × v) -> (Deriv p × _) <$> decodeVal v) rep.vals
+   vals <- traverse (\(p × v) -> (Deriv p × _) <$> decodeVal rep.classes v) rep.vals
    pure
       { graph: { vals: Map.fromFoldable vals, edges: edges rep.edges }
       , ins: D.fromFoldable (map decodeDeriv <$> rep.ins)
@@ -99,8 +105,18 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
+-- Field names of each class with an object in the given value.
+classes :: Val Unit -> Classes
+classes (Val _ u) = case u of
+   Obj c xvs -> O.insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (O.unions (classes <<< snd <$> xvs))
+   List vs -> O.unions (classes <$> vs)
+   Tuple vs -> O.unions (classes <$> vs)
+   Dictionary (DictRep (Dict d)) -> O.unions (classes <<< snd <$> d)
+   Matrix (MatrixRep (vss × _ × _)) -> O.unions (O.unions <<< map classes <$> vss)
+   _ -> O.empty
+
 -- List as array, finite float other than negative zero as number, string as string, Boolean as Boolean and
--- None as null; any other value as an object with the name of its kind as the only key.
+-- None as null; any other value as a JSON object with the name of its kind as the only key.
 encodeVal :: Val Unit -> MayFail Json
 encodeVal (Val _ u) = case u of
    Lit (Int n) -> pure (tagged "int" (encodeJson n))
@@ -112,16 +128,16 @@ encodeVal (Val _ u) = case u of
    Lit (Bool b) -> pure (fromBoolean b)
    Lit None -> pure jsonNull
    Obj c xvs -> do
-      fields <- traverse (traverse encodeVal) (A.fromFoldable xvs)
-      pure (tagged "object" (encodeJson { "class": A.fromFoldable c, fields }))
+      fields <- traverse encodeVal (O.fromFoldable xvs)
+      pure (tagged "object" (encodeJson { "class": dottedName c, fields }))
    List vs -> fromArray <$> traverse encodeVal vs
    Tuple vs -> tagged "tuple" <<< fromArray <$> traverse encodeVal vs
    Dictionary (DictRep (Dict d)) -> tagged "dict" <<< fromObject <$> traverse (snd >>> encodeVal) d
    Matrix (MatrixRep (vss × i × j)) -> do
       elements <- traverse (traverse encodeVal) vss
       (\rows columns -> tagged "matrix" (encodeJson { elements, rows, columns })) <$> encodeVal i <*> encodeVal j
-   Opaque q -> pure (tagged "opaque" (encodeJson (A.fromFoldable q)))
-   Module q -> pure (tagged "module" (encodeJson (A.fromFoldable q)))
+   Opaque q -> pure (tagged "opaque" (fromString (dottedName q)))
+   Module q -> pure (tagged "module" (fromString (dottedName q)))
    Unbound -> pure (tagged "unbound" jsonNull)
    Fun _ -> Left "Function in value shown in figure"
    TypeAlias _ _ -> Left "Type alias in value shown in figure"
@@ -132,26 +148,30 @@ encodeVal (Val _ u) = case u of
    float :: String -> Json
    float = fromString >>> tagged "float"
 
-decodeVal :: Json -> MayFail (Val Unit)
-decodeVal = caseJson
-   (const (lit None))
-   (lit <<< Bool)
-   (lit <<< Float)
-   (lit <<< Str)
-   (\vs -> Val unit <<< List <$> traverse decodeVal vs)
-   ( O.toUnfoldable >>> case _ of
-        [ tag × json ] -> Val unit <$> tagged tag json
-        _ -> Left "Object with other than one key"
-   )
+decodeVal :: Classes -> Json -> MayFail (Val Unit)
+decodeVal cs = val
    where
+   val :: Json -> MayFail (Val Unit)
+   val json = caseJson
+      (const (lit None))
+      (lit <<< Bool)
+      (lit <<< Float)
+      (lit <<< Str)
+      (\vs -> Val unit <<< List <$> traverse val vs)
+      ( O.toUnfoldable >>> case _ of
+           [ tag × json' ] -> Val unit <$> tagged tag json'
+           _ -> Left "Object with other than one key"
+      )
+      json
+
    lit :: Literal -> MayFail (Val Unit)
    lit = pure <<< Val unit <<< Lit
 
    decode :: forall a. DecodeJson a => Json -> MayFail a
    decode = decodeJson >>> lmap printJsonDecodeError
 
-   name :: Json -> MayFail (NEL.NonEmptyList String)
-   name json = (decode json :: MayFail (Array String)) >>= (NEL.fromFoldable >>> note "Empty name")
+   name :: String -> Name
+   name = split (Pattern ".") >>> NEL.fromFoldable >>> definitely'
 
    tagged :: String -> Json -> MayFail (BaseVal Unit)
    tagged "int" n = Lit <<< Int <$> decode n
@@ -162,17 +182,19 @@ decodeVal = caseJson
       "-0" -> pure (Lit (Float ((-1.0) / infinity)))
       s -> Left ("Float " <> s)
    tagged "object" json = do
-      { "class": c, fields } :: { "class" :: Json, fields :: Array (String × Json) } <- decode json
-      Obj <$> name c <*> (L.fromFoldable <$> traverse (traverse decodeVal) fields)
-   tagged "tuple" vs = Tuple <$> (decode vs >>= traverse decodeVal)
+      { "class": c, fields } :: { "class" :: String, fields :: O.Object Json } <- decode json
+      xs <- note ("Class " <> c <> " without field names") (O.lookup c cs)
+      Obj (name c) <<< L.fromFoldable <$> for xs \x ->
+         (x × _) <$> (note ("Object of class " <> c <> " without field " <> x) (O.lookup x fields) >>= val)
+   tagged "tuple" vs = Tuple <$> (decode vs >>= traverse val)
    tagged "dict" kvs = do
       d :: O.Object Json <- decode kvs
-      Dictionary <<< DictRep <<< Dict <<< map (unit × _) <$> traverse decodeVal d
+      Dictionary <<< DictRep <<< Dict <<< map (unit × _) <$> traverse val d
    tagged "matrix" json = do
       { elements, rows, columns } :: { elements :: Array (Array Json), rows :: Json, columns :: Json } <- decode json
-      vss <- traverse (traverse decodeVal) elements
-      (\i j -> Matrix (MatrixRep (vss × i × j))) <$> decodeVal rows <*> decodeVal columns
-   tagged "opaque" q = Opaque <$> name q
-   tagged "module" q = Module <$> name q
+      vss <- traverse (traverse val) elements
+      (\i j -> Matrix (MatrixRep (vss × i × j))) <$> val rows <*> val columns
+   tagged "opaque" q = Opaque <<< name <$> decode q
+   tagged "module" q = Module <<< name <$> decode q
    tagged "unbound" _ = pure Unbound
    tagged tag _ = Left ("Tag " <> tag)
