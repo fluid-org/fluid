@@ -5,7 +5,6 @@
 
 	const spec = {
 		fluidSrcPath: ['.', '../../../lib'],
-		inputs: ['tableData', 'likelihoods'],
 		query: true,
 		linking: true
 	};

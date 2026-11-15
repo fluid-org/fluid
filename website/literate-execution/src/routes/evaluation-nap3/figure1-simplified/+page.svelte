@@ -5,7 +5,6 @@
 
 	const spec = {
 		fluidSrcPath: ['..', '../../../lib'],
-		inputs: ['nap3_actions'],
 		query: true,
 		linking: false,
 		rowFilter: 'Relevant'

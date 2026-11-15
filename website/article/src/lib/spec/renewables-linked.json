@@ -1,6 +1,5 @@
 {
 	"fluidSrcPath": ["../src", "../lib"],
-	"inputs": ["renewables"],
 	"ignoreInputs": { "renewables": ["year", "country"] },
 	"query": false,
 	"linking": true
