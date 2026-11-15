@@ -32,30 +32,11 @@ Paths are defined using directory names in `src/routes`. The `index.html` equiva
 
 ### Components
 
-Components define some shared functionality and can be imported and rendered with arguments to other `.svelte` files. For example, the shared `FigureGraph.svelte` component is defined as:
+Components define shared functionality and can be imported into other `.svelte` files. For example, `FigureGraph` draws a figure from a figure graph written by `fluid build`:
 
 ```.svelte
-<script lang="ts">
-	import { loadFigureGraph } from '../../output-es/App.LoadFigureGraph';
-	import FigureContainer from './FigureContainer.svelte';
-
-	let { spec, graph } = $props();
-</script>
-
-<FigureContainer draw={(divId) => loadFigureGraph(spec)(divId)(graph)()} />
+<FigureGraph graph="../graph/example.json" />
 ```
-
-The component is used in other components or routes like:
-
-```.svelte
-<div class="some-other-html">
-    <FigureGraph spec={mySpec} graph="../graph/example.json" />
-</div>
-```
-
-`FigureContainer` calls `draw` in `onMount`, so a figure is drawn in the browser and not during server-side rendering (otherwise we would run into issues trying to update the DOM in a Node.js process).
-
-The file named by `graph` is a figure graph. Before the site is built, `fluid build` evaluates the program named in the options file of the figure. The command then writes the figure graph. A visitor to the website only draws and queries the figure.
 
 ### Assets
 
