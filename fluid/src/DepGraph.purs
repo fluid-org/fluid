@@ -17,8 +17,8 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), Endo, error, (×))
-import Util.Map (keyNotFound, maplet)
+import Util (type (×), Endo, (×))
+import Util.Map (get, maplet)
 import Util.Set ((∪))
 
 newtype Deriv = Deriv Int
@@ -45,7 +45,7 @@ newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s)
 
 -- Weights at a vertex.
 at :: forall f s. Deriv -> InEdges f s (f s)
-at p = InEdges (Set.singleton p × labelAt p)
+at p = InEdges (Set.singleton p × get p)
 
 instance Functor (InEdges f s) where
    map h (InEdges (ps × r)) = InEdges (ps × (h <<< r))
@@ -76,13 +76,6 @@ sparseRel in_ = SparseRel { out, in_ }
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
 type Labelling a = Map Deriv a
-
--- Look up label of p at the key type, since lookup through the class of maps builds an instance at every call
-labelAt :: forall a. Deriv -> Labelling a -> a
-labelAt p m = case lookup p m of
-   Just a -> a
-   Nothing -> error (keyNotFound p)
-
 type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
 
 -- Vertices labelled by values of shape f, each with the dependence of its weights on those at earlier vertices.
@@ -97,7 +90,7 @@ emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
 
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
-valAt g p = labelAt p g.vals
+valAt g p = get p g.vals
 
 deriv :: forall f s m. MonadState (DepGraph f s) m => Functor f => Semiring s => f Unit -> m Deriv
 deriv v = derivWith v (pure (zeros v))
@@ -138,7 +131,7 @@ materialise g visible =
          }
       else { weightsAt: retain p weights weightsAt, rels }
       where
-      InEdges (_ × rel) = labelAt p g.inEdges
+      InEdges (_ × rel) = get p g.inEdges
       weights = rel weightsAt
 
    -- Add weights ws at p, then free weights at each vertex which has p as last dependent
@@ -171,8 +164,8 @@ mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
    kept = mapWithIndex (\p -> keep p >>> selected) g.vals
    rel q p (SparseRel r) = SparseRel { in_: only ks_q ks_p r.in_, out: only ks_p ks_q r.out }
       where
-      ks_q = labelAt q kept
-      ks_p = labelAt p kept
+      ks_q = get q kept
+      ks_p = get p kept
    only ks ks' m = Map.filter (not <<< Map.isEmpty) $
       Map.filterKeys (_ `Set.member` ks') <$> Map.filterKeys (_ `Set.member` ks) m
 

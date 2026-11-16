@@ -7,14 +7,14 @@ import Data.Foldable (foldl)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List, head)
 import Data.List as List
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), fromMaybe', maybe, maybe')
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Unfoldable (class Unfoldable)
 import Effect.Exception (Error)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import Util (type (×), Endo, assert, definitely, definitely', error, orElse, (×))
+import Util (type (×), Endo, assert, definitely', error, throw, (×))
 import Util.Set (class Set, (∈), size)
 import Data.Map as M
 import Data.Set as DSet
@@ -90,13 +90,13 @@ disjointUnion_inv :: forall a k b. Ord k => Map a k b => Set k -> a -> a × a
 disjointUnion_inv ks m = filterKeys (_ ∈ ks) m × filterKeys (_ `not <<< (∈)` ks) m
 
 lookup' :: forall m a k b. MonadThrow Error m => Show k => Map a k b => k -> a -> m b
-lookup' k = lookup k >>> orElse (keyNotFound k)
+lookup' k m = maybe' (\_ -> throw (keyNotFound k)) pure (lookup k m)
 
 keyNotFound :: forall k. Show k => k -> String
 keyNotFound k = "Key " <> show k <> " not found"
 
 get :: forall a k b. Show k => Map a k b => k -> a -> b
-get k = lookup k >>> definitely (keyNotFound k)
+get k m = fromMaybe' (\_ -> error (keyNotFound k)) (lookup k m)
 
 findWithDefault :: forall k v. Ord k => v -> k -> M.Map k v -> v
 findWithDefault d k = maybe d identity <<< M.lookup k
@@ -116,7 +116,7 @@ alter f k m = case f (lookup k m) of
    Just v -> insert k v m
 
 update :: forall a k b. Show k => Map a k b => Endo b -> k -> Endo a
-update f k = alter (definitely (keyNotFound k) >>> f >>> Just) k
+update f k = alter (maybe' (\_ -> error (keyNotFound k)) (f >>> Just)) k
 
 insertWith :: forall a k b. Map a k b => (b -> Endo b) -> k -> b -> Endo a
 insertWith f k v = alter (Just <<< maybe v (flip f v)) k
