@@ -215,8 +215,6 @@ eval = { stmt, apply }
             V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
          where
-         -- Deliver element proj of container v with control dependence on index v' and the positions of v
-         -- weighted by consumedWeight
          subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> (Val s -> s) -> m (Deriv × Raw Val)
          subscript v v' proj consumedWeight =
             deliver (inputs.ctrl <> via consumedWeight v <> via sum v') { val: proj v.val, inEdges: via proj v }
