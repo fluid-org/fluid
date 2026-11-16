@@ -128,8 +128,7 @@ closeDefs inputs ds = ds <#> \d ->
 -- Evaluation
 -- ======================
 
--- Evaluation functions as local definitions at a fixed monad, since each use of a top-level function with a
--- class constraint rebuilds every derived instance
+-- Evaluator specialised to its class dictionaries once per use; recursive calls stay among the local definitions
 eval
    :: forall m s
     . MonadEval s m
