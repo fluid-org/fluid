@@ -278,11 +278,11 @@ eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r && N.isNaN r' -> Left "Cannot compare nan with nan in container"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
-   Lit (Bool _), Lit (Int _) -> undefined
-   Lit (Bool _), Lit (Float _) -> undefined
-   Lit (Int _), Lit (Bool _) -> undefined
-   Lit (Float _), Lit (Bool _) -> undefined
-   Fun _, Fun _ -> undefined
+   Lit (Bool _), Lit (Int _) -> undefined unit
+   Lit (Bool _), Lit (Float _) -> undefined unit
+   Lit (Int _), Lit (Bool _) -> undefined unit
+   Lit (Float _), Lit (Bool _) -> undefined unit
+   Fun _, Fun _ -> undefined unit
    Obj c _, Obj d _ | c == cRange && d == cRange -> eqElems both (elements v) (elements v')
    Obj c xvs, Obj d yus
       | c == d -> eqElems both (snd <$> xvs) (snd <$> yus)
@@ -294,7 +294,7 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    _, _ -> pure (false × both) -- different forms
    where
    both = Set.fromFoldable [ α, β ]
-   undefined = Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
+   undefined _ = Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
 
    eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> MayFail (Boolean × Set a)
    eqDict d d' =
