@@ -34,7 +34,7 @@ import File (class MonadLoad)
 import Module.Defs (ModuleName)
 import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, plus, scale, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
-import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
+import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
 import Pretty.Doc (Doc, text)
@@ -216,6 +216,10 @@ withCtrl ctrl section v =
    v { inEdges = lift2 plus v.inEdges (ctrl <#> \c -> scale (ctrlWeight * c) (force section')) }
    where
    section' = defer \_ -> section v.val
+
+-- Add control dependence on β at every position of v
+throughout :: forall a. DepSemiring a => a -> Endo (Val a)
+throughout β v = plus v (scale (ctrlWeight * β) (unitSection (erase v)))
 
 -- Constructed value: root depends on control at weight c.
 constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s

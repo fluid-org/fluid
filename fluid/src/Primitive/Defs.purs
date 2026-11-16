@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, project, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, project, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, throughout, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -140,7 +140,8 @@ sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α (List vs) : Nil) = sort (L.fromFoldable vs) <#> \vs' -> Val α (List (Array.fromFoldable vs'))
+   depRel (Val α (List vs) : Nil) =
+      sort (L.fromFoldable vs) <#> \vs' -> Val α (List (throughout α <$> Array.fromFoldable vs'))
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
 
@@ -152,15 +153,12 @@ sorted =
            n = L.length vs / 2
 
    merge :: forall a. DepSemiring a => a -> List (Val a) -> List (Val a) -> MayFail (List (Val a))
-   merge β Nil vs' = pure (withCtrl β <$> vs')
-   merge β vs Nil = pure (withCtrl β <$> vs)
+   merge β Nil vs' = pure (throughout β <$> vs')
+   merge β vs Nil = pure (throughout β <$> vs)
    merge β (v : vs) (v' : vs') = binopRel Lt v' v >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
       where
-      take true β' = (withCtrl β' v' : _) <$> merge β' (v : vs) vs'
-      take false β' = (withCtrl β' v : _) <$> merge β' vs (v' : vs')
-
-   withCtrl :: forall a. DepSemiring a => a -> Val a -> Val a
-   withCtrl β (Val α u) = Val (α + ctrlWeight * β) u
+      take true β' = (throughout β' v' : _) <$> merge β' (v : vs) vs'
+      take false β' = (throughout β' v : _) <$> merge β' vs (v' : vs')
 
 min_ :: ForeignOp
 min_ = extremum "min" Lt
@@ -173,9 +171,9 @@ extremum id op =
    ForeignOp (id × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val _ (List vs) : Nil) = case Array.uncons vs of
+   depRel (Val α (List vs) : Nil) = case Array.uncons vs of
       Nothing -> Left ("ValueError: " <> id <> "() iterable argument is empty")
-      Just { head, tail } -> foldM step (head × zero) tail <#> \(Val α u × β) -> Val (α + ctrlWeight * β) u
+      Just { head, tail } -> foldM step (head × zero) tail <#> \(v × β) -> throughout (α + β) v
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
 
@@ -345,9 +343,9 @@ get :: ForeignOp
 get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α (Lit (Str s)) : Val _ (Dictionary (DictRep d)) : Nil) =
-      pure (maybe (Val α (Lit None)) snd (lookup s d))
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val α (Lit (Str s)) : Val β (Dictionary (DictRep d)) : Nil) =
+      pure (maybe (Val (α + β) (Lit None)) (\(γ × v) -> throughout (α + β + γ) v) (lookup s d))
    depRel _ = Left "String and dictionary expected"
 
 insert :: ForeignOp
