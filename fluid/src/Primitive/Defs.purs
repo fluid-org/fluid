@@ -12,7 +12,7 @@ import Data.Argonaut.Decode (parseJson)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldM, foldl)
+import Data.Foldable (foldM, foldl, sum)
 import Data.Int (ceil, floor, toNumber)
 import Data.Int (quot, rem) as I
 import Data.Int as Int
@@ -45,7 +45,7 @@ import File (class LoadFile, File(..), loadFileFromPath)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
 import Literal (Literal(..), showFloat)
 import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
-import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
+import Util (MayFail, Endo, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
 import Pretty (prettyP)
@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, ctrlEdge, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -140,7 +140,8 @@ sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α (List vs) : Nil) = sort (L.fromFoldable vs) <#> \vs' -> Val α (List (Array.fromFoldable vs'))
+   depRel (Val α (List vs) : Nil) =
+      sort (L.fromFoldable vs) <#> \vs' -> Val α (List (ctrlEdge α <$> Array.fromFoldable vs'))
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
 
@@ -152,15 +153,12 @@ sorted =
            n = L.length vs / 2
 
    merge :: forall a. DepSemiring a => a -> List (Val a) -> List (Val a) -> MayFail (List (Val a))
-   merge β Nil vs' = pure (withCtrl β <$> vs')
-   merge β vs Nil = pure (withCtrl β <$> vs)
+   merge β Nil vs' = pure (ctrlEdge β <$> vs')
+   merge β vs Nil = pure (ctrlEdge β <$> vs)
    merge β (v : vs) (v' : vs') = binopRel Lt v' v >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
       where
-      take true β' = (withCtrl β' v' : _) <$> merge β' (v : vs) vs'
-      take false β' = (withCtrl β' v : _) <$> merge β' vs (v' : vs')
-
-   withCtrl :: forall a. DepSemiring a => a -> Val a -> Val a
-   withCtrl β (Val α u) = Val (α + ctrlWeight * β) u
+      take true β' = (ctrlEdge β' v' : _) <$> merge β' (v : vs) vs'
+      take false β' = (ctrlEdge β' v : _) <$> merge β' vs (v' : vs')
 
 min_ :: ForeignOp
 min_ = extremum "min" Lt
@@ -173,9 +171,9 @@ extremum id op =
    ForeignOp (id × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val _ (List vs) : Nil) = case Array.uncons vs of
+   depRel (Val α (List vs) : Nil) = case Array.uncons vs of
       Nothing -> Left ("ValueError: " <> id <> "() iterable argument is empty")
-      Just { head, tail } -> foldM step (head × zero) tail <#> \(Val α u × β) -> Val (α + ctrlWeight * β) u
+      Just { head, tail } -> foldM step (head × zero) tail <#> \(v × β) -> ctrlEdge (α + β) v
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
 
@@ -259,17 +257,19 @@ dims :: ForeignOp
 dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α (Tuple [ i, j ]))
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val α (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α (Tuple [ ctrlEdge α i, ctrlEdge α j ]))
    depRel _ = Left "Matrix expected"
 
 matrixUpdate :: ForeignOp
 matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α (Matrix r) : Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) : v : Nil) =
-      pure (Val α (Matrix (matrixPut i j (const v) r)))
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val α (Matrix (MatrixRep (vss × h × w))) : ix@(Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ])) : v : Nil) =
+      pure (Val α (Matrix (matrixPut i j (const (ctrlEdge (sum ix) v)) r)))
+      where
+      r = MatrixRep (map (map (ctrlEdge α)) vss × ctrlEdge α h × ctrlEdge α w)
    depRel _ = Left "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -312,18 +312,18 @@ dict_difference :: ForeignOp
 dict_difference =
    ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
-      pure (Val (α + β) (Dictionary (DictRep (d \\ d'))))
+      pure (Val (α + β) (Dictionary (DictRep (ctrlEdgeEntry (α + β) <$> (d \\ d')))))
    depRel _ = Left "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
 dict_disjointUnion =
    ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
-      pure (Val (α + β) (Dictionary (DictRep (unionWith_never d d'))))
+      pure (Val (α + β) (Dictionary (DictRep (unionWith_never (ctrlEdgeEntry α <$> d) (ctrlEdgeEntry β <$> d')))))
    depRel _ = Left "Dictionaries expected"
 
 foldl_with_index :: ForeignOp
@@ -345,18 +345,18 @@ get :: ForeignOp
 get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> MayFail (Val a)
-   depRel (Val α (Lit (Str s)) : Val _ (Dictionary (DictRep d)) : Nil) =
-      pure (maybe (Val α (Lit None)) snd (lookup s d))
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val α (Lit (Str s)) : Val β (Dictionary (DictRep d)) : Nil) =
+      pure (maybe (Val (α + β) (Lit None)) (\(γ × v) -> ctrlEdge (α + β + γ) v) (lookup s d))
    depRel _ = Left "String and dictionary expected"
 
 insert :: ForeignOp
 insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, depOp: pureRel depRel })
    where
-   depRel :: forall a. List (Val a) -> MayFail (Val a)
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val α' (Lit (Str k)) : v : Nil) =
-      pure (Val α (Dictionary (DictRep (Map.insert k (α' × v) d))))
+      pure (Val α (Dictionary (DictRep (Map.insert k (α' × v) (ctrlEdgeEntry α <$> d)))))
    depRel _ = Left "Dictionary, key and value expected"
 
 dict_intersectionWith :: ForeignOp
@@ -385,8 +385,15 @@ dict_map =
       construct ctrl (dictFrom (singleton d) results)
    depOp _ _ = throw "Function and dictionary expected"
 
-entryValue :: forall s. String -> GVal s -> GVal s
-entryValue k d = { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> snd) d }
+entryValue :: forall s. DepSemiring s => String -> GVal s -> GVal s
+entryValue k d =
+   { val: snd (dictEntry k d.val)
+   , inEdges: lift2 ctrlEdge (via root d <> via (dictEntry k >>> fst) d) (via (dictEntry k >>> snd) d)
+   }
+
+-- Control edge from β to key and whole value of an entry
+ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
+ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s

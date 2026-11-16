@@ -19,7 +19,7 @@ import Data.String as String
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
-import Lattice (class BoundedJoinSemilattice, bot, erase)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
@@ -27,7 +27,7 @@ import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root, ctrlEdge)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -159,7 +159,7 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
-binopRel :: forall a. Ord a => Semiring a => Binop -> Val a -> Val a -> MayFail (Val a)
+binopRel :: forall a. DepSemiring a => Binop -> Val a -> Val a -> MayFail (Val a)
 binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 
 unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> MayFail (Val a)
@@ -167,7 +167,7 @@ unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 
 type Operand = Int + Number + String
 
-binop :: forall a. Ord a => Binop -> Val a -> Val a -> MayFail (BaseVal a × Set a)
+binop :: forall a. DepSemiring a => Binop -> Val a -> Val a -> MayFail (BaseVal a × Set a)
 binop Eq v v'
    | bothNan v v' = pure (Lit (Bool false) × vertices2 v v')
    | otherwise = first (Lit <<< Bool) <$> eqOp v v'
@@ -179,9 +179,9 @@ binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
 binop Add (Val α (List vs)) (Val β (List vs')) =
-   pure (List (vs <> vs') × Set.fromFoldable [ α, β ])
+   pure (List ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
 binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) =
-   pure (Tuple (vs <> vs') × Set.fromFoldable [ α, β ])
+   pure (Tuple ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
 binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
@@ -260,8 +260,8 @@ repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    where
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
-repeatList :: forall a. Ord a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
-repeatList vs α n β = List (A.concat (replicate n vs)) × deps
+repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
+repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
    where
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
@@ -278,11 +278,11 @@ eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    Lit (Float r), Lit (Float r') | N.isNaN r && N.isNaN r' -> Left "Cannot compare nan with nan in container"
    Lit ℓ, Lit ℓ' | sameKind ℓ ℓ' -> pure (eqLiteral ℓ ℓ' × both)
-   Lit (Bool _), Lit (Int _) -> undefined
-   Lit (Bool _), Lit (Float _) -> undefined
-   Lit (Int _), Lit (Bool _) -> undefined
-   Lit (Float _), Lit (Bool _) -> undefined
-   Fun _, Fun _ -> undefined
+   Lit (Bool _), Lit (Int _) -> undefined unit
+   Lit (Bool _), Lit (Float _) -> undefined unit
+   Lit (Int _), Lit (Bool _) -> undefined unit
+   Lit (Float _), Lit (Bool _) -> undefined unit
+   Fun _, Fun _ -> undefined unit
    Obj c _, Obj d _ | c == cRange && d == cRange -> eqElems both (elements v) (elements v')
    Obj c xvs, Obj d yus
       | c == d -> eqElems both (snd <$> xvs) (snd <$> yus)
@@ -294,7 +294,7 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    _, _ -> pure (false × both) -- different forms
    where
    both = Set.fromFoldable [ α, β ]
-   undefined = Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
+   undefined _ = Left ("Cannot compare " <> prettyP (erase u) <> " with " <> prettyP (erase u'))
 
    eqDict :: Dict (a × Val a) -> Dict (a × Val a) -> MayFail (Boolean × Set a)
    eqDict d d' =
