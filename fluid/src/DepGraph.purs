@@ -17,7 +17,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), (×))
+import Util (type (×), Endo, (×))
 import Util.Map (get, maplet)
 import Util.Set ((∪))
 
@@ -82,7 +82,7 @@ type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relat
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
-   , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
+   , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
    , inEdges :: Labelling (InEdges f s (f s))
    }
 
@@ -126,13 +126,27 @@ materialise g visible =
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
-         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
+         { weightsAt: retain p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
          , rels: Map.insert p (sparseRel <$> edgesInto weights) rels
          }
-      else { weightsAt: Map.insert p weights weightsAt, rels }
+      else { weightsAt: retain p weights weightsAt, rels }
       where
       InEdges (_ × rel) = get p g.inEdges
       weights = rel weightsAt
+
+   -- Add weights ws at p, then free weights at each vertex which has p as last dependent
+   retain :: Deriv -> f (Lineage (Deriv × Pos) s) -> Endo (Labelling (f (Lineage (Deriv × Pos) s)))
+   retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p byLastDependent))
+
+   -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
+   lastDependent :: Labelling Deriv
+   lastDependent = foldlWithIndex dependent Map.empty g.inEdges
+      where
+      dependent p m (InEdges (qs × _)) = foldl (\m' q -> Map.insert q p m') (Map.insert p p m) qs
+
+   byLastDependent :: Labelling (List Deriv)
+   byLastDependent = fromFoldableWith (<>) $
+      (Map.toUnfoldable lastDependent :: List _) <#> \(q × p) -> p × (q : Nil)
 
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.
    edgesInto :: f (Lineage (Deriv × Pos) s) -> Labelling (Map Pos (Map Pos s))
