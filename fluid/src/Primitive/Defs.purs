@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, ctrlEdge, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, record, root, ctrlEdge, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -332,11 +332,11 @@ foldl_with_index =
    where
    depOp :: DepOp
    depOp ctrl (g : v : d : Nil) = do
-      f <- gval <$> deliver ctrl g
-      r <- deliver ctrl v
-      foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
+      f <- gval <$> record (deliver ctrl g)
+      r <- record (deliver ctrl v)
+      gval <$> foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
       where
-      step f acc (k × _) = eval.apply ctrl f (key : gval acc : entryValue k d : Nil)
+      step f acc (k × _) = eval.apply ctrl f (key : gval acc : entryValue k d : Nil) >>= record
          where
          key = { val: Val unit (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d }
    depOp _ _ = throw "Function, value and dictionary expected"
@@ -365,11 +365,11 @@ dict_intersectionWith =
    where
    depOp :: DepOp
    depOp ctrl (g : d1 : d2 : Nil) = do
-      f <- gval <$> deliver ctrl g
+      f <- gval <$> record (deliver ctrl g)
       results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (Dict.toUnfoldable (dictEntries d1.val))) \(k × _) -> do
-         r <- eval.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil)
+         r <- eval.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil) >>= record
          pure (k × gval r)
-      construct ctrl (dictFrom (d1 : d2 : Nil) results)
+      pure (construct ctrl (dictFrom (d1 : d2 : Nil) results))
    depOp _ _ = throw "Function and two dictionaries expected"
 
 dict_map :: ForeignOp
@@ -378,11 +378,11 @@ dict_map =
    where
    depOp :: DepOp
    depOp ctrl (g : d : Nil) = do
-      f <- gval <$> deliver ctrl g
+      f <- gval <$> record (deliver ctrl g)
       results <- for (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val))) \(k × _) -> do
-         r <- eval.apply ctrl f (singleton (entryValue k d))
+         r <- eval.apply ctrl f (singleton (entryValue k d)) >>= record
          pure (k × gval r)
-      construct ctrl (dictFrom (singleton d) results)
+      pure (construct ctrl (dictFrom (singleton d) results))
    depOp _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. DepSemiring s => String -> GVal s -> GVal s

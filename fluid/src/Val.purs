@@ -213,40 +213,29 @@ viaAll r vs = r <$> traverse _.inEdges vs
 ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
 ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
 
--- Constructed value: root depends on control at weight c.
-constructed :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-constructed ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges }
+-- Control edge from ctrl to the root of v
+construct :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
+construct ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges }
+
+deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
+deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
 
 record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
 record { val: v, inEdges } = derivWith v inEdges <#> (_ × v)
 
--- Record v with dependence on ctrl at every position
-deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-deliver ctrl v = record (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
-
-construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-construct ctrl v = record (constructed ctrl v)
-
 constructWith
-   :: forall t m s
+   :: forall t s
     . Traversable t
-   => MonadState (DepGraph Val s) m
    => DepSemiring s
    => Ctrl s
    -> (forall a. t (Val a) -> BaseVal a)
    -> t (GVal s)
-   -> m (Dep.Deriv × Raw Val)
+   -> GVal s
 constructWith ctrl mk vs =
    construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
 
 -- Dictionary from keys and values; later entries overwrite earlier ones.
-dictionary
-   :: forall m s
-    . MonadState (DepGraph Val s) m
-   => DepSemiring s
-   => Ctrl s
-   -> List (String × GVal s × GVal s)
-   -> m (Dep.Deriv × Raw Val)
+dictionary :: forall s. DepSemiring s => Ctrl s -> List (String × GVal s × GVal s) -> GVal s
 dictionary ctrl kvs =
    constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
    where
@@ -278,12 +267,12 @@ type DepOp =
     . MonadEval s m
    => Ctrl s
    -> List (GVal s)
-   -> m (Dep.Deriv × Raw Val)
+   -> m (GVal s)
 
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
+fromRel g ctrl vs = pure (deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs })
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp

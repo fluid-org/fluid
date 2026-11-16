@@ -22,6 +22,12 @@ dep_cases =
           , Fwd (Input "y") (\_ -> select) "True\n⸨1⸩\n2\n⸨1⸩"
           ]
      }
+   , { file: "dependence/cond_branch_doc.fld"
+     , queries:
+          [ Fwd (Input "b") (\_ -> select) "⸨True⸩\n1\n@doc(⟪\"branch\"⟫) ⟪2⟫\n⟪2⟫"
+          , Fwd (Input "y") (\_ -> select) "True\n⸨1⸩\n⸨2⸩\n⸨2⸩"
+          ]
+     }
    , { file: "dependence/match_fallthrough.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⟪Bar()⟫\n⸨5⸩\n⸨5⸩"

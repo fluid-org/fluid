@@ -43,7 +43,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, constructed, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -122,7 +122,7 @@ closeDefs inputs ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
    in
-      constructed inputs.ctrl (closure (restrict (fv ds' ∪ fv d) inputs.env) ds' d)
+      construct inputs.ctrl (closure (restrict (fv ds' ∪ fv d) inputs.env) ds' d)
 
 -- ======================
 -- Evaluation
@@ -133,36 +133,36 @@ eval
    :: forall m s
     . MonadEval s m
    => { stmt :: Inputs s -> Stmt -> m (Result s)
-      , apply :: Ctrl s -> GVal s -> List (GVal s) -> m (Deriv × Raw Val)
+      , apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
       }
 eval = { stmt, apply }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
-   expr inputs = case _ of
-      Var x -> deliver inputs.ctrl (get x inputs.env)
-      Lit ℓ -> construct inputs.ctrl (constant (Val unit (V.Lit ℓ)))
-      Dictionary ees -> do
-         kvs <- for ees \(Pair e e') -> dictEntry inputs e e'
-         dictionary inputs.ctrl kvs
+   expr inputs e'@(DocExpr e _) = do
+      r <- conclusion inputs e' >>= record
+      doc <- expr (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
+      attachDoc (fst r) (fst doc) $> r
+   expr inputs e = conclusion inputs e >>= record
+
+   -- Value of an expression with its dependence on inputs and the vertices of its premises
+   conclusion :: Inputs s -> Expr -> m (GVal s)
+   conclusion inputs = case _ of
+      Var x -> pure (deliver inputs.ctrl (get x inputs.env))
+      Lit ℓ -> pure (construct inputs.ctrl (constant (Val unit (V.Lit ℓ))))
+      Dictionary ees -> dictionary inputs.ctrl <$> for ees \(Pair e e') -> dictEntry inputs e e'
       DictComp e e' gs -> do
          cs × ctrl <- qualifiers inputs gs
-         kvs <- for cs \inputs' -> dictEntry inputs' e e'
-         dictionary ctrl kvs
-      List es -> do
-         vs <- traverse (expr inputs >>> map gval) es
-         constructWith inputs.ctrl (A.fromFoldable >>> V.List) vs
-      Tuple es -> do
-         vs <- traverse (expr inputs >>> map gval) es
-         constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) vs
+         dictionary ctrl <$> for cs \inputs' -> dictEntry inputs' e e'
+      List es -> constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
+      Tuple es -> constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
       ListComp e gs -> do
          cs × ctrl <- qualifiers inputs gs
-         vs <- for cs \inputs' -> gval <$> expr inputs' e
-         constructWith ctrl (A.fromFoldable >>> V.List) vs
+         constructWith ctrl (A.fromFoldable >>> V.List) <$> for cs \inputs' -> gval <$> expr inputs' e
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         vs <- traverse (expr inputs >>> map gval) es
-         constructWith inputs.ctrl (V.Obj c <<< zip (fieldNames classes c)) vs
+         constructWith inputs.ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
+            traverse (expr inputs >>> map gval) es
       Matrix e (x × y) e' -> do
          dims <- gval <$> expr inputs e'
          i' × j' <- case dims.val of
@@ -174,7 +174,7 @@ eval = { stmt, apply }
          vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
             let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
             gval <$> expr (inputs { env = inputs.env <+> ρ' }) e
-         constructWith inputs.ctrl mat (product (Compose vss) (Identity dims))
+         pure (constructWith inputs.ctrl mat (product (Compose vss) (Identity dims)))
          where
          index :: GVal s -> Int -> Int -> GVal s
          index dims k n =
@@ -184,14 +184,14 @@ eval = { stmt, apply }
 
          mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
          mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
-      Lambda d -> construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d)
-      Type τ -> construct inputs.ctrl (constant (Val unit (V.Fun (V.Type τ))))
+      Lambda d -> pure (construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d))
+      Type τ -> pure (construct inputs.ctrl (constant (Val unit (V.Fun (V.Type τ)))))
       Attribute e x -> do
          v <- gval <$> expr inputs e
          case v.val of
             Val _ (V.Obj c xvs) -> do
                i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-               deliver (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v }
+               pure (deliver (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v })
             _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
       Subscript e e' -> do
          v@{ val: Val _ u } <- gval <$> expr inputs e
@@ -214,14 +214,14 @@ eval = { stmt, apply }
             V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
          where
-         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (Deriv × Raw Val)
+         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (GVal s)
          subscript v v' proj ctrl =
-            deliver (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v }
+            pure (deliver (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v })
       ModMember q x -> do
          { modules } <- moduleStore
          let ρ_q = definitely' (loadedEnv (get q modules))
          p <- withMsg "Module member" $ lookup' x ρ_q
-         gvalAt p >>= deliver inputs.ctrl
+         deliver inputs.ctrl <$> gvalAt p
       App e es -> do
          f <- gval <$> expr inputs e
          vs <- traverse (expr inputs >>> map gval) es
@@ -230,25 +230,22 @@ eval = { stmt, apply }
          v <- gval <$> expr inputs e
          v' <- gval <$> expr inputs e'
          u <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v.val v'.val) <#> fst
-         deliver inputs.ctrl { val: Val unit u, inEdges: lift2 (\x y -> definitelyRight (binopRel op x y)) v.inEdges v'.inEdges }
+         pure $ deliver inputs.ctrl
+            { val: Val unit u, inEdges: lift2 (\x y -> definitelyRight (binopRel op x y)) v.inEdges v'.inEdges }
       UnOp op e -> do
          v <- gval <$> expr inputs e
          u <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v.val) <#> fst
-         deliver inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v }
+         pure (deliver inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v })
       And e e' -> do
          { holds, ctrl, value } <- condition inputs e
-         if holds then expr (inputs { ctrl = ctrl }) e' else pure value
+         if holds then gval <$> expr (inputs { ctrl = ctrl }) e' else pure value
       Or e e' -> do
          { holds, ctrl, value } <- condition inputs e
-         if holds then pure value else expr (inputs { ctrl = ctrl }) e'
+         if holds then pure value else gval <$> expr (inputs { ctrl = ctrl }) e'
       Cond e1 e e2 -> do
          { holds, ctrl } <- condition inputs e
-         expr (inputs { ctrl = ctrl }) (if holds then e1 else e2)
-      DocExpr e e' -> do
-         r <- expr inputs e'
-         doc <- expr (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
-         attachDoc (fst r) (fst doc)
-         pure r
+         gval <$> expr (inputs { ctrl = ctrl }) (if holds then e1 else e2)
+      DocExpr _ e -> gval <$> expr inputs e
 
    dictEntry :: Inputs s -> Expr -> Expr -> m (String × GVal s × GVal s)
    dictEntry inputs' e e' = do
@@ -263,11 +260,11 @@ eval = { stmt, apply }
    funName _ = "unknown"
 
    -- Evaluate e as a Boolean, taking the root of the resulting value as control input for later evaluation
-   condition :: Inputs s -> Expr -> m { holds :: Boolean, ctrl :: Ctrl s, value :: Deriv × Raw Val }
+   condition :: Inputs s -> Expr -> m { holds :: Boolean, ctrl :: Ctrl s, value :: GVal s }
    condition inputs e = do
-      p × val <- expr inputs e
-      holds × _ <- orThrow (unpack boolean val)
-      pure { holds, ctrl: via root (gval (p × val)), value: p × val }
+      v <- gval <$> expr inputs e
+      holds × _ <- orThrow (unpack boolean v.val)
+      pure { holds, ctrl: via root v, value: v }
 
    -- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
    -- short by a failed guard or an element that does not match
@@ -326,10 +323,10 @@ eval = { stmt, apply }
                _ × Val _ u <- expr (inputs { ctrl = ctrl }) e'
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
       Dataclass c -> do
-         let v = constructed inputs.ctrl (constant (Val unit (V.Fun (V.Type (T.ClassTy c Nil)))))
+         let v = construct inputs.ctrl (constant (Val unit (V.Fun (V.Type (T.ClassTy c Nil)))))
          pure (Assigns (maplet (last c) v) inputs.ctrl)
       TypeAlias x αs τ -> do
-         let v = constructed inputs.ctrl (constant (Val unit (V.TypeAlias αs τ)))
+         let v = construct inputs.ctrl (constant (Val unit (V.TypeAlias αs τ)))
          pure (Assigns (maplet x v) inputs.ctrl)
       Seq s1 s2 -> do
          r1 <- stmt inputs s1
@@ -339,7 +336,7 @@ eval = { stmt, apply }
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Ctrl s -> GVal s -> List (GVal s) -> m (Deriv × Raw Val)
+   apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
    apply ctrl f@{ val: Val _ u } vs = case u of
       V.Fun (V.Partial φ us) ->
          apply ctrl { val: Val unit (V.Fun φ), inEdges: via partialFun f }
@@ -347,9 +344,9 @@ eval = { stmt, apply }
       V.Fun φ -> do
          n <- arity'
          let k = length vs
-         if k < n then construct ctrl (partial unit)
+         if k < n then pure (construct ctrl (partial unit))
          else if k == n then call φ vs
-         else call φ (take n vs) >>= \r -> apply ctrl (gval r) (drop n vs)
+         else call φ (take n vs) >>= record >>= \r -> apply ctrl (gval r) (drop n vs)
          where
          arity' :: m Int
          arity' = case φ of
@@ -369,17 +366,17 @@ eval = { stmt, apply }
       _ -> throw $ "Found " <> prettyP f.val <> ", expected function"
       where
       -- Apply φ to vs', taking the root of the function value as control input
-      call :: V.Fun Unit -> List (GVal s) -> m (Deriv × Raw Val)
+      call :: V.Fun Unit -> List (GVal s) -> m (GVal s)
       call φ vs' = case φ of
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
                ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
                ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
-            asReturns <$> stmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
+            gval <<< asReturns <$> stmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
          V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp ctrl' vs'
          V.Type (T.ClassTy c _) ->
-            askClasses >>= \classes -> constructWith ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
+            askClasses <#> \classes -> constructWith ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
          where
