@@ -38,7 +38,7 @@ import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
 import Primitive (binop, binopRel, boolean, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
-import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
+import Util (type (×), Endo, absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
@@ -215,11 +215,11 @@ eval = { stmt, apply }
             V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
          where
-         -- Element of container v chosen by select, with control dependence on index v' and the positions of v
-         -- given by consumed
-         subscript :: GVal s -> GVal s -> (forall a. Val a -> Val a) -> (Val s -> s) -> m (Deriv × Raw Val)
-         subscript v v' select consumed =
-            deliver (inputs.ctrl <> via consumed v <> via sum v') { val: select v.val, inEdges: via select v }
+         -- Deliver element proj of container v with control dependence on index v' and the positions of v
+         -- weighted by consumedWeight
+         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> (Val s -> s) -> m (Deriv × Raw Val)
+         subscript v v' proj consumedWeight =
+            deliver (inputs.ctrl <> via consumedWeight v <> via sum v') { val: proj v.val, inEdges: via proj v }
       ModMember q x -> do
          { modules } <- moduleStore
          let ρ_q = definitely' (loadedEnv (get q modules))
