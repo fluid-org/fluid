@@ -107,7 +107,6 @@ data Filter = Everything | Interactive | Relevant
 
 type Options =
    { fluidSrcPaths :: Array Folder
-   , query :: Boolean -- show documented intermediates
    , ignoreInputs :: Selector EnvWithDocs -- input positions left out of linked queries; retire with #1585
    , linking :: Boolean
    , rowFilter :: Maybe Filter

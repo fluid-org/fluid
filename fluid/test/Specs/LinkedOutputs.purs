@@ -11,7 +11,6 @@ linkedOutputs_spec1 :: TestLinkedOutputsSpec
 linkedOutputs_spec1 =
    { spec:
         { fluidSrcPaths
-        , query: false
         , ignoreInputs: envVal "renewables" (valOf (eachElement (field "year" select >.> field "country" select)))
         , linking: true
         , rowFilter: Nothing
@@ -37,7 +36,6 @@ linkedOutputs_spec2 :: TestLinkedOutputsSpec
 linkedOutputs_spec2 =
    { spec:
         { fluidSrcPaths
-        , query: false
         , ignoreInputs: envVal "nonRenewables" (valOf (eachElement (field "year" select >.> field "country" select)))
         , linking: true
         , rowFilter: Nothing
@@ -61,7 +59,6 @@ movingAverages_spec :: TestLinkedOutputsSpec
 movingAverages_spec =
    { spec:
         { fluidSrcPaths
-        , query: false
         , ignoreInputs: none
         , linking: true
         , rowFilter: Nothing
@@ -76,7 +73,6 @@ linkedOutputs_cases :: Array TestLinkedOutputsSpec
 linkedOutputs_cases =
    [ { spec:
           { fluidSrcPaths
-          , query: false
           , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
@@ -88,7 +84,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , query: false
           , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
@@ -124,7 +119,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , query: false
           , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
@@ -136,7 +130,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , query: false
           , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
@@ -148,7 +141,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , query: false
           , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing
@@ -160,7 +152,6 @@ linkedOutputs_cases =
      }
    , { spec:
           { fluidSrcPaths
-          , query: false
           , ignoreInputs: none
           , linking: true
           , rowFilter: Nothing

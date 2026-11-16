@@ -3,7 +3,7 @@ module Fluid where
 import Prelude
 
 import App.Fig.Build (JsonOptions, figGraph, optionsFromJson)
-import App.Fig.Codec (encodeFigGraph)
+import App.Fig.Graph (encodeFigGraph)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Data.Argonaut.Core (Json, stringify, stringifyWithIndent)

@@ -4,6 +4,5 @@
 	"ignoreInputs": {
 		"nonRenewables": ["year", "country"]
 	},
-	"query": false,
 	"linking": true
 }

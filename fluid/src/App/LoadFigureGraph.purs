@@ -3,7 +3,7 @@ module App.LoadFigureGraph where
 import Prelude
 
 import App.Fig (drawLoaded, figure)
-import App.Fig.Codec (decodeFigGraph)
+import App.Fig.Graph (decodeFigGraph)
 import Data.Argonaut.Parser (jsonParser)
 import Effect (Effect)
 import Effect.Aff (runAff_)

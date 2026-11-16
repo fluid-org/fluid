@@ -1,8 +1,7 @@
-module App.Fig.Codec where
+module App.Fig.Graph where
 
 import Prelude hiding (absurd)
 
-import App.Fig (FigGraph)
 import App.View.Util (Filter)
 import Bind (FieldName, Name, dottedName)
 import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
@@ -11,26 +10,51 @@ import Data.Argonaut.Encode (encodeJson)
 import Data.Array as A
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), note)
+import Data.Foldable (foldMap)
 import Data.List as L
 import Data.List.NonEmpty as NEL
 import Data.Map as Map
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe, fromMaybe)
 import Data.Number (infinity, isFinite, isNaN, nan)
+import Data.Set (Set)
 import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), sparseRel)
+import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), VisibleGraph, sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
 import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
+import Pretty (prettyP)
 import Util (type (×), MayFail, absurd, definitely', error, (×))
-import Util.Map (insert, lookup, maplet, toUnfoldable)
+import Util.Map (get, insert, lookup, maplet, toUnfoldable)
 import Util.Set (empty, unions)
 import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
+
+-- Data sufficient to draw and query a figure without parser or evaluator
+type FigGraph =
+   { graph :: VisibleGraph Val DepKind
+   , ins :: Dict DerivWithDoc -- input name ↦ vertex
+   , out :: DerivWithDoc
+   , ιs :: Labelling DerivWithDoc -- documented intermediates
+   , ignored :: Labelling (Set Pos) -- input positions left out of linked queries
+   , linking :: Boolean
+   , rowFilter :: Maybe Filter
+   }
+
+str
+   :: { output :: String -- pseudo-variable to use as name of output view
+      , input :: String -- prefix for input views
+      , intermediate :: String
+      }
+str =
+   { output: "output"
+   , input: "input"
+   , intermediate: "intermediate"
+   }
 
 type DerivWithDocRep = Int × Maybe Int
 
@@ -53,7 +77,7 @@ type FigGraphRep =
 
 encodeFigGraph :: FigGraph -> MayFail Json
 encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
-   vals <- traverse (\(Deriv p × v) -> (p × _) <$> encodeVal v) (Map.toUnfoldable graph.vals)
+   vals <- for (Map.toUnfoldable graph.vals) \(p@(Deriv i) × v) -> bimap (failure p) (i × _) (encodeVal v)
    pure $ encodeJson
       ( { classes: unions (classes <$> Map.values graph.vals)
         , vals
@@ -67,6 +91,15 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
         } :: FigGraphRep
       )
    where
+   failure :: Deriv -> String -> String
+   failure p construct = construct <> " in " <> fromMaybe "doc" (Map.lookup p vertexRole)
+      <> " is currently unsupported in a figure graph"
+
+   vertexRole :: Labelling String
+   vertexRole = Map.insert (fst out) str.output $ Map.union
+      (ιs <#> \(_ × d) -> str.intermediate <> foldMap (\d' -> " " <> prettyP (get d' graph.vals)) d)
+      (Map.fromFoldable (D.toArrayWithKey (\x (p × _) -> p × (str.input <> " " <> prettyP (Str x))) ins))
+
    labelling :: forall a b. (a -> b) -> Labelling a -> Array (Int × b)
    labelling f = Map.toUnfoldable >>> map (bimap (\(Deriv p) -> p) f)
 
@@ -112,7 +145,6 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Collect field names by class from the objects within the given value
 classes :: Val Unit -> Classes
 classes (Val _ u) = case u of
    Obj c xvs -> insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (unions (classes <<< snd <$> xvs))
@@ -122,9 +154,6 @@ classes (Val _ u) = case u of
    Matrix (MatrixRep (vss × _ × _)) -> unions (unions <<< map classes <$> vss)
    _ -> empty
 
--- Encode a value as JSON. A list maps to an array. A literal maps to a JSON literal, except for ints,
--- non-finite floats and negative zero. Every other value maps to an object with the name of its kind as the
--- only key.
 encodeVal :: Val Unit -> MayFail Json
 encodeVal (Val _ u) = case u of
    Lit (Int n) -> pure (tagged "int" (encodeJson n))
@@ -147,9 +176,12 @@ encodeVal (Val _ u) = case u of
    Opaque q -> pure (tagged "opaque" (fromString (dottedName q)))
    Module q -> pure (tagged "module" (fromString (dottedName q)))
    Unbound -> pure (tagged "unbound" jsonNull)
-   Fun _ -> Left "Function in value shown in figure"
-   TypeAlias _ _ -> Left "Type alias in value shown in figure"
+   Fun _ -> unsupported "Function"
+   TypeAlias _ _ -> unsupported "Type alias"
    where
+   unsupported :: String -> MayFail Json
+   unsupported = Left
+
    tagged :: String -> Json -> Json
    tagged tag = maplet tag >>> fromObject
 

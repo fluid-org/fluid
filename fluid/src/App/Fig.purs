@@ -2,15 +2,15 @@ module App.Fig where
 
 import Prelude hiding (absurd, compare)
 
+import App.Fig.Graph (FigGraph, str)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, classes, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
 import App.Util.Selector (objArg, envVal, ViewSetter)
 import App.View (viewWithDoc)
 import App.View.ViewWithDoc (drawView)
-import App.View.Util (Direction(..), Fig, Filter, HTMLId, QueryResult, View)
+import App.View.Util (Direction(..), Fig, HTMLId, QueryResult, View)
 import App.View.Util.D3 (remove, rootSelect, setAttrs, setText)
 import Bind (Var)
 import Control.Apply (lift2)
-import Dict (Dict)
 import Data.Either (Either, either)
 import Data.Foldable (or)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -25,25 +25,14 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error, message)
-import DepGraph (ConjugatePair, Deriv, Labelling, Pos, VisibleGraph, dimap, mapPositions, mask, queries, selected)
+import DepGraph (ConjugatePair, Deriv, Labelling, Pos, dimap, mapPositions, mask, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
 import Util (type (×), Endo, spyWhen, (×))
 import Util.Map (get, insert, lookup, mapWithKey, values)
 import Util.Set ((\\), (∈), (∪))
-import Val (DerivWithDoc, EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val)
-
-str
-   :: { output :: String -- pseudo-variable to use as name of output view
-      , input :: String -- prefix for input views
-      , intermediate :: String
-      }
-str =
-   { output: "output"
-   , input: "input"
-   , intermediate: "intermediate"
-   }
+import Val (EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val)
 
 selectOutput :: Selector ValWithDoc -> Endo Fig
 selectOutput δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }
@@ -147,17 +136,6 @@ boolean
    :: ConjugatePair (Labelling (Set Pos)) (Labelling (Val DepKind))
    -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
-
--- Data sufficient to draw and query a figure without parser or evaluator
-type FigGraph =
-   { graph :: VisibleGraph Val DepKind
-   , ins :: Dict DerivWithDoc -- input name ↦ vertex
-   , out :: DerivWithDoc
-   , ιs :: Labelling DerivWithDoc -- documented intermediates
-   , ignored :: Labelling (Set Pos) -- input positions left out of linked queries
-   , linking :: Boolean
-   , rowFilter :: Maybe Filter
-   }
 
 figure :: FigGraph -> Fig
 figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
