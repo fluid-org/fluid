@@ -2,7 +2,7 @@ module App.Fig where
 
 import Prelude hiding (absurd, compare)
 
-import App.Fig.Graph (FigGraph)
+import App.Fig.Graph (FigGraph, str)
 import App.Util (SelState, SelStates, Selection, SelectionType(..), Selector, 𝕊, classes, pairSel, primary, primaryOrSecondary, selState, selStates, projSel, to𝔹, to𝕊)
 import App.Util.Selector (objArg, envVal, ViewSetter)
 import App.View (viewWithDoc)
@@ -33,17 +33,6 @@ import Util (type (×), Endo, spyWhen, (×))
 import Util.Map (get, insert, lookup, mapWithKey, values)
 import Util.Set ((\\), (∈), (∪))
 import Val (EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val)
-
-str
-   :: { output :: String -- pseudo-variable to use as name of output view
-      , input :: String -- prefix for input views
-      , intermediate :: String
-      }
-str =
-   { output: "output"
-   , input: "input"
-   , intermediate: "intermediate"
-   }
 
 selectOutput :: Selector ValWithDoc -> Endo Fig
 selectOutput δv fig@{ v, dir, ρ } = fig { v = v', ρ = ρ', dir = dir' }

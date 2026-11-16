@@ -45,6 +45,17 @@ type FigGraph =
    , rowFilter :: Maybe Filter
    }
 
+str
+   :: { output :: String -- pseudo-variable to use as name of output view
+      , input :: String -- prefix for input views
+      , intermediate :: String
+      }
+str =
+   { output: "output"
+   , input: "input"
+   , intermediate: "intermediate"
+   }
+
 type DerivWithDocRep = Int × Maybe Int
 
 -- Dependence relation as target position ↦ source position ↦ weight
