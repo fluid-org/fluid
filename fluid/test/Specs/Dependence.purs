@@ -282,17 +282,17 @@ dep_cases =
      }
    , { file: "dependence/dict/disjoint_union.fld"
      , queries:
-          [ Bwd Output (\_ -> dictKey "a" select' >.> dictVal "c" select) "{⸨\"a\"⸩: 5, \"b\": 6}\n{\"c\": ⸨7⸩}\n{⸨\"a\"⸩: 5, \"b\": 6, \"c\": ⸨7⸩}"
+          [ Bwd Output (\_ -> dictKey "a" select' >.> dictVal "c" select) "⟪{⸨\"a\"⸩: 5, \"b\": 6}⟫\n⟪{\"c\": ⸨7⸩}⟫\n{⸨\"a\"⸩: 5, \"b\": 6, \"c\": ⸨7⸩}"
           ]
      }
    , { file: "dependence/dict/foldl_with_index.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "{\"a\": ⟪[5, 6]⟫, \"b\": ⟪[⸨0⸩, 10]⟫, \"c\": ⟪[3, 4]⟫}\n⸨0⸩"
+          [ Bwd Output (\_ -> select) "⟪{⟪\"a\"⟫: ⟪[5, 6]⟫, ⟪\"b\"⟫: ⟪[⸨0⸩, 10]⟫, ⟪\"c\"⟫: ⟪[3, 4]⟫}⟫\n⸨0⸩"
           ]
      }
    , { file: "dependence/dict/intersection_with.fld"
      , queries:
-          [ Bwd Output (\_ -> dictVal "b" select >.> dictVal "c" select) "{\"a\": 5, \"b\": ⸨6⸩, \"c\": ⸨3⸩}\n{\"b\": ⸨-6⸩, \"c\": ⸨7⸩}\n{\"b\": ⸨0⸩, \"c\": ⸨20⸩}"
+          [ Bwd Output (\_ -> dictVal "b" select >.> dictVal "c" select) "⟪{\"a\": 5, ⟪\"b\"⟫: ⸨6⸩, ⟪\"c\"⟫: ⸨3⸩}⟫\n⟪{⟪\"b\"⟫: ⸨-6⸩, ⟪\"c\"⟫: ⸨7⸩}⟫\n{\"b\": ⸨0⸩, \"c\": ⸨20⸩}"
           ]
      }
    , { file: "dependence/dict/map.fld"
