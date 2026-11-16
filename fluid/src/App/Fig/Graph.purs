@@ -92,14 +92,14 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
       )
    where
    failure :: Deriv -> String -> String
-   failure p kind = fromMaybe "Doc" (Map.lookup p parts) <> " contains a " <> kind
-      <> ", which is currently unsupported in a figure graph"
+   failure p construct = construct <> " in " <> fromMaybe "doc" (Map.lookup p names)
+      <> " is currently unsupported in a figure graph"
 
    -- Name of input, intermediate or output at each vertex other than a doc
-   parts :: Labelling String
-   parts = Map.insert (fst out) "Output" $ Map.union
-      (ιs <#> \(_ × d) -> "Intermediate" <> foldMap (\d' -> " " <> prettyP (get d' graph.vals)) d)
-      (Map.fromFoldable (D.toArrayWithKey (\x (p × _) -> p × ("Input " <> prettyP (Str x))) ins))
+   names :: Labelling String
+   names = Map.insert (fst out) str.output $ Map.union
+      (ιs <#> \(_ × d) -> str.intermediate <> foldMap (\d' -> " " <> prettyP (get d' graph.vals)) d)
+      (Map.fromFoldable (D.toArrayWithKey (\x (p × _) -> p × (str.input <> " " <> prettyP (Str x))) ins))
 
    labelling :: forall a b. (a -> b) -> Labelling a -> Array (Int × b)
    labelling f = Map.toUnfoldable >>> map (bimap (\(Deriv p) -> p) f)
@@ -177,8 +177,8 @@ encodeVal (Val _ u) = case u of
    Opaque q -> pure (tagged "opaque" (fromString (dottedName q)))
    Module q -> pure (tagged "module" (fromString (dottedName q)))
    Unbound -> pure (tagged "unbound" jsonNull)
-   Fun _ -> unsupported "function"
-   TypeAlias _ _ -> unsupported "type alias"
+   Fun _ -> unsupported "Function"
+   TypeAlias _ _ -> unsupported "Type alias"
    where
    unsupported :: String -> MayFail Json
    unsupported = Left

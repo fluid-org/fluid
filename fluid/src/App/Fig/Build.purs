@@ -3,7 +3,7 @@ module App.Fig.Build where
 import Prelude
 
 import App.Fig (figure)
-import App.Fig.Graph (FigGraph)
+import App.Fig.Graph (FigGraph, str)
 import App.Util.Selector (eachElement, envVal, field, none, select, sel𝔹, valOf, (>.>))
 import App.View.Util (Fig, Filter, Options)
 import Classes (class HasClasses)
@@ -24,7 +24,7 @@ import Foreign.Object as Object
 import Literal (Literal(..))
 import Module (prepConfig, throwParseFailure)
 import Pretty (prettyP)
-import Util (isEmpty, quoted, throw, (×))
+import Util (isEmpty, throw, (×))
 import Util.Map (get)
 import Util.Set ((∈))
 import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, withDoc)
@@ -56,9 +56,10 @@ figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
       leaves = Map.filterKeys (\p -> p /= root && isEmpty (get p graph.edges)) g.docs
    named :: Array _ <- for (Map.toUnfoldable leaves) \(p × d) -> case valAt g d of
       Val _ (Lit (Str x)) -> pure (x × (p × Nothing))
-      v -> throw ("Doc " <> prettyP v <> " of an input is not a string")
+      v -> throw ("Doc " <> prettyP v <> " of " <> str.input <> " is not a string")
    let names = fst <$> named
-   for_ (A.head (A.difference names (A.nub names))) \x -> throw ("Two inputs documented as " <> quoted x)
+   for_ (A.head (A.difference names (A.nub names))) \x ->
+      throw ("More than one " <> str.input <> " documented as " <> prettyP (Str x))
    let
       ins = D.fromFoldable named
       shown = Set.insert root (Map.keys leaves)
