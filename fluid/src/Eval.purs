@@ -43,7 +43,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, constructed, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, constructed, project, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -139,7 +139,7 @@ eval = { stmt, apply }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
    expr inputs = case _ of
-      Var x -> deliver inputs.ctrl (get x inputs.env)
+      Var x -> project inputs.ctrl (get x inputs.env)
       Lit ℓ -> construct inputs.ctrl (constant (Val unit (V.Lit ℓ)))
       Dictionary ees -> do
          kvs <- for ees \(Pair e e') -> dictEntry inputs e e'
@@ -191,7 +191,7 @@ eval = { stmt, apply }
          case v.val of
             Val _ (V.Obj c xvs) -> do
                i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-               deliver (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v }
+               project (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v }
             _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
       Subscript e e' -> do
          v@{ val: Val _ u } <- gval <$> expr inputs e
@@ -216,12 +216,12 @@ eval = { stmt, apply }
          where
          subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (Deriv × Raw Val)
          subscript v v' proj ctrl =
-            deliver (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v }
+            project (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v }
       ModMember q x -> do
          { modules } <- moduleStore
          let ρ_q = definitely' (loadedEnv (get q modules))
          p <- withMsg "Module member" $ lookup' x ρ_q
-         gvalAt p >>= deliver inputs.ctrl
+         gvalAt p >>= project inputs.ctrl
       App e es -> do
          f <- gval <$> expr inputs e
          vs <- traverse (expr inputs >>> map gval) es
@@ -230,11 +230,11 @@ eval = { stmt, apply }
          v <- gval <$> expr inputs e
          v' <- gval <$> expr inputs e'
          u <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v.val v'.val) <#> fst
-         deliver inputs.ctrl { val: Val unit u, inEdges: lift2 (\x y -> definitelyRight (binopRel op x y)) v.inEdges v'.inEdges }
+         project inputs.ctrl { val: Val unit u, inEdges: lift2 (\x y -> definitelyRight (binopRel op x y)) v.inEdges v'.inEdges }
       UnOp op e -> do
          v <- gval <$> expr inputs e
          u <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v.val) <#> fst
-         deliver inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v }
+         project inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v }
       And e e' -> do
          { holds, ctrl, value } <- condition inputs e
          if holds then expr (inputs { ctrl = ctrl }) e' else pure value

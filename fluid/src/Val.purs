@@ -224,9 +224,9 @@ constructed ctrl = withCtrl ctrl \(Val _ u) -> Val one (zeros u)
 record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
 record { val: v, inEdges } = derivWith v inEdges <#> (_ × v)
 
--- Value delivered rather than constructed: every position depends on control at weight c.
-deliver :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
-deliver ctrl v = record (withCtrl ctrl unitSection v)
+-- Record v as a projected value, with dependence on ctrl at every position
+project :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
+project ctrl v = record (withCtrl ctrl unitSection v)
 
 construct :: forall m s. MonadState (DepGraph Val s) m => DepSemiring s => Ctrl s -> GVal s -> m (Dep.Deriv × Raw Val)
 construct ctrl v = record (constructed ctrl v)
@@ -287,7 +287,7 @@ type DepOp =
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g ctrl vs = deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
+fromRel g ctrl vs = project ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs }
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp

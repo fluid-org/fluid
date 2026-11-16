@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, project, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -332,8 +332,8 @@ foldl_with_index =
    where
    depOp :: DepOp
    depOp ctrl (g : v : d : Nil) = do
-      f <- gval <$> deliver ctrl g
-      r <- deliver ctrl v
+      f <- gval <$> project ctrl g
+      r <- project ctrl v
       foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
       where
       step f acc (k × _) = eval.apply ctrl f (key : gval acc : entryValue k d : Nil)
@@ -365,7 +365,7 @@ dict_intersectionWith =
    where
    depOp :: DepOp
    depOp ctrl (g : d1 : d2 : Nil) = do
-      f <- gval <$> deliver ctrl g
+      f <- gval <$> project ctrl g
       results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (Dict.toUnfoldable (dictEntries d1.val))) \(k × _) -> do
          r <- eval.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil)
          pure (k × gval r)
@@ -378,7 +378,7 @@ dict_map =
    where
    depOp :: DepOp
    depOp ctrl (g : d : Nil) = do
-      f <- gval <$> deliver ctrl g
+      f <- gval <$> project ctrl g
       results <- for (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val))) \(k × _) -> do
          r <- eval.apply ctrl f (singleton (entryValue k d))
          pure (k × gval r)
