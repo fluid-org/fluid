@@ -11,6 +11,7 @@ import Bind (dottedName, pathName, varName)
 import Data.List.NonEmpty (snoc)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldM, for_, intercalate)
+import Data.Functor.Coproduct (left)
 import Data.List (List(..), catMaybes, elem, filter, mapMaybe, reverse, takeWhile, (:))
 import Data.List as List
 import Data.List.NonEmpty as NEL
@@ -39,7 +40,7 @@ import SExpr as S
 import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
-import Val (class HasModuleStore, ModuleState(..), modifyModuleStore, Env(..))
+import Val (class HasModuleStore, Env(..), ModuleState(..), modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
@@ -98,7 +99,7 @@ loadTopLevel
    -> m (Dict Deriv)
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
-      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse deriv ρ) predefined
+      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse (left >>> deriv) ρ) predefined
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers

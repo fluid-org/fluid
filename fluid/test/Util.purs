@@ -19,8 +19,8 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval (Eval, documentedAs, evalProgram, visible)
-import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
+import Eval (Eval, documentedAs, evalProgram, visibleGraph)
+import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, selected)
 import File (class MonadLoad, File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig, throwParseFailure)
@@ -30,7 +30,7 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
-import Val (class HasModuleStore, Val, moduleStore, val, withDoc)
+import Val (class HasModuleStore, Label, Val, ValWithDoc(..), moduleStore, val, valAt)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -59,7 +59,8 @@ testProperties
 testProperties { e, inputs, classes } expect = do
    eval@{ g, root } <- benchmark "Dep" \_ ->
       evalProgram inputs classes e
-   withMsg "fwd_expect" $ checkPretty expect (prettyP (val g.vals (withDoc g root)))
+   withMsg "fwd_expect" $
+      checkPretty expect (prettyP (ValWithDoc { val: valAt g root, doc: valAt g <$> Map.lookup root g.docs }))
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
@@ -88,7 +89,7 @@ depName file = case _ of
       Doc vertex -> "doc of " <> name vertex
 
 -- depGraph holds the vertices created by loading the modules, before the program ran.
-deriv :: forall s. DepGraph Val s -> Eval -> VertexSpec -> Deriv
+deriv :: forall s. DepGraph Label s -> Eval -> VertexSpec -> Deriv
 deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
    Output -> root
    Input x -> case documentedAs g x of
@@ -110,7 +111,7 @@ showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
 
 selection
    :: forall s
-    . DepGraph Val s
+    . DepGraph Label s
    -> Eval
    -> VertexSpec
    -> (ObjArg -> Selector Val)
@@ -127,10 +128,10 @@ testDep file query = do
    { depGraph } <- moduleStore
    eval <- evalProgram inputs classes e
    let
-      visibleGraph = materialise eval.g (visible eval)
+      graph = visibleGraph eval
       deps × expect = case query of
-         Bwd vertex δv expect' -> bwd visibleGraph (selection depGraph eval vertex δv) × expect'
-         Fwd vertex δv expect' -> fwd visibleGraph (selection depGraph eval vertex δv) × expect'
+         Bwd vertex δv expect' -> bwd graph (selection depGraph eval vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd graph (selection depGraph eval vertex δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.

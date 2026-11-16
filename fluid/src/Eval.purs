@@ -3,6 +3,7 @@ module Eval where
 import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon, varThis)
+import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.State (runStateT)
@@ -10,6 +11,7 @@ import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (elem, fold, foldM, foldl, sum)
 import Data.Functor.Compose (Compose(..))
+import Data.Functor.Coproduct (left)
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
@@ -23,14 +25,14 @@ import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
-import Data.Tuple (fst, snd)
+import Data.Tuple (fst, snd, uncurry)
 import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Deriv, Pos, attachDoc, deriv, valAt)
+import DepGraph (DepGraph, Deriv, Pos, VisibleGraph, attachDoc, deriv, materialise)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -43,24 +45,29 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), binding, bindings, closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, valAt, value, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
-data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Ctrl s)
+-- Inputs after a statement which introduces ρ and ctrl
+after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
+after inputs ρ ctrl = { env: inputs.env <+> ρ, ctrl: fromMaybe inputs.ctrl ctrl }
+
+-- Returned value, or the bindings and control position introduced
+data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Maybe (Ctrl s))
 
 asReturns :: forall s. Result s -> Deriv × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
-asAssigns :: forall s. Result s -> Dict (GVal s) × Ctrl s
+asAssigns :: forall s. Result s -> Dict (GVal s) × Maybe (Ctrl s)
 asAssigns (Assigns ρ ctrl) = ρ × ctrl
 asAssigns (Returns _) = error "Assigns expected"
 
--- assigns ρ' ▷ r
-override :: forall s. Dict (GVal s) -> Result s -> Result s
-override ρ' (Assigns ρ'' ctrl) = Assigns (ρ' <+> ρ'') ctrl
-override _ r = r
+-- Result r of a statement evaluated after ρ and ctrl are introduced
+override :: forall s. Dict (GVal s) -> Maybe (Ctrl s) -> Result s -> Result s
+override ρ ctrl (Assigns ρ' ctrl') = Assigns (ρ <+> ρ') (ctrl' <|> ctrl)
+override _ _ r = r
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
@@ -96,19 +103,25 @@ matchesMany classes (v : vs) (p : ps) = case matches classes v p of
       Just ρ' × ctrls' -> Just (ρ `unionWith_never` ρ') × (ctrls <> ctrls')
 matchesMany _ _ _ = error absurd
 
--- Bindings of the first case whose pattern matches, with the control input afterwards: the positions inspected
--- by the cases tried, or unchanged if nothing is inspected.
-dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> GVal s -> Ctrl s -> Maybe (Dict (GVal s) × b) × Ctrl s
-dispatch _ Nil _ ctrl = Nothing × ctrl
-dispatch classes ((p × b) : cases) v ctrl = case matches classes v p of
-   Just ρ × Nil -> Just (ρ × b) × ctrl
-   Just ρ × ctrls -> Just (ρ × b) × fold ctrls
-   Nothing × ctrls -> second (fold ctrls <> _) (dispatch classes cases v mempty)
+-- Bindings of the first matching case, with the control position introduced if the cases tried inspect any
+-- position
+dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> GVal s -> Maybe (Dict (GVal s) × b) × Maybe (Ctrl s)
+dispatch classes cases v = second introduced (go cases)
+   where
+   go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List (Ctrl s)
+   go Nil = Nothing × Nil
+   go ((p × b) : cases') = case matches classes v p of
+      Just ρ × ctrls -> Just (ρ × b) × ctrls
+      Nothing × ctrls -> second (ctrls <> _) (go cases')
+
+   introduced :: List (Ctrl s) -> Maybe (Ctrl s)
+   introduced Nil = Nothing
+   introduced ctrls = Just (fold ctrls)
 
 -- dispatch on a single pattern, which must match.
-destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> GVal s -> Ctrl s -> m (Dict (GVal s) × Ctrl s)
-destructure classes p v ctrl = case dispatch classes (singleton (p × unit)) v ctrl of
-   Just (ρ × _) × ctrl' -> pure (ρ × ctrl')
+destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> GVal s -> m (Dict (GVal s) × Maybe (Ctrl s))
+destructure classes p v = case dispatch classes (singleton (p × unit)) v of
+   Just (ρ × _) × ctrl -> pure (ρ × ctrl)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
 closure :: forall s. Semiring s => Dict (GVal s) -> Dict Def -> Def -> GVal s
@@ -282,21 +295,20 @@ eval = { stmt, program, apply }
       classes <- askClasses
       fold <$> for (L.take n (L.range 0 n)) \i -> do
          let u = { val: element i v.val, inEdges: via (element i) v }
-         case dispatch classes (singleton (p × unit)) u mempty of
-            Nothing × ctrl -> pure (Nil × (via lengthDep v <> ctrl))
-            Just (ρ' × _) × ctrl -> qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> ctrl }) gs
+         case dispatch classes (singleton (p × unit)) u of
+            Nothing × ctrl -> pure (Nil × (via lengthDep v <> fold ctrl))
+            Just (ρ' × _) × ctrl ->
+               qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs
    qualifiers inputs (Decl p e : gs) = do
       v <- gval <$> expr inputs e
       classes <- askClasses
-      ρ' × ctrl <- destructure classes p v inputs.ctrl
-      qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) gs
+      ρ' × ctrl <- destructure classes p v
+      qualifiers (after inputs ρ' ctrl) gs
 
    stmt :: Inputs s -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
       Returns r -> Returns <$> record (gval r)
-      Assigns ρ ctrl -> do
-         v <- gval <$> record (bindings ρ ctrl)
-         pure (Assigns (mapWithKey (\x { val } -> { val, inEdges: via (binding x) v }) ρ) (via root v))
+      Assigns ρ ctrl -> uncurry Assigns <$> introduce ρ ctrl
 
    -- Result of a statement in terms of inputs and the vertices of the premises
    result :: Inputs s -> Stmt -> m (Result s)
@@ -304,28 +316,29 @@ eval = { stmt, program, apply }
       Return e -> Returns <$> expr inputs e
       If bs s_opt -> go (NEL.toList bs) inputs.ctrl
          where
-         go Nil ctrl = maybe (pure (Assigns empty ctrl)) (stmt (inputs { ctrl = ctrl })) s_opt
+         go Nil ctrl = maybe (pure (Assigns empty (Just ctrl))) (branch ctrl) s_opt
          go (Branch e s' : bs') ctrl = do
             { holds, ctrl: ctrl' } <- condition (inputs { ctrl = ctrl }) e
-            if holds then stmt (inputs { ctrl = ctrl' }) s' else go bs' ctrl'
+            if holds then branch ctrl' s' else go bs' ctrl'
+
+         branch ctrl s' = override empty (Just ctrl) <$> stmt (inputs { ctrl = ctrl }) s'
       Match e bs -> do
          v <- gval <$> expr inputs e
          classes <- askClasses
-         case dispatch classes (NEL.toList bs) v inputs.ctrl of
+         case dispatch classes (NEL.toList bs) v of
             Nothing × ctrl -> pure (Assigns empty ctrl)
-            Just (ρ' × s') × ctrl -> override ρ' <$> stmt (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) s'
-      Declare _ -> pure (Assigns empty inputs.ctrl)
+            Just (ρ' × s') × ctrl -> override ρ' ctrl <$> stmt (after inputs ρ' ctrl) s'
+      Declare _ -> pure (Assigns empty Nothing)
       Assign p e -> do
          v <- gval <$> expr inputs e
          classes <- askClasses
-         ρ' × ctrl <- destructure classes p v inputs.ctrl
-         pure (Assigns ρ' ctrl)
-      DefRegion ds -> pure (Assigns (closeDefs inputs ds) inputs.ctrl)
-      Pass -> pure (Assigns empty inputs.ctrl)
-      ExprStmt e -> expr inputs e $> Assigns empty inputs.ctrl
+         uncurry Assigns <$> destructure classes p v
+      DefRegion ds -> pure (Assigns (closeDefs inputs ds) Nothing)
+      Pass -> pure (Assigns empty Nothing)
+      ExprStmt e -> expr inputs e $> Assigns empty Nothing
       Assert e e_opt -> do
          { holds, ctrl } <- condition inputs e
-         if holds then pure (Assigns empty ctrl)
+         if holds then pure (Assigns empty (Just ctrl))
          else case e_opt of
             Nothing -> throw "AssertionError"
             Just e' -> do
@@ -333,25 +346,25 @@ eval = { stmt, program, apply }
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
       Dataclass c -> do
          let v = construct inputs.ctrl (constant (Val unit (V.Fun (V.Type (T.ClassTy c Nil)))))
-         pure (Assigns (maplet (last c) v) inputs.ctrl)
+         pure (Assigns (maplet (last c) v) Nothing)
       TypeAlias x αs τ -> do
          let v = construct inputs.ctrl (constant (Val unit (V.TypeAlias αs τ)))
-         pure (Assigns (maplet x v) inputs.ctrl)
-      s@(Seq _ _) -> block inputs empty (NEL.toList (statements s))
+         pure (Assigns (maplet x v) Nothing)
+      s@(Seq _ _) -> block inputs empty Nothing (NEL.toList (statements s))
 
-   -- Result of statements in sequence, as a single rule; ρ the bindings so far
-   block :: Inputs s -> Dict (GVal s) -> List Stmt -> m (Result s)
-   block inputs ρ Nil = pure (Assigns ρ inputs.ctrl)
-   block inputs ρ (s : ss) = stmt inputs s >>= case _ of
+   -- Result of statements in sequence under a single rule; ρ and ctrl are introduced by earlier statements
+   block :: Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> List Stmt -> m (Result s)
+   block _ ρ ctrl Nil = pure (Assigns ρ ctrl)
+   block inputs ρ ctrl (s : ss) = stmt inputs s >>= case _ of
       Returns r -> pure (Returns r)
-      Assigns ρ' ctrl -> block (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) (ρ <+> ρ') ss
+      Assigns ρ' ctrl' -> block (after inputs ρ' ctrl') (ρ <+> ρ') (ctrl' <|> ctrl) ss
 
    -- Value of a top-level program at the vertex of its trailing expression, if any
    program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
    program inputs s = case unsnoc (statements s) of
-      { init, last: Return e } -> block inputs empty init >>= case _ of
+      { init, last: Return e } -> block inputs empty Nothing init >>= case _ of
          Returns r -> pure r
-         Assigns ρ ctrl -> expr (inputs { env = inputs.env <+> ρ, ctrl = ctrl }) e
+         Assigns ρ ctrl -> expr (after inputs ρ ctrl) e
       _ -> asReturns <$> stmt inputs s
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
@@ -416,7 +429,7 @@ evalModule ρ0 q (Module ιs s) = do
    ρ <- traverse gvalAt ρ_imp
    ρ' × _ <- asAssigns <$> eval.stmt { ctrl: mempty, env: ρ } s
    let xs = L.fromFoldable (assigns s)
-   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Val unit V.Unbound))) xs
+   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (left (Val unit V.Unbound)))) xs
    members <- traverse (record >>> map fst) ρ'
    pure (ρ_subMods <+> ρ_unbound <+> members)
 
@@ -452,7 +465,7 @@ evalImport enclosing ρ = case _ of
          pure (ρ' <+> maplet x (get x ρ_q))
 
 moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
-moduleVal q = deriv (Val unit (V.Module q))
+moduleVal q = deriv (left (Val unit (V.Module q)))
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)
@@ -476,7 +489,7 @@ load q = do
    loaded ρ_q = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules }) $> ρ_q
 
 type Eval =
-   { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
+   { g :: DepGraph Label (Lineage (Deriv × Pos) DepKind)
    , root :: Deriv
    }
 
@@ -484,8 +497,14 @@ type Eval =
 visible :: Eval -> Set Deriv
 visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
 
+-- Graph of the visible vertices, which are labelled by values
+visibleGraph :: Eval -> VisibleGraph Val DepKind
+visibleGraph r = graph { vals = value <$> graph.vals }
+   where
+   graph = materialise r.g (visible r)
+
 -- Vertices documented with the name x.
-documentedAs :: forall s. DepGraph Val s -> String -> Array Deriv
+documentedAs :: forall s. DepGraph Label s -> String -> Array Deriv
 documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val unit (V.Lit (Str x))) g.docs))
 
 evalProgram

@@ -16,7 +16,9 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
+import Data.Either (Either(..))
 import Data.Functor.Compose (Compose(..))
+import Data.Functor.Coproduct (Coproduct(..), left, right)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -25,21 +27,21 @@ import Data.Set (Set)
 import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
 import Data.Tuple (snd)
-import Data.Traversable (class Traversable, sequenceDefault, traverse)
+import Data.Traversable (class Traversable, sequence, sequenceDefault, traverse)
 import Dict (Dict)
 import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, plus, scale, valAt, zeros)
-import DepGraph (Deriv, Pos) as Dep
+import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, plus, scale, zeros)
+import DepGraph (Deriv, Pos, valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
-import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
+import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
 data Val a = Val a (BaseVal a)
@@ -66,10 +68,29 @@ data BaseVal a
    | Module ModuleName
    | Unbound
    | TypeAlias (List Var) T.Type
-   | Bindings (Env a) -- extension of environment by a statement; root is control input for later statements
 
 root :: forall a. Val a -> a
 root (Val α _) = α
+
+-- Control position and bindings introduced by an assigning statement
+data Introduced a = Introduced (Maybe a) (Env a)
+
+ctrlPosition :: forall a. Introduced a -> a
+ctrlPosition (Introduced α _) = definitely' α
+
+binding :: forall a. Var -> Introduced a -> Val a
+binding x (Introduced _ (Env ρ)) = get x ρ
+
+-- Label of a vertex; library coproduct because V8 pretenures a constructor specific to labels, doubling memory
+type Label = Coproduct Val Introduced
+
+value :: forall a. Label a -> Val a
+value (Coproduct (Left v)) = v
+value _ = error absurd
+
+introduced :: forall a. Label a -> Introduced a
+introduced (Coproduct (Right ρ)) = ρ
+introduced _ = error absurd
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
@@ -77,7 +98,6 @@ overChildren _ (Opaque q) = Opaque q
 overChildren _ (Module q) = Module q
 overChildren _ Unbound = Unbound
 overChildren _ (TypeAlias αs τ) = TypeAlias αs τ
-overChildren f (Bindings (Env ρ)) = Bindings (Env (f <$> ρ))
 overChildren f (Obj c xvs) = Obj c (map f <$> xvs)
 overChildren f (List vs) = List (f <$> vs)
 overChildren f (Tuple vs) = Tuple (f <$> vs)
@@ -126,7 +146,7 @@ loadedEnv (Loaded ρ) = Just ρ
 
 type ModuleStore =
    { modules :: Map ModuleName ModuleState
-   , depGraph :: DepGraph Val (Lineage (Dep.Deriv × Dep.Pos) DepKind)
+   , depGraph :: DepGraph Label (Lineage (Dep.Deriv × Dep.Pos) DepKind)
    }
 
 emptyModuleStore :: ModuleStore
@@ -153,9 +173,9 @@ instance (Monad m, HasModuleStore m, Monoid w) => HasModuleStore (WriterT w m) w
    modifyModuleStore = lift <<< modifyModuleStore
 
 -- Value together with its dependence on values already in the graph.
-type GVal s = { val :: Raw Val, inEdges :: InEdges Val s (Val s) }
+type GVal s = { val :: Raw Val, inEdges :: InEdges Label s (Val s) }
 -- Dependence of the control input on values already in the graph.
-type Ctrl s = InEdges Val s s
+type Ctrl s = InEdges Label s s
 
 -- Weight 1 at every position except beneath the root of a closure.
 unitSection :: forall a s. Semiring s => Val a -> Val s
@@ -171,10 +191,9 @@ unitSection (Val _ u) = Val one case u of
    Module q -> Module q
    Unbound -> Unbound
    TypeAlias αs τ -> TypeAlias αs τ
-   Bindings (Env ρ) -> Bindings (Env (unitSection <$> ρ))
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = { val: v, inEdges: at p }
+gval (p × v) = { val: v, inEdges: value <$> at p }
 
 -- Value with no dependence.
 constant :: forall s. Semiring s => Raw Val -> GVal s
@@ -200,16 +219,20 @@ unval (p × d) (ValWithDoc { val: v, doc }) = Map.fromFoldable (A.cons (p × v) 
 unvals :: forall a. Dict DerivWithDoc -> EnvWithDocs a -> Labelling (Val a)
 unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 
+-- Value at the vertex of an expression or returning statement
+valAt :: forall s. DepGraph Label s -> Dep.Deriv -> Raw Val
+valAt g p = value (Dep.valAt g p)
+
 -- Value of a derivation already in the graph.
-gvalAt :: forall m s. MonadState (DepGraph Val s) m => Dep.Deriv -> m (GVal s)
+gvalAt :: forall m s. MonadState (DepGraph Label s) m => Dep.Deriv -> m (GVal s)
 gvalAt p = gets \g -> gval (p × valAt g p)
 
 -- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s b. (Val s -> b) -> GVal s -> InEdges Val s b
+via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
 via r v = r <$> v.inEdges
 
 -- Dependence on values already in the graph of a value that depends on vs by r.
-viaAll :: forall t s. Traversable t => (t (Val s) -> Val s) -> t (GVal s) -> InEdges Val s (Val s)
+viaAll :: forall t s. Traversable t => (t (Val s) -> Val s) -> t (GVal s) -> InEdges Label s (Val s)
 viaAll r vs = r <$> traverse _.inEdges vs
 
 -- Control edge from β to the whole of v
@@ -223,15 +246,21 @@ construct ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
 
--- Extension of environment by ρ, with ctrl the control input for later statements
-bindings :: forall s. Dict (GVal s) -> Ctrl s -> GVal s
-bindings ρ ctrl =
-   { val: Val unit (Bindings (Env (_.val <$> ρ)))
-   , inEdges: lift2 (\c ρ' -> Val c (Bindings (Env ρ'))) ctrl (traverse _.inEdges ρ)
-   }
+record :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
+record { val: v, inEdges } = derivWith (left v) (left <$> inEdges) <#> (_ × v)
 
-record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, inEdges } = derivWith v inEdges <#> (_ × v)
+-- Bindings ρ and control position ctrl in terms of a new vertex which has ρ and ctrl as label
+introduce
+   :: forall m s
+    . MonadState (DepGraph Label s) m
+   => Dict (GVal s)
+   -> Maybe (Ctrl s)
+   -> m (Dict (GVal s) × Maybe (Ctrl s))
+introduce ρ ctrl = do
+   p <- derivWith (right (Introduced (void ctrl) (Env (_.val <$> ρ))))
+      (right <$> lift2 Introduced (sequence ctrl) (Env <$> traverse _.inEdges ρ))
+   let r = introduced <$> at p
+   pure (mapWithKey (\x v -> v { inEdges = binding x <$> r }) ρ × (ctrl $> (ctrlPosition <$> r)))
 
 constructWith
    :: forall t s
@@ -257,7 +286,7 @@ class
    ( HasClasses m
    , HasModuleStore m
    , MonadLoad m
-   , MonadState (DepGraph Val s) m
+   , MonadState (DepGraph Label s) m
    , DepSemiring s
    ) <=
    MonadEval s m
@@ -267,7 +296,7 @@ instance
    ( HasClasses m
    , HasModuleStore m
    , MonadLoad m
-   , MonadState (DepGraph Val s) m
+   , MonadState (DepGraph Label s) m
    , DepSemiring s
    ) =>
    MonadEval s m
@@ -415,10 +444,6 @@ partialArg :: forall a. Int -> Val a -> Val a
 partialArg i (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 partialArg _ _ = error absurd
 
-binding :: forall a. Var -> Val a -> Val a
-binding x (Val _ (Bindings (Env ρ))) = get x ρ
-binding _ _ = error absurd
-
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
    MatrixRep (vss' × h × w)
@@ -453,14 +478,17 @@ derive instance Functor ValWithDoc
 derive instance Functor EnvWithDocs
 derive instance Functor Fun
 derive instance Functor BaseVal
+derive instance Functor Introduced
 derive instance Traversable Val
 derive instance Traversable BaseVal
+derive instance Traversable Introduced
 derive instance Traversable Fun
 derive instance Traversable Env
 derive instance Traversable ValWithDoc
 derive instance Traversable EnvWithDocs
 derive instance Foldable Val
 derive instance Foldable BaseVal
+derive instance Foldable Introduced
 derive instance Foldable Fun
 derive instance Foldable Env
 derive instance Foldable ValWithDoc
@@ -487,7 +515,6 @@ instance Apply BaseVal where
    apply (Module q) (Module q') = Module (q ≜ q')
    apply Unbound Unbound = Unbound
    apply (TypeAlias αs τ) (TypeAlias αs' τ') = TypeAlias (αs ≜ αs') (τ ≜ τ')
-   apply (Bindings fρ) (Bindings ρ) = Bindings (fρ <*> ρ)
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where

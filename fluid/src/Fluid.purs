@@ -44,7 +44,7 @@ import Pretty (prettyP)
 import Expr (Module) as E
 import SExpr (Import(..)) as S
 import Util (type (×), orElse, orThrow, withMsg, (×))
-import DepGraph (valAt)
+import Val (valAt)
 
 type FileArgs =
    { local :: Boolean

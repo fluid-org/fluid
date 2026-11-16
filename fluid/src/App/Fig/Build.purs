@@ -15,9 +15,9 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (fst)
-import DepGraph (materialise, selected, valAt)
+import DepGraph (selected)
 import Dict (fromFoldable) as D
-import Eval (evalProgram, visible)
+import Eval (evalProgram, visibleGraph)
 import File (class MonadLoad, Folder(..))
 import Foreign.Object (Object)
 import Foreign.Object as Object
@@ -27,7 +27,7 @@ import Pretty (prettyP)
 import Util (isEmpty, throw, (×))
 import Util.Map (get)
 import Util.Set ((∈))
-import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, withDoc)
+import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, valAt, withDoc)
 
 -- Options in the form decoded from JSON; delete once the options are decoded directly
 type JsonOptions =
@@ -52,7 +52,7 @@ figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, root } <- evalProgram config.inputs config.classes config.e
    let
-      graph = materialise g (visible eval)
+      graph = visibleGraph eval
       leaves = Map.filterKeys (\p -> p /= root && isEmpty (get p graph.edges)) g.docs
    named :: Array _ <- for (Map.toUnfoldable leaves) \(p × d) -> case valAt g d of
       Val _ (Lit (Str x)) -> pure (x × (p × Nothing))

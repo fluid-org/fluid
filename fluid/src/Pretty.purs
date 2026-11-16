@@ -434,7 +434,6 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Module q) = text ("<module " <> dottedName q <> ">")
    pretty V.Unbound = text "<unbound>"
    pretty (V.TypeAlias αs τ) = text "<type alias" <> typeArgs αs <+> pretty τ <> text ">"
-   pretty (V.Bindings ρ) = pretty ρ
 
 instance Highlightable a => Pretty (Fun a) where
    pretty (V.Closure _ _ _) = text "cl"
