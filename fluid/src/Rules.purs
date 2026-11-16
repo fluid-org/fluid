@@ -7,6 +7,7 @@ import Data.Foldable (class Foldable, foldMap)
 import Data.List (List(..), (:), fromFoldable)
 import Data.Maybe (Maybe(..))
 import Data.Traversable (class Traversable)
+import Dict (Dict)
 import Expr (Binop, Def, Expr, Qualifier, Unop)
 import Literal (Literal)
 import Util.Pair (Pair(..))
@@ -28,9 +29,9 @@ data Rule v a
    --key/value premises in source order
    | DictLiteral (List (Pair a))
    --retain source key, value exprs and qualifiers list
-   | DictComp Expr Expr (List Qualifier) (QualifierRun a (Pair a))
+   | DictComp Expr Expr (List Qualifier) (QualifierRun a (CompYield v (Pair a)))
    --retain source syntax in case some bodies or qualifier suffixes never ran
-   | ListComp Expr (List Qualifier) (QualifierRun a a)
+   | ListComp Expr (List Qualifier) (QualifierRun a (CompYield v a))
    | Lambda Def
    | Application a (List a) a --function closure, args, callee
    | PartialApplication a (List a)
@@ -44,7 +45,7 @@ data Rule v a
 --comprehensions execute in two phases:
 --1. qualifiers evaluate generator sources, guards and decls, producing a tree QualifierRun Deriv (Inputs s)
 --        where type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
---2. evaluate the source body at each Yield, replacing each Inputs s with a Deriv
+--2. evaluate each body and retain its qualifier bindings and premise references
 
 --q marks qualifier expression premises; b marks successful body positions
 --Nothing means the generator pattern did not match
@@ -55,6 +56,9 @@ data QualifierRun q b
    | GuardFailed q
    | DeclRun q (QualifierRun q b)
    | Yield b
+
+--bindings are metadata for the yield display, only body contains premises
+type CompYield v b = { bindings :: Dict v, body :: b }
 
 --with q fixed, ordinary traversal visits only the body positions
 derive instance Functor (QualifierRun q)
@@ -77,8 +81,8 @@ premises = case _ of
    ListLiteral children -> children
    TupleLiteral children -> children
    DictLiteral entries -> foldMap (\(Pair k v) -> k : v : Nil) entries
-   DictComp _ _ _ run -> compQualifierPremises run <> foldMap (\(Pair key value) -> key : value : Nil) (compBodyPremises run)
-   ListComp _ _ run -> compQualifierPremises run <> compBodyPremises run
+   DictComp _ _ _ run -> compQualifierPremises run <> foldMap (\{ body: Pair k v } -> k : v : Nil) (compBodyPremises run)
+   ListComp _ _ run -> compQualifierPremises run <> map _.body (compBodyPremises run)
    Lambda _ -> Nil
    Application fun args callee -> fun : (args <> (callee : Nil))
    PartialApplication fun args -> fun : args

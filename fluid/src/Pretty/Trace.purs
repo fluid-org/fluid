@@ -4,74 +4,102 @@ import Prelude
 
 import Bind (dottedName)
 import Data.Array as Array
-import Data.Foldable (foldl)
+import Data.Foldable (foldr)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Map as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Data.String (joinWith)
 import Data.String.CodePoints as String
 import DepGraph (Deriv, valAt)
+import Dict as Dict
 import Eval (Eval)
 import Literal as Literal
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Rules as R
-import Util ((×))
+import Util (type (×), (×))
+import Util.Pair (Pair(..))
 import Util.Set (size)
 import Val (DictRep(..), ForeignOp(..), MatrixRep(..), Val(..))
 import Val as V
 
-type TraceRow =
-   { vertex :: String
-   , rule :: String
-   , value :: String
-   , premises :: String
-   }
+-- The tree is a display of the rule graph. Labels organise the children
+-- of rules whose premises have distinct roles.
+data TraceNode
+   = Vertex String Deriv
+   | Branch String (List TraceNode)
+
+type TracePosition = { linePrefix :: String, childPrefix :: String }
 
 renderTrace :: Eval -> String
 renderTrace { g, root } =
-   joinWith "\n"
-      ([ "root: " <> show root, "" ]
-         <> map formatRow ([ header ] <> rows)
-         <> [ "", "result: " <> valueSummary (valAt g root) ])
+   -- joinWith "\n" (Array.fromFoldable (List.reverse lines) <> [ "", "result: " <> valueSummary (valAt g root) ])
+   joinWith "\n" (Array.fromFoldable (List.reverse lines))
    where
-   header = { vertex: "vertex", rule: "rule", value: "value", premises: "premises" }
+   lines = render Set.empty (({ linePrefix: "", childPrefix: "" } × Vertex "" root) : Nil) Nil
 
-   vertices = Set.toUnfoldable (reachable Set.empty (root : Nil)) :: Array Deriv
-   rows = map row vertices
+   render :: Set.Set Deriv -> List (TracePosition × TraceNode) -> List String -> List String
+   render seen pending output = case pending of
+      Nil -> output
+      (position × Branch label children) : rest ->
+         render seen (positionChildren position.childPrefix children <> rest)
+            ((position.linePrefix <> label) : output)
+      (position × Vertex role p) : rest
+         | Set.member p seen ->
+              render seen rest ((position.linePrefix <> role <> "#" <> show p) : output)
+         | otherwise ->
+              let
+                 value = valAt g p
+                 rule = fromMaybe (R.valueRule value) (Map.lookup p g.rules)
+                 label = role <> "#" <> show p <> " " <> abbreviate 64 (ruleSummary rule)
+                    <> " -> " <> valueSummary value
+                 children = positionChildren position.childPrefix (traceChildren rule)
+              in render (Set.insert p seen) (children <> rest) ((position.linePrefix <> label) : output)
 
-   vertexWidth = foldl (\width r -> max width (String.length r.vertex)) (String.length header.vertex) rows
-   ruleWidth = foldl (\width r -> max width (String.length r.rule)) (String.length header.rule) rows
-   valueWidth = foldl (\width r -> max width (String.length r.value)) (String.length header.value) rows
+positionChildren :: String -> List TraceNode -> List (TracePosition × TraceNode)
+positionChildren prefix = foldr position Nil
+   where
+   position child Nil =
+      ({ linePrefix: prefix <> "└─ ", childPrefix: prefix <> "   " } × child) : Nil
+   position child siblings =
+      ({ linePrefix: prefix <> "├─ ", childPrefix: prefix <> "│  " } × child) : siblings
 
-   formatRow r =
-      padRight vertexWidth r.vertex <> "  "
-         <> padRight ruleWidth r.rule <> "  "
-         <> padRight valueWidth r.value <> "  "
-         <> r.premises
+traceChildren :: R.Rule (Val Unit) Deriv -> List TraceNode
+traceChildren = case _ of
+   R.ListComp _ _ run ->
+      qualifierTree (\body -> Vertex "body " body : Nil) run : Nil
+   R.DictComp _ _ _ run ->
+      qualifierTree (\(Pair key value) -> Vertex "key " key : Vertex "value " value : Nil) run : Nil
+   R.Application fun args callee ->
+      Vertex "function " fun : (map (Vertex "argument ") args <> (Vertex "callee " callee : Nil))
+   rule -> map (Vertex "") (R.premises rule)
 
-   ruleAt p = fromMaybe (R.valueRule (valAt g p)) (Map.lookup p g.rules)
-
-   reachable seen Nil = seen
-   reachable seen (p : pending)
-      | Set.member p seen = reachable seen pending
-      | otherwise = reachable (Set.insert p seen) (R.premises (ruleAt p) <> pending)
-
-   row :: Deriv -> TraceRow
-   row p =
-      let rule = ruleAt p
-      in
-         { vertex: show p
-         , rule: abbreviate 64 (ruleSummary rule)
-         , value: valueSummary (valAt g p)
-         , premises: show (Array.fromFoldable (R.premises rule))
-         }
-
-padRight :: Int -> String -> String
-padRight width value =
-   value <> joinWith "" (Array.replicate (width - String.length value) " ")
+-- Nesting shows which qualifier branch supplied each body. The body
+-- evaluations still run after the qualifier phase completes.
+qualifierTree
+   :: forall b
+    . (b -> List TraceNode)
+   -> R.QualifierRun Deriv (R.CompYield (Val Unit) b)
+   -> TraceNode
+qualifierTree bodyChildren = case _ of
+   R.GeneratorRun source branches ->
+      Branch "generator" (Vertex "source " source : mapWithIndex candidate branches)
+   R.GuardPassed condition rest ->
+      Branch "guard passed" (Vertex "condition " condition : qualifierTree bodyChildren rest : Nil)
+   R.GuardFailed condition ->
+      Branch "guard failed" (Vertex "condition " condition : Nil)
+   R.DeclRun init rest ->
+      Branch "declaration" (Vertex "initialiser " init : qualifierTree bodyChildren rest : Nil)
+   R.Yield { bindings, body } ->
+      let assignments = Dict.toArrayWithKey (\name value -> name <> " = " <> valueSummary value) bindings
+      in Branch ("yield {" <> joinWith ", " assignments <> "}") (bodyChildren body)
+   where
+   candidate index = case _ of
+      Nothing -> Branch ("candidate " <> show index <> " (pattern did not match)") Nil
+      Just run -> Branch ("candidate " <> show index) (qualifierTree bodyChildren run : Nil)
 
 -- Inspect only a small prefix; do not pretty-print an entire value and then
 -- truncate it. In particular, never descend into a function's environment.

@@ -29,7 +29,7 @@ import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, bv, fv)
 import File (class MonadLoad, withClasses)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
@@ -146,10 +146,10 @@ eval inputs = case _ of
       dictionary rule inputs.ctrl kvs
    DictComp e e' gs -> do
       stage1Run × ctrl <- qualifiers inputs gs
-      evalTraversed <- traverse (\inputs' -> evalEntry inputs' e e') stage1Run
+      evalTraversed <- traverse (evalYield (bv gs) (\inputs' -> evalEntry inputs' e e')) stage1Run
       let
-         stage2Run = map (\(_ × k × v) -> Pair (fst k) (fst v)) evalTraversed
-         kvs = map (\(s × k × v) -> s × gval k × gval v) (R.compBodyPremises evalTraversed)
+         stage2Run = map (\{ bindings, body: _ × k × v } -> { bindings, body: Pair (fst k) (fst v) }) evalTraversed
+         kvs = map (\{ body: s × k × v } -> s × gval k × gval v) (R.compBodyPremises evalTraversed)
       dictionary (R.DictComp e e' gs stage2Run) ctrl kvs
    List es -> do
       results <- traverse (eval inputs) es
@@ -167,13 +167,13 @@ eval inputs = case _ of
          (map gval results)
    ListComp e gs -> do
       stage1Run × ctrl <- qualifiers inputs gs
-      evalTraversed <- traverse (\inputs' -> eval inputs' e) stage1Run --R.QualifierRun Deriv (Deriv × Raw Val)
-      let stage2Run = map fst evalTraversed
+      evalTraversed <- traverse (evalYield (bv gs) (\inputs' -> eval inputs' e)) stage1Run
+      let stage2Run = map (\{ bindings, body } -> { bindings, body: fst body }) evalTraversed
       constructWith
          (R.ListComp e gs stage2Run)
          ctrl
          (A.fromFoldable >>> V.List)
-         (map gval (R.compBodyPremises evalTraversed)) --get Derivs out of leaves and turn into GVals 
+         (map (gval <<< _.body) (R.compBodyPremises evalTraversed))
    Constr c es -> do
       classes <- askClasses
       checkArity c (length es) classes
@@ -325,6 +325,12 @@ eval inputs = case _ of
       attachDoc (fst r) (fst doc)
       pure r
    where
+   evalYield :: forall b. Set String -> (Inputs s -> m b) -> Inputs s -> m (R.CompYield (Raw Val) b)
+   evalYield names evalBody bodyInputs = do
+      body <- evalBody bodyInputs
+      let bindings = map _.val (restrict names bodyInputs.env)
+      pure { bindings, body }
+
    evalEntry :: Inputs s -> Expr -> Expr -> m (String × (Deriv × Raw Val) × (Deriv × Raw Val))
    evalEntry inputs' e e' = do
       k <- eval inputs' e --Deriv node for key (must be string)
