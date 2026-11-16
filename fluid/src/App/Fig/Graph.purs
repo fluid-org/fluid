@@ -135,7 +135,6 @@ decodeDepKind 1 = Ctrl
 decodeDepKind 2 = Data
 decodeDepKind _ = error absurd
 
--- Collect field names by class from the objects within the given value
 classes :: Val Unit -> Classes
 classes (Val _ u) = case u of
    Obj c xvs -> insert (dottedName c) (A.fromFoldable (fst <$> xvs)) (unions (classes <<< snd <$> xvs))
