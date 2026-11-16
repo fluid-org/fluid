@@ -82,7 +82,7 @@ type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relat
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
-   , docs :: Labelling Deriv -- vertex ↦ vertex of its doc
+   , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
    , inEdges :: Labelling (InEdges f s (f s))
    }
 
@@ -134,19 +134,18 @@ materialise g visible =
       InEdges (_ × rel) = get p g.inEdges
       weights = rel weightsAt
 
-   -- Add weights at a vertex, then drop weights at each vertex with that vertex as last dependent
+   -- Add weights ws at p, then free weights at each vertex with p as last dependent
    retain :: Deriv -> f (Lineage (Deriv × Pos) s) -> Endo (Labelling (f (Lineage (Deriv × Pos) s)))
-   retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p sourcesEnding))
+   retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p byLastDependent))
 
-   -- Vertex ↦ last dependent, or the vertex itself in the absence of dependents
+   -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
    lastDependent :: Labelling Deriv
    lastDependent = foldlWithIndex dependent Map.empty g.inEdges
       where
       dependent p m (InEdges (qs × _)) = foldl (\m' q -> Map.insert q p m') (Map.insert p p m) qs
 
-   -- Vertex ↦ vertices with it as last dependent
-   sourcesEnding :: Labelling (List Deriv)
-   sourcesEnding = fromFoldableWith (<>) $
+   byLastDependent :: Labelling (List Deriv)
+   byLastDependent = fromFoldableWith (<>) $
       (Map.toUnfoldable lastDependent :: List _) <#> \(q × p) -> p × (q : Nil)
 
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.
