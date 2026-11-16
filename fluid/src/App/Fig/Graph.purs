@@ -178,6 +178,7 @@ encodeVal (Val _ u) = case u of
    Unbound -> pure (tagged "unbound" jsonNull)
    Fun _ -> unsupported "Function"
    TypeAlias _ _ -> unsupported "Type alias"
+   Bindings _ -> unsupported "Bindings"
    where
    unsupported :: String -> MayFail Json
    unsupported = Left

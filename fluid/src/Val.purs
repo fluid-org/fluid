@@ -66,6 +66,7 @@ data BaseVal a
    | Module ModuleName
    | Unbound
    | TypeAlias (List Var) T.Type
+   | Bindings (Env a) -- extension of environment by a statement; root is control input for later statements
 
 root :: forall a. Val a -> a
 root (Val α _) = α
@@ -76,6 +77,7 @@ overChildren _ (Opaque q) = Opaque q
 overChildren _ (Module q) = Module q
 overChildren _ Unbound = Unbound
 overChildren _ (TypeAlias αs τ) = TypeAlias αs τ
+overChildren f (Bindings (Env ρ)) = Bindings (Env (f <$> ρ))
 overChildren f (Obj c xvs) = Obj c (map f <$> xvs)
 overChildren f (List vs) = List (f <$> vs)
 overChildren f (Tuple vs) = Tuple (f <$> vs)
@@ -169,6 +171,7 @@ unitSection (Val _ u) = Val one case u of
    Module q -> Module q
    Unbound -> Unbound
    TypeAlias αs τ -> TypeAlias αs τ
+   Bindings (Env ρ) -> Bindings (Env (unitSection <$> ρ))
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: at p }
@@ -219,6 +222,13 @@ construct ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * 
 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
+
+-- Extension of environment by ρ, with ctrl the control input for later statements
+bindings :: forall s. Dict (GVal s) -> Ctrl s -> GVal s
+bindings ρ ctrl =
+   { val: Val unit (Bindings (Env (_.val <$> ρ)))
+   , inEdges: lift2 (\c ρ' -> Val c (Bindings (Env ρ'))) ctrl (traverse _.inEdges ρ)
+   }
 
 record :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m (Dep.Deriv × Raw Val)
 record { val: v, inEdges } = derivWith v inEdges <#> (_ × v)
@@ -405,6 +415,10 @@ partialArg :: forall a. Int -> Val a -> Val a
 partialArg i (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 partialArg _ _ = error absurd
 
+binding :: forall a. Var -> Val a -> Val a
+binding x (Val _ (Bindings (Env ρ))) = get x ρ
+binding _ _ = error absurd
+
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
    MatrixRep (vss' × h × w)
@@ -473,6 +487,7 @@ instance Apply BaseVal where
    apply (Module q) (Module q') = Module (q ≜ q')
    apply Unbound Unbound = Unbound
    apply (TypeAlias αs τ) (TypeAlias αs' τ') = TypeAlias (αs ≜ αs') (τ ≜ τ')
+   apply (Bindings fρ) (Bindings ρ) = Bindings (fρ <*> ρ)
    apply _ _ = shapeMismatch unit
 
 instance Apply Fun where

@@ -28,7 +28,7 @@ import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, chec
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (class MonadLoad, withClasses)
 import DepGraph (DepGraph, Deriv, Pos, attachDoc, deriv, valAt)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
@@ -43,7 +43,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), Val(..), binding, bindings, closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -133,9 +133,10 @@ eval
    :: forall m s
     . MonadEval s m
    => { stmt :: Inputs s -> Stmt -> m (Result s)
+      , program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
       , apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
       }
-eval = { stmt, apply }
+eval = { stmt, program, apply }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
    expr inputs e'@(DocExpr e _) = do
@@ -144,7 +145,7 @@ eval = { stmt, apply }
       attachDoc (fst r) (fst doc) $> r
    expr inputs e = conclusion inputs e >>= record
 
-   -- Value of an expression with its dependence on inputs and the vertices of its premises
+   -- Value of an expression in terms of inputs and the vertices of the premises
    conclusion :: Inputs s -> Expr -> m (GVal s)
    conclusion inputs = case _ of
       Var x -> pure (deliver inputs.ctrl (get x inputs.env))
@@ -291,7 +292,15 @@ eval = { stmt, apply }
       qualifiers (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) gs
 
    stmt :: Inputs s -> Stmt -> m (Result s)
-   stmt inputs = case _ of
+   stmt inputs s = result inputs s >>= case _ of
+      Returns r -> Returns <$> record (gval r)
+      Assigns ρ ctrl -> do
+         v <- gval <$> record (bindings ρ ctrl)
+         pure (Assigns (mapWithKey (\x { val } -> { val, inEdges: via (binding x) v }) ρ) (via root v))
+
+   -- Result of a statement in terms of inputs and the vertices of the premises
+   result :: Inputs s -> Stmt -> m (Result s)
+   result inputs = case _ of
       Return e -> Returns <$> expr inputs e
       If bs s_opt -> go (NEL.toList bs) inputs.ctrl
          where
@@ -328,11 +337,22 @@ eval = { stmt, apply }
       TypeAlias x αs τ -> do
          let v = construct inputs.ctrl (constant (Val unit (V.TypeAlias αs τ)))
          pure (Assigns (maplet x v) inputs.ctrl)
-      Seq s1 s2 -> do
-         r1 <- stmt inputs s1
-         case r1 of
-            Returns _ -> pure r1
-            Assigns ρ' ctrl -> override ρ' <$> stmt (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) s2
+      s@(Seq _ _) -> block inputs empty (NEL.toList (statements s))
+
+   -- Result of statements in sequence, as a single rule; ρ the bindings so far
+   block :: Inputs s -> Dict (GVal s) -> List Stmt -> m (Result s)
+   block inputs ρ Nil = pure (Assigns ρ inputs.ctrl)
+   block inputs ρ (s : ss) = stmt inputs s >>= case _ of
+      Returns r -> pure (Returns r)
+      Assigns ρ' ctrl -> block (inputs { env = inputs.env <+> ρ', ctrl = ctrl }) (ρ <+> ρ') ss
+
+   -- Value of a top-level program at the vertex of its trailing expression, if any
+   program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
+   program inputs s = case unsnoc (statements s) of
+      { init, last: Return e } -> block inputs empty init >>= case _ of
+         Returns r -> pure r
+         Assigns ρ ctrl -> expr (inputs { env = inputs.env <+> ρ, ctrl = ctrl }) e
+      _ -> asReturns <$> stmt inputs s
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
@@ -482,5 +502,5 @@ evalProgram inputs classes s =
       { depGraph } <- moduleStore
       p × g <- flip runStateT depGraph do
          env <- traverse gvalAt inputs
-         fst <<< asReturns <$> eval.stmt { ctrl: mempty, env } s
+         fst <$> eval.program { ctrl: mempty, env } s
       pure { g, root: p }
