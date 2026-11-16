@@ -200,24 +200,24 @@ eval = { stmt, apply }
          case u, u' of
             V.Dictionary (DictRep d), V.Lit (Str s) -> do
                _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
-               subscript v v' (V.dictEntry s >>> snd) (\z -> root z + fst (V.dictEntry s z))
+               subscript v v' (V.dictEntry s >>> snd) (via root v <> via (V.dictEntry s >>> fst) v)
             V.Dictionary _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected str"
             _, V.Lit (Int i) | Just n <- elementCount v.val -> do
                let i' = if i < 0 then n + i else i
                unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
-               subscript v v' (element i') root
+               subscript v v' (element i') (via root v)
             V.List _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
             V.Tuple _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
             V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
             V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
                unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
-               subscript v v' (matrixElement i j) root
+               subscript v v' (matrixElement i j) (via root v)
             V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
          where
-         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> (Val s -> s) -> m (Deriv × Raw Val)
-         subscript v v' proj consumedWeight =
-            deliver (inputs.ctrl <> via consumedWeight v <> via sum v') { val: proj v.val, inEdges: via proj v }
+         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (Deriv × Raw Val)
+         subscript v v' proj ctrl =
+            deliver (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v }
       ModMember q x -> do
          { modules } <- moduleStore
          let ρ_q = definitely' (loadedEnv (get q modules))
