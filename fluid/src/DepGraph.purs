@@ -134,7 +134,7 @@ materialise g visible =
       InEdges (_ × rel) = get p g.inEdges
       weights = rel weightsAt
 
-   -- Add weights ws at p, then free weights at each vertex with p as last dependent
+   -- Add weights ws at p, then free weights at each vertex which has p as last dependent
    retain :: Deriv -> f (Lineage (Deriv × Pos) s) -> Endo (Labelling (f (Lineage (Deriv × Pos) s)))
    retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p byLastDependent))
 
