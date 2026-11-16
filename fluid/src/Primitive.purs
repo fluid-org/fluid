@@ -27,7 +27,7 @@ import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root, throughout)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root, ctrlEdge)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -179,9 +179,9 @@ binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
 binop Add (Val α (List vs)) (Val β (List vs')) =
-   pure (List ((throughout α <$> vs) <> (throughout β <$> vs')) × Set.fromFoldable [ α, β ])
+   pure (List ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
 binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) =
-   pure (Tuple ((throughout α <$> vs) <> (throughout β <$> vs')) × Set.fromFoldable [ α, β ])
+   pure (Tuple ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
 binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
@@ -261,7 +261,7 @@ repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 
 repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
-repeatList vs α n β = List (A.concat (replicate n (throughout α <$> vs))) × deps
+repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
    where
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
 

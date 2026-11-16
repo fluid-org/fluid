@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, throughout, unitSection, via, withCtrl)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, gval, matrixPut, pureRel, root, ctrlEdge, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -141,7 +141,7 @@ sorted =
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (List vs) : Nil) =
-      sort (L.fromFoldable vs) <#> \vs' -> Val α (List (throughout α <$> Array.fromFoldable vs'))
+      sort (L.fromFoldable vs) <#> \vs' -> Val α (List (ctrlEdge α <$> Array.fromFoldable vs'))
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
 
@@ -153,12 +153,12 @@ sorted =
            n = L.length vs / 2
 
    merge :: forall a. DepSemiring a => a -> List (Val a) -> List (Val a) -> MayFail (List (Val a))
-   merge β Nil vs' = pure (throughout β <$> vs')
-   merge β vs Nil = pure (throughout β <$> vs)
+   merge β Nil vs' = pure (ctrlEdge β <$> vs')
+   merge β vs Nil = pure (ctrlEdge β <$> vs)
    merge β (v : vs) (v' : vs') = binopRel Lt v' v >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
       where
-      take true β' = (throughout β' v' : _) <$> merge β' (v : vs) vs'
-      take false β' = (throughout β' v : _) <$> merge β' vs (v' : vs')
+      take true β' = (ctrlEdge β' v' : _) <$> merge β' (v : vs) vs'
+      take false β' = (ctrlEdge β' v : _) <$> merge β' vs (v' : vs')
 
 min_ :: ForeignOp
 min_ = extremum "min" Lt
@@ -173,7 +173,7 @@ extremum id op =
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (List vs) : Nil) = case Array.uncons vs of
       Nothing -> Left ("ValueError: " <> id <> "() iterable argument is empty")
-      Just { head, tail } -> foldM step (head × zero) tail <#> \(v × β) -> throughout (α + β) v
+      Just { head, tail } -> foldM step (head × zero) tail <#> \(v × β) -> ctrlEdge (α + β) v
    depRel (Val _ u : Nil) = Left (typeMismatch u "list")
    depRel _ = Left "Single argument expected"
 
@@ -258,7 +258,7 @@ dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: pureRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
-   depRel (Val α (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α (Tuple [ throughout α i, throughout α j ]))
+   depRel (Val α (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α (Tuple [ ctrlEdge α i, ctrlEdge α j ]))
    depRel _ = Left "Matrix expected"
 
 matrixUpdate :: ForeignOp
@@ -267,9 +267,9 @@ matrixUpdate =
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Matrix (MatrixRep (vss × h × w))) : ix@(Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ])) : v : Nil) =
-      pure (Val α (Matrix (matrixPut i j (const (throughout (sum ix) v)) r)))
+      pure (Val α (Matrix (matrixPut i j (const (ctrlEdge (sum ix) v)) r)))
       where
-      r = MatrixRep (map (map (throughout α)) vss × throughout α h × throughout α w)
+      r = MatrixRep (map (map (ctrlEdge α)) vss × ctrlEdge α h × ctrlEdge α w)
    depRel _ = Left "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -314,7 +314,7 @@ dict_difference =
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
-      pure (Val (α + β) (Dictionary (DictRep (throughoutEntry (α + β) <$> (d \\ d')))))
+      pure (Val (α + β) (Dictionary (DictRep (ctrlEdgeEntry (α + β) <$> (d \\ d')))))
    depRel _ = Left "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
@@ -323,7 +323,7 @@ dict_disjointUnion =
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
-      pure (Val (α + β) (Dictionary (DictRep (unionWith_never (throughoutEntry α <$> d) (throughoutEntry β <$> d')))))
+      pure (Val (α + β) (Dictionary (DictRep (unionWith_never (ctrlEdgeEntry α <$> d) (ctrlEdgeEntry β <$> d')))))
    depRel _ = Left "Dictionaries expected"
 
 foldl_with_index :: ForeignOp
@@ -347,7 +347,7 @@ get =
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Lit (Str s)) : Val β (Dictionary (DictRep d)) : Nil) =
-      pure (maybe (Val (α + β) (Lit None)) (\(γ × v) -> throughout (α + β + γ) v) (lookup s d))
+      pure (maybe (Val (α + β) (Lit None)) (\(γ × v) -> ctrlEdge (α + β + γ) v) (lookup s d))
    depRel _ = Left "String and dictionary expected"
 
 insert :: ForeignOp
@@ -356,7 +356,7 @@ insert =
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val α' (Lit (Str k)) : v : Nil) =
-      pure (Val α (Dictionary (DictRep (Map.insert k (α' × v) (throughoutEntry α <$> d)))))
+      pure (Val α (Dictionary (DictRep (Map.insert k (α' × v) (ctrlEdgeEntry α <$> d)))))
    depRel _ = Left "Dictionary, key and value expected"
 
 dict_intersectionWith :: ForeignOp
@@ -386,12 +386,14 @@ dict_map =
    depOp _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. DepSemiring s => String -> GVal s -> GVal s
-entryValue k d = withCtrl (via root d <> via (dictEntry k >>> fst) d) unitSection
-   { val: snd (dictEntry k d.val), inEdges: via (dictEntry k >>> snd) d }
+entryValue k d =
+   { val: snd (dictEntry k d.val)
+   , inEdges: lift2 ctrlEdge (via root d <> via (dictEntry k >>> fst) d) (via (dictEntry k >>> snd) d)
+   }
 
--- Add control dependence on β at the key of an entry and throughout its value
-throughoutEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
-throughoutEntry β (α × v) = (α + ctrlWeight * β) × throughout β v
+-- Control edge from β to key and whole value of an entry
+ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
+ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
 dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
