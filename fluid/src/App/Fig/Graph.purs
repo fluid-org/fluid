@@ -92,12 +92,11 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
       )
    where
    failure :: Deriv -> String -> String
-   failure p construct = construct <> " in " <> fromMaybe "doc" (Map.lookup p names)
+   failure p construct = construct <> " in " <> fromMaybe "doc" (Map.lookup p vertexRole)
       <> " is currently unsupported in a figure graph"
 
-   -- Name of input, intermediate or output at each vertex other than a doc
-   names :: Labelling String
-   names = Map.insert (fst out) str.output $ Map.union
+   vertexRole :: Labelling String
+   vertexRole = Map.insert (fst out) str.output $ Map.union
       (ιs <#> \(_ × d) -> str.intermediate <> foldMap (\d' -> " " <> prettyP (get d' graph.vals)) d)
       (Map.fromFoldable (D.toArrayWithKey (\x (p × _) -> p × (str.input <> " " <> prettyP (Str x))) ins))
 
