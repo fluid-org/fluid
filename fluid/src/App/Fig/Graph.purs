@@ -1,8 +1,7 @@
-module App.Fig.Codec where
+module App.Fig.Graph where
 
 import Prelude hiding (absurd)
 
-import App.Fig (FigGraph)
 import App.View.Util (Filter)
 import Bind (FieldName, Name, dottedName)
 import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
@@ -17,11 +16,12 @@ import Data.List.NonEmpty as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe, fromMaybe)
 import Data.Number (infinity, isFinite, isNaN, nan)
+import Data.Set (Set)
 import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), sparseRel)
+import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), VisibleGraph, sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
@@ -33,6 +33,17 @@ import Util (type (×), MayFail, absurd, definitely', error, (×))
 import Util.Map (get, insert, lookup, maplet, toUnfoldable)
 import Util.Set (empty, unions)
 import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
+
+-- Data sufficient to draw and query a figure without parser or evaluator
+type FigGraph =
+   { graph :: VisibleGraph Val DepKind
+   , ins :: Dict DerivWithDoc -- input name ↦ vertex
+   , out :: DerivWithDoc
+   , ιs :: Labelling DerivWithDoc -- documented intermediates
+   , ignored :: Labelling (Set Pos) -- input positions left out of linked queries
+   , linking :: Boolean
+   , rowFilter :: Maybe Filter
+   }
 
 type DerivWithDocRep = Int × Maybe Int
 

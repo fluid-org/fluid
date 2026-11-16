@@ -2,7 +2,8 @@ module App.Fig.Build where
 
 import Prelude
 
-import App.Fig (FigGraph, figure)
+import App.Fig (figure)
+import App.Fig.Graph (FigGraph)
 import App.Util.Selector (eachElement, envVal, field, none, select, sel𝔹, valOf, (>.>))
 import App.View.Util (Fig, Filter, Options)
 import Classes (class HasClasses)

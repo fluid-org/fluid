@@ -4,7 +4,7 @@ import Prelude
 
 import App.Fig (figure, selectInput, selectOutput, selectionResult)
 import App.Fig.Build (figGraph)
-import App.Fig.Codec (decodeFigGraph, encodeFigGraph)
+import App.Fig.Graph (decodeFigGraph, encodeFigGraph)
 import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
 import App.Util.Selector (ObjArg, objArg, sel𝔹, valOf)
 import App.View.Util (Fig, Options)
