@@ -17,7 +17,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), (×))
+import Util (type (×), Endo, (×))
 import Util.Map (get, maplet)
 import Util.Set ((∪))
 
@@ -126,13 +126,28 @@ materialise g visible =
    where
    step { weightsAt, rels } (p × v) =
       if Set.member p visible then
-         { weightsAt: Map.insert p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
+         { weightsAt: retain p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
          , rels: Map.insert p (sparseRel <$> edgesInto weights) rels
          }
-      else { weightsAt: Map.insert p weights weightsAt, rels }
+      else { weightsAt: retain p weights weightsAt, rels }
       where
       InEdges (_ × rel) = get p g.inEdges
       weights = rel weightsAt
+
+   -- Add weights at a vertex, then drop weights at each vertex with that vertex as last dependent
+   retain :: Deriv -> f (Lineage (Deriv × Pos) s) -> Endo (Labelling (f (Lineage (Deriv × Pos) s)))
+   retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p sourcesEnding))
+
+   -- Vertex ↦ last dependent, or the vertex itself in the absence of dependents
+   lastDependent :: Labelling Deriv
+   lastDependent = foldlWithIndex dependent Map.empty g.inEdges
+      where
+      dependent p m (InEdges (qs × _)) = foldl (\m' q -> Map.insert q p m') (Map.insert p p m) qs
+
+   -- Vertex ↦ vertices with it as last dependent
+   sourcesEnding :: Labelling (List Deriv)
+   sourcesEnding = fromFoldableWith (<>) $
+      (Map.toUnfoldable lastDependent :: List _) <#> \(q × p) -> p × (q : Nil)
 
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.
    edgesInto :: f (Lineage (Deriv × Pos) s) -> Labelling (Map Pos (Map Pos s))
