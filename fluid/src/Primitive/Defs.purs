@@ -39,7 +39,7 @@ import Cxt (Cxt, CxtEntry(Assigned), generalise)
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
-import Eval (evaluator) as Dep
+import Eval (evaluator)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
@@ -336,7 +336,7 @@ foldl_with_index =
       r <- deliver ctrl v
       foldM (step f) r (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
       where
-      step f acc (k × _) = Dep.evaluator.apply ctrl f (key : gval acc : entryValue k d : Nil)
+      step f acc (k × _) = evaluator.apply ctrl f (key : gval acc : entryValue k d : Nil)
          where
          key = { val: Val unit (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d }
    depOp _ _ = throw "Function, value and dictionary expected"
@@ -367,7 +367,7 @@ dict_intersectionWith =
    depOp ctrl (g : d1 : d2 : Nil) = do
       f <- gval <$> deliver ctrl g
       results <- for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (Dict.toUnfoldable (dictEntries d1.val))) \(k × _) -> do
-         r <- Dep.evaluator.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil)
+         r <- evaluator.apply ctrl f (entryValue k d1 : entryValue k d2 : Nil)
          pure (k × gval r)
       construct ctrl (dictFrom (d1 : d2 : Nil) results)
    depOp _ _ = throw "Function and two dictionaries expected"
@@ -380,7 +380,7 @@ dict_map =
    depOp ctrl (g : d : Nil) = do
       f <- gval <$> deliver ctrl g
       results <- for (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val))) \(k × _) -> do
-         r <- Dep.evaluator.apply ctrl f (singleton (entryValue k d))
+         r <- evaluator.apply ctrl f (singleton (entryValue k d))
          pure (k × gval r)
       construct ctrl (dictFrom (singleton d) results)
    depOp _ _ = throw "Function and dictionary expected"
