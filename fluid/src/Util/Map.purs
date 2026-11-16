@@ -90,11 +90,12 @@ disjointUnion_inv :: forall a k b. Ord k => Map a k b => Set k -> a -> a × a
 disjointUnion_inv ks m = filterKeys (_ ∈ ks) m × filterKeys (_ `not <<< (∈)` ks) m
 
 lookup' :: forall m a k b. MonadThrow Error m => Show k => Map a k b => k -> a -> m b
-lookup' k m = orElse (keyNotFound k) (lookup k m)
+lookup' k = lookup k >>> orElse (keyNotFound k)
 
 keyNotFound :: forall k. Show k => k -> String
 keyNotFound k = "Key " <> show k <> " not found"
 
+-- Both arguments explicit, since the point-free form is slower
 get :: forall a k b. Show k => Map a k b => k -> a -> b
 get k m = definitely (keyNotFound k) (lookup k m)
 

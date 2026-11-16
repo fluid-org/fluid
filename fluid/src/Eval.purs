@@ -128,7 +128,7 @@ closeDefs inputs ds = ds <#> \d ->
 -- Evaluation
 -- ======================
 
--- Evaluator specialised to its class dictionaries once per use; recursive calls stay among the local definitions
+-- Evaluator specialised to its class dictionaries once per use
 eval
    :: forall m s
     . MonadEval s m
