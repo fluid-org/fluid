@@ -82,7 +82,7 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    where
    failure :: Deriv -> String -> String
    failure p kind = fromMaybe "Doc" (Map.lookup p parts) <> " contains a " <> kind
-      <> ", which cannot be stored in a figure graph"
+      <> ", which is currently unsupported in a figure graph"
 
    -- Name of input, intermediate or output at each vertex other than a doc
    parts :: Labelling String
@@ -145,9 +145,6 @@ classes (Val _ u) = case u of
    Matrix (MatrixRep (vss × _ × _)) -> unions (unions <<< map classes <$> vss)
    _ -> empty
 
--- Encode a value as JSON. A list maps to an array. A literal maps to a JSON literal, except for ints,
--- non-finite floats and negative zero. Every other value maps to an object with the name of its kind as the
--- only key. Fail with the kind of a value without an encoding.
 encodeVal :: Val Unit -> MayFail Json
 encodeVal (Val _ u) = case u of
    Lit (Int n) -> pure (tagged "int" (encodeJson n))
@@ -170,9 +167,12 @@ encodeVal (Val _ u) = case u of
    Opaque q -> pure (tagged "opaque" (fromString (dottedName q)))
    Module q -> pure (tagged "module" (fromString (dottedName q)))
    Unbound -> pure (tagged "unbound" jsonNull)
-   Fun _ -> Left "function"
-   TypeAlias _ _ -> Left "type alias"
+   Fun _ -> unsupported "function"
+   TypeAlias _ _ -> unsupported "type alias"
    where
+   unsupported :: String -> MayFail Json
+   unsupported = Left
+
    tagged :: String -> Json -> Json
    tagged tag = maplet tag >>> fromObject
 
