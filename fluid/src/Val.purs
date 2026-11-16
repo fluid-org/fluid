@@ -32,7 +32,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, plus, scale, valAt, zeros)
+import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, labelAt, plus, scale, valAt, zeros)
 import DepGraph (Deriv, Pos) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -190,7 +190,7 @@ newtype EnvWithDocs a = EnvWithDocs (Dict (ValWithDoc a))
 
 -- Value at a vertex, with the value of its doc.
 val :: forall a. Labelling (Val a) -> DerivWithDoc -> ValWithDoc a
-val m (p × d) = ValWithDoc { val: get p m, doc: flip get m <$> d }
+val m (p × d) = ValWithDoc { val: labelAt p m, doc: flip labelAt m <$> d }
 
 unval :: forall a. DerivWithDoc -> ValWithDoc a -> Labelling (Val a)
 unval (p × d) (ValWithDoc { val: v, doc }) = Map.fromFoldable (A.cons (p × v) (A.fromFoldable ((×) <$> d <*> doc)))
