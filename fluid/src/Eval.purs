@@ -165,7 +165,7 @@ eval = { stmt, program }
       attachDoc (fst r) (fst doc) $> r
    expr inputs e = value inputs e >>= newValue
 
-   -- Value of an expression in terms of inputs and the vertices of the premises
+   -- Value of an expression, before vertex is allocated
    value :: Inputs s -> Expr -> m (GVal s)
    value inputs@{ ctrl, ρ } = case _ of
       Var x -> pure (deliver ctrl (get x ρ))
@@ -294,7 +294,7 @@ eval = { stmt, program }
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
    qualifiers body inputs@{ ρ } gs = gval <$> (elements gs >>= newValue)
       where
-      -- List of elements in terms of the vertices of the premises
+      -- List of elements, before vertex is allocated
       elements :: List Qualifier -> m (GVal s)
       elements Nil = body inputs
       elements (Guard e : gs') = do
@@ -326,7 +326,7 @@ eval = { stmt, program }
       Returns r -> Returns <$> newValue (gval r)
       Assigns ρ ctrl -> uncurry Assigns <$> newAssigns ρ ctrl
 
-   -- Result of a statement in terms of inputs and the vertices of the premises
+   -- Result of a statement, before vertex is allocated
    result :: Inputs s -> Stmt -> m (Result s)
    result inputs = case _ of
       Return e -> Returns <$> expr inputs e
