@@ -46,7 +46,7 @@ import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
-type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
+type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
 
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Deriv × Raw Val)
 newValue { val: v, inEdges } = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
@@ -82,7 +82,7 @@ override _ r' = r'
 
 -- Same as override, except that a control input is always present
 after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
-after inputs ρ ctrl = { env: inputs.env <+> ρ, ctrl: fromMaybe inputs.ctrl ctrl }
+after { ctrl, ρ } ρ' ctrl' = { ctrl: fromMaybe ctrl ctrl', ρ: ρ <+> ρ' }
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
@@ -146,11 +146,11 @@ closure ρ ds d = { val: clo (_.val <$> ρ), inEdges: viaAll clo ρ }
    clo ρ' = Val zero (V.Fun (V.Closure (Env ρ') ds d))
 
 closeDefs :: forall s. DepSemiring s => Inputs s -> Dict Def -> Dict (GVal s)
-closeDefs inputs ds = ds <#> \d ->
+closeDefs { ctrl, ρ } ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
    in
-      construct inputs.ctrl (closure (restrict (fv ds' ∪ fv d) inputs.env) ds' d)
+      construct ctrl (closure (restrict (fv ds' ∪ fv d) ρ) ds' d)
 
 -- ======================
 -- Evaluation
@@ -166,27 +166,27 @@ eval
 eval = { stmt, program }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
-   expr inputs e'@(DocExpr e _) = do
+   expr inputs@{ ρ } e'@(DocExpr e _) = do
       r <- value inputs e' >>= newValue
-      doc <- expr (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
+      doc <- expr (inputs { ρ = ρ <+> maplet varThis (gval r) }) e
       attachDoc (fst r) (fst doc) $> r
    expr inputs e = value inputs e >>= newValue
 
    -- Value of an expression in terms of inputs and the vertices of the premises
    value :: Inputs s -> Expr -> m (GVal s)
-   value inputs = case _ of
-      Var x -> pure (deliver inputs.ctrl (get x inputs.env))
-      Lit ℓ -> pure (construct inputs.ctrl (constant (Val unit (V.Lit ℓ))))
+   value inputs@{ ctrl, ρ } = case _ of
+      Var x -> pure (deliver ctrl (get x ρ))
+      Lit ℓ -> pure (construct ctrl (constant (Val unit (V.Lit ℓ))))
       Dictionary ees ->
-         dict <<< constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> for ees \(Pair e e') -> dictEntry inputs e e'
+         dict <<< constructWith ctrl (A.fromFoldable >>> V.List) <$> for ees \(Pair e e') -> dictEntry inputs e e'
       DictComp e e' gs -> dict <$> qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs
-      List es -> constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
-      Tuple es -> constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
+      List es -> constructWith ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
+      Tuple es -> constructWith ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
       ListComp e gs -> qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         constructWith inputs.ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
+         constructWith ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
             traverse (expr inputs >>> map gval) es
       Matrix e (x × y) e' -> do
          dims <- gval <$> expr inputs e'
@@ -198,8 +198,8 @@ eval = { stmt, program }
             ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
          vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
             let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
-            gval <$> expr (inputs { env = inputs.env <+> ρ' }) e
-         pure (constructWith inputs.ctrl mat (product (Compose vss) (Identity dims)))
+            gval <$> expr (inputs { ρ = ρ <+> ρ' }) e
+         pure (constructWith ctrl mat (product (Compose vss) (Identity dims)))
          where
          index :: GVal s -> Int -> Int -> GVal s
          index dims k n =
@@ -209,14 +209,14 @@ eval = { stmt, program }
 
          mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
          mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
-      Lambda d -> pure (construct inputs.ctrl (closure (restrict (fv d) inputs.env) empty d))
-      Type τ -> pure (construct inputs.ctrl (constant (Val unit (V.Fun (V.Type τ)))))
+      Lambda d -> pure (construct ctrl (closure (restrict (fv d) ρ) empty d))
+      Type τ -> pure (construct ctrl (constant (Val unit (V.Fun (V.Type τ)))))
       Attribute e x -> do
          v <- gval <$> expr inputs e
          case v.val of
             Val _ (V.Obj c xvs) -> do
                i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-               pure (deliver (inputs.ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v })
+               pure (deliver (ctrl <> via root v) { val: field i v.val, inEdges: via (field i) v })
             _ -> throw $ "Found " <> prettyP v.val <> ", expected object"
       Subscript e e' -> do
          v@{ val: Val _ u } <- gval <$> expr inputs e
@@ -240,34 +240,34 @@ eval = { stmt, program }
             _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
          where
          subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (GVal s)
-         subscript v v' proj ctrl =
-            pure (deliver (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v })
+         subscript v v' proj ctrl' =
+            pure (deliver (ctrl <> ctrl' <> via sum v') { val: proj v.val, inEdges: via proj v })
       ModMember q x -> do
          { modules } <- moduleStore
-         deliver inputs.ctrl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
+         deliver ctrl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
       App e es -> do
          f <- gval <$> expr inputs e
          vs <- traverse (expr inputs >>> map gval) es
-         withMsg ("In " <> funName e) $ apply inputs.ctrl f vs
+         withMsg ("In " <> funName e) $ apply ctrl f vs
       BinOp e op e' -> do
          v <- gval <$> expr inputs e
          v' <- gval <$> expr inputs e'
          u <- withMsg ("In " <> binopSymbol op) $ orThrow (binop op v.val v'.val) <#> fst
-         pure $ deliver inputs.ctrl
+         pure $ deliver ctrl
             { val: Val unit u, inEdges: lift2 (\x y -> definitelyRight (binopRel op x y)) v.inEdges v'.inEdges }
       UnOp op e -> do
          v <- gval <$> expr inputs e
          u <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v.val) <#> fst
-         pure (deliver inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v })
+         pure (deliver ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v })
       And e e' -> do
-         { holds, ctrl, value: v } <- condition inputs e
-         if holds then gval <$> expr (inputs { ctrl = ctrl }) e' else pure v
+         { holds, ctrl: ctrl', value: v } <- condition inputs e
+         if holds then gval <$> expr (inputs { ctrl = ctrl' }) e' else pure v
       Or e e' -> do
-         { holds, ctrl, value: v } <- condition inputs e
-         if holds then pure v else gval <$> expr (inputs { ctrl = ctrl }) e'
+         { holds, ctrl: ctrl', value: v } <- condition inputs e
+         if holds then pure v else gval <$> expr (inputs { ctrl = ctrl' }) e'
       Cond e1 e e2 -> do
-         { holds, ctrl } <- condition inputs e
-         gval <$> expr (inputs { ctrl = ctrl }) (if holds then e1 else e2)
+         { holds, ctrl: ctrl' } <- condition inputs e
+         gval <$> expr (inputs { ctrl = ctrl' }) (if holds then e1 else e2)
       DocExpr _ e -> gval <$> expr inputs e
 
    -- Tuple of key e and value e'
@@ -295,11 +295,11 @@ eval = { stmt, program }
       pure { holds, ctrl: via root v, value: v }
 
    singletonList :: Inputs s -> GVal s -> GVal s
-   singletonList inputs v = constructWith inputs.ctrl (A.fromFoldable >>> V.List) (v : Nil)
+   singletonList { ctrl } v = constructWith ctrl (A.fromFoldable >>> V.List) (v : Nil)
 
    -- Evaluate qualifiers and then body to list of elements; body gives one-element list
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
-   qualifiers body inputs gs = gval <$> (elements gs >>= newValue)
+   qualifiers body inputs@{ ρ } gs = gval <$> (elements gs >>= newValue)
       where
       -- List of elements in terms of the vertices of the premises
       elements :: List Qualifier -> m (GVal s)
@@ -319,7 +319,7 @@ eval = { stmt, program }
             case dispatch classes (singleton (p × unit)) u of
                Nothing × ctrl -> pure (Nil × fold ctrl)
                Just (ρ' × _) × ctrl ->
-                  qualifiers body (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs'
+                  qualifiers body (inputs { ctrl = via lengthDep v <> fold ctrl, ρ = ρ <+> ρ' }) gs'
                      <#> \v' -> singleton v' × mempty
          pure (construct (via lengthDep v <> ctrl) { val: concatLists (_.val <$> vs), inEdges: viaAll concatLists vs })
       elements (Decl p e : gs') = do
@@ -432,9 +432,9 @@ eval = { stmt, program }
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
                ρ1' = mapWithKey (\y val -> { val, inEdges: via (closureEnv >>> get y) f }) ρ1
-               ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
+               ρ2 = closeDefs { ctrl: ctrl', ρ: ρ1' } ds
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
-            gval <<< asReturns <$> stmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
+            gval <<< asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
          V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application ctrl') ctrl' vs'
          V.Type (T.ClassTy c _) ->
             askClasses <#> \classes -> constructWith ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
@@ -454,7 +454,7 @@ evalModule
 evalModule ρ0 q (Module ιs s) = do
    ρ <- foldM (evalImport q) ρ0 ιs
    { modules } <- moduleStore
-   ρ' × _ <- asAssigns <$> eval.stmt { ctrl: mempty, env: ρ } s
+   ρ' × _ <- asAssigns <$> eval.stmt { ctrl: mempty, ρ } s
    fst <$> newAssigns (subMods modules <+> unbound <+> ρ') Nothing
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
@@ -543,5 +543,5 @@ evalProgram
 evalProgram inputs classes s =
    withClasses classes do
       { depGraph } <- moduleStore
-      out × g <- flip runStateT depGraph (fst <$> eval.program { ctrl: mempty, env: inputs } s)
+      out × g <- flip runStateT depGraph (fst <$> eval.program { ctrl: mempty, ρ: inputs } s)
       pure { g, out }
