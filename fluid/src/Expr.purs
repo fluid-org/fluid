@@ -86,7 +86,6 @@ data Stmt
    | TypeAlias Var (List Var) T.Type
    | Seq Stmt Stmt
 
--- Statements of a sequence, in order
 statements :: Stmt -> NonEmptyList Stmt
 statements (Seq s s') = statements s <> statements s'
 statements s = pure s
