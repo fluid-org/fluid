@@ -121,17 +121,13 @@ matchesMany _ _ _ = error absurd
 -- Bindings of the first matching case, with the control position introduced if the cases tried inspect any
 -- position
 dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> GVal s -> Maybe (Dict (GVal s) × b) × Maybe (Ctrl s)
-dispatch classes cases v = second introduced (go cases)
+dispatch classes cases v = second (map fold <<< NEL.fromList) (go cases)
    where
    go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List (Ctrl s)
    go Nil = Nothing × Nil
    go ((p × b) : cases') = case matches classes v p of
       Just ρ × ctrls -> Just (ρ × b) × ctrls
       Nothing × ctrls -> second (ctrls <> _) (go cases')
-
-   introduced :: List (Ctrl s) -> Maybe (Ctrl s)
-   introduced Nil = Nothing
-   introduced ctrls = Just (fold ctrls)
 
 -- dispatch on a single pattern, which must match.
 destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> GVal s -> m (Dict (GVal s) × Maybe (Ctrl s))
