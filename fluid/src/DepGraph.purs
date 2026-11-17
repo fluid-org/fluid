@@ -173,8 +173,8 @@ selected v = Set.fromFoldable $
    L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v))
 
 -- Sparse dependence relation applied to sparse weights.
-applyRel :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
-applyRel r w = foldl (unionWith add) Map.empty $
+applySparse :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
+applySparse r w = foldl (unionWith add) Map.empty $
    mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w
 
 -- Add weights at a vertex.
@@ -205,14 +205,14 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
    where
    step (p × sources) ws = case lookup p ws of
       Nothing -> ws
-      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applyRel r.in_ w) ws') ws sources
+      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applySparse r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
 fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
-   into p ws (SparseRel r) w = add' p (applyRel r.out w) ws
+   into p ws (SparseRel r) w = add' p (applySparse r.out w) ws
 
 -- ======================
 -- boilerplate
