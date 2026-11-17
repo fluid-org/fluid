@@ -30,9 +30,10 @@ import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Functor.Compose (Compose(..))
+import Data.Identity (Identity(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Traversable (for, traverse)
-import Data.Tuple (fst, snd)
+import Data.Tuple (fst)
 import Classes (ClassTable, askClasses, fields)
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
@@ -54,7 +55,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), Ctrl, DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromTotalRel, matrixPut, project, fromRel, raw, root, ctrlEdge, via)
+import Val (BaseVal(..), Ctrl, DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Step(..), Val(..), applyRel, construct, deliver, dictEntries, dictEntry, elementCount, fromTotalRel, matrixPut, project, fromRel, raw, root, ctrlEdge, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -337,7 +338,7 @@ foldl_with_index =
       where
       step acc (k × _) = apply (deliver ctrl g) (key : acc : entryValue k d : Nil)
          where
-         key = project (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d
+         key = applyRel (\(Identity x) -> Val (fst (dictEntry k x)) (Lit (Str k))) (Identity d)
    depOp _ _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
@@ -381,7 +382,7 @@ dict_map =
    depOp _ _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. DepSemiring s => String -> GVal s -> GVal s
-entryValue k d = deliver (via root d <> via (dictEntry k >>> fst) d) (project (dictEntry k >>> snd) d)
+entryValue k d = deliver (via root d <> via (dictEntry k >>> fst) d) (project (Entry k) d)
 
 -- Control edge from β to key and whole value of an entry
 ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)

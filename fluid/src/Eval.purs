@@ -38,12 +38,12 @@ import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
 import Primitive (binopRel, boolean, concatLists, dropα, int, string, typeMismatch, unopRel, unpack, unpack')
-import Util (type (×), Endo, absurd, check, definitely', error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
+import Util (type (×), absurd, check, definitely', error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, construct, constructFrom, deliver, field, forDefs, fromTotalRel, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, newAssigns, newValue, partialArg, partialFun, project, fromRel, raw, root, toDict, valAt, via)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Step(..), Val(..), construct, constructFrom, deliver, elementOf, forDefs, fromTotalRel, gval, element, elementCount, lengthDep, modifyModuleStore, moduleStore, newAssigns, newValue, project, fromRel, raw, root, toDict, valAt, via)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
 
@@ -68,7 +68,7 @@ after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
 after { ctrl, ρ } ρ' ctrl' = { ctrl: fromMaybe ctrl ctrl', ρ: ρ <+> ρ' }
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
-matches :: forall s. DepSemiring s => ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
+matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
 matches _ v (PVar x)
    | x == varAnon = Just empty × Nil
    | otherwise = Just (maplet x v) × Nil
@@ -79,10 +79,10 @@ matches classes v p = second (via root v : _) case u, p of
    V.Obj c' xvs, PConstr c ps Nil
       | c `elem` ancestors classes c' ->
            matchesMany classes
-              (mapWithIndex (\i _ -> project (field i) v) (take (length ps) xvs))
+              (mapWithIndex (\i _ -> project (Field i) v) (take (length ps) xvs))
               ps
    V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x xvs $> (x × project (V.dictEntry x >>> snd) v × p')) xps of
+      case traverse (\(x × p') -> lookup x xvs $> (x × project (Entry x) v × p')) xps of
          Just kvs -> second ((kvs <#> \(x × _) -> via (V.dictEntry x >>> fst) v) <> _)
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
@@ -91,9 +91,9 @@ matches classes v p = second (via root v : _) case u, p of
    _, _ -> Nothing × Nil
    where
    Val _ u = raw v
-   matchesElements vs ps = matchesMany classes (mapWithIndex (\i _ -> project (element i) v) (L.fromFoldable vs)) ps
+   matchesElements vs ps = matchesMany classes (mapWithIndex (\i _ -> project (Element i) v) (L.fromFoldable vs)) ps
 
-matchesMany :: forall s. DepSemiring s => ClassTable -> List (GVal s) -> List Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
+matchesMany :: forall s. ClassTable -> List (GVal s) -> List Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
 matchesMany _ Nil Nil = Just empty × Nil
 matchesMany classes (v : vs) (p : ps) = case matches classes v p of
    Nothing × ctrls -> Nothing × ctrls
@@ -104,7 +104,7 @@ matchesMany _ _ _ = error absurd
 
 -- Bindings of the first matching case, with the control position introduced if the cases tried inspect any
 -- position
-dispatch :: forall s b. DepSemiring s => ClassTable -> List (Pattern × b) -> GVal s -> Maybe (Dict (GVal s) × b) × Maybe (Ctrl s)
+dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> GVal s -> Maybe (Dict (GVal s) × b) × Maybe (Ctrl s)
 dispatch classes cases v = second (map fold <<< NEL.fromList) (go cases)
    where
    go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List (Ctrl s)
@@ -114,7 +114,7 @@ dispatch classes cases v = second (map fold <<< NEL.fromList) (go cases)
       Nothing × ctrls -> second (ctrls <> _) (go cases')
 
 -- dispatch on a single pattern, which must match.
-destructure :: forall m s. MonadError Error m => DepSemiring s => ClassTable -> Pattern -> GVal s -> m (Dict (GVal s) × Maybe (Ctrl s))
+destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> GVal s -> m (Dict (GVal s) × Maybe (Ctrl s))
 destructure classes p v = case dispatch classes (singleton (p × unit)) v of
    Just (ρ × _) × ctrl -> pure (ρ × ctrl)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP (raw v) <> " does not match " <> prettyP p)
@@ -191,7 +191,7 @@ eval = { stmt, program }
          case raw v of
             Val _ (V.Obj c xvs) -> do
                i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-               pure (deliver (ctrl <> via root v) (project (field i) v))
+               pure (deliver (ctrl <> via root v) (project (Field i) v))
             _ -> throw $ "Found " <> prettyP (raw v) <> ", expected object"
       Subscript e e' -> do
          v <- gval <$> expr inputs e
@@ -202,24 +202,23 @@ eval = { stmt, program }
          case u, u' of
             V.Dictionary (DictRep d), V.Lit (Str s) -> do
                _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
-               subscript v v' (V.dictEntry s >>> snd) (via root v <> via (V.dictEntry s >>> fst) v)
+               subscript v' (project (Entry s) v) (via root v <> via (V.dictEntry s >>> fst) v)
             V.Dictionary _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected str"
             _, V.Lit (Int i) | Just n <- elementCount (raw v) -> do
                let i' = if i < 0 then n + i else i
                unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
-               subscript v v' (element i') (via root v)
+               subscript v' (elementOf i' v) (via root v)
             V.List _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected int"
             V.Tuple _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected int"
             V.Lit (Str _), _ -> throw $ "Found " <> prettyP (raw v') <> ", expected int"
             V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
                unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
-               subscript v v' (matrixElement i j) (via root v)
+               subscript v' (project (MatrixElement i j) v) (via root v)
             V.Matrix _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP (raw v) <> ", expected list, tuple, str, dict or matrix"
          where
-         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (GVal s)
-         subscript v v' proj ctrl' =
-            pure (deliver (ctrl <> ctrl' <> via sum v') (project proj v))
+         subscript :: GVal s -> GVal s -> Ctrl s -> m (GVal s)
+         subscript v' u ctrl' = pure (deliver (ctrl <> ctrl' <> via sum v') u)
       ModMember q x -> do
          { modules } <- moduleStore
          deliver ctrl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
@@ -289,7 +288,7 @@ eval = { stmt, program }
             Nothing -> throw ("Found " <> prettyP (raw v) <> ", expected list, tuple, str or dict")
          classes <- askClasses
          vs × ctrl <- fold <$> for (L.take n (L.range 0 n)) \i -> do
-            let u = project (element i) v
+            let u = elementOf i v
             case dispatch classes (singleton (p × unit)) u of
                Nothing × ctrl -> pure (Nil × fold ctrl)
                Just (ρ' × _) × ctrl ->
@@ -367,11 +366,12 @@ eval = { stmt, program }
    apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
    apply ctrl f vs = case raw f of
       Val _ (V.Fun (V.Partial _ us)) ->
-         apply ctrl (project partialFun f) (mapWithIndex (\i _ -> project (partialArg i) f) us <> vs)
+         apply ctrl (deliver (via root f) (project PartialFun f))
+            (mapWithIndex (\i _ -> project (PartialArg i) f) us <> vs)
       Val _ (V.Fun φ) -> do
          n <- arity'
          let k = length vs
-         if k < n then pure (partial unit)
+         if k < n then pure (constructFrom ctrl (\xs -> V.Fun (V.Partial (head xs) (NEL.tail xs))) (NEL.cons' f vs))
          else if k == n then call φ vs
          else application ctrl f (take n vs) >>= \v -> apply ctrl v (drop n vs)
          where
@@ -382,13 +382,6 @@ eval = { stmt, program }
             V.Type (T.ClassTy c _) -> askClasses >>= arity c
             V.Type τ -> throw ("Not callable: " <> prettyP τ)
             V.Partial _ _ -> error absurd
-
-         -- Partial application, with root and function part dependent on the function value, and stored
-         -- arguments dependent on the argument values
-         partial :: Unit -> GVal s
-         partial _ = construct ctrl
-            (\xs -> Val (root (head xs)) (V.Fun (V.Partial (fun (head xs)) (NEL.tail xs))))
-            (NEL.cons' f vs)
       _ -> throw $ "Found " <> prettyP (raw f) <> ", expected function"
       where
       -- Apply φ to vs', taking the root of the function value as control input
@@ -396,7 +389,7 @@ eval = { stmt, program }
       call φ vs' = case φ of
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
-               ρ1' = mapWithKey (\y _ -> project (closureEnv >>> get y) f) ρ1
+               ρ1' = mapWithKey (\y _ -> project (Captured y) f) ρ1
                ρ2 = closeDefs { ctrl: ctrl', ρ: ρ1' } ds
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
             gval <<< asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
