@@ -11,7 +11,6 @@ import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (elem, fold, foldM, foldl, sum)
 import Data.Functor.Compose (Compose(..))
-import Data.Functor.Coproduct (left)
 import Data.Functor.Product (Product(..), product)
 import Data.Identity (Identity(..))
 import Data.FunctorWithIndex (mapWithIndex)
@@ -45,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, valAt, value, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(..), MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, valAt, value, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -429,7 +428,7 @@ evalModule ρ0 q (Module ιs s) = do
    ρ <- traverse gvalAt ρ_imp
    ρ' × _ <- asAssigns <$> eval.stmt { ctrl: mempty, env: ρ } s
    let xs = L.fromFoldable (assigns s)
-   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (left (Val unit V.Unbound)))) xs
+   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Value (Val unit V.Unbound)))) xs
    members <- traverse (record >>> map fst) ρ'
    pure (ρ_subMods <+> ρ_unbound <+> members)
 
@@ -465,7 +464,7 @@ evalImport enclosing ρ = case _ of
          pure (ρ' <+> maplet x (get x ρ_q))
 
 moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
-moduleVal q = deriv (left (Val unit (V.Module q)))
+moduleVal q = deriv (Value (Val unit (V.Module q)))
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)

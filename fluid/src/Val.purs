@@ -16,9 +16,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
-import Data.Either (Either(..))
 import Data.Functor.Compose (Compose(..))
-import Data.Functor.Coproduct (Coproduct(..), left, right)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -72,25 +70,22 @@ data BaseVal a
 root :: forall a. Val a -> a
 root (Val α _) = α
 
--- Control position and bindings introduced by an assigning statement
-data Introduced a = Introduced (Maybe a) (Env a)
-
-ctrlPosition :: forall a. Introduced a -> a
-ctrlPosition (Introduced α _) = definitely' α
-
-binding :: forall a. Var -> Introduced a -> Val a
-binding x (Introduced _ (Env ρ)) = get x ρ
-
--- Label of a vertex; library coproduct because V8 pretenures a constructor specific to labels, doubling memory
-type Label = Coproduct Val Introduced
+-- Label of a vertex
+data Label a
+   = Value (Val a) -- of an expression or returning statement
+   | Introduced (Maybe a) (Env a) -- control position and bindings introduced by an assigning statement
 
 value :: forall a. Label a -> Val a
-value (Coproduct (Left v)) = v
+value (Value v) = v
 value _ = error absurd
 
-introduced :: forall a. Label a -> Introduced a
-introduced (Coproduct (Right ρ)) = ρ
-introduced _ = error absurd
+ctrlPosition :: forall a. Label a -> a
+ctrlPosition (Introduced α _) = definitely' α
+ctrlPosition _ = error absurd
+
+binding :: forall a. Var -> Label a -> Val a
+binding x (Introduced _ (Env ρ)) = get x ρ
+binding _ _ = error absurd
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
@@ -247,7 +242,7 @@ deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
 
 record :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, inEdges } = derivWith (left v) (left <$> inEdges) <#> (_ × v)
+record { val: v, inEdges } = derivWith (Value v) (Value <$> inEdges) <#> (_ × v)
 
 -- Bindings ρ and control position ctrl in terms of a new vertex which has ρ and ctrl as label
 introduce
@@ -257,9 +252,9 @@ introduce
    -> Maybe (Ctrl s)
    -> m (Dict (GVal s) × Maybe (Ctrl s))
 introduce ρ ctrl = do
-   p <- derivWith (right (Introduced (void ctrl) (Env (_.val <$> ρ))))
-      (right <$> lift2 Introduced (sequence ctrl) (Env <$> traverse _.inEdges ρ))
-   let r = introduced <$> at p
+   p <- derivWith (Introduced (void ctrl) (Env (_.val <$> ρ)))
+      (lift2 Introduced (sequence ctrl) (Env <$> traverse _.inEdges ρ))
+   let r = at p
    pure (mapWithKey (\x v -> v { inEdges = binding x <$> r }) ρ × (ctrl $> (ctrlPosition <$> r)))
 
 constructWith
@@ -478,17 +473,17 @@ derive instance Functor ValWithDoc
 derive instance Functor EnvWithDocs
 derive instance Functor Fun
 derive instance Functor BaseVal
-derive instance Functor Introduced
+derive instance Functor Label
 derive instance Traversable Val
 derive instance Traversable BaseVal
-derive instance Traversable Introduced
+derive instance Traversable Label
 derive instance Traversable Fun
 derive instance Traversable Env
 derive instance Traversable ValWithDoc
 derive instance Traversable EnvWithDocs
 derive instance Foldable Val
 derive instance Foldable BaseVal
-derive instance Foldable Introduced
+derive instance Foldable Label
 derive instance Foldable Fun
 derive instance Foldable Env
 derive instance Foldable ValWithDoc
