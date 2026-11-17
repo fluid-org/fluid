@@ -504,7 +504,7 @@ type Eval =
 
 -- Documented vertices, their docs and the root.
 visible :: Eval -> Set Deriv
-visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
+visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ singleton root
 
 -- Graph of the visible vertices, which are labelled by values
 visibleGraph :: Eval -> VisibleGraph Val DepKind

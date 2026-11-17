@@ -17,7 +17,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), Endo, (×))
+import Util (type (×), Endo, singleton, (×))
 import Util.Map (get, maplet)
 import Util.Set ((∪))
 
@@ -45,7 +45,7 @@ newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s)
 
 -- Weights at a vertex.
 at :: forall f s. Deriv -> InEdges f s (f s)
-at p = InEdges (Set.singleton p × get p)
+at p = InEdges (singleton p × get p)
 
 instance Functor (InEdges f s) where
    map h (InEdges (ps × r)) = InEdges (ps × (h <<< r))

@@ -23,7 +23,7 @@ import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
+import Util (MayFail, type (+), type (×), absurd, definitely', error, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
@@ -208,8 +208,8 @@ binop op (Val α u) (Val β u') = do
    -- Zero operand determines the result, so dependencies of the zero operand alone
    zeroDeps :: Operand -> Operand -> Set a
    zeroDeps x y
-      | isZero x = Set.singleton α
-      | isZero y = Set.singleton β
+      | isZero x = singleton α
+      | isZero y = singleton β
       | otherwise = both
 
    comparison :: (Ordering -> Boolean) -> Operand -> Operand -> MayFail (BaseVal a × Set a)
@@ -256,7 +256,7 @@ vertices2 (Val α _) (Val β _) = Set.fromFoldable [ α, β ]
 repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
 repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    where
-   deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+   deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
 
 -- Concatenate sequences given as pairs of root and elements; elements gain control edge from root of same sequence
 concatSeqs :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
@@ -274,15 +274,15 @@ concatRel vs = Val (foldl add zero αs) (List us)
 repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
 repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
    where
-   deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+   deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
 
 unop :: forall a. Ord a => Unop -> Val a -> MayFail (BaseVal a × Set a)
-unop Not (Val α (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
+unop Not (Val α (Lit (Bool b))) = pure (Lit (Bool (not b)) × singleton α)
 unop Not (Val _ u) = Left (typeMismatch u "bool")
-unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × Set.singleton α)
-unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × Set.singleton α)
-unop Pos (Val α u@(Lit (Int _))) = pure (u × Set.singleton α)
-unop Pos (Val α u@(Lit (Float _))) = pure (u × Set.singleton α)
+unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × singleton α)
+unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × singleton α)
+unop Pos (Val α u@(Lit (Int _))) = pure (u × singleton α)
+unop Pos (Val α u@(Lit (Float _))) = pure (u × singleton α)
 unop _ (Val _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)

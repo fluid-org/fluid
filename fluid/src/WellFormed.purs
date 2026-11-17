@@ -491,7 +491,7 @@ instance Synth S.Expr (T.Type × E.Expr) where
       pure (T.DictTy (T.baseType τ) × E.DictComp k' e' gs')
    synth cxt (S.DocExpr e e') = do
       τ × e2 <- synth cxt e'
-      _ × e1 <- synth (cxt `override` bindings (Map.singleton varThis τ)) e
+      _ × e1 <- synth (cxt `override` bindings (maplet varThis τ)) e
       pure (τ × E.DocExpr e1 e2)
 
 class Check a t b | a -> t b where
@@ -533,7 +533,7 @@ instance Check S.Expr T.Type E.Expr where
       pure (E.Matrix e1' (x × y) e2')
    check cxt (S.DocExpr e e') τ = do
       e2 <- check cxt e' τ
-      _ × e1 <- synth (cxt `override` bindings (Map.singleton varThis τ)) e
+      _ × e1 <- synth (cxt `override` bindings (maplet varThis τ)) e
       pure (E.DocExpr e1 e2)
    check cxt e τ = do
       σ × e' <- synth cxt e
@@ -902,7 +902,7 @@ distinctVars :: List S.Pattern -> CheckM Unit
 distinctVars ps = checkDistinct (\x -> "Duplicate variable in pattern: " <> quoted x) (ps >>= Set.toUnfoldable <<< bv)
 
 instance Check S.Pattern T.Type Cxt where
-   check _ (S.PVar x) τ = pure (Map.singleton x (Assigned τ))
+   check _ (S.PVar x) τ = pure (maplet x (Assigned τ))
    check _ S.PWild _ = pure empty
    check _ (S.PLit _) _ = pure empty
    check cxt (S.PAs p x) τ = do
