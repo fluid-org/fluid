@@ -457,7 +457,7 @@ evalModule ρ0 q (Module ιs s) = do
    fst <$> newAssigns (subMods modules <+> unbound <+> ρ') Nothing
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
-   unbound = D.fromFoldable ((L.fromFoldable (assigns s) :: List _) <#> (_ × constant (Val unit V.Unbound)))
+   unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × constant (Val unit V.Unbound)))
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
