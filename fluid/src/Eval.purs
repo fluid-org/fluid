@@ -278,8 +278,8 @@ eval = { stmt, program, apply }
       holds × _ <- orThrow (unpack boolean v.val)
       pure { holds, ctrl: via root v, value: v }
 
-   -- Evaluate body after each complete pass through qualifiers; return results with control consumed on complete
-   -- passes and passes cut short by failed guard or element that does not match
+   -- Evaluate qualifiers in order and then body, evaluating qualifiers and body after generator once per element
+   -- which matches pattern; return results of body and accumulated control
    qualifiers :: forall b. (Inputs s -> m b) -> Inputs s -> List Qualifier -> m (List b × Ctrl s)
    qualifiers body inputs Nil = body inputs <#> \v -> singleton v × inputs.ctrl
    qualifiers body inputs (Guard e : gs) = do
