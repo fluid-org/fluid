@@ -94,7 +94,7 @@ dispatchCommand (Parse_ args) = report args do
       Right src -> exitCode.accepted × Just src
 dispatchCommand (Check args) = report args (stages args (const (pure Nothing)))
 dispatchCommand (Evaluate args) = report args $ stages args case _ of
-   AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, root } -> Just (prettyP (valAt g root))
+   AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, out } -> Just (prettyP (valAt g out))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
 dispatchCommand (Build { specs, out }) = do
    mkdir' out { recursive: true, mode: permsAll }

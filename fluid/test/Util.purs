@@ -46,7 +46,7 @@ test file expect (n × _) = do
    _ × res <- runWriterT (replicateM n (testProperties config expect))
    pure $ res `divRow` n
 
--- Printed output of the program, with the doc of its root vertex, if any.
+-- Check that program output prints as expected
 testProperties
    :: forall m
     . HasClasses m
@@ -57,10 +57,10 @@ testProperties
    -> String
    -> m Unit
 testProperties { e, inputs, classes } expect = do
-   eval@{ g, root } <- benchmark "Dep" \_ ->
+   eval@{ g, out } <- benchmark "Dep" \_ ->
       evalProgram inputs classes e
    withMsg "fwd_expect" $
-      checkPretty expect (prettyP (ValWithDoc { val: valAt g root, doc: valAt g <$> Map.lookup root g.docs }))
+      checkPretty expect (prettyP (ValWithDoc { val: valAt g out, doc: valAt g <$> Map.lookup out g.docs }))
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
@@ -90,8 +90,8 @@ depName file = case _ of
 
 -- depGraph holds the vertices created by loading the modules, before the program ran.
 deriv :: forall s. DepGraph Label s -> Eval -> VertexSpec -> Deriv
-deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
-   Output -> root
+deriv depGraph eval@{ g: g@{ docs }, out } = case _ of
+   Output -> out
    Input x -> case documentedAs g x of
       [ p ] -> p
       _ -> error ("no vertex documented " <> show x)
@@ -102,12 +102,12 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
 showDeps :: Eval -> Labelling (Val DepKind) -> String
-showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
+showDeps { g: { docs }, out } deps = joinWith "\n" (documented <> output)
    where
    dep p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
       prettyP (val deps (p × if any (_ /= Zero) (dep d) then Just d else Nothing))
-   output = if Map.member root docs then [] else [ prettyP (dep root) ]
+   output = if Map.member out docs then [] else [ prettyP (dep out) ]
 
 selection
    :: forall s

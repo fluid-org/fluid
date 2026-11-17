@@ -518,12 +518,11 @@ load q = do
 
 type Eval =
    { g :: DepGraph Label (Lineage (Deriv × Pos) DepKind)
-   , root :: Deriv
+   , out :: Deriv
    }
 
--- Documented vertices, their docs and the root.
 visible :: Eval -> Set Deriv
-visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ singleton root
+visible { g, out } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ singleton out
 
 -- Graph of the visible vertices, which are labelled by values
 visibleGraph :: Eval -> VisibleGraph Val DepKind
@@ -550,4 +549,4 @@ evalProgram inputs classes s =
       p × g <- flip runStateT depGraph do
          env <- traverse gvalAt inputs
          fst <$> eval.program { ctrl: mempty, env } s
-      pure { g, root: p }
+      pure { g, out: p }
