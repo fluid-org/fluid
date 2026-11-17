@@ -146,9 +146,8 @@ eval
     . MonadEval s m
    => { stmt :: Inputs s -> Stmt -> m (Result s)
       , program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
-      , apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
       }
-eval = { stmt, program, apply }
+eval = { stmt, program }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
    expr inputs e'@(DocExpr e _) = do
@@ -376,6 +375,10 @@ eval = { stmt, program, apply }
          Assigns ρ ctrl -> expr (after inputs ρ ctrl) e
       _ -> asReturns <$> stmt inputs s
 
+   -- Apply f to vs at a new vertex
+   application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
+   application ctrl f vs = gval <$> (apply ctrl f vs >>= record)
+
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
    apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
@@ -416,7 +419,7 @@ eval = { stmt, program, apply }
                ρ2 = closeDefs { ctrl: ctrl', env: ρ1' } ds
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
             gval <<< asReturns <$> stmt { ctrl: ctrl', env: ρ1' <+> ρ2 <+> ρ3 } s
-         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp ctrl' vs'
+         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application ctrl') ctrl' vs'
          V.Type (T.ClassTy c _) ->
             askClasses <#> \classes -> constructWith ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
          V.Type _ -> error absurd

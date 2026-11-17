@@ -295,23 +295,30 @@ instance
    ) =>
    MonadEval s m
 
+-- Application of a function to arguments at a new vertex
+type Apply m s = GVal s -> List (GVal s) -> m (GVal s)
+
+-- Foreign function in terms of control input and arguments; calls a function argument by the given application
 type DepOp =
    forall m s
-    . MonadEval s m
-   => Ctrl s
+    . HasClasses m
+   => MonadLoad m
+   => DepSemiring s
+   => Apply m s
+   -> Ctrl s
    -> List (GVal s)
    -> m (GVal s)
 
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g ctrl vs = pure (deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs })
+fromRel g _ ctrl vs = pure (deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs })
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
-pureRel f ctrl vs = do
+pureRel f app ctrl vs = do
    _ <- orThrow (f (_.val <$> vs))
-   fromRel (f >>> definitelyRight) ctrl vs
+   fromRel (f >>> definitelyRight) app ctrl vs
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
