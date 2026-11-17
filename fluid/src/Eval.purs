@@ -43,8 +43,8 @@ import Util (type (×), Endo, absurd, check, definitely', definitelyRight, error
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
-import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, value, via, viaAll)
+import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -167,14 +167,14 @@ eval = { stmt, program }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
    expr inputs e'@(DocExpr e _) = do
-      r <- conclusion inputs e' >>= newValue
+      r <- value inputs e' >>= newValue
       doc <- expr (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
       attachDoc (fst r) (fst doc) $> r
-   expr inputs e = conclusion inputs e >>= newValue
+   expr inputs e = value inputs e >>= newValue
 
    -- Value of an expression in terms of inputs and the vertices of the premises
-   conclusion :: Inputs s -> Expr -> m (GVal s)
-   conclusion inputs = case _ of
+   value :: Inputs s -> Expr -> m (GVal s)
+   value inputs = case _ of
       Var x -> pure (deliver inputs.ctrl (get x inputs.env))
       Lit ℓ -> pure (construct inputs.ctrl (constant (Val unit (V.Lit ℓ))))
       Dictionary ees -> dictionary inputs.ctrl <$> for ees \(Pair e e') -> dictEntry inputs e e'
@@ -263,11 +263,11 @@ eval = { stmt, program }
          u <- withMsg ("In " <> unopSymbol op) $ orThrow (unop op v.val) <#> fst
          pure (deliver inputs.ctrl { val: Val unit u, inEdges: via (unopRel op >>> definitelyRight) v })
       And e e' -> do
-         { holds, ctrl, value } <- condition inputs e
-         if holds then gval <$> expr (inputs { ctrl = ctrl }) e' else pure value
+         { holds, ctrl, value: v } <- condition inputs e
+         if holds then gval <$> expr (inputs { ctrl = ctrl }) e' else pure v
       Or e e' -> do
-         { holds, ctrl, value } <- condition inputs e
-         if holds then pure value else gval <$> expr (inputs { ctrl = ctrl }) e'
+         { holds, ctrl, value: v } <- condition inputs e
+         if holds then pure v else gval <$> expr (inputs { ctrl = ctrl }) e'
       Cond e1 e e2 -> do
          { holds, ctrl } <- condition inputs e
          gval <$> expr (inputs { ctrl = ctrl }) (if holds then e1 else e2)
@@ -527,7 +527,7 @@ visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) �
 
 -- Graph of the visible vertices, which are labelled by values
 visibleGraph :: Eval -> VisibleGraph Val DepKind
-visibleGraph r = graph { vals = value <$> graph.vals }
+visibleGraph r = graph { vals = V.value <$> graph.vals }
    where
    graph = materialise r.g (visible r)
 
