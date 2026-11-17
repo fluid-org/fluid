@@ -1,4 +1,75 @@
-module Val where
+module Val
+   ( class Ann
+   , class HasModuleStore
+   , class Highlightable
+   , class MonadEval
+   , class MonadProgram
+   , Apply
+   , Array2
+   , BaseVal(..)
+   , Ctrl
+   , DepOp
+   , DerivWithDoc
+   , DictRep(..)
+   , Env(..)
+   , EnvWithDocs(..)
+   , ForeignOp'(..)
+   , ForeignOp(..)
+   , Fun(..)
+   , GVal
+   , Label(..)
+   , MatrixRep(..)
+   , ModuleState(..)
+   , ModuleStore
+   , Val(..)
+   , ValWithDoc(..)
+   , applyRel
+   , applyRelAll
+   , attr
+   , closureEnv
+   , construct
+   , constructFrom
+   , ctrlEdge
+   , dataPositions
+   , deliver
+   , dictEntries
+   , dictEntry
+   , element
+   , elementCount
+   , elements
+   , emptyModuleStore
+   , field
+   , forDefs
+   , fromRel
+   , fun
+   , gval
+   , highlightIf
+   , lengthDep
+   , loadedEnv
+   , matrixElement
+   , matrixGet
+   , matrixPut
+   , modifyModuleStore
+   , moduleStore
+   , newAssigns
+   , newValue
+   , overChildren
+   , partialArg
+   , partialFun
+   , pureRel
+   , raw
+   , reaches
+   , root
+   , toDict
+   , unitSection
+   , unval
+   , unvals
+   , val
+   , valAt
+   , value
+   , via
+   , withDoc
+   ) where
 
 import Prelude hiding (absurd, append)
 
@@ -24,20 +95,20 @@ import Data.Set (Set)
 import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
 import Data.Tuple (snd)
-import Data.Traversable (class Traversable, sequenceDefault, traverse)
+import Data.Traversable (class Traversable, sequence, sequenceDefault, traverse)
 import Dict (Dict)
 import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, PosLineage, applyRelAll, atVertex, emptyGraph, plus, raw, scale, withCtrl, zeros)
-import DepGraph (Deriv, GVal, valAt) as Dep
+import DepGraph (InEdges, DepGraph, Labelling, PosLineage, at, emptyGraph, newVertex, plus, scale, zeros)
+import DepGraph (Deriv, valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
-import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
+import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
 data Val a = Val a (BaseVal a)
@@ -156,7 +227,7 @@ instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w 
    modifyModuleStore = lift <<< modifyModuleStore
 
 -- Value together with its dependence on values already in the graph.
-type GVal s = Dep.GVal Label Val s
+newtype GVal s = GVal { val :: Raw Val, inEdges :: InEdges Label s (Val s) }
 -- Dependence of the control input on values already in the graph.
 type Ctrl s = InEdges Label s s
 
@@ -176,7 +247,23 @@ unitSection (Val _ u) = Val one case u of
    TypeAlias αs τ -> TypeAlias αs τ
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = atVertex value p v
+gval (p × v) = GVal { val: v, inEdges: value <$> at p }
+
+newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
+newValue (GVal { val: v, inEdges }) = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
+
+-- Allocate vertex with bindings ρ and control position ctrl as label; returned ρ and ctrl depend on the vertex
+newAssigns
+   :: forall m s
+    . MonadState (DepGraph Label s) m
+   => Dict (GVal s)
+   -> Maybe (Ctrl s)
+   -> m (Dict (GVal s) × Maybe (Ctrl s))
+newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
+   mapWithKey (\x (GVal v) -> GVal (v { inEdges = get x <<< bindings <$> at p })) ρ × (ctrl $> (ctrlPosition <$> at p))
+   where
+   label = Assigns (void ctrl) (Env (raw <$> ρ))
+   inEdges = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
 
 -- Vertex with the vertex of its doc, if any.
 type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
@@ -202,16 +289,37 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 valAt :: forall s. DepGraph Label s -> Dep.Deriv -> Raw Val
 valAt g p = value (Dep.valAt g p)
 
+raw :: forall s. GVal s -> Raw Val
+raw (GVal v) = v.val
+
+-- Dependence of a value which depends on v by r
+via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
+via r (GVal v) = r <$> v.inEdges
+
+-- Value which depends on v by r
+applyRel :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
+applyRel r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
+
+-- Value which depends on vs by r
+applyRelAll
+   :: forall t s
+    . Traversable t
+   => DepSemiring s
+   => (forall a. DepSemiring a => t (Val a) -> Val a)
+   -> t (GVal s)
+   -> GVal s
+applyRelAll r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
+
 -- Control edge from β to the whole of v
 ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
 ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
 
 -- Control edge from ctrl to the root of v
 construct :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-construct = withCtrl \c (Val α u) -> Val (α + ctrlWeight * c) u
+construct ctrl (GVal v) = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges })
 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-deliver = withCtrl ctrlEdge
+deliver ctrl (GVal v) = GVal (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
 
 constructFrom
    :: forall t s

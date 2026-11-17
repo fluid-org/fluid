@@ -32,7 +32,6 @@ import Data.String.Regex.Flags (noFlags)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Product (Product(..), product)
 import Data.Traversable (for, traverse)
-import DepGraph (applyRel, applyRelAll, raw)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
@@ -55,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, pureRel, root, ctrlEdge)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), applyRel, applyRelAll, construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, pureRel, raw, root, ctrlEdge)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =

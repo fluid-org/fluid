@@ -4,7 +4,6 @@ import Prelude hiding (absurd, apply)
 
 import Bind (dottedName, prefixOf, varAnon, varThis)
 import Control.Alt ((<|>))
-import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
@@ -23,7 +22,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (for, sequence, traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd, uncurry)
 import Classes (ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
 import Dict (Dict)
@@ -31,7 +30,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (withClasses)
-import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, applyRel, applyRelAll, at, atVertex, attachDoc, materialise, newVertex, raw, via, zeros)
+import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, attachDoc, materialise, zeros)
 import Lattice (class DepSemiring, DepKind, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -43,26 +42,10 @@ import Util (type (×), Endo, absurd, check, definitely', definitelyRight, error
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
-import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, construct, constructFrom, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt)
+import Val (BaseVal(..), Fun(..), dictEntry, value) as V
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), applyRel, applyRelAll, closureEnv, construct, constructFrom, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, newAssigns, newValue, partialArg, partialFun, raw, root, toDict, valAt, via)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
-
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Deriv × Raw Val)
-newValue v = newVertex (Value (raw v)) (via Value v) <#> (_ × raw v)
-
--- Allocate vertex with bindings ρ and control position ctrl as label; returned ρ and ctrl depend on the vertex
-newAssigns
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Dict (GVal s)
-   -> Maybe (Ctrl s)
-   -> m (Dict (GVal s) × Maybe (Ctrl s))
-newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
-   mapWithKey (\x v -> atVertex (bindings >>> get x) p (raw v)) ρ × (ctrl $> (ctrlPosition <$> at p))
-   where
-   label = V.Assigns (void ctrl) (Env (raw <$> ρ))
-   inEdges = lift2 V.Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
 
 -- Returned value, or the bindings and control position introduced
 data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Maybe (Ctrl s))
