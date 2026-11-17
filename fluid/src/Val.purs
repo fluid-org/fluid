@@ -16,6 +16,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
+import Data.Identity (Identity(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -265,9 +266,27 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    label = Assigns (void ctrl) (Env (raw <$> ρ))
    inEdges = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
 
--- Part of v selected by r
-project :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
-project r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
+-- Step from a value to one of its parts
+data Step
+   = Field Int -- field of object
+   | Element Int -- element of list or tuple
+   | Entry String -- value of dictionary entry
+   | MatrixElement Int Int
+   | Captured Var -- variable captured by closure
+   | PartialFun -- function of partial application
+   | PartialArg Int -- stored argument of partial application
+
+part :: forall a. Step -> Val a -> Val a
+part (Field i) = field i
+part (Element i) = element i
+part (Entry k) = dictEntry k >>> snd
+part (MatrixElement i j) = matrixElement i j
+part (Captured x) = closureEnv >>> get x
+part PartialFun = partialFun
+part (PartialArg i) = partialArg i
+
+project :: forall s. Step -> GVal s -> GVal s
+project step (GVal v) = GVal { val: part step v.val, inEdges: part step <$> v.inEdges }
 
 -- Apply r to vs; result depends on vs as r determines
 applyRel
@@ -278,6 +297,13 @@ applyRel
    -> t (GVal s)
    -> GVal s
 applyRel r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
+
+-- Element i of sequence v: part of v for list or tuple, computed from v otherwise
+elementOf :: forall s. DepSemiring s => Int -> GVal s -> GVal s
+elementOf i v = case raw v of
+   Val _ (List _) -> project (Element i) v
+   Val _ (Tuple _) -> project (Element i) v
+   _ -> applyRel (\(Identity x) -> element i x) (Identity v)
 
 -- Build new value by applying r to vs; root also depends on ctrl
 construct
