@@ -44,16 +44,6 @@ import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪)
 
 data Val a = Val a (BaseVal a)
 
-data Result a = Returns (Val a) | Assigns (Env a) (Set.Set a)
-
-asReturns :: forall a. Result a -> Val a
-asReturns (Returns v) = v
-asReturns (Assigns _ _) = error "Returns expected"
-
-asAssigns :: forall a. Result a -> Env a × Set.Set a
-asAssigns (Assigns ρ αs) = ρ × αs
-asAssigns (Returns _) = error "Assigns expected"
-
 data BaseVal a
    = Lit Literal
    | Obj Name (List (Var × Val a))
@@ -73,18 +63,18 @@ root (Val α _) = α
 -- Label of a vertex
 data Label a
    = Value (Val a) -- of an expression or returning statement
-   | Introduced (Maybe a) (Env a) -- control position and bindings introduced by an assigning statement
+   | Assigns (Maybe a) (Env a) -- control position and bindings introduced by an assigning statement
 
 value :: forall a. Label a -> Val a
 value (Value v) = v
 value _ = error absurd
 
 ctrlPosition :: forall a. Label a -> a
-ctrlPosition (Introduced α _) = definitely' α
+ctrlPosition (Assigns α _) = definitely' α
 ctrlPosition _ = error absurd
 
 binding :: forall a. Var -> Label a -> Val a
-binding x (Introduced _ (Env ρ)) = get x ρ
+binding x (Assigns _ (Env ρ)) = get x ρ
 binding _ _ = error absurd
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
@@ -252,8 +242,8 @@ introduce
    -> Maybe (Ctrl s)
    -> m (Dict (GVal s) × Maybe (Ctrl s))
 introduce ρ ctrl = do
-   p <- derivWith (Introduced (void ctrl) (Env (_.val <$> ρ)))
-      (lift2 Introduced (sequence ctrl) (Env <$> traverse _.inEdges ρ))
+   p <- derivWith (Assigns (void ctrl) (Env (_.val <$> ρ)))
+      (lift2 Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ))
    let r = at p
    pure (mapWithKey (\x v -> v { inEdges = binding x <$> r }) ρ × (ctrl $> (ctrlPosition <$> r)))
 

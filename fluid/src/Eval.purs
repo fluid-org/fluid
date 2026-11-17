@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(..), MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, valAt, value, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, valAt, value, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
