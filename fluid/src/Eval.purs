@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, constant, construct, constructFrom, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
 
@@ -136,7 +136,7 @@ destructure classes p v = case dispatch classes (singleton (p × unit)) v of
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
 closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict Def -> Def -> GVal s
-closure ctrl ρ ds d = constructWith ctrl (\ρ' -> V.Fun (V.Closure (Env ρ') ds d)) ρ
+closure ctrl ρ ds d = constructFrom ctrl (\ρ' -> V.Fun (V.Closure (Env ρ') ds d)) ρ
 
 closeDefs :: forall s. DepSemiring s => Inputs s -> Dict Def -> Dict (GVal s)
 closeDefs { ctrl, ρ } ds = ds <#> \d ->
@@ -169,17 +169,17 @@ eval = { stmt, program }
    value :: Inputs s -> Expr -> m (GVal s)
    value inputs@{ ctrl, ρ } = case _ of
       Var x -> pure (deliver ctrl (get x ρ))
-      Lit ℓ -> pure (constructWith ctrl (const (V.Lit ℓ)) Nil)
+      Lit ℓ -> pure (constructFrom ctrl (const (V.Lit ℓ)) Nil)
       Dictionary ees ->
-         dict <<< constructWith ctrl (A.fromFoldable >>> V.List) <$> for ees \(Pair e e') -> dictEntry inputs e e'
+         dict <<< constructFrom ctrl (A.fromFoldable >>> V.List) <$> for ees \(Pair e e') -> dictEntry inputs e e'
       DictComp e e' gs -> dict <$> qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs
-      List es -> constructWith ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
-      Tuple es -> constructWith ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
+      List es -> constructFrom ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
+      Tuple es -> constructFrom ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
       ListComp e gs -> qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         constructWith ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
+         constructFrom ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
             traverse (expr inputs >>> map gval) es
       Matrix e (x × y) e' -> do
          dims <- gval <$> expr inputs e'
@@ -192,7 +192,7 @@ eval = { stmt, program }
          vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
             let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
             gval <$> expr (inputs { ρ = ρ <+> ρ' }) e
-         pure (constructWith ctrl mat (product (Compose vss) (Identity dims)))
+         pure (constructFrom ctrl mat (product (Compose vss) (Identity dims)))
          where
          index :: GVal s -> Int -> Int -> GVal s
          index dims k n =
@@ -203,7 +203,7 @@ eval = { stmt, program }
          mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
          mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
       Lambda d -> pure (closure ctrl (restrict (fv d) ρ) empty d)
-      Type τ -> pure (constructWith ctrl (const (V.Fun (V.Type τ))) Nil)
+      Type τ -> pure (constructFrom ctrl (const (V.Fun (V.Type τ))) Nil)
       Attribute e x -> do
          v <- gval <$> expr inputs e
          case v.val of
@@ -269,7 +269,7 @@ eval = { stmt, program }
       k <- expr inputs' e
       _ <- orThrow (unpack string (snd k))
       v <- expr inputs' e'
-      pure (constructWith mempty (A.fromFoldable >>> V.Tuple) (gval k : gval v : Nil))
+      pure (constructFrom mempty (A.fromFoldable >>> V.Tuple) (gval k : gval v : Nil))
 
    -- Dictionary from list v of key-value tuples
    dict :: GVal s -> GVal s
@@ -288,7 +288,7 @@ eval = { stmt, program }
       pure { holds, ctrl: via root v, value: v }
 
    singletonList :: Inputs s -> GVal s -> GVal s
-   singletonList { ctrl } v = constructWith ctrl (A.fromFoldable >>> V.List) (v : Nil)
+   singletonList { ctrl } v = constructFrom ctrl (A.fromFoldable >>> V.List) (v : Nil)
 
    -- Evaluate qualifiers and then body to list of elements; body gives one-element list
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
@@ -300,7 +300,7 @@ eval = { stmt, program }
       elements (Guard e : gs') = do
          { holds, ctrl } <- condition inputs e
          if holds then qualifiers body (inputs { ctrl = ctrl }) gs'
-         else pure (constructWith ctrl (const (V.List [])) Nil)
+         else pure (constructFrom ctrl (const (V.List [])) Nil)
       elements (Generator p e : gs') = do
          v <- gval <$> expr inputs e
          n <- case elementCount v.val of
@@ -361,10 +361,10 @@ eval = { stmt, program }
                _ × Val _ u <- expr (inputs { ctrl = ctrl }) e'
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
       Dataclass c -> do
-         let v = constructWith inputs.ctrl (const (V.Fun (V.Type (T.ClassTy c Nil)))) Nil
+         let v = constructFrom inputs.ctrl (const (V.Fun (V.Type (T.ClassTy c Nil)))) Nil
          pure (Assigns (maplet (last c) v) Nothing)
       TypeAlias x αs τ -> do
-         let v = constructWith inputs.ctrl (const (V.TypeAlias αs τ)) Nil
+         let v = constructFrom inputs.ctrl (const (V.TypeAlias αs τ)) Nil
          pure (Assigns (maplet x v) Nothing)
       s@(Seq _ _) -> block inputs (Assigns empty Nothing) (NEL.toList (statements s))
 
@@ -430,7 +430,7 @@ eval = { stmt, program }
             gval <<< asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
          V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application ctrl') ctrl' vs'
          V.Type (T.ClassTy c _) ->
-            askClasses <#> \classes -> constructWith ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
+            askClasses <#> \classes -> constructFrom ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
          where

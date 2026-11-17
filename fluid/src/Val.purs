@@ -225,7 +225,7 @@ construct ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
 
-constructWith
+constructFrom
    :: forall t s
     . Traversable t
    => DepSemiring s
@@ -233,7 +233,7 @@ constructWith
    -> (forall a. t (Val a) -> BaseVal a)
    -> t (GVal s)
    -> GVal s
-constructWith ctrl mk vs =
+constructFrom ctrl mk vs =
    construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
 
 -- Dictionary from list of key-value tuples; later entries overwrite earlier ones
