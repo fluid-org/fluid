@@ -298,7 +298,7 @@ instance
 -- Application of a function to arguments at a new vertex
 type Apply m s = GVal s -> List (GVal s) -> m (GVal s)
 
--- Foreign function in terms of control input and arguments; calls a function argument by the given application
+-- Foreign function of control input and arguments; evaluator supplies operation for applying a function argument
 type DepOp =
    forall m s
     . HasClasses m
