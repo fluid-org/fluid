@@ -64,7 +64,7 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    label = V.Assigns (void ctrl) (Env (_.val <$> ρ))
    inEdges = lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ)
 
--- Same rule as for composing two statement results
+-- Same as override of one statement result by another, except that a control input is always present
 after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
 after inputs ρ ctrl = { env: inputs.env <+> ρ, ctrl: fromMaybe inputs.ctrl ctrl }
 
