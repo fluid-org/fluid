@@ -240,13 +240,15 @@ type Ctrl s = InEdges Label s s
 raw :: forall s. GVal s -> Raw Val
 raw (GVal v) = v.val
 
--- Dependence of a value which depends on v by r
+-- Dependence of r applied to v
 via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
 via r (GVal v) = r <$> v.inEdges
 
+-- Value v of vertex p as a value which depends on p
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = GVal { val: v, inEdges: value <$> at p }
 
+-- Allocate vertex labelled with given value; return vertex with raw value
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
 newValue (GVal { val: v, inEdges }) = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
 
@@ -267,7 +269,7 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
 project :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
 project r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
 
--- Value which depends on vs by r
+-- Apply r to vs; result depends on vs as r determines
 applyRel
    :: forall t s
     . Traversable t
@@ -277,7 +279,7 @@ applyRel
    -> GVal s
 applyRel r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
 
--- New value which depends on vs by r; root also depends on ctrl
+-- Build new value by applying r to vs; root also depends on ctrl
 construct
    :: forall t s
     . Traversable t
@@ -290,9 +292,11 @@ construct ctrl r vs = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrl
    where
    GVal v = applyRel r vs
 
+-- Pass on v; every position also depends on ctrl
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl (GVal v) = GVal (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
 
+-- Build new value from parts vs with constructor mk; root depends on ctrl
 constructFrom
    :: forall t s
     . Traversable t
@@ -317,12 +321,10 @@ type DepOp =
    -> List (GVal s)
    -> m (GVal s)
 
--- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
--- vector; at Unit, the value itself.
 fromTotalRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
 fromTotalRel g _ ctrl vs = pure (deliver ctrl (applyRel g vs))
 
--- Dependence relation of a primitive without effects, checked at the argument values.
+-- Same as fromTotalRel, except that f may fail; failure is checked on raw arguments
 fromRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
 fromRel f app ctrl vs = do
    _ <- orThrow (f (raw <$> vs))
