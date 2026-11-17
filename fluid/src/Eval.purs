@@ -290,7 +290,7 @@ eval = { stmt, program }
    singletonList :: Inputs s -> GVal s -> GVal s
    singletonList { ctrl } v = constructFrom ctrl (A.fromFoldable >>> V.List) (v : Nil)
 
-   -- Evaluate qualifiers and then body to list of elements; body gives one-element list
+   -- Evaluate qualifiers gs and return list of elements; body returns list of one element
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
    qualifiers body inputs@{ ρ } gs = gval <$> (elements gs >>= newValue)
       where
