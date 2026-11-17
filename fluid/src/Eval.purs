@@ -38,7 +38,7 @@ import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binop, binopRel, boolean, concatRel, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
+import Primitive (binop, binopRel, boolean, concatLists, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
 import Util (type (×), Endo, absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
@@ -320,7 +320,7 @@ eval = { stmt, program }
                Just (ρ' × _) × ctrl ->
                   qualifiers body (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs'
                      <#> \v' -> singleton v' × mempty
-         pure (construct (via lengthDep v <> ctrl) { val: concatRel (_.val <$> vs), inEdges: viaAll concatRel vs })
+         pure (construct (via lengthDep v <> ctrl) { val: concatLists (_.val <$> vs), inEdges: viaAll concatLists vs })
       elements (Decl p e : gs') = do
          v <- gval <$> expr inputs e
          classes <- askClasses
