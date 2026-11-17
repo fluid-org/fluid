@@ -163,14 +163,13 @@ eval = { stmt, program, apply }
       Var x -> pure (deliver inputs.ctrl (get x inputs.env))
       Lit ℓ -> pure (construct inputs.ctrl (constant (Val unit (V.Lit ℓ))))
       Dictionary ees -> dictionary inputs.ctrl <$> for ees \(Pair e e') -> dictEntry inputs e e'
-      DictComp e e' gs -> do
-         cs × ctrl <- qualifiers inputs gs
-         dictionary ctrl <$> for cs \inputs' -> dictEntry inputs' e e'
+      DictComp e e' gs ->
+         qualifiers (\inputs' -> dictEntry inputs' e e') inputs gs <#> \(entries × ctrl) -> dictionary ctrl entries
       List es -> constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
       Tuple es -> constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
-      ListComp e gs -> do
-         cs × ctrl <- qualifiers inputs gs
-         constructWith ctrl (A.fromFoldable >>> V.List) <$> for cs \inputs' -> gval <$> expr inputs' e
+      ListComp e gs ->
+         qualifiers (\inputs' -> gval <$> expr inputs' e) inputs gs <#> \(vs × ctrl) ->
+            constructWith ctrl (A.fromFoldable >>> V.List) vs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
@@ -279,14 +278,14 @@ eval = { stmt, program, apply }
       holds × _ <- orThrow (unpack boolean v.val)
       pure { holds, ctrl: via root v, value: v }
 
-   -- Inputs for each pass through the qualifiers, with the control consumed on every pass, including those cut
-   -- short by a failed guard or an element that does not match
-   qualifiers :: Inputs s -> List Qualifier -> m (List (Inputs s) × Ctrl s)
-   qualifiers inputs Nil = pure (singleton inputs × inputs.ctrl)
-   qualifiers inputs (Guard e : gs) = do
+   -- Evaluate body after each complete pass through qualifiers; return results with control consumed on complete
+   -- passes and passes cut short by failed guard or element that does not match
+   qualifiers :: forall b. (Inputs s -> m b) -> Inputs s -> List Qualifier -> m (List b × Ctrl s)
+   qualifiers body inputs Nil = body inputs <#> \v -> singleton v × inputs.ctrl
+   qualifiers body inputs (Guard e : gs) = do
       { holds, ctrl } <- condition inputs e
-      if holds then qualifiers (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
-   qualifiers inputs (Generator p e : gs) = do
+      if holds then qualifiers body (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
+   qualifiers body inputs (Generator p e : gs) = do
       v <- gval <$> expr inputs e
       n <- case elementCount v.val of
          Just n -> pure n
@@ -297,12 +296,12 @@ eval = { stmt, program, apply }
          case dispatch classes (singleton (p × unit)) u of
             Nothing × ctrl -> pure (Nil × (via lengthDep v <> fold ctrl))
             Just (ρ' × _) × ctrl ->
-               qualifiers (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs
-   qualifiers inputs (Decl p e : gs) = do
+               qualifiers body (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs
+   qualifiers body inputs (Decl p e : gs) = do
       v <- gval <$> expr inputs e
       classes <- askClasses
       ρ' × ctrl <- destructure classes p v
-      qualifiers (after inputs ρ' ctrl) gs
+      qualifiers body (after inputs ρ' ctrl) gs
 
    stmt :: Inputs s -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
