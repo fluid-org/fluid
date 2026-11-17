@@ -135,18 +135,15 @@ destructure classes p v = case dispatch classes (singleton (p × unit)) v of
    Just (ρ × _) × ctrl -> pure (ρ × ctrl)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP v.val <> " does not match " <> prettyP p)
 
-closure :: forall s. Semiring s => Dict (GVal s) -> Dict Def -> Def -> GVal s
-closure ρ ds d = { val: clo (_.val <$> ρ), inEdges: viaAll clo ρ }
-   where
-   clo :: forall a. Semiring a => Dict (Val a) -> Val a
-   clo ρ' = Val zero (V.Fun (V.Closure (Env ρ') ds d))
+closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict Def -> Def -> GVal s
+closure ctrl ρ ds d = constructWith ctrl (\ρ' -> V.Fun (V.Closure (Env ρ') ds d)) ρ
 
 closeDefs :: forall s. DepSemiring s => Inputs s -> Dict Def -> Dict (GVal s)
 closeDefs { ctrl, ρ } ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
    in
-      construct ctrl (closure (restrict (fv ds' ∪ fv d) ρ) ds' d)
+      closure ctrl (restrict (fv ds' ∪ fv d) ρ) ds' d
 
 -- ======================
 -- Evaluation
@@ -172,7 +169,7 @@ eval = { stmt, program }
    value :: Inputs s -> Expr -> m (GVal s)
    value inputs@{ ctrl, ρ } = case _ of
       Var x -> pure (deliver ctrl (get x ρ))
-      Lit ℓ -> pure (construct ctrl (constant (Val unit (V.Lit ℓ))))
+      Lit ℓ -> pure (constructWith ctrl (const (V.Lit ℓ)) Nil)
       Dictionary ees ->
          dict <<< constructWith ctrl (A.fromFoldable >>> V.List) <$> for ees \(Pair e e') -> dictEntry inputs e e'
       DictComp e e' gs -> dict <$> qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs
@@ -205,8 +202,8 @@ eval = { stmt, program }
 
          mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
          mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
-      Lambda d -> pure (construct ctrl (closure (restrict (fv d) ρ) empty d))
-      Type τ -> pure (construct ctrl (constant (Val unit (V.Fun (V.Type τ)))))
+      Lambda d -> pure (closure ctrl (restrict (fv d) ρ) empty d)
+      Type τ -> pure (constructWith ctrl (const (V.Fun (V.Type τ))) Nil)
       Attribute e x -> do
          v <- gval <$> expr inputs e
          case v.val of
@@ -303,7 +300,7 @@ eval = { stmt, program }
       elements (Guard e : gs') = do
          { holds, ctrl } <- condition inputs e
          if holds then qualifiers body (inputs { ctrl = ctrl }) gs'
-         else pure (construct ctrl (constant (Val unit (V.List []))))
+         else pure (constructWith ctrl (const (V.List [])) Nil)
       elements (Generator p e : gs') = do
          v <- gval <$> expr inputs e
          n <- case elementCount v.val of
@@ -364,10 +361,10 @@ eval = { stmt, program }
                _ × Val _ u <- expr (inputs { ctrl = ctrl }) e'
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
       Dataclass c -> do
-         let v = construct inputs.ctrl (constant (Val unit (V.Fun (V.Type (T.ClassTy c Nil)))))
+         let v = constructWith inputs.ctrl (const (V.Fun (V.Type (T.ClassTy c Nil)))) Nil
          pure (Assigns (maplet (last c) v) Nothing)
       TypeAlias x αs τ -> do
-         let v = construct inputs.ctrl (constant (Val unit (V.TypeAlias αs τ)))
+         let v = constructWith inputs.ctrl (const (V.TypeAlias αs τ)) Nil
          pure (Assigns (maplet x v) Nothing)
       s@(Seq _ _) -> block inputs (Assigns empty Nothing) (NEL.toList (statements s))
 
