@@ -20,12 +20,12 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst)
 import Classes (ClassTable)
 import Dict (Dict)
 import Effect.Exception (Error)
-import Eval (evalImport, implicitMembers, load) as Dep
+import Eval (evalImport, implicitMembers, load, predefinedModule) as Dep
 import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
@@ -40,7 +40,7 @@ import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
 import Lattice (DepKind)
-import Val (class MonadProgram, Env(..), GVal, ModuleState(..), constant, modifyModuleStore)
+import Val (class MonadProgram, GVal, ModuleState(..), modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
@@ -97,14 +97,13 @@ loadTopLevel
    -> m (Dict (GVal (PosLineage DepKind)))
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
+      predefined' <- for predefined \(_ × ρ) -> Loaded <$> Dep.predefinedModule ρ
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
       foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
    modifyModuleStore (_ { depGraph = depGraph })
    pure inputs
-   where
-   predefined' = predefined <#> \(_ × Env ρ) -> Loaded (constant <$> ρ)
 
 prepConfig :: forall m. MonadProgram m => String -> ExceptT ParseFailure m Config
 prepConfig fluidSrc = do

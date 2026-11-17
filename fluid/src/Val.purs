@@ -178,10 +178,6 @@ unitSection (Val _ u) = Val one case u of
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
 gval (p × v) = { val: v, inEdges: value <$> at p }
 
--- Value with no dependence.
-constant :: forall s. Semiring s => Raw Val -> GVal s
-constant v = { val: v, inEdges: pure (zeros v) }
-
 -- Vertex with the vertex of its doc, if any.
 type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
 
@@ -230,7 +226,7 @@ constructFrom
     . Traversable t
    => DepSemiring s
    => Ctrl s
-   -> (forall a. t (Val a) -> BaseVal a)
+   -> (forall a. Semiring a => t (Val a) -> BaseVal a)
    -> t (GVal s)
    -> GVal s
 constructFrom ctrl mk vs =

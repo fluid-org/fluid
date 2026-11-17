@@ -31,7 +31,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (withClasses)
-import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, at, attachDoc, materialise, newVertex)
+import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, at, attachDoc, materialise, newVertex, zeros)
 import Lattice (class DepSemiring, DepKind, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -451,6 +451,11 @@ evalModule ρ0 q (Module ιs s) = do
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × constructFrom mempty (const V.Unbound) Nil))
+
+-- Construct members ρ of a predefined module at a new vertex
+predefinedModule :: forall m s. MonadState (DepGraph Label s) m => DepSemiring s => Raw Env -> m (Dict (GVal s))
+predefinedModule (Env ρ) =
+   fst <$> newAssigns (ρ <#> \(Val _ u) -> constructFrom mempty (const (zeros u)) Nil) Nothing
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
