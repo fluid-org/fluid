@@ -51,7 +51,7 @@ type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Deriv × Raw Val)
 newValue { val: v, inEdges } = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
 
--- Bindings ρ and control position ctrl in terms of a new vertex which has ρ and ctrl as label
+-- Allocate vertex with bindings ρ and control position ctrl as label; returned ρ and ctrl depend on the vertex
 newAssigns
    :: forall m s
     . MonadState (DepGraph Label s) m
