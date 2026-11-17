@@ -64,7 +64,8 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    label = V.Assigns (void ctrl) (Env (_.val <$> ρ))
    inEdges = lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ)
 
--- Inputs after a statement which introduces ρ and ctrl
+-- Inputs after a statement which introduces ρ and ctrl; combines like two statement results except that
+-- inputs always have a control input
 after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
 after inputs ρ ctrl = { env: inputs.env <+> ρ, ctrl: fromMaybe inputs.ctrl ctrl }
 
@@ -79,10 +80,10 @@ asAssigns :: forall s. Result s -> Dict (GVal s) × Maybe (Ctrl s)
 asAssigns (Assigns ρ ctrl) = ρ × ctrl
 asAssigns (Returns _) = error "Assigns expected"
 
--- Result r of a statement evaluated after ρ and ctrl are introduced
-override :: forall s. Dict (GVal s) -> Maybe (Ctrl s) -> Result s -> Result s
-override ρ ctrl (Assigns ρ' ctrl') = Assigns (ρ <+> ρ') (ctrl' <|> ctrl)
-override _ _ r = r
+-- Result of a statement with result r followed by a statement with result r'
+override :: forall s. Result s -> Result s -> Result s
+override (Assigns ρ ctrl) (Assigns ρ' ctrl') = Assigns (ρ <+> ρ') (ctrl' <|> ctrl)
+override _ r' = r'
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
@@ -343,13 +344,13 @@ eval = { stmt, program }
             { holds, ctrl: ctrl' } <- condition (inputs { ctrl = ctrl }) e
             if holds then branch ctrl' s' else go bs' ctrl'
 
-         branch ctrl s' = override empty (Just ctrl) <$> stmt (inputs { ctrl = ctrl }) s'
+         branch ctrl s' = override (Assigns empty (Just ctrl)) <$> stmt (inputs { ctrl = ctrl }) s'
       Match e bs -> do
          v <- gval <$> expr inputs e
          classes <- askClasses
          case dispatch classes (NEL.toList bs) v of
             Nothing × ctrl -> pure (Assigns empty ctrl)
-            Just (ρ' × s') × ctrl -> override ρ' ctrl <$> stmt (after inputs ρ' ctrl) s'
+            Just (ρ' × s') × ctrl -> override (Assigns ρ' ctrl) <$> stmt (after inputs ρ' ctrl) s'
       Declare _ -> pure (Assigns empty Nothing)
       Assign p e -> do
          v <- gval <$> expr inputs e
@@ -372,21 +373,21 @@ eval = { stmt, program }
       TypeAlias x αs τ -> do
          let v = construct inputs.ctrl (constant (Val unit (V.TypeAlias αs τ)))
          pure (Assigns (maplet x v) Nothing)
-      s@(Seq _ _) -> block inputs empty Nothing (NEL.toList (statements s))
+      s@(Seq _ _) -> block inputs (Assigns empty Nothing) (NEL.toList (statements s))
 
-   -- Result of statements in sequence under a single rule; ρ and ctrl are introduced by earlier statements
-   block :: Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> List Stmt -> m (Result s)
-   block _ ρ ctrl Nil = pure (Assigns ρ ctrl)
-   block inputs ρ ctrl (s : ss) = stmt inputs s >>= case _ of
-      Returns r -> pure (Returns r)
-      Assigns ρ' ctrl' -> block (after inputs ρ' ctrl') (ρ <+> ρ') (ctrl' <|> ctrl) ss
+   -- Result of statements in sequence under a single rule; r is result of earlier statements
+   block :: Inputs s -> Result s -> List Stmt -> m (Result s)
+   block _ r Nil = pure r
+   block inputs r (s : ss) = stmt inputs s >>= case _ of
+      r'@(Returns _) -> pure r'
+      r'@(Assigns ρ ctrl) -> block (after inputs ρ ctrl) (r `override` r') ss
 
    -- Evaluate top-level program at a new vertex; return vertex of final expression as output
    program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
    program inputs s = output (unsnoc (statements s)) >>= \r -> newValue (gval r) $> r
       where
       output { init, last: ExprStmt e } =
-         asAssigns <$> block inputs empty Nothing init >>= uncurry newAssigns >>= \(ρ × ctrl) ->
+         asAssigns <$> block inputs (Assigns empty Nothing) init >>= uncurry newAssigns >>= \(ρ × ctrl) ->
             expr (after inputs ρ ctrl) e
       output _ = error absurd
 
