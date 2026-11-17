@@ -391,7 +391,7 @@ eval = { stmt, program }
          let k = length vs
          if k < n then pure (construct ctrl (partial unit))
          else if k == n then call φ vs
-         else call φ (take n vs) >>= record >>= \r -> apply ctrl (gval r) (drop n vs)
+         else application ctrl f (take n vs) >>= \v -> apply ctrl v (drop n vs)
          where
          arity' :: m Int
          arity' = case φ of
