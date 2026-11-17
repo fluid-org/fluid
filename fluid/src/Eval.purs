@@ -368,7 +368,7 @@ eval = { stmt, program }
          pure (Assigns (maplet x v) Nothing)
       s@(Seq _ _) -> block inputs (Assigns empty Nothing) (NEL.toList (statements s))
 
-   -- Result of statements in sequence under a single rule; r is result of earlier statements
+   -- Evaluate statements in order until one returns; r is result of earlier statements
    block :: Inputs s -> Result s -> List Stmt -> m (Result s)
    block _ r Nil = pure r
    block inputs r (s : ss) = stmt inputs s >>= case _ of
