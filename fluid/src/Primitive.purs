@@ -160,11 +160,13 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
-binopRel :: forall a. DepSemiring a => Binop -> Val a -> Val a -> MayFail (Val a)
-binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopRel :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
+binopRel op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopRel _ _ = error absurd
 
-unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> MayFail (Val a)
-unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
+unopRel :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
+unopRel op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
+unopRel _ _ = error absurd
 
 type Operand = Int + Number + String
 

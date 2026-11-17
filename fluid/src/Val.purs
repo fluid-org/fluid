@@ -156,8 +156,8 @@ instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w 
    modifyModuleStore = lift <<< modifyModuleStore
 
 -- Dictionary from list of key-value tuples; later entries overwrite earlier ones
-toDict :: forall a. Val a -> Val a
-toDict (Val α (List kvs)) = Val α (Dictionary (DictRep (D.fromFoldable (entry <$> kvs))))
+toDict :: forall a. List (Val a) -> Val a
+toDict (Val α (List kvs) : Nil) = Val α (Dictionary (DictRep (D.fromFoldable (entry <$> kvs))))
    where
    entry :: Val a -> String × a × Val a
    entry (Val _ (Tuple [ Val β (Lit (Str k)), v ])) = k × β × v
@@ -263,9 +263,9 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    label = Assigns (void ctrl) (Env (raw <$> ρ))
    inEdges = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
 
--- Value which depends on v by r
-applyRel :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
-applyRel r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
+-- Part of v selected by r
+project :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
+project r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
 
 -- Value which depends on vs by r
 applyRelAll
@@ -277,9 +277,18 @@ applyRelAll
    -> GVal s
 applyRelAll r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
 
--- Control edge from ctrl to the root of v
-construct :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-construct ctrl (GVal v) = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges })
+-- New value which depends on vs by r; root also depends on ctrl
+construct
+   :: forall t s
+    . Traversable t
+   => DepSemiring s
+   => Ctrl s
+   -> (forall a. DepSemiring a => t (Val a) -> Val a)
+   -> t (GVal s)
+   -> GVal s
+construct ctrl r vs = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges })
+   where
+   GVal v = applyRelAll r vs
 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl (GVal v) = GVal (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
@@ -292,7 +301,7 @@ constructFrom
    -> (forall a. Semiring a => t (Val a) -> BaseVal a)
    -> t (GVal s)
    -> GVal s
-constructFrom ctrl mk vs = construct ctrl (applyRelAll (mk >>> Val zero) vs)
+constructFrom ctrl mk vs = construct ctrl (mk >>> Val zero) vs
 
 -- Application of a function to arguments at a new vertex
 type Apply m s = GVal s -> List (GVal s) -> m (GVal s)

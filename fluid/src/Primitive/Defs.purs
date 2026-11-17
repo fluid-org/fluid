@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), applyRel, applyRelAll, construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, pureRel, raw, root, ctrlEdge)
+import Val (BaseVal(..), Ctrl, DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, project, pureRel, raw, root, ctrlEdge, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -155,7 +155,7 @@ sorted =
    merge :: forall a. DepSemiring a => a -> List (Val a) -> List (Val a) -> MayFail (List (Val a))
    merge β Nil vs' = pure (ctrlEdge β <$> vs')
    merge β vs Nil = pure (ctrlEdge β <$> vs)
-   merge β (v : vs) (v' : vs') = binopRel Lt v' v >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
+   merge β (v : vs) (v' : vs') = binopRel Lt (v' : v : Nil) >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
       where
       take true β' = (ctrlEdge β' v' : _) <$> merge β' (v : vs) vs'
       take false β' = (ctrlEdge β' v : _) <$> merge β' vs (v' : vs')
@@ -178,7 +178,7 @@ extremum id op =
    depRel _ = Left "Single argument expected"
 
    step :: forall a. DepSemiring a => Val a × a -> Val a -> MayFail (Val a × a)
-   step (v × β) v' = binopRel op v' v >>= unpack boolean <#> \(b × γ) -> (if b then v' else v) × (β + γ)
+   step (v × β) v' = binopRel op (v' : v : Nil) >>= unpack boolean <#> \(b × γ) -> (if b then v' else v) × (β + γ)
 
 exit :: ForeignOp
 exit =
@@ -337,7 +337,7 @@ foldl_with_index =
       where
       step acc (k × _) = apply (deliver ctrl g) (key : acc : entryValue k d : Nil)
          where
-         key = applyRel (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d
+         key = project (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d
    depOp _ _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
@@ -364,7 +364,7 @@ dict_intersectionWith =
    where
    depOp :: DepOp
    depOp apply ctrl (g : d1 : d2 : Nil) =
-      construct ctrl <<< dictFrom (d1 : d2 : Nil) <$>
+      dictFrom ctrl (d1 : d2 : Nil) <$>
          for (L.filter (\(k × _) -> lookup k (dictEntries (raw d2)) /= Nothing) (Dict.toUnfoldable (dictEntries (raw d1))))
             \(k × _) -> (k × _) <$> apply (deliver ctrl g) (entryValue k d1 : entryValue k d2 : Nil)
    depOp _ _ _ = throw "Function and two dictionaries expected"
@@ -375,21 +375,21 @@ dict_map =
    where
    depOp :: DepOp
    depOp apply ctrl (g : d : Nil) =
-      construct ctrl <<< dictFrom (singleton d) <$>
+      dictFrom ctrl (singleton d) <$>
          for (Dict.toUnfoldable (dictEntries (raw d)) :: List (String × (Unit × Raw Val)))
             \(k × _) -> (k × _) <$> apply (deliver ctrl g) (singleton (entryValue k d))
    depOp _ _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. DepSemiring s => String -> GVal s -> GVal s
-entryValue k = applyRel \x -> ctrlEdge (root x + fst (dictEntry k x)) (snd (dictEntry k x))
+entryValue k d = deliver (via root d <> via (dictEntry k >>> fst) d) (project (dictEntry k >>> snd) d)
 
 -- Control edge from β to key and whole value of an entry
 ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
 ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
-dictFrom :: forall s. DepSemiring s => List (GVal s) -> List (String × GVal s) -> GVal s
-dictFrom ds kvs = applyRelAll (\(Product (xs × Compose kvs')) -> dict xs kvs') (product ds (Compose kvs))
+dictFrom :: forall s. DepSemiring s => Ctrl s -> List (GVal s) -> List (String × GVal s) -> GVal s
+dictFrom ctrl ds kvs = construct ctrl (\(Product (xs × Compose kvs')) -> dict xs kvs') (product ds (Compose kvs))
    where
    dict :: forall a. Semiring a => List (Val a) -> List (String × Val a) -> Val a
    dict xs kvs' = Val (foldl add zero (root <$> xs))
