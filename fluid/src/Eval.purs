@@ -31,7 +31,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Deriv, VisibleGraph, at, attachDoc, materialise, newVertexWith)
+import DepGraph (DepGraph, Deriv, VisibleGraph, at, attachDoc, materialise, newVertex)
 import Lattice (class DepSemiring, DepKind, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -49,7 +49,7 @@ import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Deriv × Raw Val)
-newValue { val: v, inEdges } = newVertexWith (Value v) (Value <$> inEdges) <#> (_ × v)
+newValue { val: v, inEdges } = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
 
 -- Bindings ρ and control position ctrl in terms of a new vertex which has ρ and ctrl as label
 newAssigns
@@ -58,7 +58,7 @@ newAssigns
    => Dict (GVal s)
    -> Maybe (Ctrl s)
    -> m (Dict (GVal s) × Maybe (Ctrl s))
-newAssigns ρ ctrl = newVertexWith label inEdges <#> \p ->
+newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    mapWithKey (\x v -> v { inEdges = binding x <$> at p }) ρ × (ctrl $> (ctrlPosition <$> at p))
    where
    label = V.Assigns (void ctrl) (Env (_.val <$> ρ))

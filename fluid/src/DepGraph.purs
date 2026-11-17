@@ -92,8 +92,8 @@ emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
 valAt g p = get p g.vals
 
-newVertexWith :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
-newVertexWith v inEdges = do
+newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
+newVertex v inEdges = do
    size <- gets _.size
    let p = Deriv size
    modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, inEdges = Map.insert p inEdges g.inEdges }
