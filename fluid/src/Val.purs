@@ -31,8 +31,8 @@ import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
 import DepGraph (InEdges, DepGraph, Labelling, at, emptyGraph, plus, scale, zeros)
-import DepGraph (Deriv, Pos, valAt) as Dep
-import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
+import DepGraph (Deriv, valAt) as Dep
+import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
 import Pretty.Doc (Doc, text)
@@ -131,9 +131,6 @@ type ModuleStore s =
    { modules :: Map ModuleName (ModuleState s)
    , depGraph :: DepGraph Label s
    }
-
--- Weight used when a program is evaluated
-type Weight = Lineage (Dep.Deriv × Dep.Pos) DepKind
 
 emptyModuleStore :: forall s. ModuleStore s
 emptyModuleStore = { modules: Map.empty, depGraph: emptyGraph }

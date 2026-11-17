@@ -14,7 +14,9 @@ import Data.Set as Set
 import Data.String (Pattern(..), stripSuffix)
 import Data.Traversable (for)
 import Classes (class HasClasses)
-import Val (class HasModuleStore, ModuleStore, Weight, emptyModuleStore)
+import DepGraph (PosLineage)
+import Lattice (DepKind)
+import Val (class HasModuleStore, ModuleStore, emptyModuleStore)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
@@ -51,7 +53,7 @@ instance Monad m => LoadFile (NodeT m) where
 resolved :: forall m. MonadAff m => MonadAsk FileCxt m => String -> m String
 resolved path = ask >>= \(FileCxt { base: Folder dir }) -> liftAff (liftEffect (resolve [ dir ] path))
 
-newtype NodeT m a = NodeT (ReaderT FileCxt (StateT (ModuleStore Weight) m) a)
+newtype NodeT m a = NodeT (ReaderT FileCxt (StateT (ModuleStore (PosLineage DepKind)) m) a)
 
 runNodeT :: forall m a. Monad m => FileCxt -> NodeT m a -> m a
 runNodeT fileCxt (NodeT x) = evalStateT (runReaderT x fileCxt) emptyModuleStore
@@ -78,6 +80,6 @@ derive newtype instance Monad m => MonadReader FileCxt (NodeT m)
 instance Monad m => HasClasses (NodeT m) where
    askClasses = NodeT (ask <#> \(FileCxt { classes }) -> classes)
 
-instance Monad m => HasModuleStore Weight (NodeT m) where
+instance Monad m => HasModuleStore (PosLineage DepKind) (NodeT m) where
    moduleStore = NodeT (lift get)
    modifyModuleStore f = NodeT (lift (modify_ f))

@@ -24,6 +24,7 @@ import Util.Set ((∪))
 newtype Deriv = Deriv Int
 
 type Pos = Int -- index under the position ordering of a value
+type PosLineage s = Lineage (Deriv × Pos) s
 
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
@@ -113,7 +114,7 @@ materialise
    :: forall f s
     . Traversable f
    => DepSemiring s
-   => DepGraph f (Lineage (Deriv × Pos) s)
+   => DepGraph f (PosLineage s)
    -> Set Deriv
    -> VisibleGraph f s
 materialise g visible =
@@ -132,7 +133,7 @@ materialise g visible =
       weights = rel weightsAt
 
    -- Add weights ws at p, then free weights at each vertex which has p as last dependent
-   retain :: Deriv -> f (Lineage (Deriv × Pos) s) -> Endo (Labelling (f (Lineage (Deriv × Pos) s)))
+   retain :: Deriv -> f (PosLineage s) -> Endo (Labelling (f (PosLineage s)))
    retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p byLastDependent))
 
    -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
@@ -146,7 +147,7 @@ materialise g visible =
       (Map.toUnfoldable lastDependent :: List _) <#> \(q × p) -> p × (q : Nil)
 
    -- Edges into a vertex from each visible vertex, read off the lineage at every position.
-   edgesInto :: f (Lineage (Deriv × Pos) s) -> Labelling (Map Pos (Map Pos s))
+   edgesInto :: f (PosLineage s) -> Labelling (Map Pos (Map Pos s))
    edgesInto ws = foldl (unionWith Map.union) Map.empty $
       mapWithIndex (\j (Lineage (_ × m)) -> maplet j <$> bySource m) (positions ws)
 

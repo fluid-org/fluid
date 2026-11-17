@@ -21,13 +21,14 @@ import Data.Tuple (uncurry)
 import Effect.Aff (message)
 import Eval (evalProgram)
 import File (class MonadLoad, File(..), Folder(..), loadFile, (</>))
-import Lattice (𝔹)
+import Lattice (DepKind, 𝔹)
 import Module (prepConfig, throwParseFailure)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
 import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
 import Util (type (×), orThrow, throw, (×))
-import Val (class HasModuleStore, Val, EnvWithDocs, Weight)
+import DepGraph (PosLineage)
+import Val (class HasModuleStore, Val, EnvWithDocs)
 
 -- benchmarks parameterised on number of iterations
 type BenchSuite m = Int × Boolean -> Array (String × m BenchRow)
@@ -52,28 +53,28 @@ type TestLinkedInputsSpec =
    , file :: String
    }
 
-type SuiteFactory r m = HasClasses m => HasModuleStore Weight m => MonadLoad m => Array { file :: String | r } -> BenchSuite m
+type SuiteFactory r m = HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Array { file :: String | r } -> BenchSuite m
 
-suite :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array TestSpec -> BenchSuite m
+suite :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Array TestSpec -> BenchSuite m
 suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
    where
    asTest :: TestSpec -> m BenchRow
    asTest { file, fwd_expect } = do
       test (File file) fwd_expect (n × is_bench)
 
-depSuite :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array DepSpec -> TestSuite m
+depSuite :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)
 
 -- Build a figure from the figure graph after a round trip through JSON
-loadFig :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Options -> String -> m Fig
+loadFig :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Options -> String -> m Fig
 loadFig spec fluidSrc =
    figGraph spec fluidSrc >>= (encodeFigGraph >=> (stringify >>> jsonParser) >=> decodeFigGraph) >>> orThrow
       <#> figure
 
-linkedOutputsTest :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestLinkedOutputsSpec -> m Fig
+linkedOutputsTest :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => TestLinkedOutputsSpec -> m Fig
 linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
    fig0 <- logTimeWhen timing.loadFig (file <> " loadFig") \_ -> loadFig spec fluidSrc
@@ -85,10 +86,10 @@ linkedOutputsTest { spec, δ_out, out_expect, inert_expect, file } = do
    for_ (inert_expect arg) \sel -> checkEq "inert" "inert_expect" (isInert <$> v) (sel𝔹 (valOf sel) v)
    pure fig
 
-linkedOutputsSuite :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array TestLinkedOutputsSpec -> Array (String × m Unit)
+linkedOutputsSuite :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Array TestLinkedOutputsSpec -> Array (String × m Unit)
 linkedOutputsSuite testSpecs = testSpecs <#> (_.file &&& (linkedOutputsTest >>> void))
 
-linkedInputsTest :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestLinkedInputsSpec -> m Fig
+linkedInputsTest :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => TestLinkedInputsSpec -> m Fig
 linkedInputsTest { spec, δ_in, in_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
    fig <- logTimeWhen timing.loadFig (file <> " loadFig") (\_ -> loadFig spec fluidSrc) <#> uncurry selectInput (valOf <$> δ_in)
@@ -97,7 +98,7 @@ linkedInputsTest { spec, δ_in, in_expect, file } = do
    checkSelection in_expect (selected <$> ρ)
    pure fig
 
-linkedInputsSuite :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array TestLinkedInputsSpec -> Array (String × m Unit)
+linkedInputsSuite :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Array TestLinkedInputsSpec -> Array (String × m Unit)
 linkedInputsSuite testSpecs = testSpecs <#> (_.file &&& (linkedInputsTest >>> void))
 
 type IllFormedSpec =
@@ -105,7 +106,7 @@ type IllFormedSpec =
    , expected_error :: String
    }
 
-illFormedSuite :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array IllFormedSpec -> Array (String × m Unit)
+illFormedSuite :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => Array IllFormedSpec -> Array (String × m Unit)
 illFormedSuite specs = specs <#> (_.file &&& asTest)
    where
    folder = Folder "ill_formed"

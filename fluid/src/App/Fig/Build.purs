@@ -15,7 +15,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (fst)
-import DepGraph (selected)
+import DepGraph (PosLineage, selected)
 import Dict (fromFoldable) as D
 import Eval (evalProgram, visibleGraph)
 import File (class MonadLoad, Folder(..))
@@ -27,7 +27,8 @@ import Pretty (prettyP)
 import Util (isEmpty, throw, (×))
 import Util.Map (get)
 import Util.Set ((∈))
-import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), Weight, unvals, val, valAt, withDoc)
+import Lattice (DepKind)
+import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, valAt, withDoc)
 
 -- Options in the form decoded from JSON; delete once the options are decoded directly
 type JsonOptions =
@@ -47,7 +48,14 @@ optionsFromJson spec@{ ignoreInputs, linking, rowFilter } =
    }
 
 -- Take documented leaves of visible graph (other than output) as inputs of figure
-figGraph :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Options -> String -> m FigGraph
+figGraph
+   :: forall m
+    . HasClasses m
+   => HasModuleStore (PosLineage DepKind) m
+   => MonadLoad m
+   => Options
+   -> String
+   -> m FigGraph
 figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, out } <- evalProgram config.inputs config.classes config.e
@@ -74,5 +82,12 @@ figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
       , rowFilter
       }
 
-loadFig :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Options -> String -> m Fig
+loadFig
+   :: forall m
+    . HasClasses m
+   => HasModuleStore (PosLineage DepKind) m
+   => MonadLoad m
+   => Options
+   -> String
+   -> m Fig
 loadFig options fluidSrc = figure <$> figGraph options fluidSrc

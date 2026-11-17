@@ -31,7 +31,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Deriv, VisibleGraph, at, attachDoc, materialise, newVertex)
+import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, at, attachDoc, materialise, newVertex)
 import Lattice (class DepSemiring, DepKind, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), Weight, binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -516,7 +516,7 @@ load q = do
    loaded ρ_q = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules }) $> ρ_q
 
 type Eval =
-   { g :: DepGraph Label Weight
+   { g :: DepGraph Label (PosLineage DepKind)
    , out :: Deriv
    }
 
@@ -536,9 +536,9 @@ documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val 
 evalProgram
    :: forall m
     . HasClasses m
-   => HasModuleStore Weight m
+   => HasModuleStore (PosLineage DepKind) m
    => MonadLoad m
-   => Dict (GVal Weight) -- top-level environment
+   => Dict (GVal (PosLineage DepKind)) -- top-level environment
    -> ClassTable
    -> Stmt
    -> m Eval

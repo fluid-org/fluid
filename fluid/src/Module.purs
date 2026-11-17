@@ -30,7 +30,7 @@ import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
 import File (class MonadLoad, File(..), FileCxt(..), hasDirectory, loadModuleSource, manifest, modulePath, withClasses)
-import DepGraph (emptyGraph)
+import DepGraph (PosLineage, emptyGraph)
 import Module.Defs (ModuleName, containing, implicit, implicitFor, parents)
 import Parse (parseModule, parseProgram)
 import Primitive.Defs (predefined, predefinedClasses)
@@ -39,11 +39,12 @@ import SExpr as S
 import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
-import Val (class HasModuleStore, Env(..), GVal, ModuleState(..), Weight, constant, modifyModuleStore)
+import Lattice (DepKind)
+import Val (class HasModuleStore, Env(..), GVal, ModuleState(..), constant, modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
-type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal Weight), classes :: ClassTable }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal (PosLineage DepKind)), classes :: ClassTable }
 
 -- Message for source of program or module that fails to parse
 newtype ParseFailure = ParseFailure String
@@ -91,11 +92,11 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
 loadTopLevel
    :: forall m
     . HasClasses m
-   => HasModuleStore Weight m
+   => HasModuleStore (PosLineage DepKind) m
    => MonadLoad m
    => Map ModuleName Module
    -> List S.Import
-   -> m (Dict (GVal Weight))
+   -> m (Dict (GVal (PosLineage DepKind)))
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
@@ -110,7 +111,7 @@ loadTopLevel modules imports = do
 prepConfig
    :: forall m
     . HasClasses m
-   => HasModuleStore Weight m
+   => HasModuleStore (PosLineage DepKind) m
    => MonadLoad m
    => String
    -> ExceptT ParseFailure m Config
