@@ -1,4 +1,39 @@
-module DepGraph where
+module DepGraph
+   ( ConjugatePair
+   , DepGraph
+   , Deriv(..)
+   , Edges
+   , GVal
+   , InEdges(..)
+   , Labelling
+   , Pos
+   , PosLineage
+   , SparseRel(..)
+   , VisibleGraph
+   , applyRel
+   , applyRelAll
+   , at
+   , atVertex
+   , attachDoc
+   , bwd
+   , dimap
+   , emptyGraph
+   , fwd
+   , mapPositions
+   , mask
+   , materialise
+   , newVertex
+   , plus
+   , queries
+   , raw
+   , scale
+   , selected
+   , sparseRel
+   , valAt
+   , via
+   , withCtrl
+   , zeros
+   ) where
 
 import Prelude
 
@@ -63,6 +98,38 @@ instance Semiring b => Semigroup (InEdges f s b) where
 
 instance Semiring b => Monoid (InEdges f s b) where
    mempty = pure zero
+
+-- Value of shape v with dependence on labels of existing vertices; constructor not exported
+newtype GVal (f :: Type -> Type) (v :: Type -> Type) s = GVal { val :: v Unit, inEdges :: InEdges f s (v s) }
+
+raw :: forall f v s. GVal f v s -> v Unit
+raw (GVal v) = v.val
+
+-- Dependence by r on v
+via :: forall f v s b. (v s -> b) -> GVal f v s -> InEdges f s b
+via r (GVal v) = r <$> v.inEdges
+
+-- Value v at vertex p, where proj selects v from label of p
+atVertex :: forall f v s. (f s -> v s) -> Deriv -> v Unit -> GVal f v s
+atVertex proj p v = GVal { val: v, inEdges: proj <$> at p }
+
+-- Value which depends on v by r
+applyRel :: forall f v s. DepSemiring s => (forall a. DepSemiring a => v a -> v a) -> GVal f v s -> GVal f v s
+applyRel r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
+
+-- Value which depends on vs by r
+applyRelAll
+   :: forall t f v s
+    . Traversable t
+   => DepSemiring s
+   => (forall a. DepSemiring a => t (v a) -> v a)
+   -> t (GVal f v s)
+   -> GVal f v s
+applyRelAll r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
+
+-- Value v with dependence on ctrl added by h
+withCtrl :: forall f v s. (s -> v s -> v s) -> InEdges f s s -> GVal f v s -> GVal f v s
+withCtrl h ctrl (GVal v) = GVal (v { inEdges = lift2 h ctrl v.inEdges })
 
 -- Pair present exactly when its weight is non-zero.
 newtype SparseRel s = SparseRel

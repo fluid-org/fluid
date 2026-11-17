@@ -3,7 +3,6 @@ module Primitive.Defs where
 import Prelude hiding (absurd, apply, div, mod, top)
 
 import Bind (Bind, Name, Var, dottedName, qual, varName)
-import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Alt ((<|>))
 import Data.Argonaut.Core (Json, caseJson, isNull, stringify, toArray, toBoolean, toObject, toString)
@@ -30,7 +29,10 @@ import Data.String (Pattern(..))
 import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
+import Data.Functor.Compose (Compose(..))
+import Data.Functor.Product (Product(..), product)
 import Data.Traversable (for, traverse)
+import DepGraph (applyRel, applyRelAll, raw)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
@@ -53,7 +55,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, pureRel, root, ctrlEdge, via)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, pureRel, root, ctrlEdge)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -201,11 +203,12 @@ loadJson =
    ForeignOp ("load_json" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp apply ctrl vs@({ val: Val _ (Fun (Type τ)) } : { val: Val _ (Lit (Str path)) } : Nil) = do
-      classes <- askClasses
-      json <- loadJsonFile path
-      v <- orThrow (jsonVal classes τ json)
-      fromRel (\us -> ctrlWeight * foldl add zero (root <$> us) <$ v) apply ctrl vs
+   depOp apply ctrl vs
+      | Val _ (Fun (Type τ)) : Val _ (Lit (Str path)) : Nil <- raw <$> vs = do
+           classes <- askClasses
+           json <- loadJsonFile path
+           v <- orThrow (jsonVal classes τ json)
+           fromRel (\us -> ctrlWeight * foldl add zero (root <$> us) <$ v) apply ctrl vs
    depOp _ _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
@@ -331,11 +334,11 @@ foldl_with_index =
    where
    depOp :: DepOp
    depOp apply ctrl (g : v : d : Nil) =
-      foldM step (deliver ctrl v) (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
+      foldM step (deliver ctrl v) (Dict.toUnfoldable (dictEntries (raw d)) :: List (String × (Unit × Raw Val)))
       where
       step acc (k × _) = apply (deliver ctrl g) (key : acc : entryValue k d : Nil)
          where
-         key = { val: Val unit (Lit (Str k)), inEdges: via (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d }
+         key = applyRel (\x -> Val (fst (dictEntry k x)) (Lit (Str k))) d
    depOp _ _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
@@ -363,7 +366,7 @@ dict_intersectionWith =
    depOp :: DepOp
    depOp apply ctrl (g : d1 : d2 : Nil) =
       construct ctrl <<< dictFrom (d1 : d2 : Nil) <$>
-         for (L.filter (\(k × _) -> lookup k (dictEntries d2.val) /= Nothing) (Dict.toUnfoldable (dictEntries d1.val)))
+         for (L.filter (\(k × _) -> lookup k (dictEntries (raw d2)) /= Nothing) (Dict.toUnfoldable (dictEntries (raw d1))))
             \(k × _) -> (k × _) <$> apply (deliver ctrl g) (entryValue k d1 : entryValue k d2 : Nil)
    depOp _ _ _ = throw "Function and two dictionaries expected"
 
@@ -374,27 +377,22 @@ dict_map =
    depOp :: DepOp
    depOp apply ctrl (g : d : Nil) =
       construct ctrl <<< dictFrom (singleton d) <$>
-         for (Dict.toUnfoldable (dictEntries d.val) :: List (String × (Unit × Raw Val)))
+         for (Dict.toUnfoldable (dictEntries (raw d)) :: List (String × (Unit × Raw Val)))
             \(k × _) -> (k × _) <$> apply (deliver ctrl g) (singleton (entryValue k d))
    depOp _ _ _ = throw "Function and dictionary expected"
 
 entryValue :: forall s. DepSemiring s => String -> GVal s -> GVal s
-entryValue k d =
-   { val: snd (dictEntry k d.val)
-   , inEdges: lift2 ctrlEdge (via root d <> via (dictEntry k >>> fst) d) (via (dictEntry k >>> snd) d)
-   }
+entryValue k = applyRel \x -> ctrlEdge (root x + fst (dictEntry k x)) (snd (dictEntry k x))
 
 -- Control edge from β to key and whole value of an entry
 ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
 ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the given values, its root and key positions from those of the dictionary values.
-dictFrom :: forall s. Semiring s => List (GVal s) -> List (String × GVal s) -> GVal s
-dictFrom ds kvs =
-   { val: Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \(k × v) -> k × (unit × v.val)))))
-   , inEdges: lift2 dict (traverse _.inEdges ds) (traverse (\(k × v) -> (k × _) <$> v.inEdges) kvs)
-   }
+dictFrom :: forall s. DepSemiring s => List (GVal s) -> List (String × GVal s) -> GVal s
+dictFrom ds kvs = applyRelAll (\(Product (xs × Compose kvs')) -> dict xs kvs') (product ds (Compose kvs))
    where
+   dict :: forall a. Semiring a => List (Val a) -> List (String × Val a) -> Val a
    dict xs kvs' = Val (foldl add zero (root <$> xs))
       (Dictionary (DictRep (D.fromFoldable (kvs' <#> \(k × v) -> k × (foldl add zero (fst <<< dictEntry k <$> xs) × v)))))
 

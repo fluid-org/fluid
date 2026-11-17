@@ -30,8 +30,8 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, PosLineage, at, emptyGraph, plus, scale, zeros)
-import DepGraph (Deriv, valAt) as Dep
+import DepGraph (InEdges, DepGraph, Labelling, PosLineage, applyRelAll, atVertex, emptyGraph, plus, raw, scale, withCtrl, zeros)
+import DepGraph (Deriv, GVal, valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
@@ -156,7 +156,7 @@ instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w 
    modifyModuleStore = lift <<< modifyModuleStore
 
 -- Value together with its dependence on values already in the graph.
-type GVal s = { val :: Raw Val, inEdges :: InEdges Label s (Val s) }
+type GVal s = Dep.GVal Label Val s
 -- Dependence of the control input on values already in the graph.
 type Ctrl s = InEdges Label s s
 
@@ -176,7 +176,7 @@ unitSection (Val _ u) = Val one case u of
    TypeAlias αs τ -> TypeAlias αs τ
 
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = { val: v, inEdges: value <$> at p }
+gval (p × v) = atVertex value p v
 
 -- Vertex with the vertex of its doc, if any.
 type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
@@ -202,24 +202,16 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 valAt :: forall s. DepGraph Label s -> Dep.Deriv -> Raw Val
 valAt g p = value (Dep.valAt g p)
 
--- Dependence on values already in the graph of a value that depends on v by r.
-via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
-via r v = r <$> v.inEdges
-
--- Dependence on values already in the graph of a value that depends on vs by r.
-viaAll :: forall t s. Traversable t => (t (Val s) -> Val s) -> t (GVal s) -> InEdges Label s (Val s)
-viaAll r vs = r <$> traverse _.inEdges vs
-
 -- Control edge from β to the whole of v
 ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
 ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
 
 -- Control edge from ctrl to the root of v
 construct :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-construct ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges }
+construct = withCtrl \c (Val α u) -> Val (α + ctrlWeight * c) u
 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
+deliver = withCtrl ctrlEdge
 
 constructFrom
    :: forall t s
@@ -229,8 +221,7 @@ constructFrom
    -> (forall a. Semiring a => t (Val a) -> BaseVal a)
    -> t (GVal s)
    -> GVal s
-constructFrom ctrl mk vs =
-   construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
+constructFrom ctrl mk vs = construct ctrl (applyRelAll (mk >>> Val zero) vs)
 
 -- Dictionary from list of key-value tuples; later entries overwrite earlier ones
 toDict :: forall a. Val a -> Val a
@@ -283,12 +274,12 @@ type DepOp =
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
 fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g _ ctrl vs = pure (deliver ctrl { val: g (_.val <$> vs), inEdges: viaAll g vs })
+fromRel g _ ctrl vs = pure (deliver ctrl (applyRelAll g vs))
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
 pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
 pureRel f app ctrl vs = do
-   _ <- orThrow (f (_.val <$> vs))
+   _ <- orThrow (f (raw <$> vs))
    fromRel (f >>> definitelyRight) app ctrl vs
 
 data ForeignOp' = ForeignOp'
