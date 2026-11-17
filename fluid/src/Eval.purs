@@ -58,11 +58,11 @@ newAssigns
    => Dict (GVal s)
    -> Maybe (Ctrl s)
    -> m (Dict (GVal s) × Maybe (Ctrl s))
-newAssigns ρ ctrl = do
-   p <- newVertexWith (V.Assigns (void ctrl) (Env (_.val <$> ρ)))
-      (lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ))
-   let r = at p
-   pure (mapWithKey (\x v -> v { inEdges = binding x <$> r }) ρ × (ctrl $> (ctrlPosition <$> r)))
+newAssigns ρ ctrl = newVertexWith label inEdges <#> \p ->
+   mapWithKey (\x v -> v { inEdges = binding x <$> at p }) ρ × (ctrl $> (ctrlPosition <$> at p))
+   where
+   label = V.Assigns (void ctrl) (Env (_.val <$> ρ))
+   inEdges = lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ)
 
 -- Inputs after a statement which introduces ρ and ctrl
 after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
