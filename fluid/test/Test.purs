@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadError)
 import Classes (class HasClasses)
-import Val (class HasModuleStore)
+import Val (class HasModuleStore, Weight)
 import Data.Array (concat, filter, elem)
 import Data.Profunctor.Strong (second)
 import Effect (Effect)
@@ -29,29 +29,29 @@ import Util ((×))
 main :: Effect Unit
 main = run (second (runWebT emptyFileCxt <<< withRoots fluidSrcPaths) <$> tests)
 
-tests :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestSuite m
+tests :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestSuite m
 tests = allTests
 
-scratchpad :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestSuite m
+scratchpad :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestSuite m
 scratchpad = illFormedSuite (filter (\c -> c.file `elem` [ "matrix_dim_type.fld" ]) illFormed_cases)
 
-filterSuite :: forall m r. HasClasses m => HasModuleStore m => MonadLoad m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
+filterSuite :: forall m r. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array String -> Array { file :: String | r } -> SuiteFactory r m -> TestSuite m
 filterSuite files cases makeSuite =
    second void <$> makeSuite (filter (\c -> c.file `elem` files) cases) (1 × false)
 
-allTests :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestSuite m
+allTests :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestSuite m
 allTests = concat (benchmarks <#> asTestSuite) <> depSuite dep_cases <> linkingTests <> illFormedTests
 
-linkingTests :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestSuite m
+linkingTests :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestSuite m
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
 
-illFormedTests :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => TestSuite m
+illFormedTests :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => TestSuite m
 illFormedTests = illFormedSuite illFormed_cases <> (second (withRoots [ Folder "test/lib/predefined" ]) <$> illFormedSuite shadow_cases)
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
 asTestSuite suite = second void <$> suite (1 × false)
 
-benchmarks :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Array (BenchSuite m)
+benchmarks :: forall m. HasClasses m => HasModuleStore Weight m => MonadLoad m => Array (BenchSuite m)
 benchmarks =
    [ suite comprehension_cases
    , suite misc_cases

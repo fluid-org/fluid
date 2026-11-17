@@ -8,7 +8,7 @@ import Types.Defs (cRange)
 import Control.Apply (lift2)
 import Control.Monad.Except (ExceptT)
 import Control.Monad.Reader (ReaderT)
-import Control.Monad.State (class MonadState, StateT, gets)
+import Control.Monad.State (class MonadState, StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
 import Data.Array (cons, fromFoldable, length, zipWith, (!!)) as A
@@ -122,38 +122,41 @@ instance Highlightable a => Highlightable (a × b) where
 
 instance (Ann a, BoundedLattice b) => Ann (a × b)
 
--- Module parsed but not yet loaded, or loaded with its members as vertices in depGraph.
-data ModuleState = Parsed Module | Loaded (Dict Dep.Deriv)
+-- Module parsed but not yet loaded, or loaded with its environment
+data ModuleState s = Parsed Module | Loaded (Dict (GVal s))
 
-loadedEnv :: ModuleState -> Maybe (Dict Dep.Deriv)
+loadedEnv :: forall s. ModuleState s -> Maybe (Dict (GVal s))
 loadedEnv (Parsed _) = Nothing
 loadedEnv (Loaded ρ) = Just ρ
 
-type ModuleStore =
-   { modules :: Map ModuleName ModuleState
-   , depGraph :: DepGraph Label (Lineage (Dep.Deriv × Dep.Pos) DepKind)
+type ModuleStore s =
+   { modules :: Map ModuleName (ModuleState s)
+   , depGraph :: DepGraph Label s
    }
 
-emptyModuleStore :: ModuleStore
+-- Weight used when a program is evaluated
+type Weight = Lineage (Dep.Deriv × Dep.Pos) DepKind
+
+emptyModuleStore :: forall s. ModuleStore s
 emptyModuleStore = { modules: Map.empty, depGraph: emptyGraph }
 
-class Monad m <= HasModuleStore m where
-   moduleStore :: m ModuleStore
-   modifyModuleStore :: (ModuleStore -> ModuleStore) -> m Unit
+class Monad m <= HasModuleStore s m | m -> s where
+   moduleStore :: m (ModuleStore s)
+   modifyModuleStore :: (ModuleStore s -> ModuleStore s) -> m Unit
 
-instance (Monad m, HasModuleStore m) => HasModuleStore (StateT s m) where
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (StateT t m) where
    moduleStore = lift moduleStore
    modifyModuleStore = lift <<< modifyModuleStore
 
-instance (Monad m, HasModuleStore m) => HasModuleStore (ReaderT r m) where
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (ReaderT r m) where
    moduleStore = lift moduleStore
    modifyModuleStore = lift <<< modifyModuleStore
 
-instance (Monad m, HasModuleStore m) => HasModuleStore (ExceptT e m) where
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (ExceptT e m) where
    moduleStore = lift moduleStore
    modifyModuleStore = lift <<< modifyModuleStore
 
-instance (Monad m, HasModuleStore m, Monoid w) => HasModuleStore (WriterT w m) where
+instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w m) where
    moduleStore = lift moduleStore
    modifyModuleStore = lift <<< modifyModuleStore
 
@@ -208,10 +211,6 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 valAt :: forall s. DepGraph Label s -> Dep.Deriv -> Raw Val
 valAt g p = value (Dep.valAt g p)
 
--- Value of a derivation already in the graph.
-gvalAt :: forall m s. MonadState (DepGraph Label s) m => Dep.Deriv -> m (GVal s)
-gvalAt p = gets \g -> gval (p × valAt g p)
-
 -- Dependence on values already in the graph of a value that depends on v by r.
 via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
 via r v = r <$> v.inEdges
@@ -262,7 +261,7 @@ toDict _ = error absurd
 -- Monad for evaluating program into dependence graph with weights in s
 class
    ( HasClasses m
-   , HasModuleStore m
+   , HasModuleStore s m
    , MonadLoad m
    , MonadState (DepGraph Label s) m
    , DepSemiring s
@@ -272,7 +271,7 @@ class
 
 instance
    ( HasClasses m
-   , HasModuleStore m
+   , HasModuleStore s m
    , MonadLoad m
    , MonadState (DepGraph Label s) m
    , DepSemiring s

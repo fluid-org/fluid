@@ -31,8 +31,8 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Deriv, Pos, VisibleGraph, at, attachDoc, materialise, newVertex, newVertexWith)
-import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
+import DepGraph (DepGraph, Deriv, VisibleGraph, at, attachDoc, materialise, newVertexWith)
+import Lattice (class DepSemiring, DepKind, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), Weight, binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, dictionary, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -245,9 +245,7 @@ eval = { stmt, program }
             pure (deliver (inputs.ctrl <> ctrl <> via sum v') { val: proj v.val, inEdges: via proj v })
       ModMember q x -> do
          { modules } <- moduleStore
-         let ρ_q = definitely' (loadedEnv (get q modules))
-         p <- withMsg "Module member" $ lookup' x ρ_q
-         deliver inputs.ctrl <$> gvalAt p
+         deliver inputs.ctrl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
       App e es -> do
          f <- gval <$> expr inputs e
          vs <- traverse (expr inputs >>> map gval) es
@@ -383,13 +381,15 @@ eval = { stmt, program }
       Returns r -> pure (Returns r)
       Assigns ρ' ctrl' -> block (after inputs ρ' ctrl') (ρ <+> ρ') (ctrl' <|> ctrl) ss
 
-   -- Value of a top-level program at the vertex of its trailing expression, if any
+   -- Evaluate top-level program at a new vertex; return vertex of trailing expression, if any, as output
    program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
-   program inputs s = case unsnoc (statements s) of
-      { init, last: Return e } -> block inputs empty Nothing init >>= case _ of
+   program inputs s = output (unsnoc (statements s)) >>= \r -> newValue (gval r) $> r
+      where
+      output { init: Nil, last: Return e } = expr inputs e
+      output { init, last: Return e } = block inputs empty Nothing init >>= case _ of
          Returns r -> pure r
-         Assigns ρ ctrl -> expr (after inputs ρ ctrl) e
-      _ -> asReturns <$> stmt inputs s
+         Assigns ρ ctrl -> newAssigns ρ ctrl >>= \(ρ' × ctrl') -> expr (after inputs ρ' ctrl') e
+      output _ = asReturns <$> stmt inputs s
 
    -- Apply f to vs at a new vertex
    application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
@@ -443,37 +443,36 @@ eval = { stmt, program }
          where
          ctrl' = via root f
 
+-- Evaluate module q at a new vertex; bindings of body override module value of each submodule
 evalModule
    :: forall m s
     . MonadEval s m
-   => Dict Deriv
+   => Dict (GVal s)
    -> ModuleName
    -> Module
-   -> m (Dict Deriv)
+   -> m (Dict (GVal s))
 evalModule ρ0 q (Module ιs s) = do
-   ρ_imp <- foldM (evalImport q) ρ0 ιs
+   ρ <- foldM (evalImport q) ρ0 ιs
    { modules } <- moduleStore
-   ρ_subMods <- traverse moduleVal (D.fromFoldable (submods (Map.keys modules) q))
-   ρ <- traverse gvalAt ρ_imp
    ρ' × _ <- asAssigns <$> eval.stmt { ctrl: mempty, env: ρ } s
-   let xs = L.fromFoldable (assigns s)
-   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (newVertex (Value (Val unit V.Unbound)))) xs
-   members <- traverse (newValue >>> map fst) ρ'
-   pure (ρ_subMods <+> ρ_unbound <+> members)
+   fst <$> newAssigns (subMods modules <+> unbound <+> ρ') Nothing
+   where
+   subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
+   unbound = D.fromFoldable ((L.fromFoldable (assigns s) :: List _) <#> (_ × constant (Val unit V.Unbound)))
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
    :: forall m s
     . MonadEval s m
    => ModuleName
-   -> Dict Deriv
+   -> Dict (GVal s)
    -> Import
-   -> m (Dict Deriv)
+   -> m (Dict (GVal s))
 evalImport enclosing ρ = case _ of
    Import q Nothing -> do
       _ <- load q
       loadAncestors Nothing q
-      maplet (head q) <$> moduleVal (pure (head q)) <#> (ρ <+> _)
+      pure (ρ <+> maplet (head q) (moduleVal (pure (head q))))
    Import q (Just xs) -> do
       ρ_q <- load q
       loadAncestors (Just enclosing) q
@@ -492,11 +491,11 @@ evalImport enclosing ρ = case _ of
          when (Map.member (snoc q x) modules) (void (load (snoc q x)))
          pure (ρ' <+> maplet x (get x ρ_q))
 
-moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
-moduleVal q = newVertex (Value (Val unit (V.Module q)))
+moduleVal :: forall s. Semiring s => ModuleName -> GVal s
+moduleVal q = constant (Val unit (V.Module q))
 
 -- Members of the implicit modules loaded so far.
-implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)
+implicitMembers :: forall m s. HasModuleStore s m => m (Dict (GVal s))
 implicitMembers = moduleStore <#> \{ modules } ->
    foldl (\ρ q -> ρ <+> fromMaybe empty (Map.lookup q modules >>= loadedEnv)) empty implicit
 
@@ -504,7 +503,7 @@ load
    :: forall m s
     . MonadEval s m
    => ModuleName
-   -> m (Dict Deriv)
+   -> m (Dict (GVal s))
 load q = do
    { modules } <- moduleStore
    case Map.lookup q modules of
@@ -517,7 +516,7 @@ load q = do
    loaded ρ_q = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules }) $> ρ_q
 
 type Eval =
-   { g :: DepGraph Label (Lineage (Deriv × Pos) DepKind)
+   { g :: DepGraph Label Weight
    , out :: Deriv
    }
 
@@ -537,16 +536,14 @@ documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val 
 evalProgram
    :: forall m
     . HasClasses m
-   => HasModuleStore m
+   => HasModuleStore Weight m
    => MonadLoad m
-   => Dict Deriv -- top-level environment, as vertices of the module store's dependence graph
+   => Dict (GVal Weight) -- top-level environment
    -> ClassTable
    -> Stmt
    -> m Eval
 evalProgram inputs classes s =
    withClasses classes do
       { depGraph } <- moduleStore
-      p × g <- flip runStateT depGraph do
-         env <- traverse gvalAt inputs
-         fst <$> eval.program { ctrl: mempty, env } s
-      pure { g, out: p }
+      out × g <- flip runStateT depGraph (fst <$> eval.program { ctrl: mempty, env: inputs } s)
+      pure { g, out }

@@ -30,7 +30,7 @@ import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
 import File (class MonadLoad, File(..), FileCxt(..), hasDirectory, loadModuleSource, manifest, modulePath, withClasses)
-import DepGraph (Deriv, emptyGraph, newVertex)
+import DepGraph (emptyGraph)
 import Module.Defs (ModuleName, containing, implicit, implicitFor, parents)
 import Parse (parseModule, parseProgram)
 import Primitive.Defs (predefined, predefinedClasses)
@@ -39,11 +39,11 @@ import SExpr as S
 import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
-import Val (class HasModuleStore, Env(..), Label(..), ModuleState(..), modifyModuleStore)
+import Val (class HasModuleStore, Env(..), GVal, ModuleState(..), Weight, constant, modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
-type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal Weight), classes :: ClassTable }
 
 -- Message for source of program or module that fails to parse
 newtype ParseFailure = ParseFailure String
@@ -87,29 +87,30 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
            ("import cycle: " <> intercalate " -> " (quoted <<< dottedName <$> (q : reverse (takeWhile (_ /= q) path)) <> (q : Nil)))
       | otherwise = Set.insert q <$> foldM (go (q : path)) done (findWithDefault Nil q edges)
 
--- Load modules into new dependence graph, kept in module store; return top-level environment as vertex per variable
+-- Load modules into new dependence graph in module store; return top-level environment
 loadTopLevel
    :: forall m
     . HasClasses m
-   => HasModuleStore m
+   => HasModuleStore Weight m
    => MonadLoad m
    => Map ModuleName Module
    -> List S.Import
-   -> m (Dict Deriv)
+   -> m (Dict (GVal Weight))
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
-      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse (Value >>> newVertex) ρ) predefined
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
       foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
    modifyModuleStore (_ { depGraph = depGraph })
    pure inputs
+   where
+   predefined' = predefined <#> \(_ × Env ρ) -> Loaded (constant <$> ρ)
 
 prepConfig
    :: forall m
     . HasClasses m
-   => HasModuleStore m
+   => HasModuleStore Weight m
    => MonadLoad m
    => String
    -> ExceptT ParseFailure m Config
