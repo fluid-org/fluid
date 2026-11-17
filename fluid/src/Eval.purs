@@ -6,7 +6,7 @@ import Bind (dottedName, prefixOf, varAnon, varThis)
 import Control.Alt ((<|>))
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (class MonadError)
-import Control.Monad.State (runStateT)
+import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
 import Data.Foldable (elem, fold, foldM, foldl, sum)
@@ -23,7 +23,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (for, traverse)
+import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst, snd, uncurry)
 import Classes (class HasClasses, ClassTable, ancestors, arity, askClasses, checkArity, fieldNames)
 import Dict (Dict)
@@ -31,7 +31,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Deriv, Pos, VisibleGraph, attachDoc, deriv, materialise)
+import DepGraph (DepGraph, Deriv, Pos, VisibleGraph, at, attachDoc, materialise, newVertex, newVertexWith)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -43,10 +43,26 @@ import Util (type (×), Endo, absurd, check, definitely', definitelyRight, error
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
-import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, toDict, valAt, value, via, viaAll)
+import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry) as V
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, value, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
+
+newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Deriv × Raw Val)
+newValue { val: v, inEdges } = newVertexWith (Value v) (Value <$> inEdges) <#> (_ × v)
+
+-- Bindings ρ and control position ctrl in terms of a new vertex which has ρ and ctrl as label
+newAssigns
+   :: forall m s
+    . MonadState (DepGraph Label s) m
+   => Dict (GVal s)
+   -> Maybe (Ctrl s)
+   -> m (Dict (GVal s) × Maybe (Ctrl s))
+newAssigns ρ ctrl = do
+   p <- newVertexWith (V.Assigns (void ctrl) (Env (_.val <$> ρ)))
+      (lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ))
+   let r = at p
+   pure (mapWithKey (\x v -> v { inEdges = binding x <$> r }) ρ × (ctrl $> (ctrlPosition <$> r)))
 
 -- Inputs after a statement which introduces ρ and ctrl
 after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
@@ -151,10 +167,10 @@ eval = { stmt, program }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
    expr inputs e'@(DocExpr e _) = do
-      r <- conclusion inputs e' >>= record
+      r <- conclusion inputs e' >>= newValue
       doc <- expr (inputs { env = inputs.env <+> maplet varThis (gval r) }) e
       attachDoc (fst r) (fst doc) $> r
-   expr inputs e = conclusion inputs e >>= record
+   expr inputs e = conclusion inputs e >>= newValue
 
    -- Value of an expression in terms of inputs and the vertices of the premises
    conclusion :: Inputs s -> Expr -> m (GVal s)
@@ -284,7 +300,7 @@ eval = { stmt, program }
 
    -- Evaluate qualifiers and then body to list of elements; body gives one-element list
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
-   qualifiers body inputs gs = gval <$> (elements gs >>= record)
+   qualifiers body inputs gs = gval <$> (elements gs >>= newValue)
       where
       -- List of elements in terms of the vertices of the premises
       elements :: List Qualifier -> m (GVal s)
@@ -315,8 +331,8 @@ eval = { stmt, program }
 
    stmt :: Inputs s -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
-      Returns r -> Returns <$> record (gval r)
-      Assigns ρ ctrl -> uncurry Assigns <$> introduce ρ ctrl
+      Returns r -> Returns <$> newValue (gval r)
+      Assigns ρ ctrl -> uncurry Assigns <$> newAssigns ρ ctrl
 
    -- Result of a statement in terms of inputs and the vertices of the premises
    result :: Inputs s -> Stmt -> m (Result s)
@@ -377,7 +393,7 @@ eval = { stmt, program }
 
    -- Apply f to vs at a new vertex
    application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
-   application ctrl f vs = gval <$> (apply ctrl f vs >>= record)
+   application ctrl f vs = gval <$> (apply ctrl f vs >>= newValue)
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
@@ -441,8 +457,8 @@ evalModule ρ0 q (Module ιs s) = do
    ρ <- traverse gvalAt ρ_imp
    ρ' × _ <- asAssigns <$> eval.stmt { ctrl: mempty, env: ρ } s
    let xs = L.fromFoldable (assigns s)
-   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (deriv (Value (Val unit V.Unbound)))) xs
-   members <- traverse (record >>> map fst) ρ'
+   ρ_unbound <- D.fromFoldable <<< zip xs <$> traverse (const (newVertex (Value (Val unit V.Unbound)))) xs
+   members <- traverse (newValue >>> map fst) ρ'
    pure (ρ_subMods <+> ρ_unbound <+> members)
 
 -- Bind imported members, and names of imported modules to module values.
@@ -477,7 +493,7 @@ evalImport enclosing ρ = case _ of
          pure (ρ' <+> maplet x (get x ρ_q))
 
 moduleVal :: forall m s. MonadEval s m => ModuleName -> m Deriv
-moduleVal q = deriv (Value (Val unit (V.Module q)))
+moduleVal q = newVertex (Value (Val unit (V.Module q)))
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m. HasModuleStore m => m (Dict Deriv)

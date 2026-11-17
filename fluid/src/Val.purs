@@ -25,13 +25,13 @@ import Data.Set (Set)
 import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
 import Data.Tuple (snd)
-import Data.Traversable (class Traversable, sequence, sequenceDefault, traverse)
+import Data.Traversable (class Traversable, sequenceDefault, traverse)
 import Dict (Dict)
 import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, at, derivWith, emptyGraph, plus, scale, zeros)
+import DepGraph (InEdges, DepGraph, Labelling, at, emptyGraph, plus, scale, zeros)
 import DepGraph (Deriv, Pos, valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -39,7 +39,7 @@ import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Pair (Pair(..))
-import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
+import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
 data Val a = Val a (BaseVal a)
@@ -230,22 +230,6 @@ construct ctrl v = v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * 
 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl v = v { inEdges = lift2 ctrlEdge ctrl v.inEdges }
-
-record :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
-record { val: v, inEdges } = derivWith (Value v) (Value <$> inEdges) <#> (_ × v)
-
--- Bindings ρ and control position ctrl in terms of a new vertex which has ρ and ctrl as label
-introduce
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Dict (GVal s)
-   -> Maybe (Ctrl s)
-   -> m (Dict (GVal s) × Maybe (Ctrl s))
-introduce ρ ctrl = do
-   p <- derivWith (Assigns (void ctrl) (Env (_.val <$> ρ)))
-      (lift2 Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ))
-   let r = at p
-   pure (mapWithKey (\x v -> v { inEdges = binding x <$> r }) ρ × (ctrl $> (ctrlPosition <$> r)))
 
 constructWith
    :: forall t s

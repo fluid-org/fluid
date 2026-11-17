@@ -30,7 +30,7 @@ import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
 import File (class MonadLoad, File(..), FileCxt(..), hasDirectory, loadModuleSource, manifest, modulePath, withClasses)
-import DepGraph (Deriv, deriv, emptyGraph)
+import DepGraph (Deriv, emptyGraph, newVertex)
 import Module.Defs (ModuleName, containing, implicit, implicitFor, parents)
 import Parse (parseModule, parseProgram)
 import Primitive.Defs (predefined, predefinedClasses)
@@ -98,7 +98,7 @@ loadTopLevel
    -> m (Dict Deriv)
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
-      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse (Value >>> deriv) ρ) predefined
+      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse (Value >>> newVertex) ρ) predefined
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
