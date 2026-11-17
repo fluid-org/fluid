@@ -43,7 +43,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Step(..), Val(..), construct, constructFrom, deliver, elementOf, forDefs, fromTotalRel, fun, gval, element, elementCount, lengthDep, modifyModuleStore, moduleStore, newAssigns, newValue, project, fromRel, raw, root, toDict, valAt, via)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Step(..), Val(..), construct, constructFrom, deliver, elementOf, forDefs, fromTotalRel, gval, element, elementCount, lengthDep, modifyModuleStore, moduleStore, newAssigns, newValue, project, fromRel, raw, root, toDict, valAt, via)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
 
@@ -366,11 +366,12 @@ eval = { stmt, program }
    apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
    apply ctrl f vs = case raw f of
       Val _ (V.Fun (V.Partial _ us)) ->
-         apply ctrl (project PartialFun f) (mapWithIndex (\i _ -> project (PartialArg i) f) us <> vs)
+         apply ctrl (deliver (via root f) (project PartialFun f))
+            (mapWithIndex (\i _ -> project (PartialArg i) f) us <> vs)
       Val _ (V.Fun φ) -> do
          n <- arity'
          let k = length vs
-         if k < n then pure (partial unit)
+         if k < n then pure (constructFrom ctrl (\xs -> V.Fun (V.Partial (head xs) (NEL.tail xs))) (NEL.cons' f vs))
          else if k == n then call φ vs
          else application ctrl f (take n vs) >>= \v -> apply ctrl v (drop n vs)
          where
@@ -381,13 +382,6 @@ eval = { stmt, program }
             V.Type (T.ClassTy c _) -> askClasses >>= arity c
             V.Type τ -> throw ("Not callable: " <> prettyP τ)
             V.Partial _ _ -> error absurd
-
-         -- Partial application, with root and function part dependent on the function value, and stored
-         -- arguments dependent on the argument values
-         partial :: Unit -> GVal s
-         partial _ = construct ctrl
-            (\xs -> Val (root (head xs)) (V.Fun (V.Partial (fun (head xs)) (NEL.tail xs))))
-            (NEL.cons' f vs)
       _ -> throw $ "Found " <> prettyP (raw f) <> ", expected function"
       where
       -- Apply φ to vs', taking the root of the function value as control input
