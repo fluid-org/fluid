@@ -381,15 +381,14 @@ eval = { stmt, program }
       Returns r -> pure (Returns r)
       Assigns ρ' ctrl' -> block (after inputs ρ' ctrl') (ρ <+> ρ') (ctrl' <|> ctrl) ss
 
-   -- Evaluate top-level program at a new vertex; return vertex of trailing expression, if any, as output
+   -- Evaluate top-level program at a new vertex; return vertex of final expression as output
    program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
    program inputs s = output (unsnoc (statements s)) >>= \r -> newValue (gval r) $> r
       where
-      output { init: Nil, last: Return e } = expr inputs e
-      output { init, last: Return e } = block inputs empty Nothing init >>= case _ of
-         Returns r -> pure r
-         Assigns ρ ctrl -> newAssigns ρ ctrl >>= \(ρ' × ctrl') -> expr (after inputs ρ' ctrl') e
-      output _ = asReturns <$> stmt inputs s
+      output { init, last: ExprStmt e } =
+         asAssigns <$> block inputs empty Nothing init >>= uncurry newAssigns >>= \(ρ × ctrl) ->
+            expr (after inputs ρ ctrl) e
+      output _ = error absurd
 
    -- Apply f to vs at a new vertex
    application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)

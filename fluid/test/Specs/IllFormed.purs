@@ -20,7 +20,7 @@ illFormed_cases =
    , { file: "import_cycle.fld", expected_error: "import cycle: 'cyc_a' -> 'cyc_b' -> 'cyc_a'" }
    , { file: "match_exhaustive_assign.fld", expected_error: "Possibly uninitialised: 'result'\nChecking definition of 'foo'" }
    , { file: "match_partial_def.fld", expected_error: "Already initialised: 'result'\nChecking definition of 'foo'" }
-   , { file: "module_returns.fld", expected_error: "Module body definitely returns or reaches 'assert False'\nChecking module 'return_mod'" }
+   , { file: "module_returns.fld", expected_error: "Return outside function\nChecking module 'return_mod'" }
    , { file: "non_contiguous_def.fld", expected_error: "Non-contiguous clauses for: 'f'" }
    , { file: "own_descendant_import.fld", expected_error: "Module 'od_pkg' cannot import its own descendant 'od_pkg.sub'\nChecking module 'od_pkg'" }
    , { file: "qualified_class_unknown.fld", expected_error: "module 'shape_lib' has no member 'Missing'" }

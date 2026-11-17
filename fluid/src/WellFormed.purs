@@ -33,7 +33,7 @@ import Types.Defs (bool, cMatrix, cParagraph, cRange, float, int, intPair, matri
 import Cxt (CxtEntry(..), Cxt, WfResult(..), classOf, extend, merge, override, resolveName)
 import Dict as D
 import Util.Map (constMap, get, insert, keys, lookup, maplet)
-import Expr (Binop(BitOr), Unop(..), bv, fv)
+import Expr (Binop(BitOr), Unop(..), bv, fv, statements)
 import Expr (Pattern(..)) as S
 import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Qualifier(..), Stmt(..)) as E
 import Literal (Literal(..))
@@ -73,7 +73,10 @@ within what = mapStateT (mapReaderT (lmap (_ <> "\nChecking " <> what)))
 checkProgram :: List S.Import -> S.Stmt -> CheckM E.Stmt
 checkProgram imports s = do
    cxt_imp × cxt_ιs <- checkImports mainModule imports
-   snd <$> (moduleScope cxt_imp cxt_ιs s >>= \cxt_s -> checkTopStmt mainModule cxt_s s)
+   s' <- snd <$> (moduleScope cxt_imp cxt_ιs s >>= \cxt_s -> checkTopStmt mainModule cxt_s s)
+   case last (statements s') of
+      E.ExprStmt _ -> pure s'
+      _ -> throwError "Program does not end in expression"
 
 -- Member context of module q, checked on first import; no cycle guard, as the dependency graph is acyclic.
 checkModule :: ModuleName -> CheckM Cxt
@@ -137,8 +140,7 @@ checkStatements :: Name -> Cxt -> Cxt -> S.Module -> CheckM (Cxt × E.Module)
 checkStatements q cxt_imp cxt_ιs (S.Module imports s) = do
    r × s' <- moduleScope cxt_imp cxt_ιs s >>= \cxt_s -> checkTopStmt q cxt_s s
    case r of
-      -- Program may return, with the returned value as its result; spec treats __main__ as a module
-      Returns -> throwError "Module body definitely returns or reaches 'assert False'"
+      Returns -> throwError "Module body definitely reaches 'assert False'"
       Assigns cxt' -> pure (cxt' × E.Module imports' s')
    where
    imports' = imports <#> \(S.Import q' xs) -> E.Import q' xs
@@ -199,11 +201,11 @@ instance Captures (List S.Qualifier) where
 
 checkStmt :: Cxt -> Maybe T.Type -> S.Stmt -> CheckM (WfResult × E.Stmt)
 checkStmt _ _ S.Pass = pure (Assigns empty × E.Pass)
--- Outside a function, the result of the program
-checkStmt cxt ζ (S.Return (Just e)) = (Returns × _) <<< E.Return <$> maybe (exprStmt cxt e) (check cxt e) ζ
-checkStmt _ ζ (S.Return Nothing) = do
+checkStmt _ Nothing (S.Return _) = throwError "Return outside function"
+checkStmt cxt (Just τ) (S.Return (Just e)) = (Returns × _) <<< E.Return <$> check cxt e τ
+checkStmt _ (Just τ) (S.Return Nothing) = do
    classes <- classTable
-   for_ ζ \τ -> unless (equiv classes τ none) $ throwError $ "Bare return with result type " <> prettyP τ
+   unless (equiv classes τ none) $ throwError $ "Bare return with result type " <> prettyP τ
    pure (Returns × E.Return (E.Lit None))
 checkStmt cxt _ (S.ExprStmt e) = (Assigns empty × _) <<< E.ExprStmt <$> exprStmt cxt e
 checkStmt cxt _ (S.Assert (S.Lit (Bool false)) e') =
