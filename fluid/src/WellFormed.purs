@@ -33,7 +33,7 @@ import Types.Defs (bool, cMatrix, cParagraph, cRange, float, int, intPair, matri
 import Cxt (CxtEntry(..), Cxt, WfResult(..), classOf, extend, merge, override, resolveName)
 import Dict as D
 import Util.Map (constMap, get, insert, keys, lookup, maplet)
-import Expr (Binop(BitOr), Unop(..), bv, fv)
+import Expr (Binop(BitOr), Unop(..), bv, fv, statements)
 import Expr (Pattern(..)) as S
 import Expr (Branch(..), Case, Def(..), Expr(..), Import(..), Module(..), Qualifier(..), Stmt(..)) as E
 import Literal (Literal(..))
@@ -73,7 +73,10 @@ within what = mapStateT (mapReaderT (lmap (_ <> "\nChecking " <> what)))
 checkProgram :: List S.Import -> S.Stmt -> CheckM E.Stmt
 checkProgram imports s = do
    cxt_imp × cxt_ιs <- checkImports mainModule imports
-   snd <$> (moduleScope cxt_imp cxt_ιs s >>= \cxt_s -> checkTopStmt mainModule cxt_s s)
+   s' <- snd <$> (moduleScope cxt_imp cxt_ιs s >>= \cxt_s -> checkTopStmt mainModule cxt_s s)
+   case last (statements s') of
+      E.ExprStmt _ -> pure s'
+      _ -> throwError "Program does not end in expression"
 
 -- Member context of module q, checked on first import; no cycle guard, as the dependency graph is acyclic.
 checkModule :: ModuleName -> CheckM Cxt
@@ -137,8 +140,7 @@ checkStatements :: Name -> Cxt -> Cxt -> S.Module -> CheckM (Cxt × E.Module)
 checkStatements q cxt_imp cxt_ιs (S.Module imports s) = do
    r × s' <- moduleScope cxt_imp cxt_ιs s >>= \cxt_s -> checkTopStmt q cxt_s s
    case r of
-      -- Program may return, with the returned value as its result; spec treats __main__ as a module
-      Returns -> throwError "Module body definitely returns or reaches 'assert False'"
+      Returns -> throwError "Module body definitely reaches 'assert False'"
       Assigns cxt' -> pure (cxt' × E.Module imports' s')
    where
    imports' = imports <#> \(S.Import q' xs) -> E.Import q' xs
@@ -197,13 +199,13 @@ instance Captures (List S.Qualifier) where
    captures (S.Generator p e : gs) = captures e ∪ (captures gs \\ bv p)
    captures (S.Decl (S.VarDef p _ e) : gs) = captures e ∪ (captures gs \\ bv p)
 
-checkStmt :: Cxt -> Maybe T.Type -> S.Stmt -> CheckM (WfResult Cxt × E.Stmt)
+checkStmt :: Cxt -> Maybe T.Type -> S.Stmt -> CheckM (WfResult × E.Stmt)
 checkStmt _ _ S.Pass = pure (Assigns empty × E.Pass)
--- Outside a function, the result of the program
-checkStmt cxt ζ (S.Return (Just e)) = (Returns × _) <<< E.Return <$> maybe (exprStmt cxt e) (check cxt e) ζ
-checkStmt _ ζ (S.Return Nothing) = do
+checkStmt _ Nothing (S.Return _) = throwError "Return outside function"
+checkStmt cxt (Just τ) (S.Return (Just e)) = (Returns × _) <<< E.Return <$> check cxt e τ
+checkStmt _ (Just τ) (S.Return Nothing) = do
    classes <- classTable
-   for_ ζ \τ -> unless (equiv classes τ none) $ throwError $ "Bare return with result type " <> prettyP τ
+   unless (equiv classes τ none) $ throwError $ "Bare return with result type " <> prettyP τ
    pure (Returns × E.Return (E.Lit None))
 checkStmt cxt _ (S.ExprStmt e) = (Assigns empty × _) <<< E.ExprStmt <$> exprStmt cxt e
 checkStmt cxt _ (S.Assert (S.Lit (Bool false)) e') =
@@ -272,7 +274,7 @@ matchCases
    -> T.Type
    -> List Shape
    -> List (S.Pattern × S.Stmt)
-   -> CheckM (List (WfResult Cxt × E.Case) × T.Type)
+   -> CheckM (List (WfResult × E.Case) × T.Type)
 matchCases _ _ τ _ Nil = pure (Nil × τ)
 matchCases cxt ζ τ ls ((p × s) : bs) = do
    for_ (bv p) (unbound cxt)
@@ -282,7 +284,7 @@ matchCases cxt ζ τ ls ((p × s) : bs) = do
    r × s' <- checkStmt (cxt `override` cxt') ζ s
    lmap ((override (Assigns cxt') r × (p' × s')) : _) <$> matchCases cxt ζ (remaining classes τ p') ls' bs
 
-checkTopStmt :: Name -> Cxt -> S.Stmt -> CheckM (WfResult Cxt × E.Stmt)
+checkTopStmt :: Name -> Cxt -> S.Stmt -> CheckM (WfResult × E.Stmt)
 -- Aliases resolved against whole region, classes against earlier definitions only
 checkTopStmt q cxt (S.TypeRegion χs) = do
    for_ classDefs \(x × αs) -> modify_ \st ->
@@ -491,7 +493,7 @@ instance Synth S.Expr (T.Type × E.Expr) where
       pure (T.DictTy (T.baseType τ) × E.DictComp k' e' gs')
    synth cxt (S.DocExpr e e') = do
       τ × e2 <- synth cxt e'
-      _ × e1 <- synth (cxt `override` bindings (Map.singleton varThis τ)) e
+      _ × e1 <- synth (cxt `override` bindings (maplet varThis τ)) e
       pure (τ × E.DocExpr e1 e2)
 
 class Check a t b | a -> t b where
@@ -533,7 +535,7 @@ instance Check S.Expr T.Type E.Expr where
       pure (E.Matrix e1' (x × y) e2')
    check cxt (S.DocExpr e e') τ = do
       e2 <- check cxt e' τ
-      _ × e1 <- synth (cxt `override` bindings (Map.singleton varThis τ)) e
+      _ × e1 <- synth (cxt `override` bindings (maplet varThis τ)) e
       pure (E.DocExpr e1 e2)
    check cxt e τ = do
       σ × e' <- synth cxt e
@@ -902,7 +904,7 @@ distinctVars :: List S.Pattern -> CheckM Unit
 distinctVars ps = checkDistinct (\x -> "Duplicate variable in pattern: " <> quoted x) (ps >>= Set.toUnfoldable <<< bv)
 
 instance Check S.Pattern T.Type Cxt where
-   check _ (S.PVar x) τ = pure (Map.singleton x (Assigned τ))
+   check _ (S.PVar x) τ = pure (maplet x (Assigned τ))
    check _ S.PWild _ = pure empty
    check _ (S.PLit _) _ = pure empty
    check cxt (S.PAs p x) τ = do

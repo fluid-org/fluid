@@ -9,7 +9,8 @@ import Data.Int (toNumber)
 import Data.Int as Int
 import Data.Array (replicate)
 import Data.Array as A
-import Data.List (List(..), concat, fromFoldable, (:))
+import Data.List (List(..), fromFoldable, (:))
+import Data.List (concat) as L
 import Data.Number as N
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
@@ -23,11 +24,11 @@ import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (MayFail, type (+), type (×), absurd, definitely', error, (×))
+import Util (MayFail, type (+), type (×), absurd, definitely', error, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root, ctrlEdge)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, fromRel, root, ctrlEdge)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -139,7 +140,7 @@ unary id f =
    id × Val bot (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, depOp: pureRel (unsafePartial depRel) }
+   op = ForeignOp' { arity: 1, depOp: fromRel (unsafePartial depRel) }
 
    depRel :: forall a. Partial => List (Val a) -> MayFail (Val a)
    depRel (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))
@@ -159,11 +160,13 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
-binopRel :: forall a. DepSemiring a => Binop -> Val a -> Val a -> MayFail (Val a)
-binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopRel :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
+binopRel op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopRel _ _ = error absurd
 
-unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> MayFail (Val a)
-unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
+unopRel :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
+unopRel op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
+unopRel _ _ = error absurd
 
 type Operand = Int + Number + String
 
@@ -178,10 +181,8 @@ binop In v v' = first (Lit <<< Bool) <$> contains v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
-binop Add (Val α (List vs)) (Val β (List vs')) =
-   pure (List ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
-binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) =
-   pure (Tuple ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
+binop Add (Val α (List vs)) (Val β (List vs')) = pure (first List (concat ((α × vs) : (β × vs') : Nil)))
+binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) = pure (first Tuple (concat ((α × vs) : (β × vs') : Nil)))
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
 binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
@@ -210,8 +211,8 @@ binop op (Val α u) (Val β u') = do
    -- Zero operand determines the result, so dependencies of the zero operand alone
    zeroDeps :: Operand -> Operand -> Set a
    zeroDeps x y
-      | isZero x = Set.singleton α
-      | isZero y = Set.singleton β
+      | isZero x = singleton α
+      | isZero y = singleton β
       | otherwise = both
 
    comparison :: (Ordering -> Boolean) -> Operand -> Operand -> MayFail (BaseVal a × Set a)
@@ -258,20 +259,33 @@ vertices2 (Val α _) (Val β _) = Set.fromFoldable [ α, β ]
 repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
 repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    where
-   deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+   deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
+
+-- Concatenate sequences given as pairs of root and elements; elements gain control edge from root of same sequence
+concat :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
+concat seqs = A.concatMap (\(α × vs) -> ctrlEdge α <$> vs) (A.fromFoldable seqs) × Set.fromFoldable (fst <$> seqs)
+
+concatLists :: forall a. DepSemiring a => List (Val a) -> Val a
+concatLists vs = Val (foldl add zero αs) (List us)
+   where
+   items :: Val a -> Array (Val a)
+   items (Val _ (List vs')) = vs'
+   items _ = error absurd
+
+   us × αs = concat (vs <#> \v -> root v × items v)
 
 repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
 repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
    where
-   deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+   deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
 
 unop :: forall a. Ord a => Unop -> Val a -> MayFail (BaseVal a × Set a)
-unop Not (Val α (Lit (Bool b))) = pure (Lit (Bool (not b)) × Set.singleton α)
+unop Not (Val α (Lit (Bool b))) = pure (Lit (Bool (not b)) × singleton α)
 unop Not (Val _ u) = Left (typeMismatch u "bool")
-unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × Set.singleton α)
-unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × Set.singleton α)
-unop Pos (Val α u@(Lit (Int _))) = pure (u × Set.singleton α)
-unop Pos (Val α u@(Lit (Float _))) = pure (u × Set.singleton α)
+unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × singleton α)
+unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × singleton α)
+unop Pos (Val α u@(Lit (Int _))) = pure (u × singleton α)
+unop Pos (Val α u@(Lit (Float _))) = pure (u × singleton α)
 unop _ (Val _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
@@ -315,7 +329,7 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
       αs = both ∪ Set.fromFoldable (root <$> [ i, j, i', j' ])
 
    elems :: Array (Array (Val a)) -> List (Val a)
-   elems = fromFoldable >>> map fromFoldable >>> concat
+   elems = fromFoldable >>> map fromFoldable >>> L.concat
 
    sameKind :: Literal -> Literal -> Boolean
    sameKind ℓ ℓ' = case ℓ, ℓ' of

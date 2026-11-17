@@ -4,7 +4,6 @@ import Prelude hiding (absurd, compare)
 
 import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
 import App.Util.Selector (ObjArg, objArg)
-import Classes (class HasClasses)
 import Data.Array as A
 import Data.Foldable (any, minimum)
 import Data.Map as Map
@@ -19,9 +18,9 @@ import Data.String (Pattern(..), codePointFromChar, drop, length, null, split) a
 import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
-import Eval (Eval, documentedAs, evalProgram, visible)
-import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, materialise, selected, valAt)
-import File (class MonadLoad, File, Folder(..), loadFile)
+import Eval (Eval, documentedAs, evalProgram, visibleGraph)
+import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, selected)
+import File (File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig, throwParseFailure)
 import Parse (parseProgram)
@@ -30,14 +29,14 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
-import Val (class HasModuleStore, Val, moduleStore, val, withDoc)
+import Val (class MonadProgram, Label, Val, ValWithDoc(..), moduleStore, val, valAt)
 
 type TestSuite m = Array (String × m Unit)
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "lib", Folder "test/lib" ]
 
-test ∷ forall m. HasClasses m => HasModuleStore m => MonadLoad m => File -> String -> Int × Boolean -> m BenchRow
+test ∷ forall m. MonadProgram m => File -> String -> Int × Boolean -> m BenchRow
 test file expect (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
@@ -46,20 +45,13 @@ test file expect (n × _) = do
    _ × res <- runWriterT (replicateM n (testProperties config expect))
    pure $ res `divRow` n
 
--- Printed output of the program, with the doc of its root vertex, if any.
-testProperties
-   :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadLoad m
-   => MonadWriter BenchRow m
-   => Config
-   -> String
-   -> m Unit
+-- Check that program output prints as expected
+testProperties :: forall m. MonadProgram m => MonadWriter BenchRow m => Config -> String -> m Unit
 testProperties { e, inputs, classes } expect = do
-   eval@{ g, root } <- benchmark "Dep" \_ ->
+   eval@{ g, out } <- benchmark "Dep" \_ ->
       evalProgram inputs classes e
-   withMsg "fwd_expect" $ checkPretty expect (prettyP (val g.vals (withDoc g root)))
+   withMsg "fwd_expect" $
+      checkPretty expect (prettyP (ValWithDoc { val: valAt g out, doc: valAt g <$> Map.lookup out g.docs }))
    recordDepGraphSize eval.g
 
 -- Visible vertex carrying the selection.
@@ -88,9 +80,9 @@ depName file = case _ of
       Doc vertex -> "doc of " <> name vertex
 
 -- depGraph holds the vertices created by loading the modules, before the program ran.
-deriv :: forall s. DepGraph Val s -> Eval -> VertexSpec -> Deriv
-deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
-   Output -> root
+deriv :: forall s. DepGraph Label s -> Eval -> VertexSpec -> Deriv
+deriv depGraph eval@{ g: g@{ docs }, out } = case _ of
+   Output -> out
    Input x -> case documentedAs g x of
       [ p ] -> p
       _ -> error ("no vertex documented " <> show x)
@@ -101,16 +93,16 @@ deriv depGraph eval@{ g: g@{ docs }, root } = case _ of
 
 -- Documented vertices in evaluation order, each with its doc if the doc has dependence, then the output.
 showDeps :: Eval -> Labelling (Val DepKind) -> String
-showDeps { g: { docs }, root } deps = joinWith "\n" (documented <> output)
+showDeps { g: { docs }, out } deps = joinWith "\n" (documented <> output)
    where
    dep p = get p deps
    documented = Map.toUnfoldable docs <#> \(p × d) ->
       prettyP (val deps (p × if any (_ /= Zero) (dep d) then Just d else Nothing))
-   output = if Map.member root docs then [] else [ prettyP (dep root) ]
+   output = if Map.member out docs then [] else [ prettyP (dep out) ]
 
 selection
    :: forall s
-    . DepGraph Val s
+    . DepGraph Label s
    -> Eval
    -> VertexSpec
    -> (ObjArg -> Selector Val)
@@ -120,17 +112,17 @@ selection depGraph eval vertex δv =
    where
    p = deriv depGraph eval vertex
 
-testDep :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => File -> Query -> m Unit
+testDep :: forall m. MonadProgram m => File -> Query -> m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, inputs, classes } <- throwParseFailure (prepConfig fluidSrc)
    { depGraph } <- moduleStore
    eval <- evalProgram inputs classes e
    let
-      visibleGraph = materialise eval.g (visible eval)
+      graph = visibleGraph eval
       deps × expect = case query of
-         Bwd vertex δv expect' -> bwd visibleGraph (selection depGraph eval vertex δv) × expect'
-         Fwd vertex δv expect' -> fwd visibleGraph (selection depGraph eval vertex δv) × expect'
+         Bwd vertex δv expect' -> bwd graph (selection depGraph eval vertex δv) × expect'
+         Fwd vertex δv expect' -> fwd graph (selection depGraph eval vertex δv) × expect'
    withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
@@ -146,7 +138,15 @@ at expected v =
    actual = prettyP (getPersistent <$> v)
 
 -- Expectation applied to the selection must cancel it.
-checkSelection :: forall m f. MonadError Error m => Functor f => Eq (f (SelStates 𝔹)) => Pretty (f (SelStates 𝔹)) => Selector f -> f (SelStates 𝔹) -> m Unit
+checkSelection
+   :: forall m f
+    . MonadError Error m
+   => Functor f
+   => Eq (f (SelStates 𝔹))
+   => Pretty (f (SelStates 𝔹))
+   => Selector f
+   -> f (SelStates 𝔹)
+   -> m Unit
 checkSelection expect v =
    check (residual == (botOf <$> v)) ("selection differs from expectation at:\n" <> prettyP residual)
    where

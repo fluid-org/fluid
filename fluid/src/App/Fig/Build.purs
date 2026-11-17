@@ -6,7 +6,6 @@ import App.Fig (figure)
 import App.Fig.Graph (FigGraph, str)
 import App.Util.Selector (eachElement, envVal, field, none, select, sel𝔹, valOf, (>.>))
 import App.View.Util (Fig, Filter, Options)
-import Classes (class HasClasses)
 import Data.Array as A
 import Data.Foldable (foldr, for_)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -15,10 +14,10 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (fst)
-import DepGraph (materialise, selected, valAt)
+import DepGraph (selected)
 import Dict (fromFoldable) as D
-import Eval (evalProgram, visible)
-import File (class MonadLoad, Folder(..))
+import Eval (evalProgram, visibleGraph)
+import File (Folder(..))
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import Literal (Literal(..))
@@ -27,7 +26,7 @@ import Pretty (prettyP)
 import Util (isEmpty, throw, (×))
 import Util.Map (get)
 import Util.Set ((∈))
-import Val (class HasModuleStore, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, withDoc)
+import Val (class MonadProgram, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, valAt, withDoc)
 
 -- Options in the form decoded from JSON; delete once the options are decoded directly
 type JsonOptions =
@@ -46,14 +45,14 @@ optionsFromJson spec@{ ignoreInputs, linking, rowFilter } =
    , rowFilter
    }
 
--- Take documented leaves of visible graph (other than root) as inputs of figure
-figGraph :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m FigGraph
+-- Take documented leaves of visible graph (other than output) as inputs of figure
+figGraph :: forall m. MonadProgram m => Options -> String -> m FigGraph
 figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
    config <- throwParseFailure (prepConfig fluidSrc)
-   eval@{ g, root } <- evalProgram config.inputs config.classes config.e
+   eval@{ g, out } <- evalProgram config.inputs config.classes config.e
    let
-      graph = materialise g (visible eval)
-      leaves = Map.filterKeys (\p -> p /= root && isEmpty (get p graph.edges)) g.docs
+      graph = visibleGraph eval
+      leaves = Map.filterKeys (\p -> p /= out && isEmpty (get p graph.edges)) g.docs
    named :: Array _ <- for (Map.toUnfoldable leaves) \(p × d) -> case valAt g d of
       Val _ (Lit (Str x)) -> pure (x × (p × Nothing))
       v -> throw ("Doc " <> prettyP v <> " of " <> str.input <> " is not a string")
@@ -62,17 +61,17 @@ figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
       throw ("More than one " <> str.input <> " documented as " <> prettyP (Str x))
    let
       ins = D.fromFoldable named
-      shown = Set.insert root (Map.keys leaves)
+      shown = Set.insert out (Map.keys leaves)
       everything = map (const true) <$> graph.vals
    pure
       { graph
       , ins
-      , out: withDoc g root
+      , out: withDoc g out
       , ιs: mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) g.docs)
       , ignored: selected <$> unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
       , linking
       , rowFilter
       }
 
-loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options -> String -> m Fig
+loadFig :: forall m. MonadProgram m => Options -> String -> m Fig
 loadFig options fluidSrc = figure <$> figGraph options fluidSrc

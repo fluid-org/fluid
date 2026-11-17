@@ -86,6 +86,10 @@ data Stmt
    | TypeAlias Var (List Var) T.Type
    | Seq Stmt Stmt
 
+statements :: Stmt -> NonEmptyList Stmt
+statements (Seq s s') = statements s <> statements s'
+statements s = pure s
+
 data Import = Import Name (Maybe (List Var))
 
 data Module = Module (List Import) Stmt
