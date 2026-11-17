@@ -64,10 +64,6 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    label = V.Assigns (void ctrl) (Env (_.val <$> ρ))
    inEdges = lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ)
 
--- Same as override, except that a control input is always present
-after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
-after inputs ρ ctrl = { env: inputs.env <+> ρ, ctrl: fromMaybe inputs.ctrl ctrl }
-
 -- Returned value, or the bindings and control position introduced
 data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Maybe (Ctrl s))
 
@@ -83,6 +79,10 @@ asAssigns (Returns _) = error "Assigns expected"
 override :: forall s. Result s -> Result s -> Result s
 override (Assigns ρ ctrl) (Assigns ρ' ctrl') = Assigns (ρ <+> ρ') (ctrl' <|> ctrl)
 override _ r' = r'
+
+-- Same as override, except that a control input is always present
+after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
+after inputs ρ ctrl = { env: inputs.env <+> ρ, ctrl: fromMaybe inputs.ctrl ctrl }
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
 matches :: forall s. ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
