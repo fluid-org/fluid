@@ -375,7 +375,6 @@ eval = { stmt, program }
       r'@(Returns _) -> pure r'
       r'@(Assigns ρ ctrl) -> block (after inputs ρ ctrl) (r `override` r') ss
 
-   -- Evaluate top-level program at a new vertex; return vertex of final expression as output
    program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
    program inputs s = output (unsnoc (statements s)) >>= \r -> newValue (gval r) $> r
       where
