@@ -38,13 +38,13 @@ import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binop, binopRel, boolean, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
+import Primitive (binop, binopRel, boolean, concatRel, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
 import Util (type (×), Endo, absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), closureEnv, concatenation, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, toDict, valAt, value, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, toDict, valAt, value, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -307,7 +307,7 @@ eval = { stmt, program, apply }
                Just (ρ' × _) × ctrl ->
                   qualifiers body (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs'
                      <#> \v' -> singleton v' × mempty
-         pure (construct (via lengthDep v <> ctrl) (concatenation vs))
+         pure (construct (via lengthDep v <> ctrl) { val: concatRel (_.val <$> vs), inEdges: viaAll concatRel vs })
       elements (Decl p e : gs') = do
          v <- gval <$> expr inputs e
          classes <- askClasses

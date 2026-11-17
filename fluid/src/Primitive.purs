@@ -178,10 +178,8 @@ binop In v v' = first (Lit <<< Bool) <$> contains v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
-binop Add (Val α (List vs)) (Val β (List vs')) =
-   pure (List ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
-binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) =
-   pure (Tuple ((ctrlEdge α <$> vs) <> (ctrlEdge β <$> vs')) × Set.fromFoldable [ α, β ])
+binop Add (Val α (List vs)) (Val β (List vs')) = pure (first List (concatSeqs ((α × vs) : (β × vs') : Nil)))
+binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) = pure (first Tuple (concatSeqs ((α × vs) : (β × vs') : Nil)))
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
 binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
@@ -259,6 +257,19 @@ repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
 repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    where
    deps = if n <= 0 then Set.singleton β else Set.fromFoldable [ α, β ]
+
+-- Concatenate sequences given as pairs of root and elements; elements gain control edge from root of same sequence
+concatSeqs :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
+concatSeqs seqs = A.concatMap (\(α × vs) -> ctrlEdge α <$> vs) (A.fromFoldable seqs) × Set.fromFoldable (fst <$> seqs)
+
+concatRel :: forall a. DepSemiring a => List (Val a) -> Val a
+concatRel vs = Val (foldl add zero αs) (List us)
+   where
+   items :: Val a -> Array (Val a)
+   items (Val _ (List vs')) = vs'
+   items _ = error absurd
+
+   us × αs = concatSeqs (vs <#> \v -> root v × items v)
 
 repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
 repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
