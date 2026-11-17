@@ -28,7 +28,7 @@ import Util (MayFail, type (+), type (×), absurd, definitely', error, singleton
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, pureRel, root, ctrlEdge)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, fromRel, root, ctrlEdge)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -140,7 +140,7 @@ unary id f =
    id × Val bot (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, depOp: pureRel (unsafePartial depRel) }
+   op = ForeignOp' { arity: 1, depOp: fromRel (unsafePartial depRel) }
 
    depRel :: forall a. Partial => List (Val a) -> MayFail (Val a)
    depRel (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))

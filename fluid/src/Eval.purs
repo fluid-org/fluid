@@ -43,7 +43,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, construct, constructFrom, deliver, field, forDefs, fromRel, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, newAssigns, newValue, partialArg, partialFun, project, pureRel, raw, root, toDict, valAt, via)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, construct, constructFrom, deliver, field, forDefs, fromTotalRel, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, newAssigns, newValue, partialArg, partialFun, project, fromRel, raw, root, toDict, valAt, via)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
 
@@ -229,10 +229,10 @@ eval = { stmt, program }
          withMsg ("In " <> funName e) $ apply ctrl f vs
       BinOp e op e' -> do
          vs <- traverse (expr inputs >>> map gval) (e : e' : Nil)
-         withMsg ("In " <> binopSymbol op) $ pureRel (binopRel op) (application ctrl) ctrl vs
+         withMsg ("In " <> binopSymbol op) $ fromRel (binopRel op) (application ctrl) ctrl vs
       UnOp op e -> do
          v <- gval <$> expr inputs e
-         withMsg ("In " <> unopSymbol op) $ pureRel (unopRel op) (application ctrl) ctrl (v : Nil)
+         withMsg ("In " <> unopSymbol op) $ fromRel (unopRel op) (application ctrl) ctrl (v : Nil)
       And e e' -> do
          { holds, ctrl: ctrl', value: v } <- condition inputs e
          if holds then gval <$> expr (inputs { ctrl = ctrl' }) e' else pure v
@@ -254,7 +254,7 @@ eval = { stmt, program }
 
    -- Dictionary from list v of key-value tuples
    dict :: Ctrl s -> GVal s -> m (GVal s)
-   dict ctrl v = fromRel toDict (application ctrl) ctrl (v : Nil)
+   dict ctrl v = fromTotalRel toDict (application ctrl) ctrl (v : Nil)
 
    funName :: Expr -> String
    funName (Var x) = quoted x

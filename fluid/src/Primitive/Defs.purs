@@ -54,7 +54,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), Ctrl, DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromRel, matrixPut, project, pureRel, raw, root, ctrlEdge, via)
+import Val (BaseVal(..), Ctrl, DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Val(..), construct, deliver, dictEntries, dictEntry, elementCount, fromTotalRel, matrixPut, project, fromRel, raw, root, ctrlEdge, via)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -127,7 +127,7 @@ predefined = M.fromFoldable
 
 len :: ForeignOp
 len =
-   ForeignOp ("len" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   ForeignOp ("len" × ForeignOp' { arity: 1, depOp: fromRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (v@(Val α u) : Nil) = case elementCount v of
@@ -137,7 +137,7 @@ len =
 
 sorted :: ForeignOp
 sorted =
-   ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (List vs) : Nil) =
@@ -168,7 +168,7 @@ max_ = extremum "max" Gt
 
 extremum :: String -> Binop -> ForeignOp
 extremum id op =
-   ForeignOp (id × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   ForeignOp (id × ForeignOp' { arity: 1, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (List vs) : Nil) = case Array.uncons vs of
@@ -182,7 +182,7 @@ extremum id op =
 
 exit :: ForeignOp
 exit =
-   ForeignOp ("exit" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   ForeignOp ("exit" × ForeignOp' { arity: 1, depOp: fromRel depRel })
    where
    depRel :: forall a. List (Val a) -> MayFail (Val a)
    depRel (Val _ (Lit (Int n)) : Nil) = Left ("Exit status " <> show n)
@@ -191,7 +191,7 @@ exit =
 
 print_ :: ForeignOp
 print_ =
-   ForeignOp ("print" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   ForeignOp ("print" × ForeignOp' { arity: 1, depOp: fromRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (_ : Nil) = pure (Val zero (Lit None))
@@ -207,7 +207,7 @@ loadJson =
            classes <- askClasses
            json <- loadJsonFile path
            v <- orThrow (jsonVal classes τ json)
-           fromRel (\us -> ctrlWeight * foldl add zero (root <$> us) <$ v) apply ctrl vs
+           fromTotalRel (\us -> ctrlWeight * foldl add zero (root <$> us) <$ v) apply ctrl vs
    depOp _ _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
@@ -256,7 +256,7 @@ jsonVal classes τ json = case τ of
 
 dims :: ForeignOp
 dims =
-   ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   ForeignOp ("dims" × ForeignOp' { arity: 1, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Matrix (MatrixRep (_ × i × j))) : Nil) = pure (Val α (Tuple [ ctrlEdge α i, ctrlEdge α j ]))
@@ -264,7 +264,7 @@ dims =
 
 matrixUpdate :: ForeignOp
 matrixUpdate =
-   ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp: pureRel depRel })
+   ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Matrix (MatrixRep (vss × h × w))) : ix@(Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ])) : v : Nil) =
@@ -275,7 +275,7 @@ matrixUpdate =
 
 find_str :: ForeignOp
 find_str =
-   ForeignOp ("find_str" × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp ("find_str" × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Lit (Str s1)) : Val β (Lit (Str s2)) : Nil) = pure (Val (α + β) (Lit (Int (find s1 s2))))
@@ -286,7 +286,7 @@ find_str =
 
 search :: ForeignOp
 search =
-   ForeignOp ("search" × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp ("search" × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Lit (Str regex)) : Val β (Lit (Str str)) : Nil) = matchIndex regex str <#> Val (α + β)
@@ -300,7 +300,7 @@ search =
 -- When strings implement an abstract sequence type can express in terms of take/drop
 split :: ForeignOp
 split =
-   ForeignOp ("split" × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp ("split" × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Lit (Int n)) : Val β (Lit (Str str)) : Nil) =
@@ -311,7 +311,7 @@ split =
 
 dict_difference :: ForeignOp
 dict_difference =
-   ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
@@ -320,7 +320,7 @@ dict_difference =
 
 dict_disjointUnion :: ForeignOp
 dict_disjointUnion =
-   ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val β (Dictionary (DictRep d')) : Nil) =
@@ -342,7 +342,7 @@ foldl_with_index =
 
 get :: ForeignOp
 get =
-   ForeignOp ("get" × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp ("get" × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Lit (Str s)) : Val β (Dictionary (DictRep d)) : Nil) =
@@ -351,7 +351,7 @@ get =
 
 insert :: ForeignOp
 insert =
-   ForeignOp ("insert" × ForeignOp' { arity: 3, depOp: pureRel depRel })
+   ForeignOp ("insert" × ForeignOp' { arity: 3, depOp: fromRel depRel })
    where
    depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Dictionary (DictRep d)) : Val α' (Lit (Str k)) : v : Nil) =
@@ -403,7 +403,7 @@ rem = intBinary "rem" I.rem
 
 intBinary :: String -> (Int -> Int -> Int) -> ForeignOp
 intBinary id f =
-   ForeignOp (id × ForeignOp' { arity: 2, depOp: pureRel depRel })
+   ForeignOp (id × ForeignOp' { arity: 2, depOp: fromRel depRel })
    where
    depRel :: forall a. Semiring a => List (Val a) -> MayFail (Val a)
    depRel (Val α (Lit (Int m)) : Val β (Lit (Int n)) : Nil) = pure (Val (α + β) (Lit (Int (f m n))))

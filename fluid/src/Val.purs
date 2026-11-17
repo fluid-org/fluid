@@ -268,14 +268,14 @@ project :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a
 project r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
 
 -- Value which depends on vs by r
-applyRelAll
+applyRel
    :: forall t s
     . Traversable t
    => DepSemiring s
    => (forall a. DepSemiring a => t (Val a) -> Val a)
    -> t (GVal s)
    -> GVal s
-applyRelAll r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
+applyRel r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
 
 -- New value which depends on vs by r; root also depends on ctrl
 construct
@@ -288,7 +288,7 @@ construct
    -> GVal s
 construct ctrl r vs = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges })
    where
-   GVal v = applyRelAll r vs
+   GVal v = applyRel r vs
 
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
 deliver ctrl (GVal v) = GVal (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
@@ -319,14 +319,14 @@ type DepOp =
 
 -- Primitive given by its dependence relation, a linear map from argument weight vectors to the result weight
 -- vector; at Unit, the value itself.
-fromRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromRel g _ ctrl vs = pure (deliver ctrl (applyRelAll g vs))
+fromTotalRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
+fromTotalRel g _ ctrl vs = pure (deliver ctrl (applyRel g vs))
 
 -- Dependence relation of a primitive without effects, checked at the argument values.
-pureRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
-pureRel f app ctrl vs = do
+fromRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
+fromRel f app ctrl vs = do
    _ <- orThrow (f (raw <$> vs))
-   fromRel (f >>> definitelyRight) app ctrl vs
+   fromTotalRel (f >>> definitelyRight) app ctrl vs
 
 data ForeignOp' = ForeignOp'
    { arity :: Int
