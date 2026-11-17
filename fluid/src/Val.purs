@@ -16,7 +16,6 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
-import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -38,7 +37,6 @@ import Literal (Literal(..))
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
-import Util.Pair (Pair(..))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
@@ -240,14 +238,6 @@ constructWith
    -> GVal s
 constructWith ctrl mk vs =
    construct ctrl { val: Val unit (mk (_.val <$> vs)), inEdges: viaAll (mk >>> Val zero) vs }
-
--- Dictionary from keys and values; later entries overwrite earlier ones.
-dictionary :: forall s. DepSemiring s => Ctrl s -> List (String × GVal s × GVal s) -> GVal s
-dictionary ctrl kvs =
-   constructWith ctrl mk (Compose (D.fromFoldable (kvs <#> \(k × key × v) -> k × Pair key v)))
-   where
-   mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
-   mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> root key × v))
 
 -- Dictionary from list of key-value tuples; later entries overwrite earlier ones
 toDict :: forall a. Val a -> Val a

@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), Weight, binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, dictionary, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), Weight, binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -177,10 +177,9 @@ eval = { stmt, program }
    value inputs = case _ of
       Var x -> pure (deliver inputs.ctrl (get x inputs.env))
       Lit ℓ -> pure (construct inputs.ctrl (constant (Val unit (V.Lit ℓ))))
-      Dictionary ees -> dictionary inputs.ctrl <$> for ees \(Pair e e') -> dictEntry inputs e e'
-      DictComp e e' gs -> qualifiers entry inputs gs <#> \v -> { val: toDict v.val, inEdges: via toDict v }
-         where
-         entry inputs' = dictEntry inputs' e e' <#> \(_ × k × v) -> singletonList inputs' (tuple k v)
+      Dictionary ees ->
+         dict <<< constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> for ees \(Pair e e') -> dictEntry inputs e e'
+      DictComp e e' gs -> dict <$> qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs
       List es -> constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
       Tuple es -> constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
       ListComp e gs -> qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
@@ -271,12 +270,17 @@ eval = { stmt, program }
          gval <$> expr (inputs { ctrl = ctrl }) (if holds then e1 else e2)
       DocExpr _ e -> gval <$> expr inputs e
 
-   dictEntry :: Inputs s -> Expr -> Expr -> m (String × GVal s × GVal s)
+   -- Tuple of key e and value e'
+   dictEntry :: Inputs s -> Expr -> Expr -> m (GVal s)
    dictEntry inputs' e e' = do
       k <- expr inputs' e
-      s <- orThrow (unpack string (snd k)) <#> fst
-      u <- expr inputs' e'
-      pure (s × gval k × gval u)
+      _ <- orThrow (unpack string (snd k))
+      v <- expr inputs' e'
+      pure (constructWith mempty (A.fromFoldable >>> V.Tuple) (gval k : gval v : Nil))
+
+   -- Dictionary from list v of key-value tuples
+   dict :: GVal s -> GVal s
+   dict v = { val: toDict v.val, inEdges: via toDict v }
 
    funName :: Expr -> String
    funName (Var x) = quoted x
@@ -292,9 +296,6 @@ eval = { stmt, program }
 
    singletonList :: Inputs s -> GVal s -> GVal s
    singletonList inputs v = constructWith inputs.ctrl (A.fromFoldable >>> V.List) (v : Nil)
-
-   tuple :: GVal s -> GVal s -> GVal s
-   tuple k v = constructWith mempty (A.fromFoldable >>> V.Tuple) (k : v : Nil)
 
    -- Evaluate qualifiers and then body to list of elements; body gives one-element list
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
