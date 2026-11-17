@@ -197,7 +197,7 @@ instance Captures (List S.Qualifier) where
    captures (S.Generator p e : gs) = captures e ∪ (captures gs \\ bv p)
    captures (S.Decl (S.VarDef p _ e) : gs) = captures e ∪ (captures gs \\ bv p)
 
-checkStmt :: Cxt -> Maybe T.Type -> S.Stmt -> CheckM (WfResult Cxt × E.Stmt)
+checkStmt :: Cxt -> Maybe T.Type -> S.Stmt -> CheckM (WfResult × E.Stmt)
 checkStmt _ _ S.Pass = pure (Assigns empty × E.Pass)
 -- Outside a function, the result of the program
 checkStmt cxt ζ (S.Return (Just e)) = (Returns × _) <<< E.Return <$> maybe (exprStmt cxt e) (check cxt e) ζ
@@ -272,7 +272,7 @@ matchCases
    -> T.Type
    -> List Shape
    -> List (S.Pattern × S.Stmt)
-   -> CheckM (List (WfResult Cxt × E.Case) × T.Type)
+   -> CheckM (List (WfResult × E.Case) × T.Type)
 matchCases _ _ τ _ Nil = pure (Nil × τ)
 matchCases cxt ζ τ ls ((p × s) : bs) = do
    for_ (bv p) (unbound cxt)
@@ -282,7 +282,7 @@ matchCases cxt ζ τ ls ((p × s) : bs) = do
    r × s' <- checkStmt (cxt `override` cxt') ζ s
    lmap ((override (Assigns cxt') r × (p' × s')) : _) <$> matchCases cxt ζ (remaining classes τ p') ls' bs
 
-checkTopStmt :: Name -> Cxt -> S.Stmt -> CheckM (WfResult Cxt × E.Stmt)
+checkTopStmt :: Name -> Cxt -> S.Stmt -> CheckM (WfResult × E.Stmt)
 -- Aliases resolved against whole region, classes against earlier definitions only
 checkTopStmt q cxt (S.TypeRegion χs) = do
    for_ classDefs \(x × αs) -> modify_ \st ->

@@ -34,7 +34,7 @@ type Cxt = Map Var CxtEntry
 generalise :: T.Type -> CxtEntry
 generalise τ = maybe (Assigned τ) (TypeScheme <<< flip T.Forall τ) (NEL.fromFoldable (T.fv τ))
 
-data WfResult a = Returns | Assigns a
+data WfResult = Returns | Assigns Cxt
 
 class Extend a where
    extend :: a -> a -> a
@@ -57,7 +57,7 @@ instance Override CxtEntry where
 instance (Ord k, Override a) => Override (Map k a) where
    override = M.unionWith override
 
-instance Override a => Override (WfResult a) where
+instance Override WfResult where
    override _ Returns = Returns
    override Returns _ = Returns
    override (Assigns cxt) (Assigns cxt') = Assigns (cxt `override` cxt')
@@ -78,7 +78,7 @@ possiblyUnassigned (Assigned τ) = PossiblyUnassigned (Left τ)
 possiblyUnassigned (TypeScheme π) = PossiblyUnassigned (Right π)
 possiblyUnassigned _ = error absurd
 
-instance Merge a => Merge (WfResult a) where
+instance Merge WfResult where
    merge Returns r = r
    merge r Returns = r
    merge (Assigns cxt) (Assigns cxt') = Assigns (cxt `merge` cxt')
@@ -108,6 +108,5 @@ resolveName cxt name = case NEL.fromList init of
 -- ======================
 -- boilerplate
 -- ======================
-derive instance Functor WfResult
-derive instance Eq a => Eq (WfResult a)
+derive instance Eq WfResult
 derive instance Eq CxtEntry
