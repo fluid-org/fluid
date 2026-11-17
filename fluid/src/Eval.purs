@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, constant, construct, constructFrom, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, construct, constructFrom, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
 
@@ -450,7 +450,7 @@ evalModule ρ0 q (Module ιs s) = do
    fst <$> newAssigns (subMods modules <+> unbound <+> ρ') Nothing
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
-   unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × constant (Val unit V.Unbound)))
+   unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × constructFrom mempty (const V.Unbound) Nil))
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
@@ -483,8 +483,8 @@ evalImport enclosing ρ = case _ of
          when (Map.member (snoc q x) modules) (void (load (snoc q x)))
          pure (ρ' <+> maplet x (get x ρ_q))
 
-moduleVal :: forall s. Semiring s => ModuleName -> GVal s
-moduleVal q = constant (Val unit (V.Module q))
+moduleVal :: forall s. DepSemiring s => ModuleName -> GVal s
+moduleVal q = constructFrom mempty (const (V.Module q)) Nil
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m s. HasModuleStore s m => m (Dict (GVal s))
