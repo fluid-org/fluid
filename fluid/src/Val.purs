@@ -71,9 +71,9 @@ ctrlPosition :: forall a. Label a -> a
 ctrlPosition (Assigns α _) = definitely' α
 ctrlPosition _ = error absurd
 
-binding :: forall a. Var -> Label a -> Val a
-binding x (Assigns _ (Env ρ)) = get x ρ
-binding _ _ = error absurd
+bindings :: forall a. Label a -> Env a
+bindings (Assigns _ ρ) = ρ
+bindings _ = error absurd
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ

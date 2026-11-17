@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), Label(Assigns), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), binding, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), bindings, closureEnv, constant, construct, constructWith, ctrlPosition, deliver, field, forDefs, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, root, toDict, valAt, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -59,7 +59,7 @@ newAssigns
    -> Maybe (Ctrl s)
    -> m (Dict (GVal s) × Maybe (Ctrl s))
 newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
-   mapWithKey (\x v -> v { inEdges = binding x <$> at p }) ρ × (ctrl $> (ctrlPosition <$> at p))
+   mapWithKey (\x v -> v { inEdges = get x <<< bindings <$> at p }) ρ × (ctrl $> (ctrlPosition <$> at p))
    where
    label = V.Assigns (void ctrl) (Env (_.val <$> ρ))
    inEdges = lift2 V.Assigns (sequence ctrl) (Env <$> traverse _.inEdges ρ)
