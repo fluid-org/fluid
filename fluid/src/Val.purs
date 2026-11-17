@@ -298,13 +298,6 @@ applyRel
    -> GVal s
 applyRel r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
 
--- Element i of sequence v: part of v for list or tuple, computed from v otherwise
-elementOf :: forall s. DepSemiring s => Int -> GVal s -> GVal s
-elementOf i v = case raw v of
-   Val _ (List _) -> project (Element i) v
-   Val _ (Tuple _) -> project (Element i) v
-   _ -> applyRel (\(Identity x) -> element i x) (Identity v)
-
 -- Build new value by applying r to vs; root also depends on ctrl
 construct
    :: forall t s
@@ -438,6 +431,13 @@ element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$
 element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
 element i (Val _ (Obj c ((_ × Val β (Lit (Int m))) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
 element _ _ = error absurd
+
+-- Element i of sequence v: part of v for list or tuple, computed from v otherwise
+elementOf :: forall s. DepSemiring s => Int -> GVal s -> GVal s
+elementOf i v = case raw v of
+   Val _ (List _) -> project (Element i) v
+   Val _ (Tuple _) -> project (Element i) v
+   _ -> applyRel (\(Identity x) -> element i x) (Identity v)
 
 elements :: forall a. Val a -> List (Val a)
 elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
