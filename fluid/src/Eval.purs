@@ -44,7 +44,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), dictEntry) as V
-import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), closureEnv, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, valAt, value, via, viaAll)
+import Val (class HasModuleStore, class MonadEval, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label(Value), MatrixRep(..), Val(..), closureEnv, concatenation, constant, construct, constructWith, deliver, dictionary, field, forDefs, fun, gval, gvalAt, element, elementCount, introduce, lengthDep, matrixElement, modifyModuleStore, moduleStore, partialArg, partialFun, record, root, toDict, valAt, value, via, viaAll)
 
 type Inputs s = { ctrl :: Ctrl s, env :: Dict (GVal s) }
 
@@ -163,13 +163,12 @@ eval = { stmt, program, apply }
       Var x -> pure (deliver inputs.ctrl (get x inputs.env))
       Lit ℓ -> pure (construct inputs.ctrl (constant (Val unit (V.Lit ℓ))))
       Dictionary ees -> dictionary inputs.ctrl <$> for ees \(Pair e e') -> dictEntry inputs e e'
-      DictComp e e' gs ->
-         qualifiers (\inputs' -> dictEntry inputs' e e') inputs gs <#> \(entries × ctrl) -> dictionary ctrl entries
+      DictComp e e' gs -> qualifiers entry inputs gs <#> \v -> { val: toDict v.val, inEdges: via toDict v }
+         where
+         entry inputs' = dictEntry inputs' e e' <#> \(_ × k × v) -> singletonList inputs' (tuple k v)
       List es -> constructWith inputs.ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
       Tuple es -> constructWith inputs.ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
-      ListComp e gs ->
-         qualifiers (\inputs' -> gval <$> expr inputs' e) inputs gs <#> \(vs × ctrl) ->
-            constructWith ctrl (A.fromFoldable >>> V.List) vs
+      ListComp e gs -> qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
@@ -278,30 +277,42 @@ eval = { stmt, program, apply }
       holds × _ <- orThrow (unpack boolean v.val)
       pure { holds, ctrl: via root v, value: v }
 
-   -- Evaluate qualifiers in order and then body, evaluating qualifiers and body after generator once per element
-   -- which matches pattern; return results of body and accumulated control
-   qualifiers :: forall b. (Inputs s -> m b) -> Inputs s -> List Qualifier -> m (List b × Ctrl s)
-   qualifiers body inputs Nil = body inputs <#> \v -> singleton v × inputs.ctrl
-   qualifiers body inputs (Guard e : gs) = do
-      { holds, ctrl } <- condition inputs e
-      if holds then qualifiers body (inputs { ctrl = ctrl }) gs else pure (Nil × ctrl)
-   qualifiers body inputs (Generator p e : gs) = do
-      v <- gval <$> expr inputs e
-      n <- case elementCount v.val of
-         Just n -> pure n
-         Nothing -> throw ("Found " <> prettyP v.val <> ", expected list, tuple, str or dict")
-      classes <- askClasses
-      fold <$> for (L.take n (L.range 0 n)) \i -> do
-         let u = { val: element i v.val, inEdges: via (element i) v }
-         case dispatch classes (singleton (p × unit)) u of
-            Nothing × ctrl -> pure (Nil × (via lengthDep v <> fold ctrl))
-            Just (ρ' × _) × ctrl ->
-               qualifiers body (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs
-   qualifiers body inputs (Decl p e : gs) = do
-      v <- gval <$> expr inputs e
-      classes <- askClasses
-      ρ' × ctrl <- destructure classes p v
-      qualifiers body (after inputs ρ' ctrl) gs
+   singletonList :: Inputs s -> GVal s -> GVal s
+   singletonList inputs v = constructWith inputs.ctrl (A.fromFoldable >>> V.List) (v : Nil)
+
+   tuple :: GVal s -> GVal s -> GVal s
+   tuple k v = constructWith mempty (A.fromFoldable >>> V.Tuple) (k : v : Nil)
+
+   -- Evaluate qualifiers and then body to list of elements; body gives one-element list
+   qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
+   qualifiers body inputs gs = gval <$> (elements gs >>= record)
+      where
+      -- List of elements in terms of the vertices of the premises
+      elements :: List Qualifier -> m (GVal s)
+      elements Nil = body inputs
+      elements (Guard e : gs') = do
+         { holds, ctrl } <- condition inputs e
+         if holds then qualifiers body (inputs { ctrl = ctrl }) gs'
+         else pure (construct ctrl (constant (Val unit (V.List []))))
+      elements (Generator p e : gs') = do
+         v <- gval <$> expr inputs e
+         n <- case elementCount v.val of
+            Just n -> pure n
+            Nothing -> throw ("Found " <> prettyP v.val <> ", expected list, tuple, str or dict")
+         classes <- askClasses
+         vs × ctrl <- fold <$> for (L.take n (L.range 0 n)) \i -> do
+            let u = { val: element i v.val, inEdges: via (element i) v }
+            case dispatch classes (singleton (p × unit)) u of
+               Nothing × ctrl -> pure (Nil × fold ctrl)
+               Just (ρ' × _) × ctrl ->
+                  qualifiers body (inputs { env = inputs.env <+> ρ', ctrl = via lengthDep v <> fold ctrl }) gs'
+                     <#> \v' -> singleton v' × mempty
+         pure (construct (via lengthDep v <> ctrl) (concatenation vs))
+      elements (Decl p e : gs') = do
+         v <- gval <$> expr inputs e
+         classes <- askClasses
+         ρ' × ctrl <- destructure classes p v
+         qualifiers body (after inputs ρ' ctrl) gs'
 
    stmt :: Inputs s -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of

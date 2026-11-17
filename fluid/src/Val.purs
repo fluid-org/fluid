@@ -11,11 +11,11 @@ import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (class MonadState, StateT, gets)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
-import Data.Array (cons, fromFoldable, length, zipWith, (!!)) as A
+import Data.Array (concatMap, cons, fromFoldable, length, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
+import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault, sum)
 import Data.Functor.Compose (Compose(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
@@ -265,6 +265,26 @@ dictionary ctrl kvs =
    where
    mk :: forall a. Compose Dict Pair (Val a) -> BaseVal a
    mk (Compose d) = Dictionary (DictRep (d <#> \(Pair key v) -> root key × v))
+
+-- Dictionary from list of key-value tuples; later entries overwrite earlier ones
+toDict :: forall a. Val a -> Val a
+toDict (Val α (List kvs)) = Val α (Dictionary (DictRep (D.fromFoldable (entry <$> kvs))))
+   where
+   entry :: Val a -> String × a × Val a
+   entry (Val _ (Tuple [ Val β (Lit (Str k)), v ])) = k × β × v
+   entry _ = error absurd
+toDict _ = error absurd
+
+-- Concatenate lists vs; root of the concatenation depends on the root of each list
+concatenation :: forall s. Semiring s => List (GVal s) -> GVal s
+concatenation vs = { val: concat (_.val <$> vs), inEdges: viaAll concat vs }
+   where
+   concat :: forall a. Semiring a => List (Val a) -> Val a
+   concat us = Val (sum (root <$> us)) (List (A.concatMap items (A.fromFoldable us)))
+
+   items :: forall a. Val a -> Array (Val a)
+   items (Val _ (List us)) = us
+   items _ = error absurd
 
 -- Monad for evaluating program into dependence graph with weights in s
 class
