@@ -28,7 +28,7 @@ import Classes (ClassTable, ancestors, arity, askClasses, checkArity, fieldNames
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv, statements)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
 import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, attachDoc, materialise, zeros)
 import Lattice (class DepSemiring, DepKind, Raw)
@@ -347,22 +347,16 @@ eval = { stmt, program }
       TypeAlias x αs τ -> do
          let v = constructFrom inputs.ctrl (const (V.TypeAlias αs τ)) Nil
          pure (Assigns (maplet x v) Nothing)
-      s@(Seq _ _) -> block inputs (Assigns empty Nothing) (NEL.toList (statements s))
-
-   -- Evaluate statements in order until one returns; r is result of earlier statements
-   block :: Inputs s -> Result s -> List Stmt -> m (Result s)
-   block _ r Nil = pure r
-   block inputs r (s : ss) = stmt inputs s >>= case _ of
-      r'@(Returns _) -> pure r'
-      r'@(Assigns ρ ctrl) -> block (after inputs ρ ctrl) (r `override` r') ss
+      Seq s s' -> stmt inputs s >>= case _ of
+         r@(Returns _) -> pure r
+         r@(Assigns ρ ctrl) -> override r <$> stmt (after inputs ρ ctrl) s'
 
    program :: Inputs s -> Stmt -> m (Deriv × Raw Val)
-   program inputs s = output (unsnoc (statements s)) >>= \r -> newValue (gval r) $> r
+   program inputs s = output inputs s >>= \r -> newValue (gval r) $> r
       where
-      output { init, last: ExprStmt e } =
-         asAssigns <$> block inputs (Assigns empty Nothing) init >>= uncurry newAssigns >>= \(ρ × ctrl) ->
-            expr (after inputs ρ ctrl) e
-      output _ = error absurd
+      output inputs' (Seq t t') = asAssigns <$> stmt inputs' t >>= \(ρ × ctrl) -> output (after inputs' ρ ctrl) t'
+      output inputs' (ExprStmt e) = expr inputs' e
+      output _ _ = error absurd
 
    -- Apply f to vs at a new vertex
    application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
