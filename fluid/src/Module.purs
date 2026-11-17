@@ -22,7 +22,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (traverse)
 import Data.Tuple (fst)
-import Classes (class HasClasses, ClassTable)
+import Classes (ClassTable)
 import Dict (Dict)
 import Effect.Exception (Error)
 import Eval (evalImport, implicitMembers, load) as Dep
@@ -40,7 +40,7 @@ import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
 import Lattice (DepKind)
-import Val (class HasModuleStore, Env(..), GVal, ModuleState(..), constant, modifyModuleStore)
+import Val (class MonadProgram, Env(..), GVal, ModuleState(..), constant, modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
@@ -91,9 +91,7 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
 -- Load modules into new dependence graph in module store; return top-level environment
 loadTopLevel
    :: forall m
-    . HasClasses m
-   => HasModuleStore (PosLineage DepKind) m
-   => MonadLoad m
+    . MonadProgram m
    => Map ModuleName Module
    -> List S.Import
    -> m (Dict (GVal (PosLineage DepKind)))
@@ -108,13 +106,7 @@ loadTopLevel modules imports = do
    where
    predefined' = predefined <#> \(_ × Env ρ) -> Loaded (constant <$> ρ)
 
-prepConfig
-   :: forall m
-    . HasClasses m
-   => HasModuleStore (PosLineage DepKind) m
-   => MonadLoad m
-   => String
-   -> ExceptT ParseFailure m Config
+prepConfig :: forall m. MonadProgram m => String -> ExceptT ParseFailure m Config
 prepConfig fluidSrc = do
    s × imports <- except (lmap ParseFailure (parseProgram fluidSrc))
    { result: e, modules: mods, classes } <- prepModules imports (checkProgram imports (named mainModule s))

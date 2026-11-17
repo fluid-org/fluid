@@ -4,7 +4,6 @@ import Prelude hiding (absurd, compare)
 
 import App.Util (SelStates, SelectionType(..), Selector, SetSel, getPersistent, unselected)
 import App.Util.Selector (ObjArg, objArg)
-import Classes (class HasClasses)
 import Data.Array as A
 import Data.Foldable (any, minimum)
 import Data.Map as Map
@@ -20,8 +19,8 @@ import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (Eval, documentedAs, evalProgram, visibleGraph)
-import DepGraph (DepGraph, Deriv, Labelling, Pos, PosLineage, bwd, fwd, selected)
-import File (class MonadLoad, File, Folder(..), loadFile)
+import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, selected)
+import File (File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig, throwParseFailure)
 import Parse (parseProgram)
@@ -30,14 +29,14 @@ import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
-import Val (class HasModuleStore, Label, Val, ValWithDoc(..), moduleStore, val, valAt)
+import Val (class MonadProgram, Label, Val, ValWithDoc(..), moduleStore, val, valAt)
 
 type TestSuite m = Array (String × m Unit)
 
 fluidSrcPaths :: Array Folder
 fluidSrcPaths = [ Folder "lib", Folder "test/lib" ]
 
-test ∷ forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => File -> String -> Int × Boolean -> m BenchRow
+test ∷ forall m. MonadProgram m => File -> String -> Int × Boolean -> m BenchRow
 test file expect (n × _) = do
    fluidSrc <- loadFile fluidSrcPaths file
    log' ("**** prepConfig")
@@ -47,15 +46,7 @@ test file expect (n × _) = do
    pure $ res `divRow` n
 
 -- Check that program output prints as expected
-testProperties
-   :: forall m
-    . HasClasses m
-   => HasModuleStore (PosLineage DepKind) m
-   => MonadLoad m
-   => MonadWriter BenchRow m
-   => Config
-   -> String
-   -> m Unit
+testProperties :: forall m. MonadProgram m => MonadWriter BenchRow m => Config -> String -> m Unit
 testProperties { e, inputs, classes } expect = do
    eval@{ g, out } <- benchmark "Dep" \_ ->
       evalProgram inputs classes e
@@ -121,7 +112,7 @@ selection depGraph eval vertex δv =
    where
    p = deriv depGraph eval vertex
 
-testDep :: forall m. HasClasses m => HasModuleStore (PosLineage DepKind) m => MonadLoad m => File -> Query -> m Unit
+testDep :: forall m. MonadProgram m => File -> Query -> m Unit
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
    { e, inputs, classes } <- throwParseFailure (prepConfig fluidSrc)
@@ -147,7 +138,15 @@ at expected v =
    actual = prettyP (getPersistent <$> v)
 
 -- Expectation applied to the selection must cancel it.
-checkSelection :: forall m f. MonadError Error m => Functor f => Eq (f (SelStates 𝔹)) => Pretty (f (SelStates 𝔹)) => Selector f -> f (SelStates 𝔹) -> m Unit
+checkSelection
+   :: forall m f
+    . MonadError Error m
+   => Functor f
+   => Eq (f (SelStates 𝔹))
+   => Pretty (f (SelStates 𝔹))
+   => Selector f
+   -> f (SelStates 𝔹)
+   -> m Unit
 checkSelection expect v =
    check (residual == (botOf <$> v)) ("selection differs from expectation at:\n" <> prettyP residual)
    where

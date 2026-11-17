@@ -30,7 +30,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, at, emptyGraph, plus, scale, zeros)
+import DepGraph (InEdges, DepGraph, Labelling, PosLineage, at, emptyGraph, plus, scale, zeros)
 import DepGraph (Deriv, valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -264,6 +264,11 @@ instance
    , DepSemiring s
    ) =>
    MonadEval s m
+
+-- Monad for loading and evaluating program
+class (HasClasses m, HasModuleStore (PosLineage DepKind) m, MonadLoad m) <= MonadProgram m
+
+instance (HasClasses m, HasModuleStore (PosLineage DepKind) m, MonadLoad m) => MonadProgram m
 
 -- Application of a function to arguments at a new vertex
 type Apply m s = GVal s -> List (GVal s) -> m (GVal s)
