@@ -2,7 +2,7 @@
 	"program": "static/src/bar_chart_line_chart.fld",
 	"fluidSrcPath": ["../src", "../lib"],
 	"ignoreInputs": {
-		"renewables": ["year", "country"]
+		"renewables": ["year", "country", "energyType"]
 	},
 	"linking": true
 }
