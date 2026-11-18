@@ -16,7 +16,6 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
-import Data.Identity (Identity(..))
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, take) as L
 import Data.Maybe (Maybe(..))
@@ -90,7 +89,7 @@ overChildren f (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (ma
 overChildren f (Fun φ) = Fun (overFun φ)
    where
    overFun (Closure (Env ρ) ds d) = Closure (Env (f <$> ρ)) ds d
-   overFun (Partial v vs) = Partial (f v) (f <$> vs)
+   overFun (Partial φ' vs) = Partial (overFun φ') (f <$> vs)
    overFun φ' = φ'
 
 -- False at shape positions.
@@ -109,7 +108,7 @@ data Fun a
    = Closure (Env a) (Dict Def) Def
    | Prim ForeignOp
    | Type T.Type
-   | Partial (Val a) (List (Val a)) -- function applied to fewer arguments than arity; function is not partial
+   | Partial (Fun a) (List (Val a)) -- fewer arguments than the arity of the function, which is not itself partial
 
 class (Highlightable a, BoundedLattice a) <= Ann a
 
@@ -266,27 +265,9 @@ newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
    label = Assigns (void ctrl) (Env (raw <$> ρ))
    inEdges = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
 
--- Step from a value to one of its parts
-data Step
-   = Field Int -- field of object
-   | Element Int -- element of list or tuple
-   | Entry String -- value of dictionary entry
-   | MatrixElement Int Int
-   | Captured Var -- variable captured by closure
-   | PartialFun -- function of partial application
-   | PartialArg Int -- stored argument of partial application
-
-part :: forall a. Step -> Val a -> Val a
-part (Field i) = field i
-part (Element i) = element i
-part (Entry k) = dictEntry k >>> snd
-part (MatrixElement i j) = matrixElement i j
-part (Captured x) = closureEnv >>> get x
-part PartialFun = partialFun
-part (PartialArg i) = partialArg i
-
-project :: forall s. Step -> GVal s -> GVal s
-project step (GVal v) = GVal { val: part step v.val, inEdges: part step <$> v.inEdges }
+-- Part of v selected by r
+project :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
+project r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
 
 -- Apply r to vs; result depends on vs as r determines
 applyRel
@@ -432,13 +413,6 @@ element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (t
 element i (Val _ (Obj c ((_ × Val β (Lit (Int m))) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
 element _ _ = error absurd
 
--- Element i of sequence v: part of v for list or tuple, computed from v otherwise
-elementOf :: forall s. DepSemiring s => Int -> GVal s -> GVal s
-elementOf i v = case raw v of
-   Val _ (List _) -> project (Element i) v
-   Val _ (Tuple _) -> project (Element i) v
-   _ -> applyRel (\(Identity x) -> element i x) (Identity v)
-
 elements :: forall a. Val a -> List (Val a)
 elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
    where
@@ -465,12 +439,16 @@ dictEntries _ = error absurd
 dictEntry :: forall a. String -> Val a -> a × Val a
 dictEntry k = dictEntries >>> get k
 
+fun :: forall a. Val a -> Fun a
+fun (Val _ (Fun φ)) = φ
+fun _ = error absurd
+
 closureEnv :: forall a. Val a -> Env a
 closureEnv (Val _ (Fun (Closure ρ _ _))) = ρ
 closureEnv _ = error absurd
 
 partialFun :: forall a. Val a -> Val a
-partialFun (Val _ (Fun (Partial v _))) = v
+partialFun (Val α (Fun (Partial φ _))) = Val α (Fun φ)
 partialFun _ = error absurd
 
 partialArg :: forall a. Int -> Val a -> Val a
@@ -554,7 +532,7 @@ instance Apply Fun where
    apply (Closure fρ ds d) (Closure ρ _ _) = Closure (fρ <*> ρ) ds d
    apply (Prim op) (Prim _) = Prim op
    apply (Type τ) (Type τ') = Type (τ ≜ τ')
-   apply (Partial fv fvs) (Partial v vs) = Partial (fv <*> v) (zipWith (<*>) fvs vs)
+   apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
    apply _ _ = shapeMismatch unit
 
 -- Should require equal domains?
@@ -616,7 +594,7 @@ instance JoinSemilattice a => JoinSemilattice (Fun a) where
    join (Closure ρ ds d) (Closure ρ' _ _) = Closure (ρ ∨ ρ') ds d
    join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    join (Type τ) (Type τ') = Type (τ ≜ τ')
-   join (Partial v vs) (Partial v' vs') = Partial (v ∨ v') (vs ∨ vs')
+   join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
    join _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (Env a) where
