@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, PosLineage, at, emptyGraph, newVertex, plus, scale, zeros)
+import DepGraph (Hyperedge, DepGraph, Labelling, PosLineage, at, emptyGraph, newVertex, plus, scale, zeros)
 import DepGraph (Deriv, valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, (∧), (∨))
 import Literal (Literal(..))
@@ -234,24 +234,24 @@ ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
 ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
 
 -- Value together with its dependence on values already in the graph
-newtype GVal s = GVal { val :: Raw Val, inEdges :: InEdges Label s (Val s) }
+newtype GVal s = GVal { val :: Raw Val, hyperedge :: Hyperedge Label s (Val s) }
 -- Dependence of the control input on values already in the graph
-type Ctrl s = InEdges Label s s
+type Ctrl s = Hyperedge Label s s
 
 raw :: forall s. GVal s -> Raw Val
 raw (GVal v) = v.val
 
 -- Dependence of r applied to v
-via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
-via r (GVal v) = r <$> v.inEdges
+via :: forall s b. (Val s -> b) -> GVal s -> Hyperedge Label s b
+via r (GVal v) = r <$> v.hyperedge
 
 -- Value v of vertex p as a value which depends on p
 gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = GVal { val: v, inEdges: value <$> at p }
+gval (p × v) = GVal { val: v, hyperedge: value <$> at p }
 
 -- Allocate vertex labelled with given value; return vertex with raw value
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
-newValue (GVal { val: v, inEdges }) = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
+newValue (GVal { val: v, hyperedge }) = newVertex (Value v) (Value <$> hyperedge) <#> (_ × v)
 
 -- Allocate vertex with bindings ρ and control position ctrl as label; returned ρ and ctrl depend on the vertex
 newAssigns
@@ -260,11 +260,11 @@ newAssigns
    => Dict (GVal s)
    -> Maybe (Ctrl s)
    -> m (Dict (GVal s) × Maybe (Ctrl s))
-newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
-   mapWithKey (\x (GVal v) -> GVal (v { inEdges = get x <<< bindings <$> at p })) ρ × (ctrl $> (ctrlPosition <$> at p))
+newAssigns ρ ctrl = newVertex label hyperedge <#> \p ->
+   mapWithKey (\x (GVal v) -> GVal (v { hyperedge = get x <<< bindings <$> at p })) ρ × (ctrl $> (ctrlPosition <$> at p))
    where
    label = Assigns (void ctrl) (Env (raw <$> ρ))
-   inEdges = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
+   hyperedge = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
 
 -- Step from a value to one of its parts
 data Step
@@ -286,7 +286,7 @@ part PartialFun = partialFun
 part (PartialArg i) = partialArg i
 
 project :: forall s. Step -> GVal s -> GVal s
-project step (GVal v) = GVal { val: part step v.val, inEdges: part step <$> v.inEdges }
+project step (GVal v) = GVal { val: part step v.val, hyperedge: part step <$> v.hyperedge }
 
 -- Apply r to vs; result depends on vs as r determines
 applyRel
@@ -296,7 +296,7 @@ applyRel
    => (forall a. DepSemiring a => t (Val a) -> Val a)
    -> t (GVal s)
    -> GVal s
-applyRel r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
+applyRel r vs = GVal { val: r (raw <$> vs), hyperedge: r <$> traverse (via identity) vs }
 
 -- Build new value by applying r to vs; root also depends on ctrl
 construct
@@ -307,13 +307,13 @@ construct
    -> (forall a. DepSemiring a => t (Val a) -> Val a)
    -> t (GVal s)
    -> GVal s
-construct ctrl r vs = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges })
+construct ctrl r vs = GVal (v { hyperedge = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.hyperedge })
    where
    GVal v = applyRel r vs
 
 -- Pass on v; every position also depends on ctrl
 deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-deliver ctrl (GVal v) = GVal (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
+deliver ctrl (GVal v) = GVal (v { hyperedge = lift2 ctrlEdge ctrl v.hyperedge })
 
 -- Build new value from parts vs with constructor mk; root depends on ctrl
 constructFrom

@@ -41,27 +41,27 @@ scale a = map (mul a)
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
 
--- In-edges of a vertex: its source vertices, with its dependence on them as a linear function of their weights.
-newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s) -> b))
+-- Hyperedge from source vertices into a vertex; vertex depends on sources as linear function of their weights
+newtype Hyperedge (f :: Type -> Type) s b = Hyperedge (Set Deriv × (Labelling (f s) -> b))
 
 -- Weights at a vertex.
-at :: forall f s. Deriv -> InEdges f s (f s)
-at p = InEdges (singleton p × get p)
+at :: forall f s. Deriv -> Hyperedge f s (f s)
+at p = Hyperedge (singleton p × get p)
 
-instance Functor (InEdges f s) where
-   map h (InEdges (ps × r)) = InEdges (ps × (h <<< r))
+instance Functor (Hyperedge f s) where
+   map h (Hyperedge (ps × r)) = Hyperedge (ps × (h <<< r))
 
-instance Apply (InEdges f s) where
-   apply (InEdges (ps × h)) (InEdges (ps' × r)) = InEdges ((ps ∪ ps') × \ws -> h ws (r ws))
+instance Apply (Hyperedge f s) where
+   apply (Hyperedge (ps × h)) (Hyperedge (ps' × r)) = Hyperedge ((ps ∪ ps') × \ws -> h ws (r ws))
 
-instance Applicative (InEdges f s) where
-   pure b = InEdges (Set.empty × const b)
+instance Applicative (Hyperedge f s) where
+   pure b = Hyperedge (Set.empty × const b)
 
 -- Sum of scalar dependences.
-instance Semiring b => Semigroup (InEdges f s b) where
+instance Semiring b => Semigroup (Hyperedge f s b) where
    append = lift2 add
 
-instance Semiring b => Monoid (InEdges f s b) where
+instance Semiring b => Monoid (Hyperedge f s b) where
    mempty = pure zero
 
 -- Pair present exactly when its weight is non-zero.
@@ -84,20 +84,20 @@ type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
    , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
-   , inEdges :: Labelling (InEdges f s (f s))
+   , hyperedges :: Labelling (Hyperedge f s (f s))
    }
 
 emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
+emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, hyperedges: Map.empty }
 
 valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
 valAt g p = get p g.vals
 
-newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
-newVertex v inEdges = do
+newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Hyperedge f s (f s) -> m Deriv
+newVertex v hyperedge = do
    size <- gets _.size
    let p = Deriv size
-   modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, inEdges = Map.insert p inEdges g.inEdges }
+   modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, hyperedges = Map.insert p hyperedge g.hyperedges }
    pure p
 
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
@@ -129,7 +129,7 @@ materialise g visible =
          }
       else { weightsAt: retain p weights weightsAt, rels }
       where
-      InEdges (_ × rel) = get p g.inEdges
+      Hyperedge (_ × rel) = get p g.hyperedges
       weights = rel weightsAt
 
    -- Add weights ws at p, then free weights at each vertex which has p as last dependent
@@ -138,9 +138,9 @@ materialise g visible =
 
    -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
    lastDependent :: Labelling Deriv
-   lastDependent = foldlWithIndex dependent Map.empty g.inEdges
+   lastDependent = foldlWithIndex dependent Map.empty g.hyperedges
       where
-      dependent p m (InEdges (qs × _)) = foldl (\m' q -> Map.insert q p m') (Map.insert p p m) qs
+      dependent p m (Hyperedge (qs × _)) = foldl (\m' q -> Map.insert q p m') (Map.insert p p m) qs
 
    byLastDependent :: Labelling (List Deriv)
    byLastDependent = fromFoldableWith (<>) $
