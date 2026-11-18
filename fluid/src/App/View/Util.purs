@@ -13,7 +13,7 @@ import Data.Argonaut.Encode (class EncodeJson, encodeJson)
 import Data.Either (note)
 import Data.Foldable (all, find, sequence_)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe, maybe)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Effect (Effect)
@@ -23,8 +23,9 @@ import Lattice (𝔹, (∨))
 import Util (type (×), Endo, (×))
 import Util.Map (toUnfoldable, values)
 import Util.Set (size)
+import Unsafe.Coerce (unsafeCoerce)
 import Val (EnvWithDocs, Val, ValWithDoc)
-import Web.Event.Event (Event, EventType(..))
+import Web.Event.Event (Event, EventType(..), target)
 import Web.Event.EventTarget (eventListener)
 
 type HTMLId = String
@@ -79,12 +80,16 @@ foreign import mouseButton :: Event -> Int
 
 registerMouseListeners :: (Event -> Effect Unit) -> D3.Selection -> Effect Unit
 registerMouseListeners handler element = do
-   click <- eventListener \event -> when (mouseButton event == 0) (handler event)
-   hover <- eventListener handler
+   click <- eventListener \event -> when (mouseButton event == 0) (handler' event)
+   hover <- eventListener handler'
    void $ element # setStyles [ "cursor" ↦ "pointer" ]
    void $ element # on (EventType "mousedown") click
    void $ element # on (EventType "mouseenter") hover
    void $ element # on (EventType "mouseleave") hover
+   where
+   -- Ignore event on element removed by redraw, since browser still delivers mouseenter chosen before redraw
+   handler' event = when (connected event) (handler event)
+   connected = target >>> maybe false \tgt -> (unsafeCoerce tgt :: { isConnected :: Boolean }).isConnected
 
 type UIHelpers =
    { val :: forall a. Selectable a -> a
