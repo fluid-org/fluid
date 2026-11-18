@@ -2,31 +2,35 @@ module Test.Util.Suite where
 
 import Prelude
 
-import App.Fig (figure, selectInput, selectOutput, selectionResult)
+import App.Fig (figure, selectInput, selectIntermediate, selectOutput, selectionResult)
 import App.Fig.Build (figGraph)
 import App.Fig.Graph (decodeFigGraph, encodeFigGraph)
-import App.Util (SelStates, Selector, isInert, isPersistent, isTransient, selStates, 𝕊)
-import App.Util.Selector (ObjArg, objArg, sel𝔹, valOf)
+import App.Util (SelState(..), SelStates, SelectionType(..), Selector, isInert, isPersistent, isTransient, pairSel, projSel, selStates, selector, 𝕊)
+import App.Util.Selector (ObjArg, SelSetter, objArg, select, sel𝔹, valOf)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
 import Control.Monad.Error.Class (catchError)
 import Data.Argonaut.Core (stringify)
 import Data.Argonaut.Parser (jsonParser)
+import Data.Array as A
 import Data.Either (Either(..))
 import Data.Foldable (for_)
+import Data.Map as Map
 import Data.Maybe (Maybe)
 import Data.Profunctor.Strong ((&&&))
 import Data.Tuple (uncurry)
 import Effect.Aff (message)
 import Eval (evalProgram)
 import File (File(..), Folder(..), loadFile, (</>))
-import Lattice (𝔹)
+import Lattice (class BoundedJoinSemilattice, 𝔹, bot)
 import Module (prepConfig, throwParseFailure)
 import Test.Benchmark.Util (BenchRow, logTimeWhen)
 import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
-import Util (type (×), orThrow, throw, (×))
+import Util (type (×), orThrow, throw, (!), (×))
+import Util.Map (get)
 import Val (class MonadProgram, Val, EnvWithDocs)
+import Web.Event.Event (EventType(..))
 
 -- benchmarks parameterised on number of iterations
 type BenchSuite m = Int × Boolean -> Array (String × m BenchRow)
@@ -48,6 +52,16 @@ type TestLinkedInputsSpec =
    { spec :: Options
    , δ_in :: Bind (Selector Val)
    , in_expect :: Selector EnvWithDocs
+   , file :: String
+   }
+
+type TestIntermediatesSpec =
+   { spec :: Options
+   , δ_out :: ObjArg -> Selector Val
+   , intermediate :: Int -- index in evaluation order among documented intermediates
+   , transient :: SelSetter Val Val -- position in intermediate
+   , in_expect :: Selector EnvWithDocs
+   , out_expect :: ObjArg -> Selector Val
    , file :: String
    }
 
@@ -98,6 +112,27 @@ linkedInputsTest { spec, δ_in, in_expect, file } = do
 
 linkedInputsSuite :: forall m. MonadProgram m => Array TestLinkedInputsSpec -> Array (String × m Unit)
 linkedInputsSuite testSpecs = testSpecs <#> (_.file &&& (linkedInputsTest >>> void))
+
+-- Move transient selection to persistent selection; expectations check persistent selection only
+asPersistent :: forall a. BoundedJoinSemilattice a => Eq a => SelStates a -> SelStates 𝔹
+asPersistent s = pairSel ((_ /= bot) <$> projSel Transient s) (Reactive false)
+
+-- Select output, then make transient selection on intermediate displayed by output selection
+intermediatesTest :: forall m. MonadProgram m => TestIntermediatesSpec -> m Unit
+intermediatesTest { spec, δ_out, intermediate, transient, in_expect, out_expect, file } = do
+   fluidSrc <- loadFile spec.fluidSrcPaths (File file)
+   fig <- loadFig spec fluidSrc <#> selectOutput (valOf (δ_out objArg))
+   let
+      p = A.fromFoldable (Map.keys fig.inertι) ! intermediate
+      { ρ, v, ι } = selectionResult $
+         selectIntermediate p (valOf (transient (selector (EventType "mouseenter")))) (fig { ι = (selectionResult fig).ι })
+   checkSelection in_expect (asPersistent <$> ρ)
+   checkSelection (valOf (out_expect objArg)) (asPersistent <$> v)
+   checkSelection (valOf (transient select)) (asPersistent <$> get p ι)
+
+intermediatesSuite :: forall m. MonadProgram m => Array TestIntermediatesSpec -> Array (String × m Unit)
+intermediatesSuite testSpecs = testSpecs <#>
+   ((\{ file, intermediate } -> file <> ", transient selection on intermediate " <> show intermediate) &&& intermediatesTest)
 
 type IllFormedSpec =
    { file :: String

@@ -204,6 +204,7 @@ figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
       ρ = toρ deps
 
    linkIntermediates :: Labelling (ValWithDoc (SelStates 𝔹)) -> QueryResult
-   linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × toι sel
+   linkIntermediates ι = toρ (unmasked.bwd sel) × toV (unmasked.fwd sel) × Map.filter or ι'
       where
-      sel = Map.unions (Map.intersectionWith unval ιs (map (projSel Transient >>> to𝔹) <$> ι))
+      ι' = map (projSel Transient >>> to𝔹) <$> ι
+      sel = Map.unions (Map.intersectionWith unval ιs ι')

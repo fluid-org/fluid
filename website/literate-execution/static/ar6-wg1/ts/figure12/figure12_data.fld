@@ -38,4 +38,4 @@ models: list[str] = [
 def precip(ensemble_data: dict[str, float]) -> float:
   return mean([ ensemble_data[ model ] for model in models ])
 
-precip_std_extra_annual: dict[str, float] = dict_map(precip, hydroData.pr["std"]["extra_annual"].ens)
+precip_std_extra_annual: dict[str, float] = @doc("precip_std_extra_annual") dict_map(precip, hydroData.pr["std"]["extra_annual"].ens)

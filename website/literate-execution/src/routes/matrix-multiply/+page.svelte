@@ -29,7 +29,7 @@ MultiView([
 	<div></div>
 	<div></div>
 	<div class="flex-left-align">
-		<h3>Matrix convolution</h3>
+		<h3>Matrix multiplication</h3>
 	</div>
 
 	<DataPane {showDataPane} toggle={toggleDataPane}>

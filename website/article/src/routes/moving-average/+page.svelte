@@ -1,6 +1,5 @@
 <script>
 	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
-   import { text } from 'stream/consumers';
 
 	let showDataPane = false;
 
