@@ -87,7 +87,7 @@ registerMouseListeners handler element = do
    void $ element # on (EventType "mouseenter") hover
    void $ element # on (EventType "mouseleave") hover
    where
-   -- Ignore event on element removed by redraw, since browser still delivers mouseenter chosen before redraw
+   -- Ignore event on element removed by redraw; handler of removed element would redraw from figure state before removal
    handler' event = when (connected event) (handler event)
    connected = target >>> maybe false \tgt -> (unsafeCoerce tgt :: { isConnected :: Boolean }).isConnected
 
