@@ -59,15 +59,20 @@ movingAverages_spec :: TestLinkedOutputsSpec
 movingAverages_spec =
    { spec:
         { fluidSrcPaths
-        , ignoreInputs: none
+        , ignoreInputs: envVal "methane" (valOf (eachElement (field "type" select)))
         , linking: true
         , rowFilter: Nothing
         }
-   , δ_out: \_ -> none -- TODO: make this a non-trivial test
-   , out_expect: \_ -> none
+   , δ_out: \arg -> arg cLineChart f_plots (listElement 0 (y arg 5))
+   , out_expect: \arg -> arg cLineChart f_plots
+        ( listElement 0 (y arg 3 >.> y arg 4 >.> y arg 5 >.> y arg 6 >.> y arg 7)
+             >.> listElement 1 (y arg 4 >.> y arg 5 >.> y arg 6)
+        )
    , inert_expect: \_ -> Nothing
    , file: "linked_outputs/moving_average.fld"
    }
+   where
+   y arg n = arg cLinePlot f_points (listElement n (arg cPoint f_y select))
 
 linkedOutputs_cases :: Array TestLinkedOutputsSpec
 linkedOutputs_cases =
