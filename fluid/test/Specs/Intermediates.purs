@@ -12,7 +12,7 @@ intermediates_cases =
    [ { spec: { fluidSrcPaths, ignoreInputs: none, linking: true, rowFilter: Nothing }
      , δ_out: \_ -> matrixElement 1 1 select
      , intermediate: 4
-     , hover: matrixElement 1 1
+     , transient: matrixElement 1 1
      , in_expect:
           envVal "filter"
              ( valOf $ at
@@ -40,7 +40,7 @@ intermediates_cases =
    , { spec: { fluidSrcPaths, ignoreInputs: none, linking: true, rowFilter: Nothing }
      , δ_out: \_ -> tupleElement 0 (matrixElement 0 0 select)
      , intermediate: 0
-     , hover: matrixElement 0 0
+     , transient: matrixElement 0 0
      , in_expect:
           envVal "leftMatrix"
              ( valOf $ at

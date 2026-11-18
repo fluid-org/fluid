@@ -5,7 +5,7 @@ import Prelude
 import App.Fig (figure, selectInput, selectIntermediate, selectOutput, selectionResult)
 import App.Fig.Build (figGraph)
 import App.Fig.Graph (decodeFigGraph, encodeFigGraph)
-import App.Util (SelStates, Selector, getTransient, isInert, isPersistent, isTransient, selStates, selector, 𝕊)
+import App.Util (SelState(..), SelStates, SelectionType(..), Selector, isInert, isPersistent, isTransient, pairSel, projSel, selStates, selector, 𝕊)
 import App.Util.Selector (ObjArg, SelSetter, objArg, select, sel𝔹, valOf)
 import App.View.Util (Fig, Options)
 import Bind (Bind)
@@ -59,7 +59,7 @@ type TestIntermediatesSpec =
    { spec :: Options
    , δ_out :: ObjArg -> Selector Val
    , intermediate :: Int -- index in evaluation order among documented intermediates
-   , hover :: SelSetter Val Val -- position in intermediate
+   , transient :: SelSetter Val Val -- position in intermediate
    , in_expect :: Selector EnvWithDocs
    , out_expect :: ObjArg -> Selector Val
    , file :: String
@@ -114,25 +114,25 @@ linkedInputsSuite :: forall m. MonadProgram m => Array TestLinkedInputsSpec -> A
 linkedInputsSuite testSpecs = testSpecs <#> (_.file &&& (linkedInputsTest >>> void))
 
 -- Move transient selection to persistent selection; expectations check persistent selection only
-transient :: forall a. BoundedJoinSemilattice a => Eq a => SelStates a -> SelStates 𝔹
-transient s = selStates (isInert s) (getTransient s /= bot) false
+asPersistent :: forall a. BoundedJoinSemilattice a => Eq a => SelStates a -> SelStates 𝔹
+asPersistent s = pairSel ((_ /= bot) <$> projSel Transient s) (Reactive false)
 
--- Select output, then hover over an intermediate displayed for that selection
+-- Select output, then make transient selection on intermediate displayed by output selection
 intermediatesTest :: forall m. MonadProgram m => TestIntermediatesSpec -> m Unit
-intermediatesTest { spec, δ_out, intermediate, hover, in_expect, out_expect, file } = do
+intermediatesTest { spec, δ_out, intermediate, transient, in_expect, out_expect, file } = do
    fluidSrc <- loadFile spec.fluidSrcPaths (File file)
    fig <- loadFig spec fluidSrc <#> selectOutput (valOf (δ_out objArg))
    let
       p = A.fromFoldable (Map.keys fig.inertι) ! intermediate
       { ρ, v, ι } = selectionResult $
-         selectIntermediate p (valOf (hover (selector (EventType "mouseenter")))) (fig { ι = (selectionResult fig).ι })
-   checkSelection in_expect (transient <$> ρ)
-   checkSelection (valOf (out_expect objArg)) (transient <$> v)
-   checkSelection (valOf (hover select)) (transient <$> get p ι)
+         selectIntermediate p (valOf (transient (selector (EventType "mouseenter")))) (fig { ι = (selectionResult fig).ι })
+   checkSelection in_expect (asPersistent <$> ρ)
+   checkSelection (valOf (out_expect objArg)) (asPersistent <$> v)
+   checkSelection (valOf (transient select)) (asPersistent <$> get p ι)
 
 intermediatesSuite :: forall m. MonadProgram m => Array TestIntermediatesSpec -> Array (String × m Unit)
 intermediatesSuite testSpecs = testSpecs <#>
-   ((\{ file, intermediate } -> file <> ", hover over intermediate " <> show intermediate) &&& intermediatesTest)
+   ((\{ file, intermediate } -> file <> ", transient selection on intermediate " <> show intermediate) &&& intermediatesTest)
 
 type IllFormedSpec =
    { file :: String
