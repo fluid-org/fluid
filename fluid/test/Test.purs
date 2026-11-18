@@ -16,13 +16,14 @@ import Test.Specs.Comments (comments_cases)
 import Test.Specs.Comprehension (comprehension_cases)
 import Test.Specs.Dependence (dep_cases)
 import Test.Specs.Graphics (graphics_cases)
+import Test.Specs.Intermediates (intermediates_cases)
 import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
 import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
 import Test.Util (TestSuite, fluidSrcPaths)
 import Test.Util.Mocha (run)
-import Test.Util.Suite (BenchSuite, SuiteFactory, depSuite, illFormedSuite, linkedInputsSuite, linkedOutputsSuite, suite)
+import Test.Util.Suite (BenchSuite, SuiteFactory, depSuite, illFormedSuite, intermediatesSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
 
 main :: Effect Unit
@@ -49,6 +50,7 @@ allTests = concat (benchmarks <#> asTestSuite) <> depSuite dep_cases <> linkingT
 
 linkingTests :: forall m. MonadProgram m => TestSuite m
 linkingTests = linkedOutputsSuite linkedOutputs_cases <> linkedInputsSuite linkedInputs_cases
+   <> intermediatesSuite intermediates_cases
 
 illFormedTests :: forall m. MonadProgram m => TestSuite m
 illFormedTests = illFormedSuite illFormed_cases <> (second (withRoots [ Folder "test/lib/predefined" ]) <$> illFormedSuite shadow_cases)
