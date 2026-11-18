@@ -1,0 +1,4 @@
+b: bool = @doc("b") True
+y: int = @doc("y") 1
+
+@doc("result") ((@doc("branch") (y + 1)) if b else 0)

@@ -1,0 +1,5 @@
+{
+	"program": "static/src/methane.fld",
+	"fluidSrcPath": ["../src", "../lib"],
+	"linking": true
+}

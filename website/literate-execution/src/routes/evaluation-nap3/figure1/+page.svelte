@@ -1,15 +1,7 @@
 <script>
-	import { DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['..', '../../../lib'],
-		inputs: ['nap3_actions', 'ccra3_risks'],
-		query: true,
-		linking: true,
-		rowFilter: 'Relevant'
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
@@ -31,7 +23,7 @@
 	</DataPane>
 
 	<div>
-		<Figure {spec} fld="figure1.fld" />
+		<FigureGraph graph="../../graph/nap3-figure1.json" />
 	</div>
 </Grid>
 

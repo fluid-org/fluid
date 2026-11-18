@@ -1,14 +1,7 @@
 <script>
-	import { DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		inputs: ['tableData'],
-		query: true,
-		linking: true
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
@@ -29,7 +22,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../src/_1805_02474v1_10.fld" />
+		<FigureGraph graph="../graph/scigen-1805.02474v1-10.json" />
 	</div>
 </Grid>
 

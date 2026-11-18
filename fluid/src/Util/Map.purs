@@ -95,8 +95,9 @@ lookup' k = lookup k >>> orElse (keyNotFound k)
 keyNotFound :: forall k. Show k => k -> String
 keyNotFound k = "Key " <> show k <> " not found"
 
+-- Both arguments explicit, since the point-free form is slower
 get :: forall a k b. Show k => Map a k b => k -> a -> b
-get k = lookup k >>> definitely (keyNotFound k)
+get k m = definitely (keyNotFound k) (lookup k m)
 
 findWithDefault :: forall k v. Ord k => v -> k -> M.Map k v -> v
 findWithDefault d k = maybe d identity <<< M.lookup k

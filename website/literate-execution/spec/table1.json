@@ -1,0 +1,5 @@
+{
+	"program": "static/ar6-wg1/spm/table1/table1.fld",
+	"fluidSrcPath": [".", "../../../lib"],
+	"linking": true
+}

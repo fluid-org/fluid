@@ -20,17 +20,17 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (fst)
-import Classes (class HasClasses, ClassTable)
+import Classes (ClassTable)
 import Dict (Dict)
 import Effect.Exception (Error)
-import Eval (evalImport, implicitMembers, load) as Dep
+import Eval (evalImport, implicitMembers, load, predefinedModule) as Dep
 import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
 import File (class MonadLoad, File(..), FileCxt(..), hasDirectory, loadModuleSource, manifest, modulePath, withClasses)
-import DepGraph (Deriv, deriv, emptyGraph)
+import DepGraph (PosLineage, emptyGraph)
 import Module.Defs (ModuleName, containing, implicit, implicitFor, parents)
 import Parse (parseModule, parseProgram)
 import Primitive.Defs (predefined, predefinedClasses)
@@ -39,11 +39,12 @@ import SExpr as S
 import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
-import Val (class HasModuleStore, ModuleState(..), modifyModuleStore, Env(..))
+import Lattice (DepKind)
+import Val (class MonadProgram, GVal, ModuleState(..), modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
-type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict Deriv, classes :: ClassTable }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal (PosLineage DepKind)), classes :: ClassTable }
 
 -- Message for source of program or module that fails to parse
 newtype ParseFailure = ParseFailure String
@@ -87,18 +88,16 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
            ("import cycle: " <> intercalate " -> " (quoted <<< dottedName <$> (q : reverse (takeWhile (_ /= q) path)) <> (q : Nil)))
       | otherwise = Set.insert q <$> foldM (go (q : path)) done (findWithDefault Nil q edges)
 
--- Load modules into new dependence graph, kept in module store; return top-level environment as vertex per variable
+-- Load modules into new dependence graph in module store; return top-level environment
 loadTopLevel
    :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadLoad m
+    . MonadProgram m
    => Map ModuleName Module
    -> List S.Import
-   -> m (Dict Deriv)
+   -> m (Dict (GVal (PosLineage DepKind)))
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
-      predefined' <- traverse (\(_ × Env ρ) -> Loaded <$> traverse deriv ρ) predefined
+      predefined' <- for predefined \(_ × ρ) -> Loaded <$> Dep.predefinedModule ρ
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
       for_ implicit Dep.load
       ρ0 <- Dep.implicitMembers
@@ -106,13 +105,7 @@ loadTopLevel modules imports = do
    modifyModuleStore (_ { depGraph = depGraph })
    pure inputs
 
-prepConfig
-   :: forall m
-    . HasClasses m
-   => HasModuleStore m
-   => MonadLoad m
-   => String
-   -> ExceptT ParseFailure m Config
+prepConfig :: forall m. MonadProgram m => String -> ExceptT ParseFailure m Config
 prepConfig fluidSrc = do
    s × imports <- except (lmap ParseFailure (parseProgram fluidSrc))
    { result: e, modules: mods, classes } <- prepModules imports (checkProgram imports (named mainModule s))

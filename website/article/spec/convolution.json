@@ -1,0 +1,5 @@
+{
+	"program": "static/src/convolution.fld",
+	"fluidSrcPath": ["../src", "../lib"],
+	"linking": false
+}

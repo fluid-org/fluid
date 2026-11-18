@@ -186,15 +186,6 @@ topStmt = defer \_ -> typeRegion <|> stmt
 stmts :: Parser Stmt
 stmts = defer \_ -> many1 (align stmt) <#> foldr1Seq
 
--- Top-level programs may omit 'return' on the trailing expression that gives
--- the program its value. Inside functions and other block bodies, 'return'
--- is required.
-programStmt :: Parser Stmt
-programStmt = defer \_ -> ifStmt <|> matchStmt <|> typeRegion <|> defStmt <|> declareStmt <|> returnStmt <|> (reserved "pass" *> pure Pass) <|> assertStmt <|> misplacedImport <|> (Return <<< Just <$> exprs)
-
-programStmts :: Parser Stmt
-programStmts = defer \_ -> many1 (align programStmt) <#> foldr1Seq
-
 foldr1Seq :: NonEmptyList Stmt -> Stmt
 foldr1Seq (NonEmptyList (s :| ss)) = case ss of
    Nil -> s
@@ -602,7 +593,7 @@ parseProgram src = parse (topLevel programBody) src
    where
    programBody = do
       ιs <- many (align import_)
-      s <- programStmts
+      s <- many1 (align topStmt) <#> foldr1Seq
       pure (s × ιs)
 
 parseModule :: String -> MayFail (Module × List Name)

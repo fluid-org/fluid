@@ -15,8 +15,6 @@ linkedInputs_spec3 :: TestLinkedInputsSpec
 linkedInputs_spec3 =
    { spec:
         { fluidSrcPaths
-        , inputs: [ "renewables", "nonRenewables" ]
-        , query: false
         , ignoreInputs: envVal "renewables" (valOf yearAndCountry) >.> envVal "nonRenewables" (valOf yearAndCountry)
         , linking: true
         , rowFilter: Nothing
@@ -48,8 +46,6 @@ linkedInputs_spec4 :: TestLinkedInputsSpec
 linkedInputs_spec4 =
    { spec:
         { fluidSrcPaths
-        , inputs: [ "renewables", "nonRenewables" ]
-        , query: false
         , ignoreInputs: envVal "renewables" (valOf yearAndCountry) >.> envVal "nonRenewables" (valOf yearAndCountry)
         , linking: true
         , rowFilter: Nothing
@@ -82,9 +78,6 @@ linkedInputs_spec5 :: TestLinkedInputsSpec
 linkedInputs_spec5 =
    { spec:
         { fluidSrcPaths
-
-        , inputs: [ "nonRenewables", "renewables" ]
-        , query: false
         , ignoreInputs: none
         , linking: true
         , rowFilter: Nothing

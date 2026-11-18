@@ -34,10 +34,18 @@ import Util.Set ((∈))
 -- Files under each source root
 type Manifests = Map Folder (Set File)
 
-newtype FileCxt = FileCxt { fluidSrcPaths :: Array Folder, manifests :: Manifests, classes :: ClassTable }
+newtype FileCxt = FileCxt
+   { base :: Folder -- directory for relative paths under Node; working directory if empty
+   , fluidSrcPaths :: Array Folder
+   , manifests :: Manifests
+   , classes :: ClassTable
+   }
 
 emptyFileCxt :: FileCxt
-emptyFileCxt = FileCxt { fluidSrcPaths: [], manifests: Map.empty, classes: Map.empty }
+emptyFileCxt = fileCxtIn (Folder "")
+
+fileCxtIn :: Folder -> FileCxt
+fileCxtIn base = FileCxt { base, fluidSrcPaths: [], manifests: Map.empty, classes: Map.empty }
 
 withClasses :: forall m a. MonadReader FileCxt m => ClassTable -> m a -> m a
 withClasses classes = local (\(FileCxt r) -> FileCxt (r { classes = classes }))

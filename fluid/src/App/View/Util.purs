@@ -6,11 +6,12 @@ import App.Util (SelState, SelStates, Selectable, Selection, SelectionType, Sele
 import App.Util.Selector (ObjArg, dictVal)
 import App.View.Util.D3 (create, on, setAttrs, setStyles)
 import App.View.Util.D3 as D3
-import Bind (Var, (↦))
+import Bind ((↦))
 import Data.Argonaut.Decode (class DecodeJson, JsonDecodeError(..))
 import Data.Argonaut.Decode.Decoders (decodeString)
-import Data.Either (Either(..))
-import Data.Foldable (all, sequence_)
+import Data.Argonaut.Encode (class EncodeJson, encodeJson)
+import Data.Either (note)
+import Data.Foldable (all, find, sequence_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe)
 import Data.Tuple (fst, snd)
@@ -19,7 +20,6 @@ import Effect (Effect)
 import File (Folder)
 import DepGraph (Labelling)
 import Lattice (𝔹, (∨))
-import SExpr as S
 import Util (type (×), Endo, (×))
 import Util.Map (toUnfoldable, values)
 import Util.Set (size)
@@ -107,8 +107,6 @@ data Filter = Everything | Interactive | Relevant
 
 type Options =
    { fluidSrcPaths :: Array Folder
-   , inputs :: Array Var
-   , query :: Boolean -- show documented intermediates
    , ignoreInputs :: Selector EnvWithDocs -- input positions left out of linked queries; retire with #1585
    , linking :: Boolean
    , rowFilter :: Maybe Filter
@@ -117,8 +115,7 @@ type Options =
 data Direction = LinkedInputs | LinkedOutputs | Intermediates
 
 type Fig =
-   { spec :: Options
-   , s :: S.Stmt
+   { rowFilter :: Maybe Filter
    , ρ :: EnvWithDocs (SelStates 𝔹)
    , v :: ValWithDoc (SelStates 𝔹)
    , ι :: Labelling (ValWithDoc (SelStates 𝔹))
@@ -142,11 +139,14 @@ type QueryResult = EnvWithDocs (SelState 𝔹) × ValWithDoc (SelState 𝔹) × 
 derive instance Eq Direction
 derive instance Eq Filter
 
-instance decodeJsonFilter :: DecodeJson Filter where
-   decodeJson json = do
-      s <- decodeString json
-      case s of
-         "Everything" -> pure Everything
-         "Interactive" -> pure Interactive
-         "Relevant" -> pure Relevant
-         _ -> Left $ TypeMismatch $ "Unknown Filter: " <> s
+instance Show Filter where
+   show Everything = "Everything"
+   show Interactive = "Interactive"
+   show Relevant = "Relevant"
+
+instance DecodeJson Filter where
+   decodeJson json = decodeString json >>= \s ->
+      note (TypeMismatch ("Unknown Filter: " <> s)) (find (show >>> (_ == s)) [ Everything, Interactive, Relevant ])
+
+instance EncodeJson Filter where
+   encodeJson = show >>> encodeJson

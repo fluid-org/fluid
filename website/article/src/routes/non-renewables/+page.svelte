@@ -1,15 +1,7 @@
 <script>
-	import { DataPane, Figure, Grid } from '@fluid-org/fluid';
+	import { DataPane, FigureGraph, Grid } from '@fluid-org/fluid';
 
 	let showDataPane = false;
-
-	const spec = {
-		fluidSrcPath: ['../src', '../lib'],
-		inputs: ['nonRenewables'],
-		ignoreInputs: { nonRenewables: ['year', 'country'] },
-		query: false,
-		linking: true
-	};
 
 	const toggleDataPane = () => {
 		showDataPane = !showDataPane;
@@ -30,7 +22,7 @@
 	</DataPane>
 
 	<div class="flex-left-align">
-		<Figure {spec} fld="../src/non_renewables.fld" />
+		<FigureGraph graph="../graph/non-renewables.json" />
 	</div>
 </Grid>
 

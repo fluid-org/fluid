@@ -2,11 +2,16 @@ module Fluid where
 
 import Prelude
 
+import App.Fig.Build (JsonOptions, figGraph, optionsFromJson)
+import App.Fig.Graph (encodeFigGraph)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
-import Data.Argonaut.Core (stringifyWithIndent)
+import Data.Argonaut.Core (Json, stringify, stringifyWithIndent)
+import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
+import Data.Argonaut.Parser (jsonParser)
 import Data.Array as Array
+import Data.Bifunctor (lmap)
 import Data.Foldable (for_)
 import Data.List.Types (NonEmptyList)
 import Data.Set as Set
@@ -21,14 +26,16 @@ import Effect.Aff (Aff, Error, message, runAff_, try)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log, logShow)
 import Eval (evalProgram)
-import File (File(..), Folder(..), emptyFileCxt, loadFile, loadManifest, modulePath, withClasses, withRoots)
+import File (File(..), Folder(..), emptyFileCxt, fileCxtIn, loadFile, loadManifest, modulePath, withClasses, withRoots)
 import Classes (ClassTable)
 import Data.Map (Map)
 import Module (Config, ParseFailure(..), loadTopLevel, prepConfig, prepModule)
 import Module.Defs (ModuleName)
 import Module.Node (NodeT, runNodeT)
 import Node.Encoding (Encoding(..))
-import Node.FS.Aff (writeTextFile)
+import Node.FS.Aff (mkdir', readTextFile, writeTextFile)
+import Node.FS.Perms (permsAll)
+import Node.Path (basenameWithoutExt, concat, dirname)
 import Node.Process (exit')
 import Options.Applicative (Parser, command, execParser, fullDesc, header, help, helper, long, metavar, progDesc, short, some, strArgument, strOption, subparser, switch, (<**>))
 import Options.Applicative.Builder (info)
@@ -36,8 +43,8 @@ import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
 import Expr (Module) as E
 import SExpr (Import(..)) as S
-import Util (type (×), orElse, (×))
-import DepGraph (valAt)
+import Util (type (×), orElse, orThrow, withMsg, (×))
+import Val (valAt)
 
 type FileArgs =
    { local :: Boolean
@@ -46,7 +53,12 @@ type FileArgs =
    , asModule :: Boolean -- as module rather than program
    }
 
-data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Manifest (NonEmptyList String)
+type BuildArgs =
+   { specs :: NonEmptyList String -- JSON files of figure options
+   , out :: String -- directory for figure graphs
+   }
+
+data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Build BuildArgs | Manifest (NonEmptyList String)
 
 parseFileArgs :: Parser FileArgs
 parseFileArgs = ado
@@ -56,6 +68,12 @@ parseFileArgs = ado
    asModule <- switch (long "module" <> short 'm' <> help "Treat the file as a module rather than a program")
    in { local, fileName, fluidSrcPaths, asModule }
 
+parseBuildArgs :: Parser BuildArgs
+parseBuildArgs = ado
+   out <- strOption (long "out" <> short 'o' <> help "Directory for figure graphs")
+   specs <- some (strArgument (metavar "SPEC" <> help "JSON file of figure options"))
+   in { specs, out }
+
 parseManifest :: Parser (NonEmptyList String)
 parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write manifests under"))
 
@@ -64,6 +82,7 @@ commandParser = subparser
    ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse a file and print it back"))
         <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check a file statically, with the exit codes of a PurePy checker"))
         <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate a file, printing its value; exit 1 on failure"))
+        <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Write the figure graph of each figure"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
 
@@ -75,8 +94,22 @@ dispatchCommand (Parse_ args) = report args do
       Right src -> exitCode.accepted × Just src
 dispatchCommand (Check args) = report args (stages args (const (pure Nothing)))
 dispatchCommand (Evaluate args) = report args $ stages args case _ of
-   AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, root } -> Just (prettyP (valAt g root))
+   AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, out } -> Just (prettyP (valAt g out))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
+dispatchCommand (Build { specs, out }) = do
+   mkdir' out { recursive: true, mode: permsAll }
+   for_ specs \spec -> withMsg spec do
+      json <- readTextFile UTF8 spec >>= jsonParser >>> orThrow
+      { program } :: { program :: String } <- decode json
+      options :: JsonOptions <- decode json
+      fluidSrc <- readTextFile UTF8 program
+      let options'@{ fluidSrcPaths } = optionsFromJson options
+      graph <- runNodeT (fileCxtIn (Folder (dirname program))) $ withRoots fluidSrcPaths $
+         figGraph options' fluidSrc >>= encodeFigGraph >>> orThrow
+      writeTextFile UTF8 (concat [ out, basenameWithoutExt spec ".json" <> ".json" ]) (stringify graph)
+   where
+   decode :: forall a. DecodeJson a => Json -> Aff a
+   decode = decodeJson >>> lmap printJsonDecodeError >>> orThrow
 dispatchCommand (Manifest dirs) = for_ dirs (writeManifests <<< Folder)
 
 -- Print message, if any, and exit with code.

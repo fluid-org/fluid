@@ -1,0 +1,5 @@
+{
+	"program": "static/src/moving_average.fld",
+	"fluidSrcPath": ["../src", "../lib"],
+	"linking": false
+}

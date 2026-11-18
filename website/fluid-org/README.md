@@ -32,70 +32,11 @@ Paths are defined using directory names in `src/routes`. The `index.html` equiva
 
 ### Components
 
-Components define some shared functionality and can be imported and rendered with arguments to other `.svelte` files. For example, the shared `Figure.svelte` components is defined as:
+Components define shared functionality and can be imported into other `.svelte` files. For example, `FigureGraph` draws a figure from a figure graph written by `fluid build`:
 
 ```.svelte
-<script lang="ts">
-	import { loadFigure } from '$lib/fluid/App.LoadFigure';
-	import { onMount } from 'svelte';
-
-	let { spec, fld } = $props();
-
-	onMount(() => {
-		loadFigure(spec)('fig')(fld)();
-	});
-</script>
-
-<div id="fig">
-	<div class="fig-loading">loading figure(s)</div>
-</div>
-
-<!-- CSS is scoped to the component and served only when
-the component is rendered, i.e. not a single big .css file
-for the whole site -->
-<style>
-	@keyframes fadeIn {
-		from {
-			opacity: 0;
-		}
-		to {
-			opacity: 1;
-		}
-	}
-
-	.fig-loading:only-child {
-		color: fuchsia;
-		animation: fadeIn 2s ease-in-out infinite alternate;
-	}
-
-	.fig-loading:not(:only-child) {
-		display: none;
-	}
-</style>
-
+<FigureGraph graph="../graph/example.json" />
 ```
-
-The component is used in other components or routes like:
-
-```.svelte
-<div class="some-other-html">
-    <Figure spec={mySpec} fld="example.fld" />
-</div>
-```
-
-The script block is evaluated during server-side rendering. The `onMount` call ensures that `loadFigure` is not called on the server, only in the browser (otherwise we would run into issues trying to update the DOM in a Node.js process).
-
-If we separated our processing vs rendering work in Fluid, then we could change this to something like:
-
-```.ts
-const figure = prepareFigure(spec, fld)
-
-onMount(() => {
-  loadFigure(figure, 'fig')
-})
-```
-
-Here, `figure` would be computed during prerendering, and only the rendering work would be performed by a visitor to the website.
 
 ### Assets
 
