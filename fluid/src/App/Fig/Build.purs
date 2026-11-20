@@ -7,14 +7,18 @@ import App.Fig.Graph (FigGraph, str)
 import App.Util.Selector (eachElement, envVal, field, none, select, sel𝔹, valOf, (>.>))
 import App.View.Util (Fig, Filter, Options)
 import Data.Array as A
+import Data.DateTime.Instant (unInstant)
 import Data.Foldable (foldr, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
+import Data.Newtype (unwrap)
 import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (fst)
 import DepGraph (selected)
+import Effect.Class (liftEffect)
+import Effect.Now (now)
 import Dict (fromFoldable) as D
 import Eval (evalProgram, visibleGraph)
 import File (Folder(..))
@@ -23,7 +27,7 @@ import Foreign.Object as Object
 import Literal (Literal(..))
 import Module (prepConfig, throwParseFailure)
 import Pretty (prettyP)
-import Util (isEmpty, throw, (×))
+import Util (type (×), isEmpty, throw, (×))
 import Util.Map (get)
 import Util.Set ((∈))
 import Val (class MonadProgram, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, valAt, withDoc)
@@ -45,13 +49,22 @@ optionsFromJson spec@{ ignoreInputs, linking, rowFilter } =
    , rowFilter
    }
 
--- Take documented leaves of visible graph (other than output) as inputs of figure
+-- Times in milliseconds; evaluation includes loading of modules
+type Timing = { evaluate :: Number, materialise :: Number }
+
 figGraph :: forall m. MonadProgram m => Options -> String -> m FigGraph
-figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
+figGraph options fluidSrc = fst <$> figGraphTimed options fluidSrc
+
+-- Take documented leaves of visible graph (other than output) as inputs of figure
+figGraphTimed :: forall m. MonadProgram m => Options -> String -> m (FigGraph × Timing)
+figGraphTimed { linking, ignoreInputs, rowFilter } fluidSrc = do
+   started <- clock
    config <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g, out } <- evalProgram config.inputs config.classes config.e
+   evaluated <- clock
+   let graph = visibleGraph eval
+   materialised <- clock
    let
-      graph = visibleGraph eval
       leaves = Map.filterKeys (\p -> p /= out && isEmpty (get p graph.edges)) g.docs
    named :: Array _ <- for (Map.toUnfoldable leaves) \(p × d) -> case valAt g d of
       Val _ (Lit (Str x)) -> pure (x × (p × Nothing))
@@ -63,7 +76,7 @@ figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
       ins = D.fromFoldable named
       shown = Set.insert out (Map.keys leaves)
       everything = map (const true) <$> graph.vals
-   pure
+   pure $
       { graph
       , ins
       , out: withDoc g out
@@ -71,7 +84,9 @@ figGraph { linking, ignoreInputs, rowFilter } fluidSrc = do
       , ignored: selected <$> unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
       , linking
       , rowFilter
-      }
+      } × { evaluate: evaluated - started, materialise: materialised - evaluated }
+   where
+   clock = liftEffect (now <#> unInstant >>> unwrap)
 
 loadFig :: forall m. MonadProgram m => Options -> String -> m Fig
 loadFig options fluidSrc = figure <$> figGraph options fluidSrc
