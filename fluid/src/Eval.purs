@@ -84,7 +84,7 @@ matches classes u@(q × Val _ v) p = second (q : _) case v, p of
    V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Obj c' xvs, PConstr c ps Nil
       | c `elem` ancestors classes c' ->
-           matchesMany classes (mapWithIndex (\i _ -> project (Field i) u) (take (length ps) xvs)) ps
+           matchesMany classes ((\(x × _) -> project (Field x) u) <$> take (length ps) xvs) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
       case traverse (\(x × p') -> lookup x xvs $> (x × project (Entry x) u × p')) xps of
          Just kvs -> second ((kvs <#> \(x × _) -> fst (project (Key x) u)) <> _)
@@ -121,7 +121,7 @@ destructure classes p u = case dispatch classes (singleton (p × unit)) u of
 
 object :: forall s. Semiring s => ClassTable -> Sources s -> Name -> List (GVal s) -> GVal s
 object classes srcs c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst <$> vs))) ×
-   construct srcs (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Field i × δ) vs))
+   construct srcs (Map.fromFoldable (zip (Field <$> fieldNames classes c) (snd <$> vs)))
 
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
 closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
@@ -206,8 +206,8 @@ eval = { stmt, program }
          r@(a × v) <- expr inputs e
          case v of
             Val _ (V.Obj c xvs) -> do
-               i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-               pure (deliver (singleton (vertex a)) (reuseAt (project (Field i) (position r))))
+               _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
+               pure (deliver (singleton (vertex a)) (reuseAt (project (Field x) (position r))))
             _ -> throw $ "Found " <> prettyP v <> ", expected object"
       Subscript e e' -> do
          r@(_ × v) <- expr inputs e

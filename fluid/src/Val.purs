@@ -82,7 +82,7 @@ instance Paths Label where
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
 pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
    Lit ℓ -> Lit ℓ
-   Obj c xvs -> Obj c (mapWithIndex (\i (x × v) -> x × pathsFrom (Field i : p) v) xvs)
+   Obj c xvs -> Obj c (xvs <#> \(x × v) -> x × pathsFrom (Field x : p) v)
    List vs -> List (mapWithIndex (\i -> pathsFrom (Element i : p)) vs)
    Tuple vs -> Tuple (mapWithIndex (\i -> pathsFrom (Element i : p)) vs)
    Dictionary (DictRep d) ->
@@ -102,7 +102,7 @@ pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
    TypeAlias αs τ -> TypeAlias αs τ
 
 part :: forall a. Step -> Val a -> Val a
-part (Field i) v = field i v
+part (Field x) v = attr x v
 part (Element i) v = element i v
 part (Key k) v = Val (fst (dictEntry k v)) (Lit (Str k))
 part (Entry k) v = snd (dictEntry k v)
@@ -276,8 +276,8 @@ positionsIn (a × v) = Set.fromFoldable (at a <<< fst <$> positions (paths v))
 
 -- Positions which determine the length of the sequence at a vertex: the root, plus start and stop of a range
 lengthPositions :: Dep.Deriv × Raw Val -> Set Path
-lengthPositions (a × Val _ (Obj c _)) | c == cRange =
-   Set.fromFoldable [ vertex a, at a (singleton (Field 0)), at a (singleton (Field 1)) ]
+lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
+   Set.fromFoldable (vertex a : (xvs <#> \(x × _) -> at a (singleton (Field x))))
 lengthPositions (a × _) = singleton (vertex a)
 
 -- Part at step of the value at a position
@@ -478,10 +478,6 @@ matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!!
 matrixElement :: forall a. Int -> Int -> Val a -> Val a
 matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
 matrixElement _ _ _ = error absurd
-
-field :: forall a. Int -> Val a -> Val a
-field i (Val _ (Obj _ xvs)) = snd (xvs ! i)
-field _ _ = error absurd
 
 attr :: forall a. Var -> Val a -> Val a
 attr x (Val _ (Obj _ xvs)) = get x (D.fromFoldable xvs)

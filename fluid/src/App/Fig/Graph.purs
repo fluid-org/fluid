@@ -4,12 +4,13 @@ import Prelude hiding (absurd)
 
 import App.View.Util (Filter)
 import Bind (FieldName, Name, dottedName)
-import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
+import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull, stringify)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
 import Data.Array as A
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), note)
+import Data.Int (fromNumber) as Int
 import Data.Foldable (foldMap)
 import Data.List as L
 import Data.List.NonEmpty as NEL
@@ -21,7 +22,7 @@ import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Deriv(..), Edges, Labelling, Pos, SparseRel(..), VisibleGraph, sparseRel)
+import DepGraph (Deriv(..), Labelling, Path, SparseRel(..), Step(..), VisibleGraph, sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
@@ -40,7 +41,7 @@ type FigGraph =
    , ins :: Dict DerivWithDoc -- input name ↦ vertex
    , out :: DerivWithDoc
    , ιs :: Labelling DerivWithDoc -- documented intermediates
-   , ignored :: Labelling (Set Pos) -- input positions left out of linked queries
+   , ignored :: Labelling (Set Path) -- input positions left out of linked queries
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
@@ -58,8 +59,11 @@ str =
 
 type DerivWithDocRep = Int × Maybe Int
 
+-- Position in a value as a path: element as its index, field as its name, matrix element as its indices
+type PathRep = Array Json
+
 -- Dependence relation as target position ↦ source position ↦ weight
-type RelRep = Array (Pos × Array (Pos × Int))
+type RelRep = Array (PathRep × Array (PathRep × Int))
 
 type Classes = Object (Array FieldName) -- class ↦ field names
 
@@ -70,7 +74,7 @@ type FigGraphRep =
    , ins :: Array (String × DerivWithDocRep)
    , out :: DerivWithDocRep
    , intermediates :: Array (Int × DerivWithDocRep)
-   , ignored :: Array (Int × Array Pos)
+   , ignored :: Array (Int × Array PathRep)
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
@@ -85,7 +89,7 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
         , ins: map encodeDeriv <$> D.toArrayWithKey (×) ins
         , out: encodeDeriv out
         , intermediates: labelling encodeDeriv ιs
-        , ignored: labelling Set.toUnfoldable ignored
+        , ignored: labelling (Set.toUnfoldable >>> map encodePath) ignored
         , linking
         , rowFilter
         } :: FigGraphRep
@@ -107,18 +111,21 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    encodeDeriv (Deriv p × d) = p × (d <#> \(Deriv q) -> q)
 
    encodeRel :: SparseRel DepKind -> RelRep
-   encodeRel (SparseRel { in_ }) = Map.toUnfoldable (in_ <#> (map encodeDepKind >>> Map.toUnfoldable))
+   encodeRel (SparseRel { in_ }) =
+      Map.toUnfoldable in_ <#> bimap encodePath (Map.toUnfoldable >>> map (bimap encodePath encodeDepKind))
 
 decodeFigGraph :: Json -> MayFail FigGraph
 decodeFigGraph json = do
    rep :: FigGraphRep <- lmap printJsonDecodeError (decodeJson json)
    vals <- traverse (\(p × v) -> (Deriv p × _) <$> decodeVal rep.classes v) rep.vals
+   edges <- traverse (traverse (traverse (traverse decodeRel))) rep.edges
+   ignored <- traverse (traverse (traverse decodePath)) rep.ignored
    pure
-      { graph: { vals: Map.fromFoldable vals, edges: edges rep.edges }
+      { graph: { vals: Map.fromFoldable vals, edges: labelling (labelling identity) edges }
       , ins: D.fromFoldable (map decodeDeriv <$> rep.ins)
       , out: decodeDeriv rep.out
       , ιs: labelling decodeDeriv rep.intermediates
-      , ignored: labelling Set.fromFoldable rep.ignored
+      , ignored: labelling Set.fromFoldable ignored
       , linking: rep.linking
       , rowFilter: rep.rowFilter
       }
@@ -126,14 +133,47 @@ decodeFigGraph json = do
    labelling :: forall a b. (a -> b) -> Array (Int × a) -> Labelling b
    labelling f = map (bimap Deriv f) >>> Map.fromFoldable
 
-   edges :: Array (Int × Array (Int × RelRep)) -> Edges (SparseRel DepKind)
-   edges = labelling (labelling decodeRel)
-
    decodeDeriv :: DerivWithDocRep -> DerivWithDoc
    decodeDeriv (p × d) = Deriv p × (Deriv <$> d)
 
-   decodeRel :: RelRep -> SparseRel DepKind
-   decodeRel = map (map (map (map decodeDepKind) >>> Map.fromFoldable)) >>> Map.fromFoldable >>> sparseRel
+   decodeRel :: RelRep -> MayFail (SparseRel DepKind)
+   decodeRel r = sparseRel <<< Map.fromFoldable <$> for r \(q × ws) ->
+      (×) <$> decodePath q <*> (Map.fromFoldable <$> for ws \(p × w) -> (_ × decodeDepKind w) <$> decodePath p)
+
+encodePath :: Path -> PathRep
+encodePath = A.fromFoldable >>> map case _ of
+   Element i -> encodeJson i
+   Field x -> fromString x
+   MatrixElement i j -> encodeJson [ i, j ]
+   Entry k -> fromObject (maplet "entry" (fromString k))
+   Key k -> fromObject (maplet "key" (fromString k))
+   RowCount -> fromObject (maplet "dims" (encodeJson 0))
+   ColumnCount -> fromObject (maplet "dims" (encodeJson 1))
+   _ -> error absurd
+
+decodePath :: PathRep -> MayFail Path
+decodePath = L.fromFoldable >>> traverse \step -> caseJson
+   (const (unknown step))
+   (const (unknown step))
+   (\i -> note "Element index" (Element <$> Int.fromNumber i))
+   (Field >>> pure)
+   ( \ij -> lmap printJsonDecodeError (decodeJson (fromArray ij)) >>= case _ of
+        [ i, j ] -> pure (MatrixElement i j)
+        _ -> unknown step
+   )
+   ( toUnfoldable >>> case _ of
+        [ "entry" × k ] -> Entry <$> lmap printJsonDecodeError (decodeJson k)
+        [ "key" × k ] -> Key <$> lmap printJsonDecodeError (decodeJson k)
+        [ "dims" × n ] -> lmap printJsonDecodeError (decodeJson n) >>= case _ of
+           0 -> pure RowCount
+           1 -> pure ColumnCount
+           _ -> unknown step
+        _ -> unknown step
+   )
+   step
+   where
+   unknown :: forall a. Json -> MayFail a
+   unknown step = Left ("Step " <> stringify step)
 
 encodeDepKind :: DepKind -> Int
 encodeDepKind Zero = error absurd

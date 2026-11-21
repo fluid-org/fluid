@@ -4,7 +4,7 @@ import Prelude hiding (absurd, compose)
 
 import Bind (Var)
 import Control.Apply (lift2)
-import Control.Monad.State (class MonadState, evalState, execState, gets, modify_, state)
+import Control.Monad.State (class MonadState, execState, gets, modify_)
 import Data.Foldable (any, foldMap, foldl, foldr)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -28,15 +28,13 @@ import Unsafe.Reference (unsafeRefEq)
 
 newtype Deriv = Deriv Int
 
-type Pos = Int -- index under the position ordering of a value
-
 -- Step from a value to one of its parts, or from a family of values to one of its members
 data Step
    = Vertex Deriv
    | Environment -- environment of inputs
    | Ctl -- control position of inputs
    | Binding Var -- variable of environment
-   | Field Int -- field of object
+   | Field Var -- field of object
    | Element Int -- element of list or tuple
    | Key String -- key of dictionary entry
    | Entry String -- value of dictionary entry
@@ -72,9 +70,6 @@ class Traversable f <= Paths f where
 
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
-
-mapPositions :: forall f a b. Traversable f => (Pos -> b) -> f a -> f b
-mapPositions h = traverse (\_ -> state \n -> h n × (n + 1)) >>> flip evalState 0
 
 zeros :: forall f a s. Functor f => Semiring s => f a -> f s
 zeros = map (const zero)
@@ -280,15 +275,15 @@ attachDoc a b = modify_ \g -> g { docs = Map.insert a b g.docs }
 
 -- Pair present exactly when its weight is non-zero
 newtype SparseRel s = SparseRel
-   { out :: Map Pos (Map Pos s) -- source ↦ labelled target neighbours
-   , in_ :: Map Pos (Map Pos s) -- target ↦ labelled source neighbours
+   { out :: Map Path (Map Path s) -- source ↦ labelled target neighbours
+   , in_ :: Map Path (Map Path s) -- target ↦ labelled source neighbours
    }
 
-sparseRel :: forall s. Map Pos (Map Pos s) -> SparseRel s
+sparseRel :: forall s. Map Path (Map Path s) -> SparseRel s
 sparseRel in_ = SparseRel { out, in_ }
    where
    out = fromFoldableWith Map.union
-      (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
+      (Map.toUnfoldable in_ >>= \(q × m) -> (Map.toUnfoldable m :: List _) <#> \(p × w) -> p × maplet q w)
 
 -- Visible vertices with their values; edges labelled by the dependence relations left by hiding every other vertex
 type VisibleGraph (f :: Type -> Type) s =
@@ -330,55 +325,50 @@ materialise g visible =
    byLastDependent = fromFoldableWith (<>) $
       (Map.toUnfoldable lastDependent :: List _) <#> \(b × a) -> a × (b : Nil)
 
-   -- Index of each position of a visible vertex
-   indices :: Labelling (Map Path Pos)
-   indices = vals <#> \v -> Map.fromFoldable (mapWithIndex (\i (p × _) -> p × i) (positions (paths v)))
-
    -- Edges into a visible vertex from each visible vertex
-   edgesInto :: Deriv -> Dependence s -> Labelling (Map Pos (Map Pos s))
+   edgesInto :: Deriv -> Dependence s -> Labelling (Map Path (Map Path s))
    edgesInto a δ = foldl (unionWith Map.union) Map.empty $
-      mapWithIndex (\j (q × _) -> maplet j <$> bySource (weights (supp δ q))) (positions (paths (get a vals)))
+      positions (paths (get a vals)) <#> \(q × _) -> maplet q <$> bySource (weights (supp δ q))
 
-   bySource :: Map Path s -> Labelling (Map Pos s)
+   bySource :: Map Path s -> Labelling (Map Path s)
    bySource row = fromFoldableWith Map.union $
       (Map.toUnfoldable row :: List _) <#> case _ of
-         (Vertex b : p) × w -> b × maplet (get p (get b indices)) w
+         (Vertex b : p) × w -> b × maplet p w
          _ -> error absurd
 
 -- Restrict every dependence relation to the positions where the predicate holds.
-mask :: forall f s. Traversable f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
-mask keep g = g { edges = mapWithIndex (\q -> mapWithIndex (rel q)) g.edges }
+mask :: forall f s. Paths f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
+mask keep g = g { edges = mapWithIndex (\b -> mapWithIndex (rel b)) g.edges }
    where
-   kept = mapWithIndex (\p -> keep p >>> selected) g.vals
-   rel q p (SparseRel r) = SparseRel { in_: only ks_q ks_p r.in_, out: only ks_p ks_q r.out }
+   kept = mapWithIndex (\a -> keep a >>> selected) g.vals
+   rel b a (SparseRel r) = SparseRel { in_: only ps_b ps_a r.in_, out: only ps_a ps_b r.out }
       where
-      ks_q = get q kept
-      ks_p = get p kept
-   only ks ks' m = Map.filter (not <<< Map.isEmpty) $
-      Map.filterKeys (_ `Set.member` ks') <$> Map.filterKeys (_ `Set.member` ks) m
+      ps_b = get b kept
+      ps_a = get a kept
+   only ps ps' m = Map.filter (not <<< Map.isEmpty) $
+      Map.filterKeys (_ `Set.member` ps') <$> Map.filterKeys (_ `Set.member` ps) m
 
 -- Positions carrying true.
-selected :: forall f. Traversable f => f Boolean -> Set Pos
-selected v = Set.fromFoldable $
-   L.mapMaybe identity (mapWithIndex (\i b -> if b then Just i else Nothing) (positions v))
+selected :: forall f. Paths f => f Boolean -> Set Path
+selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
 
 -- Sparse dependence relation applied to sparse weights.
-applySparse :: forall s. Semiring s => Map Pos (Map Pos s) -> Map Pos s -> Map Pos s
+applySparse :: forall s. Semiring s => Map Path (Map Path s) -> Map Path s -> Map Path s
 applySparse r w = foldl (unionWith add) Map.empty $
-   mapWithIndex (\i a -> maybe Map.empty (map (a * _)) (lookup i r)) w
+   mapWithIndex (\p w' -> maybe Map.empty (map (w' * _)) (lookup p r)) w
 
 -- Add weights at a vertex.
-add' :: forall s. Semiring s => Deriv -> Map Pos s -> Labelling (Map Pos s) -> Labelling (Map Pos s)
+add' :: forall s. Semiring s => Deriv -> Map Path s -> Labelling (Map Path s) -> Labelling (Map Path s)
 add' = insertWith (unionWith add)
 
 -- Weight 1 at the selected positions.
-unitWeights :: forall s. Semiring s => Labelling (Set Pos) -> Labelling (Map Pos s)
+unitWeights :: forall s. Semiring s => Labelling (Set Path) -> Labelling (Map Path s)
 unitWeights = map (Set.toMap >>> map (const one))
 
 -- Weights at each visible vertex as a value, zero where absent.
-dense :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Map Pos s) -> Labelling (f s)
-dense g ws = g.vals # mapWithIndex \p ->
-   mapPositions (\i -> fromMaybe zero (lookup p ws >>= lookup i))
+dense :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Map Path s) -> Labelling (f s)
+dense g ws = g.vals # mapWithIndex \a v ->
+   paths v <#> \(p × _) -> fromMaybe zero (lookup a ws >>= lookup p)
 
 -- Forward and backward queries, each the transpose of the other.
 type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
@@ -386,11 +376,11 @@ type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
 dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
 dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
 
-queries :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Pos)) (Labelling (f s))
+queries :: forall f s. Paths f => Semiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Path)) (Labelling (f s))
 queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Dependence of the selection on the positions of each visible vertex.
-bwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
+bwd :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step (p × sources) ws = case lookup p ws of
@@ -398,7 +388,7 @@ bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable 
       Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applySparse r.in_ w) ws') ws sources
 
 -- Dependence of the positions of each visible vertex on the selection.
-fwd :: forall f s. Traversable f => Semiring s => VisibleGraph f s -> Labelling (Set Pos) -> Labelling (f s)
+fwd :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
    step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources

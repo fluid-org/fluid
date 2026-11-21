@@ -25,7 +25,7 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error, message)
-import DepGraph (ConjugatePair, Deriv, Labelling, Pos, dimap, mapPositions, mask, queries, selected)
+import DepGraph (ConjugatePair, Deriv, Labelling, Path, dimap, mask, paths, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
@@ -133,7 +133,7 @@ drawLoaded divId = either failed loaded
 
 -- Queries over Boolean selections.
 boolean
-   :: ConjugatePair (Labelling (Set Pos)) (Labelling (Val DepKind))
+   :: ConjugatePair (Labelling (Set Path)) (Labelling (Val DepKind))
    -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
 boolean = dimap (map selected) (map (map (_ /= Zero)))
 
@@ -160,7 +160,7 @@ figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
    -- Queries over the whole graph; queries restricted to data positions other than ignored positions
    unmasked = boolean (queries graph)
    masked = boolean $ queries $ graph # mask \p v ->
-      maybe (dataPositions v) (\is -> lift2 (\b b' -> b && not b') (dataPositions v) (mapPositions (_ ∈ is) v))
+      maybe (dataPositions v) (\ps -> lift2 (\b b' -> b && not b') (dataPositions v) (paths v <#> \(q × _) -> q ∈ ps))
          (Map.lookup p ignored)
 
    -- Positions not reached backwards from the output; positions not reached forwards from any input

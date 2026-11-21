@@ -19,7 +19,7 @@ import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (Eval, documentedAs, evalProgram, visibleGraph)
-import DepGraph (DepGraph, Deriv, Labelling, Pos, bwd, fwd, selected)
+import DepGraph (DepGraph, Deriv, Labelling, Path, bwd, fwd, selected)
 import File (File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig, throwParseFailure)
@@ -106,7 +106,7 @@ selection
    -> Eval
    -> VertexSpec
    -> (ObjArg -> Selector Val)
-   -> Labelling (Set Pos)
+   -> Labelling (Set Path)
 selection depGraph eval vertex δv =
    maplet p (selected (selectOn δv objArg (valAt eval.g p)))
    where
