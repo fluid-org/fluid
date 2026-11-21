@@ -33,9 +33,7 @@ type Pos = Int -- index under the position ordering of a value
 -- Step from a value to one of its parts, or from a family of values to one of its members
 data Step
    = Vertex Deriv
-   | Arg Int -- argument of foreign function
-   | Ctl -- control input
-   | Binding Var -- binding of assigning statement
+   | Binding Var -- variable of environment
    | Field Int -- field of object
    | Element Int -- element of list or tuple
    | Key String -- key of dictionary entry
@@ -43,7 +41,7 @@ data Step
    | MatrixElement Int Int
    | RowCount -- of matrix
    | ColumnCount
-   | Captured Var -- variable captured by closure
+   | Uncl -- environment of closure
    | PartialFun -- function of partial application
    | PartialArg Int -- stored argument of partial application
 
@@ -52,9 +50,16 @@ type Path = List Step
 ε :: Path
 ε = Nil
 
+-- Position p in the value of vertex a
+at :: Deriv -> Path -> Path
+at a p = Vertex a : p
+
+vertex :: Deriv -> Path
+vertex a = at a ε
+
 -- Whether the step leads from a function value to a value held by the function
 uncl :: Step -> Boolean
-uncl (Captured _) = true
+uncl Uncl = true
 uncl PartialFun = true
 uncl (PartialArg _) = true
 uncl _ = false
@@ -97,6 +102,14 @@ instance Semiring s => Semigroup (Sources s) where
 
 instance Semiring s => Monoid (Sources s) where
    mempty = Sources Set.empty Map.empty
+
+-- Control dependence on each of ps
+control :: forall s. Set Path -> Sources s
+control ps = Sources ps Map.empty
+
+-- Dependence on p with weight one
+source :: forall s. Semiring s => Path -> Sources s
+source p = Sources Set.empty (Map.singleton p one)
 
 positionsOf :: forall s. Sources s -> Set Path
 positionsOf (Sources ps ws) = ps ∪ Map.keys ws
@@ -142,6 +155,7 @@ data Form
    = Reuse Path -- subvalue of source at path
    | Zero -- nothing reused
    | Family (Map Step Restructuring) -- restructuring into each part
+   | Extend Restructuring (Map Step Restructuring) -- restructuring into environment; restructuring into each replacement member
 
 restructuring :: Form -> Restructuring
 restructuring = Restructuring Set.empty
@@ -155,8 +169,18 @@ pathAfter p@(step : p') (Restructuring ps ψ) = (if any uncl p then identity els
    Reuse q -> restructuring (Reuse (q <> p))
    Zero -> restructuring Zero
    Family θs -> pathAfter p' (get step θs)
+   Extend θ θs -> case lookup step θs of
+      Just θ' -> pathAfter p' θ'
+      Nothing -> pathAfter p θ
 
 type Dependence s = Restructuring × Rel s
+
+reuse :: forall s. Semiring s => Path -> Dependence s
+reuse p = restructuring (Reuse p) × mempty
+
+-- Add control dependence of the target on each of ps
+under :: forall s. Set Path -> Endo (Dependence s)
+under ps (θ × r) = withCtrl ps θ × r
 
 supp :: forall s. Semiring s => Dependence s -> Path -> Sources s
 supp (θ × r) q = case pathAfter q θ of
@@ -174,12 +198,17 @@ restructuringAfter (Restructuring ps ψ) δ@(θ × _) = withCtrl (supps δ ps) c
    Reuse p -> pathAfter p θ
    Zero -> restructuring Zero
    Family θs -> restructuring (Family (flip restructuringAfter δ <$> θs))
+   Extend θ' θs -> restructuring (Extend (restructuringAfter θ' δ) (flip restructuringAfter δ <$> θs))
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring -> Rel s -> Rel s
 restructuringAfterRel (Restructuring _ ψ) r = case ψ of
    Reuse p -> π p r
    Zero -> mempty
-   Family θs -> Rel mempty (Map.mapMaybe (flip restructuringAfterRel r >>> nonZero) θs)
+   Family θs -> Rel mempty (members θs)
+   Extend θ θs -> case restructuringAfterRel θ r of
+      Rel srcs rs -> Rel srcs (Map.union (members θs) (Map.difference rs θs))
+   where
+   members = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
 
 -- Relation after the relation of a dependence
 relAfter :: forall s. DepSemiring s => Rel s -> Dependence s -> Rel s
@@ -193,18 +222,29 @@ compose (θ' × r') δ@(_ × r) = restructuringAfter θ' δ × (restructuringAft
 tupling :: forall s. Semiring s => Map Step (Dependence s) -> Dependence s
 tupling δs = restructuring (Family (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
+-- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on srcs
+construct :: forall s. Semiring s => Sources s -> Map Step (Dependence s) -> Dependence s
+construct srcs δs
+   | Map.isEmpty δs = restructuring Zero × onto srcs
+   | otherwise = map (onto srcs <> _) (tupling δs)
+
+-- Dependence of the environment at position p with members δs replaced or added
+extend :: forall s. Semiring s => Path -> Map Step (Dependence s) -> Dependence s
+extend p δs = restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence s -> Set Deriv
-vertices (θ × r) = Set.map vertex (ofRestructuring θ ∪ ofRel r)
+vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    where
    ofRestructuring (Restructuring ps ψ) = Set.mapMaybe L.head ps ∪ case ψ of
       Reuse p -> Set.mapMaybe L.head (singleton p)
       Zero -> Set.empty
       Family θs -> foldMap ofRestructuring θs
+      Extend θ' θs -> ofRestructuring θ' ∪ foldMap ofRestructuring θs
    ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
 
-   vertex (Vertex a) = a
-   vertex _ = error absurd
+   holder (Vertex a) = a
+   holder _ = error absurd
 
 type Labelling a = Map Deriv a
 type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
