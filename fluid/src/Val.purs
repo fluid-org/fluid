@@ -15,7 +15,7 @@ import Data.Array (cons, fromFoldable, length, zipWith, (!!)) as A
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
-import Data.Foldable (class Foldable, foldMap, foldMapDefaultL, foldl, foldrDefault)
+import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:), zipWith)
 import Data.List ((!!), range, reverse, take) as L
@@ -31,14 +31,14 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), at, construct, emptyGraph, extend, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, source, tupling, under, vertex, zeros, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), at, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, vertex, zeros, ι)
 import DepGraph (Deriv, Form(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
-import Util.Map (class Map, (<+>), delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
+import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
 data Val a = Val a (BaseVal a)
@@ -61,8 +61,9 @@ root (Val α _) = α
 
 -- Label of a vertex
 data Label a
-   = Value (Val a) -- of an expression or returning statement, or unit value of a control input
-   | Environment (Env a) -- of a premise, or bindings introduced by an assigning statement
+   = Value (Val a) -- of an expression or returning statement
+   | Bindings (Env a) -- introduced by an assigning statement, or members of a module
+   | Inputs a (Env a) -- control position and environment of a premise
 
 value :: forall a. Label a -> Val a
 value (Value v) = v
@@ -73,7 +74,9 @@ instance Paths Val where
 
 instance Paths Label where
    paths (Value v) = Value (paths v)
-   paths (Environment (Env ρ)) = Environment (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
+   paths (Bindings (Env ρ)) = Bindings (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
+   paths (Inputs α (Env ρ)) =
+      Inputs (singleton Ctl × α) (Env (mapWithKey (\x -> pathsFrom (Binding x : Environment : Nil)) ρ))
 
 -- Same as paths, except that each path starts with the reverse of p
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
@@ -302,9 +305,24 @@ deliver ps = map (under ps)
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
 newValue (v × δ) = newVertex (Value v) δ <#> (_ × v)
 
--- Allocate control vertex which depends on each of ps
-newCtl :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Set Path -> m Dep.Deriv
-newCtl ps = newVertex (Value (Val unit (Lit None))) (construct (foldMap source ps) Map.empty)
+-- Position of the environment at inputs vertex b
+envAt :: Dep.Deriv -> Path
+envAt b = at b (singleton Environment)
+
+-- Control position at inputs vertex b
+ctlAt :: Dep.Deriv -> Path
+ctlAt b = at b (singleton Ctl)
+
+-- Allocate inputs vertex for environment ρ with dependence δ; control position has dependence δ'
+newInputs
+   :: forall m s
+    . MonadState (DepGraph Label s) m
+   => Semiring s
+   => Dict (Raw Val)
+   -> Dependence s
+   -> Dependence s
+   -> m Dep.Deriv
+newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ Environment × δ, Ctl × δ' ]))
 
 -- Dependence of each member of an environment
 members :: forall s. Dict (GVal s) -> Map Step (Dependence s)
@@ -317,21 +335,8 @@ newBindings
    => Semiring s
    => Dict (GVal s)
    -> m (Dep.Deriv × Dict (GVal s))
-newBindings ρ = newVertex (Environment (Env (fst <$> ρ))) (tupling (members ρ)) <#> \a ->
+newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (members ρ)) <#> \a ->
    a × mapWithKey (\x (v × _) -> v × reuse (at a (singleton (Binding x)))) ρ
-
--- Allocate vertex for ρ' added to the environment ρ at position p; return vertex and resulting environment
-newEnv
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => Path
-   -> Dict (Raw Val)
-   -> Dict (GVal s)
-   -> m (Dep.Deriv × Dict (Raw Val))
-newEnv p ρ ρ' = newVertex (Environment (Env ρ'')) (extend p (members ρ')) <#> (_ × ρ'')
-   where
-   ρ'' = ρ <+> (fst <$> ρ')
 
 -- Result of f at the values of vertices rs, if any; dependence is the derivative of f, plus control dependence on ctl
 derivative

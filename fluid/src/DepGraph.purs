@@ -33,6 +33,8 @@ type Pos = Int -- index under the position ordering of a value
 -- Step from a value to one of its parts, or from a family of values to one of its members
 data Step
    = Vertex Deriv
+   | Environment -- environment of inputs
+   | Ctl -- control position of inputs
    | Binding Var -- variable of environment
    | Field Int -- field of object
    | Element Int -- element of list or tuple
@@ -230,7 +232,10 @@ construct srcs δs
 
 -- Dependence of the environment at position p with members δs replaced or added
 extend :: forall s. Semiring s => Path -> Map Step (Dependence s) -> Dependence s
-extend p δs = restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+extend p δs
+   | Map.isEmpty δs = reuse p
+   | otherwise =
+        restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence s -> Set Deriv
