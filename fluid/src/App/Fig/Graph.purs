@@ -4,13 +4,13 @@ import Prelude hiding (absurd)
 
 import App.View.Util (Filter)
 import Bind (FieldName, Name, dottedName)
-import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull, stringify)
+import Data.Argonaut.Core (Json, caseJson, fromArray, fromBoolean, fromNumber, fromObject, fromString, jsonNull)
 import Data.Argonaut.Decode (class DecodeJson, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Encode (encodeJson)
 import Data.Array as A
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..), note)
-import Data.Int (fromNumber) as Int
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Foldable (foldMap)
 import Data.List as L
 import Data.List.NonEmpty as NEL
@@ -22,7 +22,7 @@ import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Deriv(..), Labelling, Path, SparseRel(..), Step(..), VisibleGraph, sparseRel)
+import DepGraph (Deriv(..), Labelling, Path, SparseRel(..), VisibleGraph, paths, positions, sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
@@ -30,7 +30,7 @@ import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
 import Pretty (prettyP)
-import Util (type (×), MayFail, absurd, definitely', error, (×))
+import Util (type (×), MayFail, absurd, definitely', error, (!), (×))
 import Util.Map (get, insert, lookup, maplet, toUnfoldable)
 import Util.Set (empty, unions)
 import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
@@ -59,11 +59,11 @@ str =
 
 type DerivWithDocRep = Int × Maybe Int
 
--- Position in a value as a path: element as its index, field as its name, matrix element as its indices
-type PathRep = Array Json
+-- Position in a value as its index under the position ordering
+type PosRep = Int
 
 -- Dependence relation as target position ↦ source position ↦ weight
-type RelRep = Array (PathRep × Array (PathRep × Int))
+type RelRep = Array (PosRep × Array (PosRep × Int))
 
 type Classes = Object (Array FieldName) -- class ↦ field names
 
@@ -74,7 +74,7 @@ type FigGraphRep =
    , ins :: Array (String × DerivWithDocRep)
    , out :: DerivWithDocRep
    , intermediates :: Array (Int × DerivWithDocRep)
-   , ignored :: Array (Int × Array PathRep)
+   , ignored :: Array (Int × Array PosRep)
    , linking :: Boolean
    , rowFilter :: Maybe Filter
    }
@@ -85,11 +85,12 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    pure $ encodeJson
       ( { classes: unions (classes <$> Map.values graph.vals)
         , vals
-        , edges: labelling (labelling encodeRel) graph.edges
+        , edges: Map.toUnfoldable graph.edges <#> \(b × rs) ->
+             encodeVertex b × (Map.toUnfoldable rs <#> \(a × r) -> encodeVertex a × encodeRel (index b) (index a) r)
         , ins: map encodeDeriv <$> D.toArrayWithKey (×) ins
         , out: encodeDeriv out
         , intermediates: labelling encodeDeriv ιs
-        , ignored: labelling (Set.toUnfoldable >>> map encodePath) ignored
+        , ignored: Map.toUnfoldable ignored <#> \(a × ps) -> encodeVertex a × Set.toUnfoldable (Set.map (index a) ps)
         , linking
         , rowFilter
         } :: FigGraphRep
@@ -105,27 +106,46 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
       (Map.fromFoldable (D.toArrayWithKey (\x (p × _) -> p × (str.input <> " " <> prettyP (Str x))) ins))
 
    labelling :: forall a b. (a -> b) -> Labelling a -> Array (Int × b)
-   labelling f = Map.toUnfoldable >>> map (bimap (\(Deriv p) -> p) f)
+   labelling f = Map.toUnfoldable >>> map (bimap encodeVertex f)
+
+   encodeVertex :: Deriv -> Int
+   encodeVertex (Deriv a) = a
 
    encodeDeriv :: DerivWithDoc -> DerivWithDocRep
-   encodeDeriv (Deriv p × d) = p × (d <#> \(Deriv q) -> q)
+   encodeDeriv (a × d) = encodeVertex a × (encodeVertex <$> d)
 
-   encodeRel :: SparseRel DepKind -> RelRep
-   encodeRel (SparseRel { in_ }) =
-      Map.toUnfoldable in_ <#> bimap encodePath (Map.toUnfoldable >>> map (bimap encodePath encodeDepKind))
+   -- Index of every position at each vertex
+   indices :: Labelling (Map.Map Path PosRep)
+   indices = graph.vals <#> \v -> Map.fromFoldable (mapWithIndex (\i (p × _) -> p × i) (positions (paths v)))
+
+   index :: Deriv -> Path -> PosRep
+   index a p = get p (get a indices)
+
+   -- Relation with every target position indexed by tgt; src indexes every source position
+   encodeRel :: (Path -> PosRep) -> (Path -> PosRep) -> SparseRel DepKind -> RelRep
+   encodeRel tgt src (SparseRel { in_ }) = reindex tgt (in_ <#> (map encodeDepKind >>> reindex src))
+
+   reindex :: forall a. (Path -> PosRep) -> Map.Map Path a -> Array (PosRep × a)
+   reindex f m = Map.toUnfoldable (Map.fromFoldable (lmap f <$> (Map.toUnfoldable m :: Array _)))
 
 decodeFigGraph :: Json -> MayFail FigGraph
 decodeFigGraph json = do
    rep :: FigGraphRep <- lmap printJsonDecodeError (decodeJson json)
-   vals <- traverse (\(p × v) -> (Deriv p × _) <$> decodeVal rep.classes v) rep.vals
-   edges <- traverse (traverse (traverse (traverse decodeRel))) rep.edges
-   ignored <- traverse (traverse (traverse decodePath)) rep.ignored
+   vals <- Map.fromFoldable <$> traverse (\(a × v) -> (Deriv a × _) <$> decodeVal rep.classes v) rep.vals
+   let
+      -- Paths at each vertex in the position ordering
+      pathsAt = vals <#> \v -> A.fromFoldable (fst <$> positions (paths v))
+      path a i = get (Deriv a) pathsAt ! i
    pure
-      { graph: { vals: Map.fromFoldable vals, edges: labelling (labelling identity) edges }
+      { graph:
+           { vals
+           , edges: Map.fromFoldable $ rep.edges <#> \(b × rs) ->
+                Deriv b × Map.fromFoldable (rs <#> \(a × r) -> Deriv a × decodeRel (path b) (path a) r)
+           }
       , ins: D.fromFoldable (map decodeDeriv <$> rep.ins)
       , out: decodeDeriv rep.out
       , ιs: labelling decodeDeriv rep.intermediates
-      , ignored: labelling Set.fromFoldable ignored
+      , ignored: Map.fromFoldable (rep.ignored <#> \(a × is) -> Deriv a × Set.fromFoldable (path a <$> is))
       , linking: rep.linking
       , rowFilter: rep.rowFilter
       }
@@ -136,44 +156,9 @@ decodeFigGraph json = do
    decodeDeriv :: DerivWithDocRep -> DerivWithDoc
    decodeDeriv (p × d) = Deriv p × (Deriv <$> d)
 
-   decodeRel :: RelRep -> MayFail (SparseRel DepKind)
-   decodeRel r = sparseRel <<< Map.fromFoldable <$> for r \(q × ws) ->
-      (×) <$> decodePath q <*> (Map.fromFoldable <$> for ws \(p × w) -> (_ × decodeDepKind w) <$> decodePath p)
-
-encodePath :: Path -> PathRep
-encodePath = A.fromFoldable >>> map case _ of
-   Element i -> encodeJson i
-   Field x -> fromString x
-   MatrixElement i j -> encodeJson [ i, j ]
-   Entry k -> fromObject (maplet "entry" (fromString k))
-   Key k -> fromObject (maplet "key" (fromString k))
-   RowCount -> fromObject (maplet "dims" (encodeJson 0))
-   ColumnCount -> fromObject (maplet "dims" (encodeJson 1))
-   _ -> error absurd
-
-decodePath :: PathRep -> MayFail Path
-decodePath = L.fromFoldable >>> traverse \step -> caseJson
-   (const (unknown step))
-   (const (unknown step))
-   (\i -> note "Element index" (Element <$> Int.fromNumber i))
-   (Field >>> pure)
-   ( \ij -> lmap printJsonDecodeError (decodeJson (fromArray ij)) >>= case _ of
-        [ i, j ] -> pure (MatrixElement i j)
-        _ -> unknown step
-   )
-   ( toUnfoldable >>> case _ of
-        [ "entry" × k ] -> Entry <$> lmap printJsonDecodeError (decodeJson k)
-        [ "key" × k ] -> Key <$> lmap printJsonDecodeError (decodeJson k)
-        [ "dims" × n ] -> lmap printJsonDecodeError (decodeJson n) >>= case _ of
-           0 -> pure RowCount
-           1 -> pure ColumnCount
-           _ -> unknown step
-        _ -> unknown step
-   )
-   step
-   where
-   unknown :: forall a. Json -> MayFail a
-   unknown step = Left ("Step " <> stringify step)
+   -- Relation with every target index mapped to a path by tgt; src maps every source index
+   decodeRel :: (PosRep -> Path) -> (PosRep -> Path) -> RelRep -> SparseRel DepKind
+   decodeRel tgt src = map (bimap tgt (map (bimap src decodeDepKind) >>> Map.fromFoldable)) >>> Map.fromFoldable >>> sparseRel
 
 encodeDepKind :: DepKind -> Int
 encodeDepKind Zero = error absurd
