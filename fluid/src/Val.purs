@@ -89,7 +89,7 @@ overChildren f (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (ma
 overChildren f (Fun φ) = Fun (overFun φ)
    where
    overFun (Closure (Env ρ) ds d) = Closure (Env (f <$> ρ)) ds d
-   overFun (Partial φ' vs) = Partial (overFun φ') (f <$> vs)
+   overFun (Partial v vs) = Partial (f v) (f <$> vs)
    overFun φ' = φ'
 
 -- False at shape positions.
@@ -108,7 +108,7 @@ data Fun a
    = Closure (Env a) (Dict Def) Def
    | Prim ForeignOp
    | Type T.Type
-   | Partial (Fun a) (List (Val a)) -- fewer arguments than the arity of the function, which is not itself partial
+   | Partial (Val a) (List (Val a)) -- function applied to fewer arguments than arity; function is not partial
 
 class (Highlightable a, BoundedLattice a) <= Ann a
 
@@ -439,16 +439,12 @@ dictEntries _ = error absurd
 dictEntry :: forall a. String -> Val a -> a × Val a
 dictEntry k = dictEntries >>> get k
 
-fun :: forall a. Val a -> Fun a
-fun (Val _ (Fun φ)) = φ
-fun _ = error absurd
-
 closureEnv :: forall a. Val a -> Env a
 closureEnv (Val _ (Fun (Closure ρ _ _))) = ρ
 closureEnv _ = error absurd
 
 partialFun :: forall a. Val a -> Val a
-partialFun (Val α (Fun (Partial φ _))) = Val α (Fun φ)
+partialFun (Val _ (Fun (Partial v _))) = v
 partialFun _ = error absurd
 
 partialArg :: forall a. Int -> Val a -> Val a
@@ -532,7 +528,7 @@ instance Apply Fun where
    apply (Closure fρ ds d) (Closure ρ _ _) = Closure (fρ <*> ρ) ds d
    apply (Prim op) (Prim _) = Prim op
    apply (Type τ) (Type τ') = Type (τ ≜ τ')
-   apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
+   apply (Partial fv fvs) (Partial v vs) = Partial (fv <*> v) (zipWith (<*>) fvs vs)
    apply _ _ = shapeMismatch unit
 
 -- Should require equal domains?
@@ -594,7 +590,7 @@ instance JoinSemilattice a => JoinSemilattice (Fun a) where
    join (Closure ρ ds d) (Closure ρ' _ _) = Closure (ρ ∨ ρ') ds d
    join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    join (Type τ) (Type τ') = Type (τ ≜ τ')
-   join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
+   join (Partial v vs) (Partial v' vs') = Partial (v ∨ v') (vs ∨ vs')
    join _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (Env a) where
