@@ -1,12 +1,14 @@
 module DepGraph where
 
-import Prelude
+import Prelude hiding (absurd, compose)
 
+import Bind (Var)
 import Control.Apply (lift2)
 import Control.Monad.State (class MonadState, evalState, execState, gets, modify_, state)
-import Data.Foldable (foldl, foldr)
+import Data.Foldable (any, foldMap, foldl, foldr)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
+import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
 import Data.List as L
 import Data.Map (Map, fromFoldableWith, insertWith, lookup, unionWith)
@@ -15,16 +17,51 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
+import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable, traverse)
-import Lattice (class DepSemiring, Lineage(..))
-import Util (type (×), Endo, singleton, (×))
+import Data.Tuple (fst, snd)
+import Lattice (class DepSemiring, ctrlWeight)
+import Util (type (×), Endo, absurd, error, singleton, (×))
 import Util.Map (get, maplet)
 import Util.Set ((∪))
+import Unsafe.Reference (unsafeRefEq)
 
 newtype Deriv = Deriv Int
 
 type Pos = Int -- index under the position ordering of a value
-type PosLineage s = Lineage (Deriv × Pos) s
+
+-- Step from a value to one of its parts, or from a family of values to one of its members
+data Step
+   = Vertex Deriv
+   | Arg Int -- argument of foreign function
+   | Ctl -- control input
+   | Binding Var -- binding of assigning statement
+   | Field Int -- field of object
+   | Element Int -- element of list or tuple
+   | Key String -- key of dictionary entry
+   | Entry String -- value of dictionary entry
+   | MatrixElement Int Int
+   | RowCount -- of matrix
+   | ColumnCount
+   | Captured Var -- variable captured by closure
+   | PartialFun -- function of partial application
+   | PartialArg Int -- stored argument of partial application
+
+type Path = List Step
+
+ε :: Path
+ε = Nil
+
+-- Whether the step leads from a function value to a value held by the function
+uncl :: Step -> Boolean
+uncl (Captured _) = true
+uncl PartialFun = true
+uncl (PartialArg _) = true
+uncl _ = false
+
+-- Labels with a path to each position
+class Traversable f <= Paths f where
+   paths :: forall a. f a -> f (Path × a)
 
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
@@ -41,33 +78,165 @@ scale a = map (mul a)
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
 
--- In-edges of a vertex: its source vertices, with its dependence on them as a linear function of their weights.
-newtype InEdges (f :: Type -> Type) s b = InEdges (Set Deriv × (Labelling (f s) -> b))
+-- Same as union, except that a result equal to ps or ps' is that argument
+unionShared :: Set Path -> Set Path -> Set Path
+unionShared ps ps'
+   | unsafeRefEq ps ps' = ps
+   | otherwise = argument (ps ∪ ps')
+        where
+        argument qs
+           | Set.size qs == Set.size ps = ps
+           | Set.size qs == Set.size ps' = ps'
+           | otherwise = qs
 
--- Weights at a vertex.
-at :: forall f s. Deriv -> InEdges f s (f s)
-at p = InEdges (singleton p × get p)
+-- Sources of a target position: set of sources with control weight, then non-zero weight of every other source
+data Sources s = Sources (Set Path) (Map Path s)
 
-instance Functor (InEdges f s) where
-   map h (InEdges (ps × r)) = InEdges (ps × (h <<< r))
+instance Semiring s => Semigroup (Sources s) where
+   append (Sources ps ws) (Sources ps' ws') = Sources (unionShared ps ps') (unionWith add ws ws')
 
-instance Apply (InEdges f s) where
-   apply (InEdges (ps × h)) (InEdges (ps' × r)) = InEdges ((ps ∪ ps') × \ws -> h ws (r ws))
+instance Semiring s => Monoid (Sources s) where
+   mempty = Sources Set.empty Map.empty
 
-instance Applicative (InEdges f s) where
-   pure b = InEdges (Set.empty × const b)
+positionsOf :: forall s. Sources s -> Set Path
+positionsOf (Sources ps ws) = ps ∪ Map.keys ws
 
--- Sum of scalar dependences.
-instance Semiring b => Semigroup (InEdges f s b) where
-   append = lift2 add
+weights :: forall s. DepSemiring s => Sources s -> Map Path s
+weights (Sources ps ws) = unionWith add (Set.toMap ps $> ctrlWeight) ws
 
-instance Semiring b => Monoid (InEdges f s b) where
-   mempty = pure zero
+-- Product of non-zero w with the weight of every source; unchanged for a source with control weight
+scaleSources :: forall s. Eq s => Semiring s => s -> Endo (Sources s)
+scaleSources w srcs@(Sources ps ws)
+   | w == one = srcs
+   | otherwise = Sources ps (mul w <$> ws)
 
--- Pair present exactly when its weight is non-zero.
+-- Sources of the target root, then relation into each part; zero relations absent
+data Rel s = Rel (Sources s) (Map Step (Rel s))
+
+instance Semiring s => Semigroup (Rel s) where
+   append (Rel srcs rs) (Rel srcs' rs') = Rel (srcs <> srcs') (unionWith append rs rs')
+
+instance Semiring s => Monoid (Rel s) where
+   mempty = Rel mempty Map.empty
+
+nonZero :: forall s. Rel s -> Maybe (Rel s)
+nonZero r@(Rel (Sources ps ws) rs)
+   | Set.isEmpty ps && Map.isEmpty ws && Map.isEmpty rs = Nothing
+   | otherwise = Just r
+
+-- Relation of the target root to the given sources
+onto :: forall s. Sources s -> Rel s
+onto srcs = Rel srcs Map.empty
+
+ι :: forall s. Semiring s => Path -> Endo (Rel s)
+ι p r = foldr (\step r' -> Rel mempty (maybe Map.empty (maplet step) (nonZero r'))) r p
+
+π :: forall s. Semiring s => Path -> Endo (Rel s)
+π Nil r = r
+π (step : p) (Rel _ rs) = maybe mempty (π p) (lookup step rs)
+
+-- Control dependence of the target on a set of source positions, with a form
+data Restructuring = Restructuring (Set Path) Form
+
+data Form
+   = Reuse Path -- subvalue of source at path
+   | Zero -- nothing reused
+   | Family (Map Step Restructuring) -- restructuring into each part
+
+restructuring :: Form -> Restructuring
+restructuring = Restructuring Set.empty
+
+withCtrl :: Set Path -> Endo Restructuring
+withCtrl ps' (Restructuring ps ψ) = Restructuring (unionShared ps ps') ψ
+
+pathAfter :: Path -> Restructuring -> Restructuring
+pathAfter Nil θ = θ
+pathAfter p@(step : p') (Restructuring ps ψ) = (if any uncl p then identity else withCtrl ps) case ψ of
+   Reuse q -> restructuring (Reuse (q <> p))
+   Zero -> restructuring Zero
+   Family θs -> pathAfter p' (get step θs)
+
+type Dependence s = Restructuring × Rel s
+
+supp :: forall s. Semiring s => Dependence s -> Path -> Sources s
+supp (θ × r) q = case pathAfter q θ of
+   Restructuring ps (Reuse p) -> Sources ps (Map.singleton p one)
+   Restructuring ps _ -> Sources ps Map.empty <> srcs
+   where
+   Rel srcs _ = π q r
+
+-- Sources of every position in qs
+supps :: forall s. Semiring s => Dependence s -> Set Path -> Set Path
+supps δ qs = positionsOf (foldMap (supp δ) qs)
+
+restructuringAfter :: forall s. Semiring s => Restructuring -> Dependence s -> Restructuring
+restructuringAfter (Restructuring ps ψ) δ@(θ × _) = withCtrl (supps δ ps) case ψ of
+   Reuse p -> pathAfter p θ
+   Zero -> restructuring Zero
+   Family θs -> restructuring (Family (flip restructuringAfter δ <$> θs))
+
+restructuringAfterRel :: forall s. Semiring s => Restructuring -> Rel s -> Rel s
+restructuringAfterRel (Restructuring _ ψ) r = case ψ of
+   Reuse p -> π p r
+   Zero -> mempty
+   Family θs -> Rel mempty (Map.mapMaybe (flip restructuringAfterRel r >>> nonZero) θs)
+
+-- Relation after the relation of a dependence
+relAfter :: forall s. DepSemiring s => Rel s -> Dependence s -> Rel s
+relAfter (Rel (Sources ps ws) rs) δ =
+   Rel (foldlWithIndex (\p srcs w -> srcs <> scaleSources w (supp δ p)) (Sources (supps δ ps) Map.empty) ws)
+      (Map.mapMaybe (flip relAfter δ >>> nonZero) rs)
+
+compose :: forall s. DepSemiring s => Dependence s -> Dependence s -> Dependence s
+compose (θ' × r') δ@(_ × r) = restructuringAfter θ' δ × (restructuringAfterRel θ' r <> relAfter r' δ)
+
+tupling :: forall s. Semiring s => Map Step (Dependence s) -> Dependence s
+tupling δs = restructuring (Family (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+
+-- Vertices which hold the source positions
+vertices :: forall s. Dependence s -> Set Deriv
+vertices (θ × r) = Set.map vertex (ofRestructuring θ ∪ ofRel r)
+   where
+   ofRestructuring (Restructuring ps ψ) = Set.mapMaybe L.head ps ∪ case ψ of
+      Reuse p -> Set.mapMaybe L.head (singleton p)
+      Zero -> Set.empty
+      Family θs -> foldMap ofRestructuring θs
+   ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
+
+   vertex (Vertex a) = a
+   vertex _ = error absurd
+
+type Labelling a = Map Deriv a
+type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
+
+-- Vertices labelled by values of shape f; at most one edge into each vertex
+type DepGraph (f :: Type -> Type) s =
+   { size :: Int -- vertices allocated so far
+   , vals :: Labelling (f Unit)
+   , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
+   , edges :: Labelling (Set Deriv × Dependence s) -- target ↦ sources, with dependence on their values
+   }
+
+emptyGraph :: forall f s. DepGraph f s
+emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
+
+valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
+valAt g a = get a g.vals
+
+newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence s -> m Deriv
+newVertex v δ = do
+   size <- gets _.size
+   let a = Deriv size
+   modify_ \g -> g { size = size + 1, vals = Map.insert a v g.vals, edges = Map.insert a (vertices δ × δ) g.edges }
+   pure a
+
+attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
+attachDoc a b = modify_ \g -> g { docs = Map.insert a b g.docs }
+
+-- Pair present exactly when its weight is non-zero
 newtype SparseRel s = SparseRel
    { out :: Map Pos (Map Pos s) -- source ↦ labelled target neighbours
-   , in_ :: Map Pos (Map Pos s) -- target ↦ labelled source neighbours, the lineage
+   , in_ :: Map Pos (Map Pos s) -- target ↦ labelled source neighbours
    }
 
 sparseRel :: forall s. Map Pos (Map Pos s) -> SparseRel s
@@ -76,84 +245,60 @@ sparseRel in_ = SparseRel { out, in_ }
    out = fromFoldableWith Map.union
       (Map.toUnfoldable in_ >>= \(j × m) -> (Map.toUnfoldable m :: List _) <#> \(i × w) -> i × maplet j w)
 
-type Labelling a = Map Deriv a
-type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
-
--- Vertices labelled by values of shape f, each with the dependence of its weights on those at earlier vertices.
-type DepGraph (f :: Type -> Type) s =
-   { size :: Int -- vertices allocated so far
-   , vals :: Labelling (f Unit)
-   , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
-   , inEdges :: Labelling (InEdges f s (f s))
-   }
-
-emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, inEdges: Map.empty }
-
-valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
-valAt g p = get p g.vals
-
-newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> InEdges f s (f s) -> m Deriv
-newVertex v inEdges = do
-   size <- gets _.size
-   let p = Deriv size
-   modify_ \g -> g { size = size + 1, vals = Map.insert p v g.vals, inEdges = Map.insert p inEdges g.inEdges }
-   pure p
-
-attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
-attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
-
--- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
+-- Visible vertices with their values; edges labelled by the dependence relations left by hiding every other vertex
 type VisibleGraph (f :: Type -> Type) s =
    { vals :: Labelling (f Unit)
    , edges :: Edges (SparseRel s)
    }
 
 -- Relies on edges running from earlier to later vertices in evaluation order.
-materialise
-   :: forall f s
-    . Traversable f
-   => DepSemiring s
-   => DepGraph f (PosLineage s)
-   -> Set Deriv
-   -> VisibleGraph f s
+materialise :: forall f s. Paths f => DepSemiring s => DepGraph f s -> Set Deriv -> VisibleGraph f s
 materialise g visible =
-   { vals: Map.filterKeys (_ `Set.member` visible) g.vals
-   , edges: (foldl step { weightsAt: Map.empty, rels: Map.empty } (Map.toUnfoldable g.vals :: List _)).rels
+   { vals
+   , edges: (foldl step { θs: Map.empty, rs: Map.empty, edges: Map.empty } (Map.toUnfoldable g.edges :: List _)).edges
    }
    where
-   step { weightsAt, rels } (p × v) =
-      if Set.member p visible then
-         { weightsAt: retain p (mapPositions (\i -> Lineage (zero × maplet (p × i) one)) v) weightsAt
-         , rels: Map.insert p (sparseRel <$> edgesInto weights) rels
-         }
-      else { weightsAt: retain p weights weightsAt, rels }
-      where
-      InEdges (_ × rel) = get p g.inEdges
-      weights = rel weightsAt
+   vals = Map.filterKeys (_ `Set.member` visible) g.vals
 
-   -- Add weights ws at p, then free weights at each vertex which has p as last dependent
-   retain :: Deriv -> f (PosLineage s) -> Endo (Labelling (f (PosLineage s)))
-   retain p ws weightsAt = foldr Map.delete (Map.insert p ws weightsAt) (fromMaybe Nil (lookup p byLastDependent))
+   -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
+   step { θs, rs, edges } (a × (_ × δ)) =
+      if Set.member a visible then
+         { θs: free a (Map.insert (Vertex a) (restructuring (Reuse (singleton (Vertex a)))) θs)
+         , rs: free a rs
+         , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
+         }
+      else { θs: free a (Map.insert (Vertex a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (Vertex a) rs), edges }
+      where
+      θ' × r' = compose δ (restructuring (Family θs) × Rel mempty rs)
+
+   -- Free the entry of each vertex which has a as last dependent
+   free :: forall a. Deriv -> Endo (Map Step a)
+   free a xs = foldr (Vertex >>> Map.delete) xs (fromMaybe Nil (lookup a byLastDependent))
 
    -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
    lastDependent :: Labelling Deriv
-   lastDependent = foldlWithIndex dependent Map.empty g.inEdges
+   lastDependent = foldlWithIndex dependent Map.empty g.edges
       where
-      dependent p m (InEdges (qs × _)) = foldl (\m' q -> Map.insert q p m') (Map.insert p p m) qs
+      dependent a m (bs × _) = foldl (\m' b -> Map.insert b a m') (Map.insert a a m) bs
 
    byLastDependent :: Labelling (List Deriv)
    byLastDependent = fromFoldableWith (<>) $
-      (Map.toUnfoldable lastDependent :: List _) <#> \(q × p) -> p × (q : Nil)
+      (Map.toUnfoldable lastDependent :: List _) <#> \(b × a) -> a × (b : Nil)
 
-   -- Edges into a vertex from each visible vertex, read off the lineage at every position.
-   edgesInto :: f (PosLineage s) -> Labelling (Map Pos (Map Pos s))
-   edgesInto ws = foldl (unionWith Map.union) Map.empty $
-      mapWithIndex (\j (Lineage (_ × m)) -> maplet j <$> bySource m) (positions ws)
+   -- Index of each position of a visible vertex
+   indices :: Labelling (Map Path Pos)
+   indices = vals <#> \v -> Map.fromFoldable (mapWithIndex (\i (p × _) -> p × i) (positions (paths v)))
 
-   bySource :: Map (Deriv × Pos) s -> Labelling (Map Pos s)
-   bySource m = fromFoldableWith Map.union $
-      (Map.toUnfoldable m :: List _) <#> \((q × i) × w) -> q × maplet i w
+   -- Edges into a visible vertex from each visible vertex
+   edgesInto :: Deriv -> Dependence s -> Labelling (Map Pos (Map Pos s))
+   edgesInto a δ = foldl (unionWith Map.union) Map.empty $
+      mapWithIndex (\j (q × _) -> maplet j <$> bySource (weights (supp δ q))) (positions (paths (get a vals)))
+
+   bySource :: Map Path s -> Labelling (Map Pos s)
+   bySource row = fromFoldableWith Map.union $
+      (Map.toUnfoldable row :: List _) <#> case _ of
+         (Vertex b : p) × w -> b × maplet (get p (get b indices)) w
+         _ -> error absurd
 
 -- Restrict every dependence relation to the positions where the predicate holds.
 mask :: forall f s. Traversable f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
@@ -219,5 +364,12 @@ fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable 
 -- ======================
 derive instance Eq Deriv
 derive instance Ord Deriv
+derive instance Eq Step
+derive instance Ord Step
+derive instance Generic Step _
+
+instance Show Step where
+   show = genericShow
+
 derive instance Newtype Deriv _
 derive newtype instance Show Deriv

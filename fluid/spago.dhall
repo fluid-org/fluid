@@ -61,6 +61,7 @@ in  { name = ""
       , "unfoldable"
       , "unicode"
       , "unsafe-coerce"
+      , "unsafe-reference"
       , "web-events"
       ]
     , packages = ./packages.dhall

@@ -2,21 +2,18 @@ module Eval where
 
 import Prelude hiding (absurd, apply)
 
-import Bind (dottedName, prefixOf, varAnon, varThis)
+import Bind (Name, dottedName, prefixOf, varAnon, varThis)
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, fold, foldM, foldl, sum)
-import Data.Functor.Compose (Compose(..))
-import Data.Functor.Product (Product(..), product)
-import Data.Identity (Identity(..))
+import Data.Foldable (elem, fold, foldM, foldl)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), drop, elemIndex, length, take, zip, (:))
 import Data.List as L
 import Data.List.NonEmpty (head, last, snoc, unsnoc)
-import Data.List.NonEmpty (cons', fromList, tail, toList) as NEL
+import Data.List.NonEmpty (fromList, toList) as NEL
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Profunctor.Strong (first, second)
@@ -30,31 +27,31 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, attachDoc, materialise, zeros)
+import DepGraph (DepGraph, Deriv, Step(..), VisibleGraph, attachDoc, materialise, ε)
 import Lattice (class DepSemiring, DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binopRel, boolean, concatLists, dropα, int, string, typeMismatch, unopRel, unpack, unpack')
-import Util (type (×), Endo, absurd, check, definitely', error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
-import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
+import Primitive (binopRel, boolean, dropα, int, string, typeMismatch, unopRel, unpack, unpack')
+import Util (type (×), absurd, check, definitely', error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
+import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, toUnfoldable, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
-import Val (BaseVal(..), Fun(..), dictEntry, value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, construct, constructFrom, deliver, field, forDefs, fromTotalRel, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, newAssigns, newValue, partialArg, partialFun, project, fromRel, raw, root, toDict, valAt, via)
+import Val (BaseVal(..), Fun(..), value) as V
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), concatLists, construct, deliver, elementCount, elementOf, elementsOf, forDefs, fromRel, gval, modifyModuleStore, moduleStore, newAssigns, newValue, project, raw, toDict, valAt, via, viaAll, viaLength)
 
-type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
+type Inputs s = { ctrl :: Ctrl, ρ :: Dict (GVal s) }
 
 -- Returned value, or the bindings and control position introduced
-data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Maybe (Ctrl s))
+data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Maybe Ctrl)
 
 asReturns :: forall s. Result s -> Deriv × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
-asAssigns :: forall s. Result s -> Dict (GVal s) × Maybe (Ctrl s)
+asAssigns :: forall s. Result s -> Dict (GVal s) × Maybe Ctrl
 asAssigns (Assigns ρ ctrl) = ρ × ctrl
 asAssigns (Returns _) = error "Assigns expected"
 
@@ -64,26 +61,26 @@ override (Assigns ρ ctrl) (Assigns ρ' ctrl') = Assigns (ρ <+> ρ') (ctrl' <|>
 override _ r' = r'
 
 -- Same as override, except that a control input is always present
-after :: forall s. Inputs s -> Dict (GVal s) -> Maybe (Ctrl s) -> Inputs s
+after :: forall s. Inputs s -> Dict (GVal s) -> Maybe Ctrl -> Inputs s
 after { ctrl, ρ } ρ' ctrl' = { ctrl: fromMaybe ctrl ctrl', ρ: ρ <+> ρ' }
 
 -- Variables bound if the pattern matches the value, with the dependence of each inspected position.
-matches :: forall s. DepSemiring s => ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
+matches :: forall s. DepSemiring s => ClassTable -> GVal s -> Pattern -> Maybe (Dict (GVal s)) × List Ctrl
 matches _ v (PVar x)
    | x == varAnon = Just empty × Nil
    | otherwise = Just (maplet x v) × Nil
 matches _ _ PWild = Just empty × Nil
 matches classes v (PAs p x) = first (map (_ `unionWith_never` maplet x v)) (matches classes v p)
-matches classes v p = second (via root v : _) case u, p of
+matches classes v p = second (via ε v : _) case u, p of
    V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Obj c' xvs, PConstr c ps Nil
       | c `elem` ancestors classes c' ->
            matchesMany classes
-              (mapWithIndex (\i _ -> project (field i) v) (take (length ps) xvs))
+              (mapWithIndex (\i _ -> project (Field i) v) (take (length ps) xvs))
               ps
    V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x xvs $> (x × project (V.dictEntry x >>> snd) v × p')) xps of
-         Just kvs -> second ((kvs <#> \(x × _) -> via (V.dictEntry x >>> fst) v) <> _)
+      case traverse (\(x × p') -> lookup x xvs $> (x × project (Entry x) v × p')) xps of
+         Just kvs -> second ((kvs <#> \(x × _) -> via (singleton (Key x)) v) <> _)
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
    V.List vs, PList ps | A.length vs == length ps -> matchesElements vs ps
@@ -91,9 +88,9 @@ matches classes v p = second (via root v : _) case u, p of
    _, _ -> Nothing × Nil
    where
    Val _ u = raw v
-   matchesElements vs ps = matchesMany classes (mapWithIndex (\i _ -> project (element i) v) (L.fromFoldable vs)) ps
+   matchesElements vs ps = matchesMany classes (mapWithIndex (\i _ -> project (Element i) v) (L.fromFoldable vs)) ps
 
-matchesMany :: forall s. DepSemiring s => ClassTable -> List (GVal s) -> List Pattern -> Maybe (Dict (GVal s)) × List (Ctrl s)
+matchesMany :: forall s. DepSemiring s => ClassTable -> List (GVal s) -> List Pattern -> Maybe (Dict (GVal s)) × List Ctrl
 matchesMany _ Nil Nil = Just empty × Nil
 matchesMany classes (v : vs) (p : ps) = case matches classes v p of
    Nothing × ctrls -> Nothing × ctrls
@@ -104,23 +101,31 @@ matchesMany _ _ _ = error absurd
 
 -- Bindings of the first matching case, with the control position introduced if the cases tried inspect any
 -- position
-dispatch :: forall s b. DepSemiring s => ClassTable -> List (Pattern × b) -> GVal s -> Maybe (Dict (GVal s) × b) × Maybe (Ctrl s)
+dispatch :: forall s b. DepSemiring s => ClassTable -> List (Pattern × b) -> GVal s -> Maybe (Dict (GVal s) × b) × Maybe Ctrl
 dispatch classes cases v = second (map fold <<< NEL.fromList) (go cases)
    where
-   go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List (Ctrl s)
+   go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List Ctrl
    go Nil = Nothing × Nil
    go ((p × b) : cases') = case matches classes v p of
       Just ρ × ctrls -> Just (ρ × b) × ctrls
       Nothing × ctrls -> second (ctrls <> _) (go cases')
 
 -- dispatch on a single pattern, which must match.
-destructure :: forall m s. MonadError Error m => DepSemiring s => ClassTable -> Pattern -> GVal s -> m (Dict (GVal s) × Maybe (Ctrl s))
+destructure :: forall m s. MonadError Error m => DepSemiring s => ClassTable -> Pattern -> GVal s -> m (Dict (GVal s) × Maybe Ctrl)
 destructure classes p v = case dispatch classes (singleton (p × unit)) v of
    Just (ρ × _) × ctrl -> pure (ρ × ctrl)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP (raw v) <> " does not match " <> prettyP p)
 
-closure :: forall s. DepSemiring s => Ctrl s -> Dict (GVal s) -> Dict Def -> Def -> GVal s
-closure ctrl ρ ds d = constructFrom ctrl (\ρ' -> V.Fun (V.Closure (Env ρ') ds d)) ρ
+-- List or tuple of vs, as mk determines
+sequenceOf :: forall s. DepSemiring s => (Array (Raw Val) -> Raw BaseVal) -> Ctrl -> List (GVal s) -> GVal s
+sequenceOf mk ctrl vs = construct ctrl (mk (A.fromFoldable (raw <$> vs))) (mapWithIndex (\i v -> Element i × v) vs)
+
+object :: forall s. DepSemiring s => ClassTable -> Ctrl -> Name -> List (GVal s) -> GVal s
+object classes ctrl c vs =
+   construct ctrl (V.Obj c (zip (fieldNames classes c) (raw <$> vs))) (mapWithIndex (\i v -> Field i × v) vs)
+
+closure :: forall s. DepSemiring s => Ctrl -> Dict (GVal s) -> Dict Def -> Def -> GVal s
+closure ctrl ρ ds d = construct ctrl (V.Fun (V.Closure (Env (raw <$> ρ)) ds d)) (first Captured <$> toUnfoldable ρ)
 
 closeDefs :: forall s. DepSemiring s => Inputs s -> Dict Def -> Dict (GVal s)
 closeDefs { ctrl, ρ } ds = ds <#> \d ->
@@ -153,19 +158,18 @@ eval = { stmt, program }
    value :: Inputs s -> Expr -> m (GVal s)
    value inputs@{ ctrl, ρ } = case _ of
       Var x -> pure (deliver ctrl (get x ρ))
-      Lit ℓ -> pure (constructFrom ctrl (const (V.Lit ℓ)) Nil)
+      Lit ℓ -> pure (construct ctrl (V.Lit ℓ) Nil)
       Dictionary ees ->
-         constructFrom ctrl (A.fromFoldable >>> V.List) <$> for ees (\(Pair e e') -> dictEntry inputs e e') >>= dict ctrl
+         deliver ctrl <<< toDict <<< sequenceOf V.List ctrl <$> for ees (\(Pair e e') -> dictEntry inputs e e')
       DictComp e e' gs ->
-         qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs >>= dict ctrl
-      List es -> constructFrom ctrl (A.fromFoldable >>> V.List) <$> traverse (expr inputs >>> map gval) es
-      Tuple es -> constructFrom ctrl (A.fromFoldable >>> V.Tuple) <$> traverse (expr inputs >>> map gval) es
+         deliver ctrl <<< toDict <$> qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs
+      List es -> sequenceOf V.List ctrl <$> traverse (expr inputs >>> map gval) es
+      Tuple es -> sequenceOf V.Tuple ctrl <$> traverse (expr inputs >>> map gval) es
       ListComp e gs -> qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         constructFrom ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
-            traverse (expr inputs >>> map gval) es
+         object classes ctrl c <$> traverse (expr inputs >>> map gval) es
       Matrix e (x × y) e' -> do
          dims <- gval <$> expr inputs e'
          i' × j' <- case raw dims of
@@ -177,21 +181,24 @@ eval = { stmt, program }
          vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
             let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
             gval <$> expr (inputs { ρ = ρ <+> ρ' }) e
-         pure (constructFrom ctrl mat (product (Compose vss) (Identity dims)))
+         let
+            rows = project (Element 0) dims
+            columns = project (Element 1) dims
+         pure $ construct ctrl (V.Matrix (MatrixRep ((map raw <$> vss) × raw rows × raw columns)))
+            ( (RowCount × rows) : (ColumnCount × columns)
+                 : L.fromFoldable (A.concat (mapWithIndex (\i -> mapWithIndex (\j v -> MatrixElement i j × v)) vss))
+            )
          where
          index :: GVal s -> Int -> Int -> GVal s
-         index dims k n = constructFrom (via (element k >>> root) dims) (const (V.Lit (Int n))) Nil
-
-         mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
-         mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
+         index dims k n = construct (via (singleton (Element k)) dims) (V.Lit (Int n)) Nil
       Lambda d -> pure (closure ctrl (restrict (fv d) ρ) empty d)
-      Type τ -> pure (constructFrom ctrl (const (V.Fun (V.Type τ))) Nil)
+      Type τ -> pure (construct ctrl (V.Fun (V.Type τ)) Nil)
       Attribute e x -> do
          v <- gval <$> expr inputs e
          case raw v of
             Val _ (V.Obj c xvs) -> do
                i <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " has no field " <> quoted x)
-               pure (deliver (ctrl <> via root v) (project (field i) v))
+               pure (deliver (ctrl <> via ε v) (project (Field i) v))
             _ -> throw $ "Found " <> prettyP (raw v) <> ", expected object"
       Subscript e e' -> do
          v <- gval <$> expr inputs e
@@ -202,24 +209,24 @@ eval = { stmt, program }
          case u, u' of
             V.Dictionary (DictRep d), V.Lit (Str s) -> do
                _ <- withMsg "Dict lookup" $ lookup s d # orElse ("Key \"" <> s <> "\" not found")
-               subscript v v' (V.dictEntry s >>> snd) (via root v <> via (V.dictEntry s >>> fst) v)
+               subscript v' (project (Entry s) v) (via ε v <> via (singleton (Key s)) v)
             V.Dictionary _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected str"
             _, V.Lit (Int i) | Just n <- elementCount (raw v) -> do
                let i' = if i < 0 then n + i else i
                unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
-               subscript v v' (element i') (via root v)
+               subscript v' (elementOf i' v) (via ε v)
             V.List _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected int"
             V.Tuple _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected int"
             V.Lit (Str _), _ -> throw $ "Found " <> prettyP (raw v') <> ", expected int"
             V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
                unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
-               subscript v v' (matrixElement i j) (via root v)
+               subscript v' (project (MatrixElement i j) v) (via ε v)
             V.Matrix _, _ -> throw $ "Found " <> prettyP (raw v') <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP (raw v) <> ", expected list, tuple, str, dict or matrix"
          where
-         subscript :: GVal s -> GVal s -> (forall a. Endo (Val a)) -> Ctrl s -> m (GVal s)
-         subscript v v' proj ctrl' =
-            pure (deliver (ctrl <> ctrl' <> via sum v') (project proj v))
+         -- Part u of the subscripted value at index v'; ctrl' is a further control input
+         subscript :: GVal s -> GVal s -> Ctrl -> m (GVal s)
+         subscript v' u ctrl' = pure (deliver (ctrl <> ctrl' <> viaAll v') u)
       ModMember q x -> do
          { modules } <- moduleStore
          deliver ctrl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
@@ -250,11 +257,7 @@ eval = { stmt, program }
       k <- expr inputs' e
       _ <- orThrow (unpack string (snd k))
       v <- expr inputs' e'
-      pure (constructFrom mempty (A.fromFoldable >>> V.Tuple) (gval k : gval v : Nil))
-
-   -- Dictionary from list v of key-value tuples
-   dict :: Ctrl s -> GVal s -> m (GVal s)
-   dict ctrl v = fromTotalRel toDict (application ctrl) ctrl (v : Nil)
+      pure (sequenceOf V.Tuple mempty (gval k : gval v : Nil))
 
    funName :: Expr -> String
    funName (Var x) = quoted x
@@ -262,14 +265,14 @@ eval = { stmt, program }
    funName _ = "unknown"
 
    -- Evaluate e as a Boolean, taking the root of the resulting value as control input for later evaluation
-   condition :: Inputs s -> Expr -> m { holds :: Boolean, ctrl :: Ctrl s, value :: GVal s }
+   condition :: Inputs s -> Expr -> m { holds :: Boolean, ctrl :: Ctrl, value :: GVal s }
    condition inputs e = do
       v <- gval <$> expr inputs e
       holds × _ <- orThrow (unpack boolean (raw v))
-      pure { holds, ctrl: via root v, value: v }
+      pure { holds, ctrl: via ε v, value: v }
 
    singletonList :: Inputs s -> GVal s -> GVal s
-   singletonList { ctrl } v = constructFrom ctrl (A.fromFoldable >>> V.List) (v : Nil)
+   singletonList { ctrl } v = sequenceOf V.List ctrl (v : Nil)
 
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
    qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
@@ -281,21 +284,20 @@ eval = { stmt, program }
       elements (Guard e : gs') = do
          { holds, ctrl } <- condition inputs e
          if holds then qualifiers body (inputs { ctrl = ctrl }) gs'
-         else pure (constructFrom ctrl (const (V.List [])) Nil)
+         else pure (construct ctrl (V.List []) Nil)
       elements (Generator p e : gs') = do
          v <- gval <$> expr inputs e
-         n <- case elementCount (raw v) of
-            Just n -> pure n
+         us <- case elementCount (raw v) of
+            Just _ -> pure (elementsOf v)
             Nothing -> throw ("Found " <> prettyP (raw v) <> ", expected list, tuple, str or dict")
          classes <- askClasses
-         vs × ctrl <- fold <$> for (L.take n (L.range 0 n)) \i -> do
-            let u = project (element i) v
+         vs × ctrl <- fold <$> for us \u ->
             case dispatch classes (singleton (p × unit)) u of
                Nothing × ctrl -> pure (Nil × fold ctrl)
                Just (ρ' × _) × ctrl ->
-                  qualifiers body (inputs { ctrl = via lengthDep v <> fold ctrl, ρ = ρ <+> ρ' }) gs'
+                  qualifiers body (inputs { ctrl = viaLength v <> fold ctrl, ρ = ρ <+> ρ' }) gs'
                      <#> \v' -> singleton v' × mempty
-         pure (construct (via lengthDep v <> ctrl) concatLists vs)
+         pure (concatLists (viaLength v <> ctrl) vs)
       elements (Decl p e : gs') = do
          v <- gval <$> expr inputs e
          classes <- askClasses
@@ -342,10 +344,10 @@ eval = { stmt, program }
                _ × Val _ u <- expr (inputs { ctrl = ctrl }) e'
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
       Dataclass c -> do
-         let v = constructFrom inputs.ctrl (const (V.Fun (V.Type (T.ClassTy c Nil)))) Nil
+         let v = construct inputs.ctrl (V.Fun (V.Type (T.ClassTy c Nil))) Nil
          pure (Assigns (maplet (last c) v) Nothing)
       TypeAlias x αs τ -> do
-         let v = constructFrom inputs.ctrl (const (V.TypeAlias αs τ)) Nil
+         let v = construct inputs.ctrl (V.TypeAlias αs τ) Nil
          pure (Assigns (maplet x v) Nothing)
       Seq s s' -> stmt inputs s >>= case _ of
          r@(Returns _) -> pure r
@@ -359,20 +361,22 @@ eval = { stmt, program }
       output _ _ = error absurd
 
    -- Apply f to vs at a new vertex
-   application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
+   application :: Ctrl -> GVal s -> List (GVal s) -> m (GVal s)
    application ctrl f vs = gval <$> (apply ctrl f vs >>= newValue)
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
+   apply :: Ctrl -> GVal s -> List (GVal s) -> m (GVal s)
    apply ctrl f vs = case raw f of
       Val _ (V.Fun (V.Partial _ us)) ->
-         apply ctrl (deliver (via root f) (project partialFun f))
-            (mapWithIndex (\i _ -> project (partialArg i) f) us <> vs)
+         apply ctrl (deliver (via ε f) (project PartialFun f))
+            (mapWithIndex (\i _ -> project (PartialArg i) f) us <> vs)
       Val _ (V.Fun φ) -> do
          n <- arity'
          let k = length vs
-         if k < n then pure (constructFrom ctrl (\xs -> V.Fun (V.Partial (head xs) (NEL.tail xs))) (NEL.cons' f vs))
+         if k < n then
+            pure $ construct ctrl (V.Fun (V.Partial (raw f) (raw <$> vs)))
+               ((PartialFun × f) : mapWithIndex (\i v -> PartialArg i × v) vs)
          else if k == n then call φ vs
          else application ctrl f (take n vs) >>= \v -> apply ctrl v (drop n vs)
          where
@@ -390,17 +394,17 @@ eval = { stmt, program }
       call φ vs' = case φ of
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
-               ρ1' = mapWithKey (\y _ -> project (closureEnv >>> get y) f) ρ1
+               ρ1' = mapWithKey (\y _ -> project (Captured y) f) ρ1
                ρ2 = closeDefs { ctrl: ctrl', ρ: ρ1' } ds
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
             gval <<< asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
          V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application ctrl') ctrl' vs'
          V.Type (T.ClassTy c _) ->
-            askClasses <#> \classes -> constructFrom ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
+            askClasses <#> \classes -> object classes ctrl' c vs'
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
          where
-         ctrl' = via root f
+         ctrl' = via ε f
 
 -- Evaluate module q at a new vertex; bindings of body override module value of each submodule
 evalModule
@@ -417,12 +421,12 @@ evalModule ρ0 q (Module ιs s) = do
    fst <$> newAssigns (subMods modules <+> unbound <+> ρ') Nothing
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
-   unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × constructFrom mempty (const V.Unbound) Nil))
+   unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × construct mempty V.Unbound Nil))
 
 -- Construct members ρ of a predefined module at a new vertex
 predefinedModule :: forall m s. MonadState (DepGraph Label s) m => DepSemiring s => Raw Env -> m (Dict (GVal s))
 predefinedModule (Env ρ) =
-   fst <$> newAssigns (ρ <#> \(Val _ u) -> constructFrom mempty (const (zeros u)) Nil) Nothing
+   fst <$> newAssigns (ρ <#> \(Val _ u) -> construct mempty u Nil) Nothing
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
@@ -456,7 +460,7 @@ evalImport enclosing ρ = case _ of
          pure (ρ' <+> maplet x (get x ρ_q))
 
 moduleVal :: forall s. DepSemiring s => ModuleName -> GVal s
-moduleVal q = constructFrom mempty (const (V.Module q)) Nil
+moduleVal q = construct mempty (V.Module q) Nil
 
 -- Members of the implicit modules loaded so far.
 implicitMembers :: forall m s. HasModuleStore s m => m (Dict (GVal s))
@@ -480,7 +484,7 @@ load q = do
    loaded ρ_q = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ_q) s.modules }) $> ρ_q
 
 type Eval =
-   { g :: DepGraph Label (PosLineage DepKind)
+   { g :: DepGraph Label DepKind
    , out :: Deriv
    }
 
@@ -500,7 +504,7 @@ documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val 
 evalProgram
    :: forall m
     . MonadProgram m
-   => Dict (GVal (PosLineage DepKind)) -- top-level environment
+   => Dict (GVal DepKind) -- top-level environment
    -> ClassTable
    -> Stmt
    -> m Eval

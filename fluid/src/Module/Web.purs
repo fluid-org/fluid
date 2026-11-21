@@ -11,7 +11,6 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Class (class MonadEffect)
 import Effect.Exception (Error)
 import File (class LoadFile, FileCxt(..), loadFileFromPath, loadManifest)
-import DepGraph (PosLineage)
 import Lattice (DepKind)
 import Val (class HasModuleStore, ModuleStore, emptyModuleStore)
 
@@ -19,7 +18,7 @@ instance (MonadAff m, MonadError Error m, LoadFile m) => LoadFile (WebT m) where
    loadFileFromPath = lift <<< loadFileFromPath
    loadManifest = lift <<< loadManifest
 
-newtype WebT m a = WebT (ReaderT FileCxt (StateT (ModuleStore (PosLineage DepKind)) m) a)
+newtype WebT m a = WebT (ReaderT FileCxt (StateT (ModuleStore DepKind) m) a)
 
 runWebT :: forall m a. Monad m => FileCxt -> WebT m a -> m a
 runWebT fileCxt (WebT x) = evalStateT (runReaderT x fileCxt) emptyModuleStore
@@ -46,6 +45,6 @@ instance Monad m => HasClasses (WebT m) where
 instance MonadTrans WebT where
    lift m = WebT (lift (lift m))
 
-instance Monad m => HasModuleStore (PosLineage DepKind) (WebT m) where
+instance Monad m => HasModuleStore DepKind (WebT m) where
    moduleStore = WebT (lift get)
    modifyModuleStore f = WebT (lift (modify_ f))

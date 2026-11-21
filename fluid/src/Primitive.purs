@@ -265,15 +265,6 @@ repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
 concat :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
 concat seqs = A.concatMap (\(α × vs) -> ctrlEdge α <$> vs) (A.fromFoldable seqs) × Set.fromFoldable (fst <$> seqs)
 
-concatLists :: forall a. DepSemiring a => List (Val a) -> Val a
-concatLists vs = Val (foldl add zero αs) (List us)
-   where
-   items :: Val a -> Array (Val a)
-   items (Val _ (List vs')) = vs'
-   items _ = error absurd
-
-   us × αs = concat (vs <#> \v -> root v × items v)
-
 repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
 repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
    where
