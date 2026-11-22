@@ -8,4 +8,3 @@
 dist/
 node_modules/
 .yarn/install-state.gz
-*.code-workspace
