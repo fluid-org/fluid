@@ -47,7 +47,7 @@ data QualifierTrace v a
    | GuardPassed a a
    | GuardFailed a
    | DeclTrace a a
-   | Yield (CompYield v a)
+   | ListYield (CompYield v a)
    | DictYield (CompYield v (Pair a))
 
 --bindings for display

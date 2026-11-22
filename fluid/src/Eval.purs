@@ -28,7 +28,7 @@ import Classes (ClassTable, ancestors, arity, askClasses, checkArity, fieldNames
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, bv, fv)
 import File (withClasses)
 import DepGraph (DepGraph, Deriv, PosLineage, VisibleGraph, addTrace, attachDoc, materialise, zeros)
 import Lattice (class DepSemiring, DepKind, Raw)
@@ -145,15 +145,18 @@ eval = { stmt, program }
    where
    expr :: Inputs s -> Expr -> m (Deriv × Raw Val)
    expr inputs@{ ρ } e'@(DocExpr e _) = do
-      r <- value inputs e' >>= recordExpr
+      v × trace <- value inputs e'
+      r <- record (v × Tr.ExprTrace trace)
       doc <- expr (inputs { ρ = ρ <+> maplet varThis (gval r) }) e
       attachDoc (fst r) (fst doc) $> r
-   expr inputs e = value inputs e >>= recordExpr
+   expr inputs e = do
+      v × trace <- value inputs e
+      record (v × Tr.ExprTrace trace)
 
-   recordExpr :: GVal s × Tr.ExprTrace (Label Unit) Deriv -> m (Deriv × Raw Val)
-   recordExpr (v × trace) = do
+   record :: GVal s × Tr.Trace (Label Unit) Deriv -> m (Deriv × Raw Val)
+   record (v × trace) = do
       r <- newValue v
-      addTrace (fst r) (Tr.ExprTrace trace)
+      addTrace (fst r) trace
       pure r
 
    --value-only trace fallback, temporary
@@ -171,18 +174,33 @@ eval = { stmt, program }
          entries <- for ees (\(Pair e e') -> dictEntry inputs e e')
          v <- dict ctrl (constructFrom ctrl (A.fromFoldable >>> V.List) (fst <$> entries))
          pure (v × Tr.DictLiteral (snd <$> entries))
-      DictComp e e' gs -> untraced $ qualifiers body inputs gs >>= dict ctrl
+      DictComp e e' gs -> do
+         run <- qualifiers body inputs gs
+         v <- dict ctrl (gval run)
+         pure (v × Tr.DictComp e e' gs (fst run))
          where
          body inputs' = do
-            entry × _ <- dictEntry inputs' e e'
-            pure (singletonList inputs' entry)
+            entry × p <- dictEntry inputs' e e'
+            pure
+               ( singletonList inputs' entry
+                    × Tr.DictYield { bindings: qualifierBindings gs inputs', body: p }
+               )
       List es -> do
          results <- traverse (expr inputs) es
          pure (constructFrom ctrl (A.fromFoldable >>> V.List) (gval <$> results) × Tr.ListLiteral (fst <$> results))
       Tuple es -> do
          results <- traverse (expr inputs) es
          pure (constructFrom ctrl (A.fromFoldable >>> V.Tuple) (gval <$> results) × Tr.TupleLiteral (fst <$> results))
-      ListComp e gs -> untraced $ qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
+      ListComp e gs -> do
+         run <- qualifiers body inputs gs
+         pure (gval run × Tr.ListComp e gs (fst run))
+         where
+         body inputs' = do
+            r <- expr inputs' e
+            pure
+               ( singletonList inputs' (gval r)
+                    × Tr.ListYield { bindings: qualifierBindings gs inputs', body: fst r }
+               )
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
@@ -325,36 +343,53 @@ eval = { stmt, program }
    singletonList :: Inputs s -> GVal s -> GVal s
    singletonList { ctrl } v = constructFrom ctrl (A.fromFoldable >>> V.List) (v : Nil)
 
+   qualifierBindings :: List Qualifier -> Inputs s -> Dict (Label Unit)
+   qualifierBindings gs { ρ } = map (\v -> V.Value (raw v)) (restrict (bv gs) ρ)
+
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
-   qualifiers :: (Inputs s -> m (GVal s)) -> Inputs s -> List Qualifier -> m (GVal s)
-   qualifiers body inputs@{ ρ } gs = gval <$> (elements gs >>= newValue)
+   qualifiers
+      :: (Inputs s -> m (GVal s × Tr.QualifierTrace (Label Unit) Deriv))
+      -> Inputs s
+      -> List Qualifier
+      -> m (Deriv × Raw Val)
+   qualifiers body inputs@{ ρ } gs = do
+      v × trace <- elements gs
+      record (v × Tr.QualifierTrace trace)
       where
       -- List of elements, before vertex is allocated
-      elements :: List Qualifier -> m (GVal s)
+      elements :: List Qualifier -> m (GVal s × Tr.QualifierTrace (Label Unit) Deriv)
       elements Nil = body inputs
       elements (Guard e : gs') = do
-         { holds, ctrl } <- condition inputs e
-         if holds then qualifiers body (inputs { ctrl = ctrl }) gs'
-         else pure (constructFrom ctrl (const (V.List [])) Nil)
+         { holds, ctrl, vertex } <- condition inputs e
+         if holds then do
+            rest <- qualifiers body (inputs { ctrl = ctrl }) gs'
+            pure (gval rest × Tr.GuardPassed vertex (fst rest))
+         else pure (constructFrom ctrl (const (V.List [])) Nil × Tr.GuardFailed vertex)
       elements (Generator p e : gs') = do
-         v <- gval <$> expr inputs e
+         source <- expr inputs e
+         let v = gval source
          n <- case elementCount (raw v) of
             Just n -> pure n
             Nothing -> throw ("Found " <> prettyP (raw v) <> ", expected list, tuple, str or dict")
          classes <- askClasses
-         vs × ctrl <- fold <$> for (L.take n (L.range 0 n)) \i -> do
+         candidates <- for (L.take n (L.range 0 n)) \i -> do
             let u = project (element i) v
             case dispatch classes (singleton (p × unit)) u of
-               Nothing × ctrl -> pure (Nil × fold ctrl)
-               Just (ρ' × _) × ctrl ->
-                  qualifiers body (inputs { ctrl = via lengthDep v <> fold ctrl, ρ = ρ <+> ρ' }) gs'
-                     <#> \v' -> singleton v' × mempty
-         pure (construct (via lengthDep v <> ctrl) concatLists vs)
+               Nothing × ctrl -> pure ((Nil × fold ctrl) × Nothing)
+               Just (ρ' × _) × ctrl -> do
+                  rest <- qualifiers body (inputs { ctrl = via lengthDep v <> fold ctrl, ρ = ρ <+> ρ' }) gs'
+                  pure ((singleton (gval rest) × mempty) × Just (fst rest))
+         let vs × ctrl = fold (fst <$> candidates)
+         pure
+            ( construct (via lengthDep v <> ctrl) concatLists vs
+                 × Tr.GeneratorTrace (fst source) (snd <$> candidates)
+            )
       elements (Decl p e : gs') = do
-         v <- gval <$> expr inputs e
+         init <- expr inputs e
          classes <- askClasses
-         ρ' × ctrl <- destructure classes p v
-         qualifiers body (after inputs ρ' ctrl) gs'
+         ρ' × ctrl <- destructure classes p (gval init)
+         rest <- qualifiers body (after inputs ρ' ctrl) gs'
+         pure (gval rest × Tr.DeclTrace (fst init) (fst rest))
 
    stmt :: Inputs s -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
