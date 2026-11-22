@@ -52,11 +52,11 @@ renderTrace { g, root } =
               render seen rest ((position.linePrefix <> role <> "#" <> show p) : output)
          | otherwise ->
               let
-                 value = valAt g p
-                 rule = fromMaybe (R.valueRule value) (Map.lookup p g.rules)
-                 label = role <> "#" <> show p <> " " <> abbreviate 64 (ruleSummary rule)
-                    <> " -> " <> valueSummary value
-                 children = positionChildren position.childPrefix (traceChildren rule)
+                  value = valAt g p
+                  rule = fromMaybe (R.valueRule value) (Map.lookup p g.rules)
+                  label = role <> "#" <> show p <> " " <> abbreviate 64 (ruleSummary rule)
+                     <> " -> " <> valueSummary value
+                  children = positionChildren position.childPrefix (traceChildren rule)
               in render (Set.insert p seen) (children <> rest) ((position.linePrefix <> label) : output)
 
 positionChildren :: String -> List TraceNode -> List (TracePosition × TraceNode)
