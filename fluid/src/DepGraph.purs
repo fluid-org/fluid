@@ -17,7 +17,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (class Traversable, traverse)
 import Lattice (class DepSemiring, Lineage(..))
-import Trace as T
+import Trace as Tr
 import Util (type (×), Endo, singleton, (×))
 import Util.Map (get, maplet)
 import Util.Set ((∪))
@@ -84,7 +84,7 @@ type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relat
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
-   , traces :: Labelling (T.Trace (f Unit) Deriv)
+   , traces :: Labelling (Tr.Trace (f Unit) Deriv)
    , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
    , inEdges :: Labelling (InEdges f s (f s))
    }
@@ -105,7 +105,7 @@ newVertex v inEdges = do
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
 attachDoc p q = modify_ \g -> g { docs = Map.insert p q g.docs }
 
-addTrace :: forall f s m. MonadState (DepGraph f s) m => Deriv -> T.Trace (f Unit) Deriv -> m Unit
+addTrace :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Tr.Trace (f Unit) Deriv -> m Unit
 addTrace p trace = modify_ \g -> g { traces = Map.insert p trace g.traces }
 
 -- Visible vertices with their values; edges labelled by dependence relations summed over hidden paths.
