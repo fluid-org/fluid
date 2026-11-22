@@ -167,10 +167,15 @@ eval = { stmt, program }
    value inputs@{ ctrl, ρ } = case _ of
       Var x -> pure (deliver ctrl (get x ρ) × Tr.Variable x)
       Lit ℓ -> pure (constructFrom ctrl (const (V.Lit ℓ)) Nil × Tr.Literal ℓ)
-      Dictionary ees -> untraced $
-         constructFrom ctrl (A.fromFoldable >>> V.List) <$> for ees (\(Pair e e') -> dictEntry inputs e e') >>= dict ctrl
-      DictComp e e' gs -> untraced $
-         qualifiers (\inputs' -> singletonList inputs' <$> dictEntry inputs' e e') inputs gs >>= dict ctrl
+      Dictionary ees -> do
+         entries <- for ees (\(Pair e e') -> dictEntry inputs e e')
+         v <- dict ctrl (constructFrom ctrl (A.fromFoldable >>> V.List) (fst <$> entries))
+         pure (v × Tr.DictLiteral (snd <$> entries))
+      DictComp e e' gs -> untraced $ qualifiers body inputs gs >>= dict ctrl
+         where
+         body inputs' = do
+            entry × _ <- dictEntry inputs' e e'
+            pure (singletonList inputs' entry)
       List es -> do
          results <- traverse (expr inputs) es
          pure (constructFrom ctrl (A.fromFoldable >>> V.List) (gval <$> results) × Tr.ListLiteral (fst <$> results))
@@ -178,30 +183,38 @@ eval = { stmt, program }
          results <- traverse (expr inputs) es
          pure (constructFrom ctrl (A.fromFoldable >>> V.Tuple) (gval <$> results) × Tr.TupleLiteral (fst <$> results))
       ListComp e gs -> untraced $ qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
-      Constr c es -> untraced do
+      Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         constructFrom ctrl (V.Obj c <<< zip (fieldNames classes c)) <$>
-            traverse (expr inputs >>> map gval) es
-      Matrix e (x × y) e' -> untraced do
-         dims <- gval <$> expr inputs e'
+         args <- traverse (expr inputs) es
+         pure
+            ( constructFrom ctrl (V.Obj c <<< zip (fieldNames classes c)) (gval <$> args)
+                 × Tr.ObjectConstructor c (fst <$> args)
+            )
+      Matrix e (x × y) e' -> do
+         dimsResult <- expr inputs e'
+         let dims = gval dimsResult
          i' × j' <- case raw dims of
             Val _ (V.Tuple [ Val _ (V.Lit (Int i')), Val _ (V.Lit (Int j')) ]) -> pure (i' × j')
             Val _ u -> throw (typeMismatch u "pair of int")
          check
             (i' × j' >= 1 × 1)
             ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
-         vss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
+         vssResults <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j -> do
             let ρ' = maplet x (index dims 0 i) `unionWith_never` maplet y (index dims 1 j)
-            gval <$> expr (inputs { ρ = ρ <+> ρ' }) e
-         pure (constructFrom ctrl mat (product (Compose vss) (Identity dims)))
+            expr (inputs { ρ = ρ <+> ρ' }) e
+         let vss = map (map gval) vssResults
+         pure
+            ( constructFrom ctrl mat (product (Compose vss) (Identity dims))
+                 × Tr.Matrix (fst dimsResult) (map (map fst) vssResults)
+            )
          where
          index :: GVal s -> Int -> Int -> GVal s
          index dims k n = constructFrom (via (element k >>> root) dims) (const (V.Lit (Int n))) Nil
 
          mat :: forall a. Product (Compose Array Array) Identity (Val a) -> BaseVal a
          mat (Product (Compose vss × Identity p)) = V.Matrix (MatrixRep (vss × element 0 p × element 1 p))
-      Lambda d -> untraced $ pure (closure ctrl (restrict (fv d) ρ) empty d)
+      Lambda d -> pure (closure ctrl (restrict (fv d) ρ) empty d × Tr.Lambda d)
       Type τ -> untraced $ pure (constructFrom ctrl (const (V.Fun (V.Type τ))) Nil)
       Attribute e x -> do
          targ <- expr inputs e
@@ -281,13 +294,16 @@ eval = { stmt, program }
             pure (gval chosen × Tr.CondFalse vertex e1 (fst chosen))
       DocExpr _ e -> untraced $ gval <$> expr inputs e
 
-   -- Tuple of key e and value e'
-   dictEntry :: Inputs s -> Expr -> Expr -> m (GVal s)
+   -- Tuple of key e and value e', with their vertex IDs
+   dictEntry :: Inputs s -> Expr -> Expr -> m (GVal s × Pair Deriv)
    dictEntry inputs' e e' = do
       k <- expr inputs' e
       _ <- orThrow (unpack string (snd k))
       v <- expr inputs' e'
-      pure (constructFrom mempty (A.fromFoldable >>> V.Tuple) (gval k : gval v : Nil))
+      pure
+         ( constructFrom mempty (A.fromFoldable >>> V.Tuple) (gval k : gval v : Nil)
+              × Pair (fst k) (fst v)
+         )
 
    -- Dictionary from list v of key-value tuples
    dict :: Ctrl s -> GVal s -> m (GVal s)
