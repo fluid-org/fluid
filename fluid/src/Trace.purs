@@ -1,4 +1,4 @@
-module Rules where
+module Trace where
 
 import Bind (Name, Var)
 import Data.Foldable (class Foldable, foldMap)
@@ -9,6 +9,10 @@ import Expr (Binop, Def, Expr, Qualifier, Unop)
 import Literal (Literal)
 import Util.Pair (Pair)
 
+
+data Trace v a
+   = ExprTrace (ExprTrace v a)
+   | QualifierTrace (QualifierTrace v a)
 
 data ExprTrace v a
    = Variable Var
@@ -51,6 +55,7 @@ type CompYield v b = { bindings :: Dict v, body :: b }
 
 derive instance Foldable (ExprTrace v)
 derive instance Foldable (QualifierTrace v)
+derive instance Foldable (Trace v)
 
 premises :: forall f a. Foldable f => f a -> List a
 premises = foldMap singleton
