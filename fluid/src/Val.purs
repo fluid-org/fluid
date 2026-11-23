@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, sourceRoot, zeros, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), bindings, sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, sourceRoot, zeros, ι)
 import DepGraph (Vertex, BaseRestructuring(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
@@ -326,7 +326,7 @@ newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldabl
 
 -- Dependence of each member of an environment
 members :: forall s. Dict (GVal s) -> Map Step (Dependence s)
-members ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × _ × δ) -> Binding x × δ)
+members ρ = bindings (snd <$> ρ)
 
 -- Allocate vertex for bindings ρ; return vertex and bindings which reuse the vertex members
 newBindings

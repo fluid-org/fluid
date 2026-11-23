@@ -11,7 +11,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
 import Data.List as L
-import Data.Map (Map, fromFoldableWith, insertWith, lookup, unionWith)
+import Data.Map (Map, fromFoldableWith, insertWith, unionWith)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype)
@@ -20,9 +20,10 @@ import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (fst, snd)
+import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
 import Util (type (×), Endo, absurd, error, isEmpty, singleton, (×))
-import Util.Map (get, maplet)
+import Util.Map (get, lookup, maplet, toUnfoldable)
 import Util.Set (empty, size, (∈), (∪))
 import Unsafe.Reference (unsafeRefEq)
 
@@ -144,7 +145,7 @@ data BaseRestructuring
    = Reuse Path -- subvalue of source at path
    | Zero -- nothing reused
    | Family (Map Step Restructuring) -- restructuring into each part
-   | Extend Restructuring (Map Step Restructuring) -- restructuring into environment; restructuring into each replacement member
+   | Extend Restructuring (Dict Restructuring) -- environment, then members added or replaced
 
 restructuring :: BaseRestructuring -> Restructuring
 restructuring = Restructuring empty
@@ -158,9 +159,9 @@ pathAfter p@(step : p') (Restructuring ps ψ) = (if any intoClosure p then ident
    Reuse q -> restructuring (Reuse (q <> p))
    Zero -> restructuring Zero
    Family θs -> pathAfter p' (get step θs)
-   Extend θ θs -> case lookup step θs of
-      Just θ' -> pathAfter p' θ'
-      Nothing -> pathAfter p θ
+   Extend θ θs -> case step of
+      Binding x | Just θ' <- lookup x θs -> pathAfter p' θ'
+      _ -> pathAfter p θ
    where
    intoClosure :: Step -> Boolean
    intoClosure ClosureEnv = true
@@ -200,8 +201,8 @@ restructuringAfterRel (Restructuring _ ψ) r = case ψ of
    Reuse p -> π p r
    Zero -> mempty
    Family θs -> Rel mempty (members θs)
-   Extend θ θs -> case restructuringAfterRel θ r of
-      Rel srcs rs -> Rel srcs (Map.union (members θs) (Map.difference rs θs))
+   Extend θ θs -> case restructuringAfterRel θ r × bindings θs of
+      Rel srcs rs × θs' -> Rel srcs (Map.union (members θs') (Map.difference rs θs'))
    where
    members = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
 
@@ -214,6 +215,10 @@ relAfter (Rel (Sources ps ws) rs) δ =
 compose :: forall s. DepSemiring s => Dependence s -> Dependence s -> Dependence s
 compose (θ' × r') δ@(_ × r) = restructuringAfter θ' δ × (restructuringAfterRel θ' r <> relAfter r' δ)
 
+-- Members of an environment by step
+bindings :: forall a. Dict a -> Map Step a
+bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
+
 tupling :: forall s. Semiring s => Map Step (Dependence s) -> Dependence s
 tupling δs = restructuring (Family (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
@@ -224,11 +229,11 @@ construct srcs δs
    | otherwise = map (onto srcs <> _) (tupling δs)
 
 -- Dependence of the environment at position p with members δs replaced or added
-extend :: forall s. Semiring s => Path -> Map Step (Dependence s) -> Dependence s
+extend :: forall s. Semiring s => Path -> Dict (Dependence s) -> Dependence s
 extend p δs
    | isEmpty δs = reuse p
    | otherwise =
-        restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+        restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
 
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence s -> Set Vertex

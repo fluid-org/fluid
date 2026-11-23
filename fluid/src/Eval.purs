@@ -64,7 +64,7 @@ override _ r' = r'
 after :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Path -> m Inputs
 after inputs@{ ρ, b } ρ' ps
    | isEmpty ρ' && isEmpty ps = pure inputs
-   | otherwise = newInputs ρ'' (extend (envAt b) (members ρ')) ctl <#> { ρ: ρ'', b: _ }
+   | otherwise = newInputs ρ'' (extend (envAt b) (snd <$> ρ')) ctl <#> { ρ: ρ'', b: _ }
         where
         ρ'' = ρ <+> (fst <$> ρ')
         ctl = if isEmpty ps then reuse (ctlAt b) else construct (control ps) Map.empty
@@ -409,7 +409,7 @@ eval = { stmt, program }
       call :: V.Fun Unit -> m (GVal s)
       call = case _ of
          V.Closure (Env ρ) ds (Def xs s) -> do
-            b <- newInputs ρ'' (extend p (members ρ')) (construct (control (singleton (sourceRoot a))) Map.empty)
+            b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (control (singleton (sourceRoot a))) Map.empty)
             gval <<< asReturns <$> stmt { ρ: ρ'', b } s
             where
             p = sourceAt a (singleton ClosureEnv)
