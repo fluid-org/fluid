@@ -87,7 +87,7 @@ pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
    List vs -> List (mapWithIndex (\i -> pathsFrom (Element i : p)) vs)
    Tuple vs -> Tuple (mapWithIndex (\i -> pathsFrom (Element i : p)) vs)
    Dictionary (DictRep d) ->
-      Dictionary (DictRep (mapWithKey (\k (β × v) -> (L.reverse (Key k : p) × β) × pathsFrom (Entry k : p) v) d))
+      Dictionary (DictRep (mapWithKey (\k (β × v) -> (L.reverse (DictKey k : p) × β) × pathsFrom (DictVal k : p) v) d))
    Matrix (MatrixRep (vss × i × j)) -> Matrix $ MatrixRep $
       mapWithIndex (\i' -> mapWithIndex (\j' -> pathsFrom (MatrixElement i' j' : p))) vss
          × pathsFrom (MatrixRows : p) i
@@ -105,8 +105,8 @@ pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
 part :: forall a. Step -> Val a -> Val a
 part (Field x) v = attr x v
 part (Element i) v = element i v
-part (Key k) v = Val (fst (dictEntry k v)) (Lit (Str k))
-part (Entry k) v = snd (dictEntry k v)
+part (DictKey k) v = Val (fst (dictEntry k v)) (Lit (Str k))
+part (DictVal k) v = snd (dictEntry k v)
 part (MatrixElement i j) v = matrixElement i j v
 part MatrixRows (Val _ (Matrix (MatrixRep (_ × i × _)))) = i
 part MatrixCols (Val _ (Matrix (MatrixRep (_ × _ × j)))) = j
@@ -362,7 +362,7 @@ derivative f ctl rs = f (arg <$> rs) <#> \v ->
 elementStep :: Int -> Raw Val -> Maybe Step
 elementStep i (Val _ (List _)) = Just (Element i)
 elementStep i (Val _ (Tuple _)) = Just (Element i)
-elementStep i (Val _ (Dictionary (DictRep d))) = Just (Key (fst (definitely' (toUnfoldable d L.!! i))))
+elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely' (toUnfoldable d L.!! i))))
 elementStep _ _ = Nothing
 
 -- Element i computed from the sequence at a vertex
@@ -388,7 +388,7 @@ sequenceOf mk srcs vs =
 dictionary :: forall s. Semiring s => Sources (Set Path) s -> List (GVal s × GVal s) -> GVal s
 dictionary srcs kvs =
    Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \((k × _) × v × _) -> key k × unit × v)))) ×
-      construct srcs (Map.fromFoldable (kvs >>= \((k × δ) × _ × δ') -> (Key (key k) × δ) : (Entry (key k) × δ') : Nil))
+      construct srcs (Map.fromFoldable (kvs >>= \((k × δ) × _ × δ') -> (DictKey (key k) × δ) : (DictVal (key k) × δ') : Nil))
    where
    key :: Raw Val -> String
    key (Val _ (Lit (Str k))) = k

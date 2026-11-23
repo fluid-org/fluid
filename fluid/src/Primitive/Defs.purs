@@ -339,7 +339,7 @@ foldl_with_index =
       gval <$> foldM (step g') r' (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
       where
       step g' acc (k × _) = do
-         key <- newValue (reuseAt (project (Key k) (position d)))
+         key <- newValue (reuseAt (project (DictKey k) (position d)))
          u <- entryValue k d
          apply g' (key : acc : u : Nil)
    depOp _ _ _ = throw "Function, value and dictionary expected"
@@ -398,7 +398,7 @@ entryValue
    -> Vertex × Raw Val
    -> m (Vertex × Raw Val)
 entryValue k d@(a × _) =
-   newValue $ deliver (Set.fromFoldable [ sourceRoot a, fst (project (Key k) (position d)) ]) (reuseAt (project (Entry k) (position d)))
+   newValue $ deliver (Set.fromFoldable [ sourceRoot a, fst (project (DictKey k) (position d)) ]) (reuseAt (project (DictVal k) (position d)))
 
 -- Control edge from β to key and whole value of an entry
 ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
@@ -408,7 +408,7 @@ ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 dictFrom :: forall s. Semiring s => Path -> List (Vertex × Raw Val) -> List (String × (Vertex × Raw Val)) -> GVal s
 dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> sourceRoot >>> unitWeight) ds) $
    kvs <#> \(k × r) ->
-      (Val unit (Lit (Str k)) × construct (foldMap (\d -> unitWeight (fst (project (Key k) (position d)))) ds) M.empty) × gval r
+      (Val unit (Lit (Str k)) × construct (foldMap (\d -> unitWeight (fst (project (DictKey k) (position d)))) ds) M.empty) × gval r
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

@@ -33,7 +33,7 @@ import Util.Set (empty, size, (∪))
 
 newtype Vertex = Vertex Int
 
--- Step to part of value or member of family
+-- Step to part of value; values include families of values such as environments
 data Step
    = Source Vertex -- of edge
    | InEnv -- environment of inputs
@@ -41,8 +41,8 @@ data Step
    | Binding Var
    | Field Var
    | Element Int -- of list or tuple
-   | Key String -- of dictionary entry
-   | Entry String -- value of dictionary entry
+   | DictKey String
+   | DictVal String
    | MatrixElement Int Int
    | MatrixRows
    | MatrixCols

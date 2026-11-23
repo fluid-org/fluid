@@ -87,8 +87,8 @@ matches classes u@(q × Val _ v) p = second (q : _) case v, p of
       | c `elem` ancestors classes c' ->
            matchesMany classes ((\(x × _) -> project (Field x) u) <$> take (length ps) xvs) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x xvs $> (x × project (Entry x) u × p')) xps of
-         Just kvs -> second ((kvs <#> \(x × _) -> fst (project (Key x) u)) <> _)
+      case traverse (\(x × p') -> lookup x xvs $> (x × project (DictVal x) u × p')) xps of
+         Just kvs -> second ((kvs <#> \(x × _) -> fst (project (DictKey x) u)) <> _)
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
    V.List vs, PList ps | A.length vs == length ps -> matchesMany classes (elementsAt u) ps
@@ -219,7 +219,7 @@ eval = { stmt, program }
          case u, u' of
             V.Dictionary (DictRep d), V.Lit (Str k) -> do
                _ <- withMsg "Dict lookup" $ lookup k d # orElse ("Key \"" <> k <> "\" not found")
-               subscript r r' (reuseAt (project (Entry k) (position r))) (singleton (fst (project (Key k) (position r))))
+               subscript r r' (reuseAt (project (DictVal k) (position r))) (singleton (fst (project (DictKey k) (position r))))
             V.Dictionary _, _ -> throw $ "Found " <> prettyP v' <> ", expected str"
             _, V.Lit (Int i) | Just n <- elementCount v -> do
                let i' = if i < 0 then n + i else i
