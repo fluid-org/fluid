@@ -20,7 +20,7 @@ import Control.Monad.ST.Global (Global, toEffect)
 import Data.Array.ST (STArray)
 import Data.Array.ST as STA
 import Data.Array.ST.Partial (peek) as STAP
-import Data.FoldableWithIndex (foldMapWithIndex)
+import Data.FoldableWithIndex (foldMapWithIndex, foldlWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
 import Data.Map (Map)
@@ -30,7 +30,6 @@ import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
-import Data.String (joinWith)
 import Data.String.CodeUnits (length)
 import Effect.Unsafe (unsafePerformEffect)
 import Foreign.Object.ST (STObject)
@@ -118,8 +117,8 @@ sized x = show (length x) <> "." <> x
 
 -- Equal exactly for equal tries
 trieKey :: Trie -> String
-trieKey (Trie b children) = (if b then "1" else "0") <>
-   joinWith "" ((Map.toUnfoldable children :: Array _) <#> \(step × PathSet i) -> stepKey step <> "=" <> show i <> ";")
+trieKey (Trie b children) =
+   foldlWithIndex (\step k (PathSet i) -> k <> stepKey step <> "=" <> show i <> ";") (if b then "1" else "0") children
 
 intern :: Trie -> PathSet
 intern t = unsafePerformEffect $ toEffect do
