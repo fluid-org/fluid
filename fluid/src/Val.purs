@@ -265,10 +265,13 @@ valAt g p = value (get p g.vals)
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Path) s
 
--- Application of a function to arguments at a new vertex
-type Apply m = Vertex × Raw Val -> List (Vertex × Raw Val) -> m (Vertex × Raw Val)
+-- Source position, then value at that position
+type Position = Path × Raw Val
 
--- Foreign function of control position and argument vertices; evaluator supplies operation for applying a
+-- Application of a function to arguments; result at a new vertex
+type Apply m = Position -> List Position -> m Position
+
+-- Foreign function of control position and arguments; evaluator supplies operation for applying a
 -- function argument
 type DepOp =
    forall m s
@@ -278,7 +281,7 @@ type DepOp =
    => DepSemiring s
    => Apply m
    -> Path
-   -> List (Vertex × Raw Val)
+   -> List Position
    -> m (GVal s)
 
 -- Module parsed but not yet loaded, or loaded with its environment

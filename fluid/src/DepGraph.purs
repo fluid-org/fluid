@@ -17,7 +17,7 @@ import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
-import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceAt, sourceRoot)
+import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceAt, sourceRoot, sourceVertex)
 import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (×))
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
@@ -179,17 +179,14 @@ emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
 
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence (Set Path) s -> Set Vertex
-vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
+vertices (θ × r) = Set.map sourceVertex (ofRestructuring θ ∪ ofRel r)
    where
-   ofRestructuring θ' = Set.mapMaybe L.head (ctrl θ') ∪ case θ' of
-      Reuse _ p -> Set.mapMaybe L.head (singleton p)
+   ofRestructuring θ' = ctrl θ' ∪ case θ' of
+      Reuse _ p -> singleton p
       NoReuse _ -> empty
       Tupling _ θs -> foldMap ofRestructuring θs
       ExtendEnv _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
-   ofRel (Rel (Support ps ws) rs) = Set.mapMaybe L.head (ps ∪ keys ws) ∪ foldMap ofRel rs
-
-   holder (EdgeSrc a) = a
-   holder _ = error absurd
+   ofRel (Rel (Support ps ws) rs) = ps ∪ keys ws ∪ foldMap ofRel rs
 
 newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Path) s -> m Vertex
 newVertex v δ = do

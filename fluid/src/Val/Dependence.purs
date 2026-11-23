@@ -22,23 +22,16 @@ import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, orThrow, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable)
-import Val (BaseVal(..), DepOp, DictRep(..), Env(..), GVal, Label(..), Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepOp, DictRep(..), Env(..), GVal, Label(..), Position, Val(..), child, element, elementCount)
 
--- Position in value of a vertex, then value at that position
-type Position = Path × Raw Val
+-- Every position within the value at a position
+positionsIn :: Position -> Set Path
+positionsIn (q × v) = Set.fromFoldable ((q <> _) <<< fst <$> positions (paths v))
 
-position :: Vertex × Raw Val -> Position
-position (a × v) = sourceRoot a × v
-
--- Every position in the value of a vertex
-positionsIn :: Vertex × Raw Val -> Set Path
-positionsIn (a × v) = Set.fromFoldable (sourceAt a <<< fst <$> positions (paths v))
-
--- Positions which determine the length of the sequence at a vertex: the root, plus start and stop of a range
-lengthPositions :: Vertex × Raw Val -> Set Path
-lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
-   Set.fromFoldable (sourceRoot a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
-lengthPositions (a × _) = singleton (sourceRoot a)
+-- Positions which determine length of sequence at a position; for a range, its root with start and stop
+lengthPositions :: Position -> Set Path
+lengthPositions (q × Val _ (Obj c xvs)) | c == cRange = Set.fromFoldable (q : (xvs <#> \(x × _) -> q <> singleton (Field x)))
+lengthPositions (q × _) = singleton q
 
 -- Child at step of the value at a position
 childAt :: Step -> Endo Position
@@ -54,16 +47,13 @@ elementsAt u = (\i -> childAt (Element i) u) <$> L.take n (L.range 0 n)
 reuseAt :: forall s. Semiring s => Position -> GVal s
 reuseAt (p × v) = v × reuse p
 
-gval :: forall s. Semiring s => Vertex × Raw Val -> GVal s
-gval = position >>> reuseAt
-
 -- Add control dependence on each of ps to every position outside a function value
 deliver :: forall s. Set Path -> Endo (GVal s)
 deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
--- Allocate vertex for given value; return vertex with raw value
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Vertex × Raw Val)
-newValue (v × δ) = newVertex (Value v) δ <#> (_ × v)
+-- Allocate vertex for given value; return root position with raw value
+newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m Position
+newValue (v × δ) = newVertex (Value v) δ <#> \a -> sourceRoot a × v
 
 -- Position of the environment at inputs vertex b
 envAt :: Vertex -> Path
@@ -84,29 +74,24 @@ newInputs
    -> m Vertex
 newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InputsEnv × δ, InputsCtl × δ' ]))
 
--- Allocate vertex for bindings ρ; return vertex with each binding as reuse of its position
-newBindings
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => Dict (GVal s)
-   -> m (Vertex × Dict (GVal s))
+-- Allocate vertex for bindings ρ; return each binding as reuse of its position
+newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Dict (GVal s))
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
-   a × mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
+   mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
--- Result of f at the values of vertices rs, if any; dependence is the derivative of f, plus control dependence on ctl
+-- Result of f at the values at rs, if any; dependence is the derivative of f, plus control dependence on ctl
 derivative
    :: forall s
     . DepSemiring s
    => (forall a. DepSemiring a => List (Val a) -> MayFail (Val a))
    -> Set Path
-   -> List (Vertex × Raw Val)
+   -> List Position
    -> MayFail (GVal s)
 derivative f ctl rs = f (arg <$> rs) <#> \v ->
    erase v × NoReuse ctl × foldl row mempty (positions (paths v))
    where
-   arg :: Vertex × Raw Val -> Val (Lineage Path s)
-   arg (a × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (sourceAt a p) one)
+   arg :: Position -> Val (Lineage Path s)
+   arg (q × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one)
 
    row :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
    row r (p × Lineage (_ × ws))
@@ -120,18 +105,18 @@ elementStep i (Val _ (Tuple _)) = Just (Element i)
 elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely' (toUnfoldable d L.!! i))))
 elementStep _ _ = Nothing
 
--- Element i computed from the sequence at a vertex
-computedElement :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
+-- Element i computed from the sequence at a position
+computedElement :: forall s. DepSemiring s => Int -> Position -> GVal s
 computedElement i r = definitelyRight (derivative elementOf Set.empty (singleton r))
    where
    elementOf :: forall a. List (Val a) -> MayFail (Val a)
    elementOf (v : Nil) = pure (element i v)
    elementOf _ = error absurd
 
--- Element i of the sequence at a vertex
-elementAt :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
+-- Element i of the sequence at a position
+elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
 elementAt i r = case elementStep i (snd r) of
-   Just step -> reuseAt (childAt step (position r))
+   Just step -> reuseAt (childAt step r)
    Nothing -> computedElement i r
 
 -- List or tuple of vs, as mk determines; root depends on support

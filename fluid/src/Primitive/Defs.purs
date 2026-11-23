@@ -32,7 +32,7 @@ import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
-import Path (Path, Step(..), Vertex, sourceRoot)
+import Path (Path, Step(..))
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
 import Cxt (Cxt, CxtEntry(Assigned), generalise)
@@ -55,8 +55,8 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Val(..), dictEntries, elementCount, matrixPut)
-import Val.Dependence (deliver, dictionary, fromRel, gval, newValue, position, childAt, reuseAt)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Position, Val(..), dictEntries, elementCount, matrixPut)
+import Val.Dependence (deliver, dictionary, fromRel, newValue, childAt, reuseAt)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -209,7 +209,7 @@ loadJson =
            classes <- askClasses
            json <- loadJsonFile path
            v <- orThrow (jsonVal classes τ json)
-           pure (deliver (Set.fromFoldable (ctl : (sourceRoot <<< fst <$> rs))) (v × construct mempty M.empty))
+           pure (deliver (Set.fromFoldable (ctl : (fst <$> rs))) (v × construct mempty M.empty))
    depOp _ _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
@@ -335,12 +335,12 @@ foldl_with_index =
    where
    depOp :: DepOp
    depOp apply ctl (g : r : d : Nil) = do
-      g' <- newValue (deliver (singleton ctl) (gval g))
-      r' <- newValue (deliver (singleton ctl) (gval r))
-      gval <$> foldM (step g') r' (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
+      g' <- newValue (deliver (singleton ctl) (reuseAt g))
+      r' <- newValue (deliver (singleton ctl) (reuseAt r))
+      reuseAt <$> foldM (step g') r' (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
       where
       step g' acc (k × _) = do
-         key <- newValue (reuseAt (childAt (DictKey k) (position d)))
+         key <- newValue (reuseAt (childAt (DictKey k) d))
          u <- entryValue k d
          apply g' (key : acc : u : Nil)
    depOp _ _ _ = throw "Function, value and dictionary expected"
@@ -369,7 +369,7 @@ dict_intersectionWith =
    where
    depOp :: DepOp
    depOp apply ctl (g : d1 : d2 : Nil) = do
-      g' <- newValue (deliver (singleton ctl) (gval g))
+      g' <- newValue (deliver (singleton ctl) (reuseAt g))
       dictFrom ctl (d1 : d2 : Nil) <$>
          for (L.filter (\(k × _) -> lookup k (dictEntries (snd d2)) /= Nothing) (Dict.toUnfoldable (dictEntries (snd d1))))
             \(k × _) -> (k × _) <$> do
@@ -384,28 +384,28 @@ dict_map =
    where
    depOp :: DepOp
    depOp apply ctl (g : d : Nil) = do
-      g' <- newValue (deliver (singleton ctl) (gval g))
+      g' <- newValue (deliver (singleton ctl) (reuseAt g))
       dictFrom ctl (singleton d) <$>
          for (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
             \(k × _) -> (k × _) <$> (entryValue k d >>= \u -> apply g' (singleton u))
    depOp _ _ _ = throw "Function and dictionary expected"
 
--- Entry k of the dictionary at vertex d, as a value at a new vertex
+-- Entry k of the dictionary at position d, as a value at a new vertex
 entryValue
    :: forall m s
     . MonadState (DepGraph Label s) m
    => Semiring s
    => String
-   -> Vertex × Raw Val
-   -> m (Vertex × Raw Val)
-entryValue k d@(a × _) =
-   newValue $ deliver (Set.fromFoldable [ sourceRoot a, fst (childAt (DictKey k) (position d)) ]) (reuseAt (childAt (DictVal k) (position d)))
+   -> Position
+   -> m Position
+entryValue k d =
+   newValue $ deliver (Set.fromFoldable [ fst d, fst (childAt (DictKey k) d) ]) (reuseAt (childAt (DictVal k) d))
 
--- Dictionary with the values at given vertices; root and keys depend on the roots and keys of the dictionaries ds
-dictFrom :: forall s. Semiring s => Path -> List (Vertex × Raw Val) -> List (String × (Vertex × Raw Val)) -> GVal s
-dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> sourceRoot >>> unitWeight) ds) $
+-- Dictionary with the values at given positions; root and keys depend on the roots and keys of the dictionaries ds
+dictFrom :: forall s. Semiring s => Path -> List Position -> List (String × Position) -> GVal s
+dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> unitWeight) ds) $
    kvs <#> \(k × r) ->
-      (Val unit (Lit (Str k)) × construct (foldMap (\d -> unitWeight (fst (childAt (DictKey k) (position d)))) ds) M.empty) × gval r
+      (Val unit (Lit (Str k)) × construct (foldMap (\d -> unitWeight (fst (childAt (DictKey k) d))) ds) M.empty) × reuseAt r
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

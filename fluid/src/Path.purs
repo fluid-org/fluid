@@ -8,10 +8,11 @@ module Path
    , pathSet
    , sourceAt
    , sourceRoot
+   , sourceVertex
    , ε
    ) where
 
-import Prelude
+import Prelude hiding (absurd)
 
 import Bind (Var)
 import Data.Foldable (foldMap)
@@ -28,7 +29,7 @@ import Data.Show.Generic (genericShow)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
-import Util (class IsEmpty, type (×), singleton, (×))
+import Util (class IsEmpty, type (×), absurd, error, singleton, (×))
 import Util.Map (get, lookup, maplet)
 import Util.Set (class Set, empty, filter, size, union, (∈), (∪))
 
@@ -62,6 +63,10 @@ sourceAt a p = EdgeSrc a : p
 
 sourceRoot :: Vertex -> Path
 sourceRoot a = sourceAt a ε
+
+sourceVertex :: Path -> Vertex
+sourceVertex (EdgeSrc a : _) = a
+sourceVertex _ = error absurd
 
 -- Set of paths; equal sets have equal identities
 newtype PathSet = PathSet Int
