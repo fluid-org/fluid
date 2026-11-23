@@ -77,7 +77,7 @@ instance Paths Label where
    paths (Value v) = Value (paths v)
    paths (Bindings (Env ρ)) = Bindings (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
    paths (Inputs α (Env ρ)) =
-      Inputs (singleton InCtl × α) (Env (mapWithKey (\x -> pathsFrom (Binding x : InEnv : Nil)) ρ))
+      Inputs (singleton InputsCtl × α) (Env (mapWithKey (\x -> pathsFrom (Binding x : InputsEnv : Nil)) ρ))
 
 -- Same as paths, except that each path starts with the reverse of p
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
@@ -308,11 +308,11 @@ newValue (v × δ) = newVertex (Value v) δ <#> (_ × v)
 
 -- Position of the environment at inputs vertex b
 envAt :: Vertex -> Path
-envAt b = sourceAt b (singleton InEnv)
+envAt b = sourceAt b (singleton InputsEnv)
 
 -- Control position at inputs vertex b
 ctlAt :: Vertex -> Path
-ctlAt b = sourceAt b (singleton InCtl)
+ctlAt b = sourceAt b (singleton InputsCtl)
 
 -- Allocate inputs vertex for environment ρ with dependence δ; control position has dependence δ'
 newInputs
@@ -323,7 +323,7 @@ newInputs
    -> Dependence (Set Path) s
    -> Dependence (Set Path) s
    -> m Vertex
-newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InEnv × δ, InCtl × δ' ]))
+newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InputsEnv × δ, InputsCtl × δ' ]))
 
 -- Dependence of each member of an environment
 members :: forall s. Dict (GVal s) -> Map Step (Dependence (Set Path) s)

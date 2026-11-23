@@ -36,8 +36,8 @@ newtype Vertex = Vertex Int
 -- Step to part of value; values include families of values such as environments
 data Step
    = Source Vertex -- of edge
-   | InEnv -- environment of inputs
-   | InCtl -- control input
+   | InputsEnv
+   | InputsCtl
    | Binding Var
    | Field Var
    | Element Int -- of list or tuple
