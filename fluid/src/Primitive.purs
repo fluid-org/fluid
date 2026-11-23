@@ -174,7 +174,7 @@ unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val
 unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 unopFun _ _ = error absurd
 
--- Apply binary operator to the values at two positions; a sequence reuses the elements of the operands
+-- Concatenation and repetition reuse elements of operand sequences
 applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
 applyBinop Add ctl r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (deliver ctl (concatOf List mempty (r : r' : Nil)))
 applyBinop Add ctl r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (deliver ctl (concatOf Tuple mempty (r : r' : Nil)))
