@@ -67,7 +67,7 @@ after inputs@{ ρ, b } ρ' ps
    | otherwise = newInputs ρ'' (extend (envAt b) (members ρ')) ctl <#> { ρ: ρ'', b: _ }
         where
         ρ'' = ρ <+> (fst <$> ρ')
-        ctl = if isEmpty ps then reuse (ctlAt b) else construct (foldMap source ps) Map.empty
+        ctl = if isEmpty ps then reuse (ctlAt b) else construct (control ps) Map.empty
 
 -- Inputs of a premise with control input dependent on the root at vertex a
 controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Vertex -> Inputs -> m Inputs
@@ -409,7 +409,7 @@ eval = { stmt, program }
       call :: V.Fun Unit -> m (GVal s)
       call = case _ of
          V.Closure (Env ρ) ds (Def xs s) -> do
-            b <- newInputs ρ'' (extend p (members ρ')) (construct (source (vertex a)) Map.empty)
+            b <- newInputs ρ'' (extend p (members ρ')) (construct (control (singleton (vertex a))) Map.empty)
             gval <<< asReturns <$> stmt { ρ: ρ'', b } s
             where
             p = sourceAt a (singleton ClosureEnv)
