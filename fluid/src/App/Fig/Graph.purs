@@ -22,7 +22,7 @@ import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Deriv(..), Labelling, Path, SparseRel(..), VisibleGraph, paths, positions, sparseRel)
+import DepGraph (Vertex(..), Labelling, Path, SparseRel(..), VisibleGraph, paths, positions, sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
@@ -33,14 +33,14 @@ import Pretty (prettyP)
 import Util (type (×), MayFail, absurd, definitely', error, (!), (×))
 import Util.Map (get, insert, lookup, maplet, toUnfoldable)
 import Util.Set (empty, unions)
-import Val (BaseVal(..), DerivWithDoc, DictRep(..), MatrixRep(..), Val(..))
+import Val (BaseVal(..), VertexWithDoc, DictRep(..), MatrixRep(..), Val(..))
 
 -- Data sufficient to draw and query a figure without parser or evaluator
 type FigGraph =
    { graph :: VisibleGraph Val DepKind
-   , ins :: Dict DerivWithDoc -- input name ↦ vertex
-   , out :: DerivWithDoc
-   , ιs :: Labelling DerivWithDoc -- documented intermediates
+   , ins :: Dict VertexWithDoc -- input name ↦ vertex
+   , out :: VertexWithDoc
+   , ιs :: Labelling VertexWithDoc -- documented intermediates
    , ignored :: Labelling (Set Path) -- input positions left out of linked queries
    , linking :: Boolean
    , rowFilter :: Maybe Filter
@@ -57,7 +57,7 @@ str =
    , intermediate: "intermediate"
    }
 
-type DerivWithDocRep = Int × Maybe Int
+type VertexWithDocRep = Int × Maybe Int
 
 -- Position in a value as its index under the position ordering
 type PosRep = Int
@@ -71,9 +71,9 @@ type FigGraphRep =
    { classes :: Classes
    , vals :: Array (Int × Json)
    , edges :: Array (Int × Array (Int × RelRep)) -- target ↦ source ↦ relation
-   , ins :: Array (String × DerivWithDocRep)
-   , out :: DerivWithDocRep
-   , intermediates :: Array (Int × DerivWithDocRep)
+   , ins :: Array (String × VertexWithDocRep)
+   , out :: VertexWithDocRep
+   , intermediates :: Array (Int × VertexWithDocRep)
    , ignored :: Array (Int × Array PosRep)
    , linking :: Boolean
    , rowFilter :: Maybe Filter
@@ -81,22 +81,22 @@ type FigGraphRep =
 
 encodeFigGraph :: FigGraph -> MayFail Json
 encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
-   vals <- for (Map.toUnfoldable graph.vals) \(p@(Deriv i) × v) -> bimap (failure p) (i × _) (encodeVal v)
+   vals <- for (Map.toUnfoldable graph.vals) \(p@(Vertex i) × v) -> bimap (failure p) (i × _) (encodeVal v)
    pure $ encodeJson
       ( { classes: unions (classes <$> Map.values graph.vals)
         , vals
         , edges: Map.toUnfoldable graph.edges <#> \(b × rs) ->
              encodeVertex b × (Map.toUnfoldable rs <#> \(a × r) -> encodeVertex a × encodeRel (index b) (index a) r)
-        , ins: map encodeDeriv <$> D.toArrayWithKey (×) ins
-        , out: encodeDeriv out
-        , intermediates: labelling encodeDeriv ιs
+        , ins: map encodeVertexWithDoc <$> D.toArrayWithKey (×) ins
+        , out: encodeVertexWithDoc out
+        , intermediates: labelling encodeVertexWithDoc ιs
         , ignored: Map.toUnfoldable ignored <#> \(a × ps) -> encodeVertex a × Set.toUnfoldable (Set.map (index a) ps)
         , linking
         , rowFilter
         } :: FigGraphRep
       )
    where
-   failure :: Deriv -> String -> String
+   failure :: Vertex -> String -> String
    failure p construct = construct <> " in " <> fromMaybe "doc" (Map.lookup p vertexRole)
       <> " is currently unsupported in a figure graph"
 
@@ -108,17 +108,17 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    labelling :: forall a b. (a -> b) -> Labelling a -> Array (Int × b)
    labelling f = Map.toUnfoldable >>> map (bimap encodeVertex f)
 
-   encodeVertex :: Deriv -> Int
-   encodeVertex (Deriv a) = a
+   encodeVertex :: Vertex -> Int
+   encodeVertex (Vertex a) = a
 
-   encodeDeriv :: DerivWithDoc -> DerivWithDocRep
-   encodeDeriv (a × d) = encodeVertex a × (encodeVertex <$> d)
+   encodeVertexWithDoc :: VertexWithDoc -> VertexWithDocRep
+   encodeVertexWithDoc (a × d) = encodeVertex a × (encodeVertex <$> d)
 
    -- Index of every position at each vertex
    indices :: Labelling (Map.Map Path PosRep)
    indices = graph.vals <#> \v -> Map.fromFoldable (mapWithIndex (\i (p × _) -> p × i) (positions (paths v)))
 
-   index :: Deriv -> Path -> PosRep
+   index :: Vertex -> Path -> PosRep
    index a p = get p (get a indices)
 
    -- Relation with every target position indexed by tgt; src indexes every source position
@@ -131,30 +131,30 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
 decodeFigGraph :: Json -> MayFail FigGraph
 decodeFigGraph json = do
    rep :: FigGraphRep <- lmap printJsonDecodeError (decodeJson json)
-   vals <- Map.fromFoldable <$> traverse (\(a × v) -> (Deriv a × _) <$> decodeVal rep.classes v) rep.vals
+   vals <- Map.fromFoldable <$> traverse (\(a × v) -> (Vertex a × _) <$> decodeVal rep.classes v) rep.vals
    let
       -- Paths at each vertex in the position ordering
       pathsAt = vals <#> \v -> A.fromFoldable (fst <$> positions (paths v))
-      path a i = get (Deriv a) pathsAt ! i
+      path a i = get (Vertex a) pathsAt ! i
    pure
       { graph:
            { vals
            , edges: Map.fromFoldable $ rep.edges <#> \(b × rs) ->
-                Deriv b × Map.fromFoldable (rs <#> \(a × r) -> Deriv a × decodeRel (path b) (path a) r)
+                Vertex b × Map.fromFoldable (rs <#> \(a × r) -> Vertex a × decodeRel (path b) (path a) r)
            }
-      , ins: D.fromFoldable (map decodeDeriv <$> rep.ins)
-      , out: decodeDeriv rep.out
-      , ιs: labelling decodeDeriv rep.intermediates
-      , ignored: Map.fromFoldable (rep.ignored <#> \(a × is) -> Deriv a × Set.fromFoldable (path a <$> is))
+      , ins: D.fromFoldable (map decodeVertexWithDoc <$> rep.ins)
+      , out: decodeVertexWithDoc rep.out
+      , ιs: labelling decodeVertexWithDoc rep.intermediates
+      , ignored: Map.fromFoldable (rep.ignored <#> \(a × is) -> Vertex a × Set.fromFoldable (path a <$> is))
       , linking: rep.linking
       , rowFilter: rep.rowFilter
       }
    where
    labelling :: forall a b. (a -> b) -> Array (Int × a) -> Labelling b
-   labelling f = map (bimap Deriv f) >>> Map.fromFoldable
+   labelling f = map (bimap Vertex f) >>> Map.fromFoldable
 
-   decodeDeriv :: DerivWithDocRep -> DerivWithDoc
-   decodeDeriv (p × d) = Deriv p × (Deriv <$> d)
+   decodeVertexWithDoc :: VertexWithDocRep -> VertexWithDoc
+   decodeVertexWithDoc (p × d) = Vertex p × (Vertex <$> d)
 
    -- Relation with every target index mapped to a path by tgt; src maps every source index
    decodeRel :: (PosRep -> Path) -> (PosRep -> Path) -> RelRep -> SparseRel DepKind

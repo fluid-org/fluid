@@ -26,35 +26,35 @@ import Util.Map (get, maplet)
 import Util.Set ((∪))
 import Unsafe.Reference (unsafeRefEq)
 
-newtype Deriv = Deriv Int
+newtype Vertex = Vertex Int
 
--- Step from a value to one of its parts, or from a family of values to one of its members
+-- Step to part of value or member of family
 data Step
-   = Vertex Deriv
-   | Environment -- environment of inputs
-   | Ctl -- control position of inputs
-   | Binding Var -- variable of environment
-   | Field Var -- field of object
-   | Element Int -- element of list or tuple
-   | Key String -- key of dictionary entry
+   = Source Vertex -- of edge
+   | InEnv -- environment of inputs
+   | InCtl -- control input
+   | Binding Var
+   | Field Var
+   | Element Int -- of list or tuple
+   | Key String -- of dictionary entry
    | Entry String -- value of dictionary entry
    | MatrixElement Int Int
-   | RowCount -- of matrix
-   | ColumnCount
+   | MatrixRows
+   | MatrixCols
    | Uncl -- environment of closure
-   | PartialFun -- function of partial application
-   | PartialArg Int -- stored argument of partial application
+   | PartialFun
+   | PartialArg Int
 
 type Path = List Step
 
 ε :: Path
 ε = Nil
 
--- Position p in the value of vertex a
-at :: Deriv -> Path -> Path
-at a p = Vertex a : p
+-- Position p of source vertex a
+at :: Vertex -> Path -> Path
+at a p = Source a : p
 
-vertex :: Deriv -> Path
+vertex :: Vertex -> Path
 vertex a = at a ε
 
 -- Whether the step leads from a function value to a value held by the function
@@ -233,7 +233,7 @@ extend p δs
         restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
 -- Vertices which hold the source positions
-vertices :: forall s. Dependence s -> Set Deriv
+vertices :: forall s. Dependence s -> Set Vertex
 vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    where
    ofRestructuring (Restructuring ps ψ) = Set.mapMaybe L.head ps ∪ case ψ of
@@ -243,34 +243,34 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
       Extend θ' θs -> ofRestructuring θ' ∪ foldMap ofRestructuring θs
    ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
 
-   holder (Vertex a) = a
+   holder (Source a) = a
    holder _ = error absurd
 
-type Labelling a = Map Deriv a
+type Labelling a = Map Vertex a
 type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
 
 -- Vertices labelled by values of shape f; at most one edge into each vertex
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
-   , docs :: Labelling Deriv -- documented vertex ↦ vertex of doc
-   , edges :: Labelling (Set Deriv × Dependence s) -- target ↦ sources, with dependence on their values
+   , docs :: Labelling Vertex -- documented vertex ↦ vertex of doc
+   , edges :: Labelling (Set Vertex × Dependence s) -- target ↦ sources, with dependence on their values
    }
 
 emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
 
-valAt :: forall f s. DepGraph f s -> Deriv -> f Unit
+valAt :: forall f s. DepGraph f s -> Vertex -> f Unit
 valAt g a = get a g.vals
 
-newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence s -> m Deriv
+newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence s -> m Vertex
 newVertex v δ = do
    size <- gets _.size
-   let a = Deriv size
+   let a = Vertex size
    modify_ \g -> g { size = size + 1, vals = Map.insert a v g.vals, edges = Map.insert a (vertices δ × δ) g.edges }
    pure a
 
-attachDoc :: forall f s m. MonadState (DepGraph f s) m => Deriv -> Deriv -> m Unit
+attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
 attachDoc a b = modify_ \g -> g { docs = Map.insert a b g.docs }
 
 -- Pair present exactly when its weight is non-zero
@@ -292,7 +292,7 @@ type VisibleGraph (f :: Type -> Type) s =
    }
 
 -- Relies on edges running from earlier to later vertices in evaluation order.
-materialise :: forall f s. Paths f => DepSemiring s => DepGraph f s -> Set Deriv -> VisibleGraph f s
+materialise :: forall f s. Paths f => DepSemiring s => DepGraph f s -> Set Vertex -> VisibleGraph f s
 materialise g visible =
    { vals
    , edges: (foldl step { θs: Map.empty, rs: Map.empty, edges: Map.empty } (Map.toUnfoldable g.edges :: List _)).edges
@@ -303,41 +303,41 @@ materialise g visible =
    -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
    step { θs, rs, edges } (a × (_ × δ)) =
       if Set.member a visible then
-         { θs: free a (Map.insert (Vertex a) (restructuring (Reuse (singleton (Vertex a)))) θs)
+         { θs: free a (Map.insert (Source a) (restructuring (Reuse (singleton (Source a)))) θs)
          , rs: free a rs
          , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
          }
-      else { θs: free a (Map.insert (Vertex a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (Vertex a) rs), edges }
+      else { θs: free a (Map.insert (Source a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (Source a) rs), edges }
       where
       θ' × r' = compose δ (restructuring (Family θs) × Rel mempty rs)
 
    -- Free the entry of each vertex which has a as last dependent
-   free :: forall a. Deriv -> Endo (Map Step a)
-   free a xs = foldr (Vertex >>> Map.delete) xs (fromMaybe Nil (lookup a byLastDependent))
+   free :: forall a. Vertex -> Endo (Map Step a)
+   free a xs = foldr (Source >>> Map.delete) xs (fromMaybe Nil (lookup a byLastDependent))
 
    -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
-   lastDependent :: Labelling Deriv
+   lastDependent :: Labelling Vertex
    lastDependent = foldlWithIndex dependent Map.empty g.edges
       where
       dependent a m (bs × _) = foldl (\m' b -> Map.insert b a m') (Map.insert a a m) bs
 
-   byLastDependent :: Labelling (List Deriv)
+   byLastDependent :: Labelling (List Vertex)
    byLastDependent = fromFoldableWith (<>) $
       (Map.toUnfoldable lastDependent :: List _) <#> \(b × a) -> a × (b : Nil)
 
    -- Edges into a visible vertex from each visible vertex
-   edgesInto :: Deriv -> Dependence s -> Labelling (Map Path (Map Path s))
+   edgesInto :: Vertex -> Dependence s -> Labelling (Map Path (Map Path s))
    edgesInto a δ = foldl (unionWith Map.union) Map.empty $
       positions (paths (get a vals)) <#> \(q × _) -> maplet q <$> bySource (weights (supp δ q))
 
    bySource :: Map Path s -> Labelling (Map Path s)
    bySource row = fromFoldableWith Map.union $
       (Map.toUnfoldable row :: List _) <#> case _ of
-         (Vertex b : p) × w -> b × maplet p w
+         (Source b : p) × w -> b × maplet p w
          _ -> error absurd
 
 -- Restrict every dependence relation to the positions where the predicate holds.
-mask :: forall f s. Paths f => (Deriv -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
+mask :: forall f s. Paths f => (Vertex -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
 mask keep g = g { edges = mapWithIndex (\b -> mapWithIndex (rel b)) g.edges }
    where
    kept = mapWithIndex (\a -> keep a >>> selected) g.vals
@@ -358,7 +358,7 @@ applySparse r w = foldl (unionWith add) Map.empty $
    mapWithIndex (\p w' -> maybe Map.empty (map (w' * _)) (lookup p r)) w
 
 -- Add weights at a vertex.
-add' :: forall s. Semiring s => Deriv -> Map Path s -> Labelling (Map Path s) -> Labelling (Map Path s)
+add' :: forall s. Semiring s => Vertex -> Map Path s -> Labelling (Map Path s) -> Labelling (Map Path s)
 add' = insertWith (unionWith add)
 
 -- Weight 1 at the selected positions.
@@ -397,8 +397,8 @@ fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable 
 -- ======================
 -- boilerplate
 -- ======================
-derive instance Eq Deriv
-derive instance Ord Deriv
+derive instance Eq Vertex
+derive instance Ord Vertex
 derive instance Eq Step
 derive instance Ord Step
 derive instance Generic Step _
@@ -406,5 +406,5 @@ derive instance Generic Step _
 instance Show Step where
    show = genericShow
 
-derive instance Newtype Deriv _
-derive newtype instance Show Deriv
+derive instance Newtype Vertex _
+derive newtype instance Show Vertex

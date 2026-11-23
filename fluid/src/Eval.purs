@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Deriv, Path, Sources, Step(..), VisibleGraph, at, attachDoc, construct, control, extend, materialise, reuse, source, tupling, vertex)
+import DepGraph (DepGraph, Vertex, Path, Sources, Step(..), VisibleGraph, at, attachDoc, construct, control, extend, materialise, reuse, source, tupling, vertex)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -42,12 +42,12 @@ import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, members, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, part, position, positionsIn, project, reuseAt, sequenceOf, valAt)
 
 -- Environment, and inputs vertex which holds environment
-type Inputs = { ρ :: Dict (Raw Val), b :: Deriv }
+type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
 
 -- Returned value, or bindings introduced and any new sources of the control input
-data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Set Path)
+data Result s = Returns (Vertex × Raw Val) | Assigns (Dict (GVal s)) (Set Path)
 
-asReturns :: forall s. Result s -> Deriv × Raw Val
+asReturns :: forall s. Result s -> Vertex × Raw Val
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
@@ -70,7 +70,7 @@ after inputs@{ ρ, b } ρ' ps
         ctl = if isEmpty ps then reuse (ctlAt b) else construct (foldMap source ps) Map.empty
 
 -- Inputs of a premise with control input dependent on the root at vertex a
-controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Deriv -> Inputs -> m Inputs
+controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Vertex -> Inputs -> m Inputs
 controlledBy a inputs = after inputs empty (singleton (vertex a))
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
@@ -138,7 +138,7 @@ closeDefs ctl p ρ ds = ds <#> \d ->
       closure ctl p (restrict (fv ds' ∪ fv d) ρ) ds' d
 
 -- Concatenation of the lists at vertices rs; root also depends on srcs
-concatLists :: forall s. Semiring s => Sources s -> List (Deriv × Raw Val) -> GVal s
+concatLists :: forall s. Semiring s => Sources s -> List (Vertex × Raw Val) -> GVal s
 concatLists srcs rs = sequenceOf V.List (srcs <> foldMap (fst >>> vertex >>> source) rs) $
    rs >>= \r@(a × _) -> deliver (singleton (vertex a)) <<< reuseAt <$> elementsAt (position r)
 
@@ -151,11 +151,11 @@ eval
    :: forall m s
     . MonadEval s m
    => { stmt :: Inputs -> Stmt -> m (Result s)
-      , program :: Inputs -> Stmt -> m (Deriv × Raw Val)
+      , program :: Inputs -> Stmt -> m (Vertex × Raw Val)
       }
 eval = { stmt, program }
    where
-   expr :: Inputs -> Expr -> m (Deriv × Raw Val)
+   expr :: Inputs -> Expr -> m (Vertex × Raw Val)
    expr inputs e'@(DocExpr e _) = do
       r <- value inputs e' >>= newValue
       doc <- after inputs (maplet varThis (gval r)) empty >>= flip expr e
@@ -193,12 +193,12 @@ eval = { stmt, program }
          pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × part (Element 0) v × part (Element 1) v))) ×
             construct (control ctl)
                ( Map.fromFoldable $
-                    [ RowCount × reuse (at a (singleton (Element 0))), ColumnCount × reuse (at a (singleton (Element 1))) ]
+                    [ MatrixRows × reuse (at a (singleton (Element 0))), MatrixCols × reuse (at a (singleton (Element 1))) ]
                        <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (a' × _) -> MatrixElement i j × reuse (vertex a'))) rss)
                )
          where
          -- Index n along dimension k of the matrix with dimensions at vertex a
-         index :: Deriv -> Int -> Int -> GVal s
+         index :: Vertex -> Int -> Int -> GVal s
          index a k n = Val unit (V.Lit (Int n)) × construct (control (singleton (at a (singleton (Element k))))) Map.empty
       Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
       Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (control ctl) Map.empty)
@@ -234,7 +234,7 @@ eval = { stmt, program }
             _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
          where
          -- Part u of the value at vertex r, at the index at vertex r'; ps are further control positions
-         subscript :: Deriv × Raw Val -> Deriv × Raw Val -> GVal s -> Set Path -> m (GVal s)
+         subscript :: Vertex × Raw Val -> Vertex × Raw Val -> GVal s -> Set Path -> m (GVal s)
          subscript r r' u ps = pure (deliver (singleton (vertex (fst r)) ∪ ps ∪ positionsIn r') u)
       ModMember q x -> do
          { modules } <- moduleStore
@@ -263,14 +263,14 @@ eval = { stmt, program }
       ctl = singleton (ctlAt b)
 
    -- Vertices of key e and value e'
-   dictEntry :: Inputs -> Expr -> Expr -> m ((Deriv × Raw Val) × (Deriv × Raw Val))
+   dictEntry :: Inputs -> Expr -> Expr -> m ((Vertex × Raw Val) × (Vertex × Raw Val))
    dictEntry inputs e e' = do
       k <- expr inputs e
       _ <- orThrow (unpack string (snd k))
       (k × _) <$> expr inputs e'
 
    -- Tuple of key and value
-   entry :: (Deriv × Raw Val) × (Deriv × Raw Val) -> GVal s
+   entry :: (Vertex × Raw Val) × (Vertex × Raw Val) -> GVal s
    entry (k × r) = sequenceOf V.Tuple mempty (gval k : gval r : Nil)
 
    funName :: Expr -> String
@@ -279,7 +279,7 @@ eval = { stmt, program }
    funName _ = "unknown"
 
    -- Evaluate e as a Boolean at vertex r
-   condition :: Inputs -> Expr -> m { holds :: Boolean, r :: Deriv × Raw Val }
+   condition :: Inputs -> Expr -> m { holds :: Boolean, r :: Vertex × Raw Val }
    condition inputs e = do
       r <- expr inputs e
       holds × _ <- orThrow (unpack boolean (snd r))
@@ -289,7 +289,7 @@ eval = { stmt, program }
    singletonList { b } v = sequenceOf V.List (control (singleton (ctlAt b))) (v : Nil)
 
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
-   qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m (Deriv × Raw Val)
+   qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m (Vertex × Raw Val)
    qualifiers body inputs gs = elements gs >>= newValue
       where
       -- List of elements, before vertex is allocated
@@ -368,7 +368,7 @@ eval = { stmt, program }
       where
       constant = construct (control (singleton (ctlAt b))) Map.empty
 
-   program :: Inputs -> Stmt -> m (Deriv × Raw Val)
+   program :: Inputs -> Stmt -> m (Vertex × Raw Val)
    program inputs s = output inputs s >>= \r -> newValue (gval r) $> r
       where
       output inputs' (Seq t t') = asAssigns <$> stmt inputs' t >>= \(ρ × ps) -> after inputs' ρ ps >>= flip output t'
@@ -376,12 +376,12 @@ eval = { stmt, program }
       output _ _ = error absurd
 
    -- Apply f to rs at a new vertex; a partial application depends on control position ctl
-   application :: Path -> Deriv × Raw Val -> List (Deriv × Raw Val) -> m (Deriv × Raw Val)
+   application :: Path -> Vertex × Raw Val -> List (Vertex × Raw Val) -> m (Vertex × Raw Val)
    application ctl f rs = apply ctl f rs >>= newValue
 
    -- Apply f to rs, partially if rs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Path -> Deriv × Raw Val -> List (Deriv × Raw Val) -> m (GVal s)
+   apply :: Path -> Vertex × Raw Val -> List (Vertex × Raw Val) -> m (GVal s)
    apply ctl f@(a × v) rs = case v of
       Val _ (V.Fun (V.Partial _ us)) -> do
          f' <- newValue (deliver (singleton (vertex a)) (reuseAt (project PartialFun (position f))))
@@ -504,10 +504,10 @@ load q = do
 
 type Eval =
    { g :: DepGraph Label DepKind
-   , out :: Deriv
+   , out :: Vertex
    }
 
-visible :: Eval -> Set Deriv
+visible :: Eval -> Set Vertex
 visible { g, out } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ singleton out
 
 -- Graph of the visible vertices, which are labelled by values
@@ -517,7 +517,7 @@ visibleGraph r = graph { vals = V.value <$> graph.vals }
    graph = materialise r.g (visible r)
 
 -- Vertices documented with the name x.
-documentedAs :: forall s. DepGraph Label s -> String -> Array Deriv
+documentedAs :: forall s. DepGraph Label s -> String -> Array Vertex
 documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val unit (V.Lit (Str x))) g.docs))
 
 evalProgram

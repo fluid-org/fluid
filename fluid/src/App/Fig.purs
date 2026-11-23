@@ -25,7 +25,7 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error, message)
-import DepGraph (ConjugatePair, Deriv, Labelling, Path, dimap, mask, paths, queries, selected)
+import DepGraph (ConjugatePair, Vertex, Labelling, Path, dimap, mask, paths, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
@@ -61,7 +61,7 @@ setInputView x δvw fig = fig
    { in_views = insert x (lookup x fig.in_views # join <#> δvw) fig.in_views
    }
 
-selectIntermediate :: Deriv -> Selector ValWithDoc -> Endo Fig
+selectIntermediate :: Vertex -> Selector ValWithDoc -> Endo Fig
 selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
    ι' × selType = first (\u -> Map.insert p u ι) (δv (get p ι))
@@ -70,7 +70,7 @@ selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ',
       Transient -> ρ × v × dir × ι'
       _ -> ρ × v × dir × ι
 
-setIntermediateView :: Deriv -> ViewSetter Fig View
+setIntermediateView :: Vertex -> ViewSetter Fig View
 setIntermediateView p δvw fig =
    fig { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
 

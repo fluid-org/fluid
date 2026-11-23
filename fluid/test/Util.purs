@@ -19,7 +19,7 @@ import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (Eval, documentedAs, evalProgram, visibleGraph)
-import DepGraph (DepGraph, Deriv, Labelling, Path, bwd, fwd, selected)
+import DepGraph (DepGraph, Vertex, Labelling, Path, bwd, fwd, selected)
 import File (File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig, throwParseFailure)
@@ -80,14 +80,14 @@ depName file = case _ of
       Doc vertex -> "doc of " <> name vertex
 
 -- depGraph holds the vertices created by loading the modules, before the program ran.
-deriv :: forall s. DepGraph Label s -> Eval -> VertexSpec -> Deriv
-deriv depGraph eval@{ g: g@{ docs }, out } = case _ of
+vertexOf :: forall s. DepGraph Label s -> Eval -> VertexSpec -> Vertex
+vertexOf depGraph eval@{ g: g@{ docs }, out } = case _ of
    Output -> out
    Input x -> case documentedAs g x of
       [ p ] -> p
       _ -> error ("no vertex documented " <> show x)
    Intermediate n -> intermediates ! n
-   Doc vertex -> get (deriv depGraph eval vertex) docs
+   Doc vertex -> get (vertexOf depGraph eval vertex) docs
    where
    intermediates = A.filter (not <<< (_ `Map.member` depGraph.vals)) (A.fromFoldable (Map.keys docs))
 
@@ -110,7 +110,7 @@ selection
 selection depGraph eval vertex δv =
    maplet p (selected (selectOn δv objArg (valAt eval.g p)))
    where
-   p = deriv depGraph eval vertex
+   p = vertexOf depGraph eval vertex
 
 testDep :: forall m. MonadProgram m => File -> Query -> m Unit
 testDep file query = do

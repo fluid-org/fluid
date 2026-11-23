@@ -41,7 +41,7 @@ import Effect.Exception (Error)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import Control.Monad.State (class MonadState)
-import DepGraph (DepGraph, Deriv, Path, Step(..), construct, control, source, vertex)
+import DepGraph (DepGraph, Vertex, Path, Step(..), construct, control, source, vertex)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
 import Literal (Literal(..), showFloat)
 import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
@@ -394,8 +394,8 @@ entryValue
     . MonadState (DepGraph Label s) m
    => Semiring s
    => String
-   -> Deriv × Raw Val
-   -> m (Deriv × Raw Val)
+   -> Vertex × Raw Val
+   -> m (Vertex × Raw Val)
 entryValue k d@(a × _) =
    newValue $ deliver (Set.fromFoldable [ vertex a, fst (project (Key k) (position d)) ]) (reuseAt (project (Entry k) (position d)))
 
@@ -404,7 +404,7 @@ ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
 ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the values at given vertices; root and keys depend on the roots and keys of the dictionaries ds
-dictFrom :: forall s. Semiring s => Path -> List (Deriv × Raw Val) -> List (String × (Deriv × Raw Val)) -> GVal s
+dictFrom :: forall s. Semiring s => Path -> List (Vertex × Raw Val) -> List (String × (Vertex × Raw Val)) -> GVal s
 dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> vertex >>> source) ds) $
    kvs <#> \(k × r) ->
       (Val unit (Lit (Str k)) × construct (foldMap (\d -> source (fst (project (Key k) (position d)))) ds) M.empty) × gval r
