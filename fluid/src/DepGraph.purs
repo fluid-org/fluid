@@ -33,7 +33,7 @@ positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.revers
 selected :: forall f. Paths f => f Boolean -> Set Path
 selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
 
--- Control sources, then non-zero weight of every other source
+-- Control sources as a set of type c, then non-zero weight of every other source
 data Support c s = Support c (Map Path s)
 
 instance (Set c Path, Semiring s) => Semigroup (Support c s) where
