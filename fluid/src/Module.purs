@@ -30,7 +30,7 @@ import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
 import File (class MonadLoad, File(..), FileCxt(..), hasDirectory, loadModuleSource, manifest, modulePath, withClasses)
-import DepGraph (PosLineage, emptyGraph)
+import DepGraph (emptyGraph)
 import Module.Defs (ModuleName, containing, implicit, implicitFor, parents)
 import Parse (parseModule, parseProgram)
 import Primitive.Defs (predefined, predefinedClasses)
@@ -44,7 +44,7 @@ import Val (class MonadProgram, GVal, ModuleState(..), modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
-type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal (PosLineage DepKind)), classes :: ClassTable }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal DepKind), classes :: ClassTable }
 
 -- Message for source of program or module that fails to parse
 newtype ParseFailure = ParseFailure String
@@ -94,7 +94,7 @@ loadTopLevel
     . MonadProgram m
    => Map ModuleName Module
    -> List S.Import
-   -> m (Dict (GVal (PosLineage DepKind)))
+   -> m (Dict (GVal DepKind))
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- for predefined \(_ × ρ) -> Loaded <$> Dep.predefinedModule ρ

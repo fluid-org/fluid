@@ -3,6 +3,7 @@ module Primitive where
 import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
+import Control.Apply (lift2)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl)
 import Data.Int (toNumber)
@@ -20,15 +21,16 @@ import Data.String as String
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
-import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (MayFail, type (+), type (×), absurd, definitely', error, singleton, (×))
+import Util (MayFail, type (+), type (×), Endo, absurd, definitely', error, orThrow, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, fromRel, root, ctrlEdge)
+import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
+import Val.Dependence (applyDepFun)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -129,6 +131,10 @@ boolean =
    }
 
 -- Need to be careful about type variables escaping higher-rank quantification.
+-- Foreign function with dependence given by f
+fromDepFun :: DepFun -> DepOp
+fromDepFun f _ ctl rs = orThrow (applyDepFun f (singleton ctl) rs)
+
 type Unary i o a =
    { i :: ToFrom i a
    , o :: ToFrom o a
@@ -140,10 +146,10 @@ unary id f =
    id × Val bot (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, depOp: fromRel (unsafePartial depRel) }
+   op = ForeignOp' { arity: 1, depOp: fromDepFun (unsafePartial depFun) }
 
-   depRel :: forall a. Partial => List (Val a) -> MayFail (Val a)
-   depRel (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))
+   depFun :: forall a. Partial => List (Val a) -> MayFail (Val a)
+   depFun (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b
@@ -160,13 +166,13 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
-binopRel :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
-binopRel op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
-binopRel _ _ = error absurd
+binopFun :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
+binopFun op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopFun _ _ = error absurd
 
-unopRel :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
-unopRel op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
-unopRel _ _ = error absurd
+unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
+unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
+unopFun _ _ = error absurd
 
 type Operand = Int + Number + String
 
@@ -261,18 +267,28 @@ repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    where
    deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
 
+-- Control edge from β to the whole of v
+ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
+ctrlEdge β v = lift2 add v (mul (ctrlWeight * β) <$> unitSection v)
+   where
+   -- Weight 1 at every position except beneath the root of a closure
+   unitSection :: Endo (Val a)
+   unitSection (Val _ u) = Val one case u of
+      Obj c xvs -> Obj c (map unitSection <$> xvs)
+      List vs -> List (unitSection <$> vs)
+      Tuple vs -> Tuple (unitSection <$> vs)
+      Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v') -> one × unitSection v') <$> d))
+      Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
+      Fun φ -> Fun (φ $> zero)
+      _ -> u
+
+-- Control edge from β to key and whole value of an entry
+ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
+ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
+
 -- Concatenate sequences given as pairs of root and elements; elements gain control edge from root of same sequence
 concat :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
 concat seqs = A.concatMap (\(α × vs) -> ctrlEdge α <$> vs) (A.fromFoldable seqs) × Set.fromFoldable (fst <$> seqs)
-
-concatLists :: forall a. DepSemiring a => List (Val a) -> Val a
-concatLists vs = Val (foldl add zero αs) (List us)
-   where
-   items :: Val a -> Array (Val a)
-   items (Val _ (List vs')) = vs'
-   items _ = error absurd
-
-   us × αs = concat (vs <#> \v -> root v × items v)
 
 repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
 repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps

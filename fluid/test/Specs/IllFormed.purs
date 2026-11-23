@@ -10,7 +10,7 @@ illFormed_cases =
    [ { file: "bare_module.fld", expected_error: "module 'qual_lib' is not a value" }
    , { file: "capture_redefined_class.fld", expected_error: "Declared twice: 'C'" }
    , { file: "constr_dup_keyword.fld", expected_error: "Class 'Coord' keyword fields mismatch: expected 'x', 'y'; got 'x', 'x', 'y'" }
-   , { file: "dict_attr.fld", expected_error: "Values of type dict[str, int] have no attributes" }
+   , { file: "dict_attr.fld", expected_error: "Values of type dict[str, int] do not have attributes" }
    , { file: "from_import_arity.fld", expected_error: "'Derived' expects 2 argument(s); got 1" }
    , { file: "from_import_bad_ancestor.fld", expected_error: "Unbound name: 'z'\nChecking module 'bad_pkg'" }
    , { file: "from_import_loads_ancestor.fld", expected_error: "AssertionError" }

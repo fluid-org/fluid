@@ -18,15 +18,15 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
-import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for_, sequence_)
 import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error, message)
-import DepGraph (ConjugatePair, Deriv, Labelling, Pos, dimap, mapPositions, mask, queries, selected)
+import DepGraph (Labelling, VisibleGraph, bwd, fwd, mask, paths, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
+import Path (Vertex)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
 import Util (type (×), Endo, spyWhen, (×))
@@ -61,7 +61,7 @@ setInputView x δvw fig = fig
    { in_views = insert x (lookup x fig.in_views # join <#> δvw) fig.in_views
    }
 
-selectIntermediate :: Deriv -> Selector ValWithDoc -> Endo Fig
+selectIntermediate :: Vertex -> Selector ValWithDoc -> Endo Fig
 selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ', v = v', dir = dir' }
    where
    ι' × selType = first (\u -> Map.insert p u ι) (δv (get p ι))
@@ -70,7 +70,7 @@ selectIntermediate p δv fig@{ ι, dir, ρ, v } = fig { ι = ι_final, ρ = ρ',
       Transient -> ρ × v × dir × ι'
       _ -> ρ × v × dir × ι
 
-setIntermediateView :: Deriv -> ViewSetter Fig View
+setIntermediateView :: Vertex -> ViewSetter Fig View
 setIntermediateView p δvw fig =
    fig { intermediate_views = Map.insert p (Map.lookup p fig.intermediate_views # join <#> δvw) fig.intermediate_views }
 
@@ -131,11 +131,14 @@ drawLoaded divId = either failed loaded
    failed err = log (show err) *> void (placeholder >>= setAttrs [ classes [ "fig-error" ] ] >>= setText (message err))
    loaded fig = drawFig divId fig *> (placeholder >>= remove)
 
+-- Forward query with backward query as its transpose
+type Queries = { fwd :: Endo (Labelling (Val 𝔹)), bwd :: Endo (Labelling (Val 𝔹)) }
+
 -- Queries over Boolean selections.
-boolean
-   :: ConjugatePair (Labelling (Set Pos)) (Labelling (Val DepKind))
-   -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
-boolean = dimap (map selected) (map (map (_ /= Zero)))
+boolean :: VisibleGraph Val DepKind -> Queries
+boolean g = { fwd: query (fwd g), bwd: query (bwd g) }
+   where
+   query f = map selected >>> f >>> map (map (_ /= Zero))
 
 figure :: FigGraph -> Fig
 figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
@@ -158,15 +161,13 @@ figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
    nothing = map (const false) <$> graph.vals
 
    -- Queries over the whole graph; queries restricted to data positions other than ignored positions
-   unmasked = boolean (queries graph)
-   masked = boolean $ queries $ graph # mask \p v ->
-      maybe (dataPositions v) (\is -> lift2 (\b b' -> b && not b') (dataPositions v) (mapPositions (_ ∈ is) v))
+   unmasked = boolean graph
+   masked = boolean $ graph # mask \p v ->
+      maybe (dataPositions v) (\ps -> lift2 (\b b' -> b && not b') (dataPositions v) (paths v <#> \(q × _) -> q ∈ ps))
          (Map.lookup p ignored)
 
    -- Positions not reached backwards from the output; positions not reached forwards from any input
-   inert
-      :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
-      -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
+   inert :: Queries -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
    inert { fwd, bwd } =
       { bwd: map not <$> bwd (unval out (val everything out))
       , fwd: map not <$> fwd (Map.filterKeys (_ ∈ inputVertices) everything)

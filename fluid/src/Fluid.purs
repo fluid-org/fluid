@@ -2,7 +2,7 @@ module Fluid where
 
 import Prelude
 
-import App.Fig.Build (JsonOptions, figGraph, optionsFromJson)
+import App.Fig.Build (JsonOptions, figGraphTimed, optionsFromJson)
 import App.Fig.Graph (encodeFigGraph)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
@@ -56,6 +56,7 @@ type FileArgs =
 type BuildArgs =
    { specs :: NonEmptyList String -- JSON files of figure options
    , out :: String -- directory for figure graphs
+   , timing :: Boolean
    }
 
 data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Build BuildArgs | Manifest (NonEmptyList String)
@@ -71,8 +72,9 @@ parseFileArgs = ado
 parseBuildArgs :: Parser BuildArgs
 parseBuildArgs = ado
    out <- strOption (long "out" <> short 'o' <> help "Directory for figure graphs")
+   timing <- switch (long "timing" <> help "Print times of evaluation and materialisation")
    specs <- some (strArgument (metavar "SPEC" <> help "JSON file of figure options"))
-   in { specs, out }
+   in { specs, out, timing }
 
 parseManifest :: Parser (NonEmptyList String)
 parseManifest = some (strArgument (metavar "DIR" <> help "Directory to write manifests under"))
@@ -96,7 +98,7 @@ dispatchCommand (Check args) = report args (stages args (const (pure Nothing)))
 dispatchCommand (Evaluate args) = report args $ stages args case _ of
    AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, out } -> Just (prettyP (valAt g out))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
-dispatchCommand (Build { specs, out }) = do
+dispatchCommand (Build { specs, out, timing }) = do
    mkdir' out { recursive: true, mode: permsAll }
    for_ specs \spec -> withMsg spec do
       json <- readTextFile UTF8 spec >>= jsonParser >>> orThrow
@@ -104,9 +106,12 @@ dispatchCommand (Build { specs, out }) = do
       options :: JsonOptions <- decode json
       fluidSrc <- readTextFile UTF8 program
       let options'@{ fluidSrcPaths } = optionsFromJson options
-      graph <- runNodeT (fileCxtIn (Folder (dirname program))) $ withRoots fluidSrcPaths $
-         figGraph options' fluidSrc >>= encodeFigGraph >>> orThrow
+      graph × times <- runNodeT (fileCxtIn (Folder (dirname program))) $ withRoots fluidSrcPaths do
+         fig × times <- figGraphTimed options' fluidSrc
+         (_ × times) <$> orThrow (encodeFigGraph fig)
       writeTextFile UTF8 (concat [ out, basenameWithoutExt spec ".json" <> ".json" ]) (stringify graph)
+      when timing $ log $
+         spec <> ": evaluate " <> show times.evaluate <> " ms, materialise " <> show times.materialise <> " ms"
    where
    decode :: forall a. DecodeJson a => Json -> Aff a
    decode = decodeJson >>> lmap printJsonDecodeError >>> orThrow

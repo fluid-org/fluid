@@ -16,27 +16,28 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Bitraversable (bitraverse)
 import Data.Foldable (class Foldable, foldMapDefaultL, foldl, foldrDefault)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:), zipWith)
-import Data.List ((!!), range, take) as L
+import Data.List ((!!), range, reverse, take) as L
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.String.CodePoints (codePointAt, length, singleton) as S
 import Data.Set as Set
-import Data.Tuple (snd)
-import Data.Traversable (class Traversable, sequence, sequenceDefault, traverse)
+import Data.Tuple (fst, snd)
+import Data.Traversable (class Traversable, sequenceDefault, traverse)
 import Dict (Dict)
 import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (InEdges, DepGraph, Labelling, PosLineage, at, emptyGraph, newVertex, plus, scale, zeros)
-import DepGraph (Deriv, valAt) as Dep
-import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Raw, ctrlWeight, (∧), (∨))
+import DepGraph (class Paths, DepGraph, Dependence, Labelling, emptyGraph, paths)
+import Lattice (class BoundedLattice, class DepSemiring, class JoinSemilattice, class MeetSemilattice, DepKind(..), Raw, (∧), (∨))
 import Literal (Literal(..))
+import Path (Path, Step(..), Vertex)
 import Types as T
 import Pretty.Doc (Doc, text)
-import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
@@ -55,46 +56,136 @@ data BaseVal a
    | Unbound
    | TypeAlias (List Var) T.Type
 
+data Fun a
+   = Closure (Env a) (Dict Def) Def
+   | Prim ForeignOp
+   | Type T.Type
+   | Partial (Val a) (List (Val a)) -- function applied to fewer arguments than arity; function is not partial
+
+newtype Env a = Env (Dict (Val a))
+
+-- Wrap internal representations to provide foldable and traversable instances
+newtype DictRep a = DictRep (Dict (a × Val a))
+-- Elements, then row count and column count as int values
+newtype MatrixRep a = MatrixRep (Array2 (Val a) × Val a × Val a)
+type Array2 a = Array (Array a)
+
+data ForeignOp' = ForeignOp'
+   { arity :: Int
+   , depOp :: DepOp
+   }
+
+newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq
+
 root :: forall a. Val a -> a
 root (Val α _) = α
 
 -- Label of a vertex
 data Label a
    = Value (Val a) -- of an expression or returning statement
-   | Assigns (Maybe a) (Env a) -- control position and bindings introduced by an assigning statement
+   | Bindings (Env a) -- introduced by an assigning statement, or members of a module
+   | Inputs a (Env a) -- control position and environment of a premise
 
 value :: forall a. Label a -> Val a
 value (Value v) = v
 value _ = error absurd
 
-ctrlPosition :: forall a. Label a -> a
-ctrlPosition (Assigns α _) = definitely' α
-ctrlPosition _ = error absurd
+instance Paths Val where
+   paths = pathsFrom Nil
 
-bindings :: forall a. Label a -> Env a
-bindings (Assigns _ ρ) = ρ
-bindings _ = error absurd
+instance Paths Label where
+   paths (Value v) = Value (paths v)
+   paths (Bindings (Env ρ)) = Bindings (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
+   paths (Inputs α (Env ρ)) =
+      Inputs (singleton InputsCtl × α) (Env (mapWithKey (\x -> pathsFrom (Binding x : InputsEnv : Nil)) ρ))
 
-overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
-overChildren _ (Lit ℓ) = Lit ℓ
-overChildren _ (Opaque q) = Opaque q
-overChildren _ (Module q) = Module q
-overChildren _ Unbound = Unbound
-overChildren _ (TypeAlias αs τ) = TypeAlias αs τ
-overChildren f (Obj c xvs) = Obj c (map f <$> xvs)
-overChildren f (List vs) = List (f <$> vs)
-overChildren f (Tuple vs) = Tuple (f <$> vs)
-overChildren f (Dictionary (DictRep d)) = Dictionary (DictRep (map f <$> d))
-overChildren f (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (map f) vss × i × j))
-overChildren f (Fun φ) = Fun (overFun φ)
+-- Same as paths, except that each path starts with the reverse of p
+pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
+pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
+   Lit ℓ -> Lit ℓ
+   Obj c xvs -> Obj c (xvs <#> \(x × v) -> x × pathsFrom (Field x : p) v)
+   List vs -> List (mapWithIndex (\i -> pathsFrom (Element i : p)) vs)
+   Tuple vs -> Tuple (mapWithIndex (\i -> pathsFrom (Element i : p)) vs)
+   Dictionary (DictRep d) ->
+      Dictionary (DictRep (mapWithKey (\k (β × v) -> (L.reverse (DictKey k : p) × β) × pathsFrom (DictVal k : p) v) d))
+   Matrix (MatrixRep (vss × i × j)) -> Matrix $ MatrixRep $
+      mapWithIndex (\i' -> mapWithIndex (\j' -> pathsFrom (MatrixElement i' j' : p))) vss
+         × pathsFrom (MatrixRows : p) i
+         × pathsFrom (MatrixCols : p) j
+   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (mapWithKey (\x -> pathsFrom (Binding x : ClosureEnv : p)) ρ)) ds d)
+   Fun (Prim φ) -> Fun (Prim φ)
+   Fun (Type τ) -> Fun (Type τ)
+   Fun (Partial v vs) ->
+      Fun (Partial (pathsFrom (PartialFun : p) v) (mapWithIndex (\i -> pathsFrom (PartialArg i : p)) vs))
+   Opaque q -> Opaque q
+   Module q -> Module q
+   Unbound -> Unbound
+   TypeAlias αs τ -> TypeAlias αs τ
+
+matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
+matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
+
+matrixElement :: forall a. Int -> Int -> Val a -> Val a
+matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
+matrixElement _ _ _ = error absurd
+
+attr :: forall a. Var -> Val a -> Val a
+attr x (Val _ (Obj _ xvs)) = get x (D.fromFoldable xvs)
+attr _ _ = error absurd
+
+-- Element of list or tuple, character of string, key of dictionary or integer of range at index i
+element :: forall a. Int -> Val a -> Val a
+element i (Val _ (List vs)) = definitely' (vs A.!! i)
+element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
+element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
+element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
+element i (Val _ (Obj c ((_ × Val β (Lit (Int m))) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
+element _ _ = error absurd
+
+elements :: forall a. Val a -> List (Val a)
+elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
    where
-   overFun (Closure (Env ρ) ds d) = Closure (Env (f <$> ρ)) ds d
-   overFun (Partial φ' vs) = Partial (overFun φ') (f <$> vs)
-   overFun φ' = φ'
+   n = definitely' (elementCount v)
+
+elementCount :: forall a. Val a -> Maybe Int
+elementCount (Val _ (List vs)) = Just (A.length vs)
+elementCount (Val _ (Tuple vs)) = Just (A.length vs)
+elementCount (Val _ (Obj c ((_ × Val _ (Lit (Int m))) : (_ × Val _ (Lit (Int n))) : Nil))) | c == cRange =
+   Just (max 0 (n - m))
+elementCount (Val _ (Lit (Str s))) = Just (S.length s)
+elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
+elementCount _ = Nothing
+
+dictEntries :: forall a. Val a -> Dict (a × Val a)
+dictEntries (Val _ (Dictionary (DictRep d))) = d
+dictEntries _ = error absurd
+
+dictEntry :: forall a. String -> Val a -> a × Val a
+dictEntry k = dictEntries >>> get k
+
+matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
+matrixPut i j δv (MatrixRep (vss × h × w)) =
+   MatrixRep (vss' × h × w)
+   where
+   vs_i = vss ! i
+   v_j = vs_i ! j
+   vss' = unsafeUpdateAt i (unsafeUpdateAt j (δv v_j) vs_i) vss
+
+child :: forall a. Step -> Val a -> Val a
+child (Field x) v = attr x v
+child (Element i) v = element i v
+child (DictKey k) v = Val (fst (dictEntry k v)) (Lit (Str k))
+child (DictVal k) v = snd (dictEntry k v)
+child (MatrixElement i j) v = matrixElement i j v
+child MatrixRows (Val _ (Matrix (MatrixRep (_ × i × _)))) = i
+child MatrixCols (Val _ (Matrix (MatrixRep (_ × _ × j)))) = j
+child PartialFun (Val _ (Fun (Partial v _))) = v
+child (PartialArg i) (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
+child _ _ = error absurd
 
 -- False at shape positions.
 dataPositions :: forall a. Val a -> Val Boolean
-dataPositions (Val _ u) = Val (not container) (overChildren dataPositions (false <$ u))
+dataPositions (Val _ u) = Val (not container) (overChildren (false <$ u))
    where
    container = case u of
       Obj _ _ -> true
@@ -104,11 +195,41 @@ dataPositions (Val _ u) = Val (not container) (overChildren dataPositions (false
       Matrix _ -> true
       _ -> false
 
-data Fun a
-   = Closure (Env a) (Dict Def) Def
-   | Prim ForeignOp
-   | Type T.Type
-   | Partial (Fun a) (List (Val a)) -- fewer arguments than the arity of the function, which is not itself partial
+   overChildren :: Endo (BaseVal Boolean)
+   overChildren (Obj c xvs) = Obj c (map dataPositions <$> xvs)
+   overChildren (List vs) = List (dataPositions <$> vs)
+   overChildren (Tuple vs) = Tuple (dataPositions <$> vs)
+   overChildren (Dictionary (DictRep d)) = Dictionary (DictRep (map dataPositions <$> d))
+   overChildren (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (map dataPositions) vss × i × j))
+   overChildren (Fun (Closure (Env ρ) ds d)) = Fun (Closure (Env (dataPositions <$> ρ)) ds d)
+   overChildren (Fun (Partial v vs)) = Fun (Partial (dataPositions v) (dataPositions <$> vs))
+   overChildren u' = u'
+
+forDefs :: Dict Def -> Def -> Dict Def
+forDefs ds d = restrict (reaches (Set.toUnfoldable (fv d ∩ dom_ds)) empty) ds
+   where
+   dom_ds = keys ds
+
+   reaches :: List Var -> Endo (Set Var)
+   reaches Nil acc = acc
+   reaches (x : xs) acc
+      | x ∈ acc = reaches xs acc
+      | otherwise = reaches (Set.toUnfoldable (fv (get x ds) ∩ dom_ds) <> xs) (singleton x ∪ acc)
+
+class Highlightable a where
+   highlightIf :: a -> Endo Doc
+
+instance Highlightable Unit where
+   highlightIf _ = identity
+
+instance Highlightable Boolean where
+   highlightIf false = identity
+   highlightIf true = \doc -> text "⸨" <> doc <> text "⸩"
+
+instance Highlightable DepKind where
+   highlightIf Zero = identity
+   highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
+   highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
 
 class (Highlightable a, BoundedLattice a) <= Ann a
 
@@ -119,6 +240,52 @@ instance Highlightable a => Highlightable (a × b) where
    highlightIf (a × _) doc = highlightIf a doc
 
 instance (Ann a, BoundedLattice b) => Ann (a × b)
+
+-- Vertex with the vertex of its doc, if any.
+type VertexWithDoc = Vertex × Maybe Vertex
+
+-- Value with its doc, as shown in a figure.
+newtype ValWithDoc a = ValWithDoc { val :: Val a, doc :: Maybe (Val a) }
+newtype EnvWithDocs a = EnvWithDocs (Dict (ValWithDoc a))
+
+-- Value at a vertex, with the value of its doc.
+val :: forall a. Labelling (Val a) -> VertexWithDoc -> ValWithDoc a
+val m (p × d) = ValWithDoc { val: get p m, doc: flip get m <$> d }
+
+unval :: forall a. VertexWithDoc -> ValWithDoc a -> Labelling (Val a)
+unval (p × d) (ValWithDoc { val: v, doc }) = Map.fromFoldable (A.cons (p × v) (A.fromFoldable ((×) <$> d <*> doc)))
+
+unvals :: forall a. Dict VertexWithDoc -> EnvWithDocs a -> Labelling (Val a)
+unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
+
+-- Value at the vertex of an expression or returning statement
+valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
+valAt g p = value (get p g.vals)
+
+-- Value with its dependence on the values of vertices already in the graph
+type GVal s = Raw Val × Dependence (Set Path) s
+
+-- Source position, then value at that position
+type Position = Path × Raw Val
+
+-- Function on annotated values; dependence left to the annotations
+type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+
+-- Application of a function to arguments; result at a new vertex
+type Apply m = Position -> List Position -> m Position
+
+-- Foreign function of control position and arguments; evaluator supplies operation for applying a
+-- function argument
+type DepOp =
+   forall m s
+    . HasClasses m
+   => MonadLoad m
+   => MonadState (DepGraph Label s) m
+   => DepSemiring s
+   => Apply m
+   -> Path
+   -> List Position
+   -> m (GVal s)
 
 -- Module parsed but not yet loaded, or loaded with its environment
 data ModuleState s = Parsed Module | Loaded (Dict (GVal s))
@@ -138,31 +305,6 @@ emptyModuleStore = { modules: Map.empty, depGraph: emptyGraph }
 class Monad m <= HasModuleStore s m | m -> s where
    moduleStore :: m (ModuleStore s)
    modifyModuleStore :: (ModuleStore s -> ModuleStore s) -> m Unit
-
-instance (Monad m, HasModuleStore s m) => HasModuleStore s (StateT t m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
-instance (Monad m, HasModuleStore s m) => HasModuleStore s (ReaderT r m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
-instance (Monad m, HasModuleStore s m) => HasModuleStore s (ExceptT e m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
-instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
--- Dictionary from list of key-value tuples; later entries overwrite earlier ones
-toDict :: forall a. List (Val a) -> Val a
-toDict (Val α (List kvs) : Nil) = Val α (Dictionary (DictRep (D.fromFoldable (entry <$> kvs))))
-   where
-   entry :: Val a -> String × a × Val a
-   entry (Val _ (Tuple [ Val β (Lit (Str k)), v ])) = k × β × v
-   entry _ = error absurd
-toDict _ = error absurd
 
 -- Monad for evaluating program into dependence graph with weights in s
 class
@@ -185,298 +327,9 @@ instance
    MonadEval s m
 
 -- Monad for loading and evaluating program
-class (HasClasses m, HasModuleStore (PosLineage DepKind) m, MonadLoad m) <= MonadProgram m
+class (HasClasses m, HasModuleStore DepKind m, MonadLoad m) <= MonadProgram m
 
-instance (HasClasses m, HasModuleStore (PosLineage DepKind) m, MonadLoad m) => MonadProgram m
-
--- Vertex with the vertex of its doc, if any.
-type DerivWithDoc = Dep.Deriv × Maybe Dep.Deriv
-
-withDoc :: forall f s. DepGraph f s -> Dep.Deriv -> DerivWithDoc
-withDoc g p = p × Map.lookup p g.docs
-
--- Value with its doc, as shown in a figure.
-newtype ValWithDoc a = ValWithDoc { val :: Val a, doc :: Maybe (Val a) }
-newtype EnvWithDocs a = EnvWithDocs (Dict (ValWithDoc a))
-
--- Value at a vertex, with the value of its doc.
-val :: forall a. Labelling (Val a) -> DerivWithDoc -> ValWithDoc a
-val m (p × d) = ValWithDoc { val: get p m, doc: flip get m <$> d }
-
-unval :: forall a. DerivWithDoc -> ValWithDoc a -> Labelling (Val a)
-unval (p × d) (ValWithDoc { val: v, doc }) = Map.fromFoldable (A.cons (p × v) (A.fromFoldable ((×) <$> d <*> doc)))
-
-unvals :: forall a. Dict DerivWithDoc -> EnvWithDocs a -> Labelling (Val a)
-unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
-
--- Value at the vertex of an expression or returning statement
-valAt :: forall s. DepGraph Label s -> Dep.Deriv -> Raw Val
-valAt g p = value (Dep.valAt g p)
-
--- Weight 1 at every position except beneath the root of a closure
-unitSection :: forall a s. Semiring s => Val a -> Val s
-unitSection (Val _ u) = Val one case u of
-   Lit ℓ -> Lit ℓ
-   Obj c xvs -> Obj c (map unitSection <$> xvs)
-   List vs -> List (unitSection <$> vs)
-   Tuple vs -> Tuple (unitSection <$> vs)
-   Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
-   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
-   Fun φ -> Fun (zeros φ)
-   Opaque q -> Opaque q
-   Module q -> Module q
-   Unbound -> Unbound
-   TypeAlias αs τ -> TypeAlias αs τ
-
--- Control edge from β to the whole of v
-ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
-ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
-
--- Value together with its dependence on values already in the graph
-newtype GVal s = GVal { val :: Raw Val, inEdges :: InEdges Label s (Val s) }
--- Dependence of the control input on values already in the graph
-type Ctrl s = InEdges Label s s
-
-raw :: forall s. GVal s -> Raw Val
-raw (GVal v) = v.val
-
--- Dependence of r applied to v
-via :: forall s b. (Val s -> b) -> GVal s -> InEdges Label s b
-via r (GVal v) = r <$> v.inEdges
-
--- Value v of vertex p as a value which depends on p
-gval :: forall s. Dep.Deriv × Raw Val -> GVal s
-gval (p × v) = GVal { val: v, inEdges: value <$> at p }
-
--- Allocate vertex labelled with given value; return vertex with raw value
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Deriv × Raw Val)
-newValue (GVal { val: v, inEdges }) = newVertex (Value v) (Value <$> inEdges) <#> (_ × v)
-
--- Allocate vertex with bindings ρ and control position ctrl as label; returned ρ and ctrl depend on the vertex
-newAssigns
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Dict (GVal s)
-   -> Maybe (Ctrl s)
-   -> m (Dict (GVal s) × Maybe (Ctrl s))
-newAssigns ρ ctrl = newVertex label inEdges <#> \p ->
-   mapWithKey (\x (GVal v) -> GVal (v { inEdges = get x <<< bindings <$> at p })) ρ × (ctrl $> (ctrlPosition <$> at p))
-   where
-   label = Assigns (void ctrl) (Env (raw <$> ρ))
-   inEdges = lift2 Assigns (sequence ctrl) (Env <$> traverse (via identity) ρ)
-
--- Part of v selected by r
-project :: forall s. DepSemiring s => (forall a. DepSemiring a => Val a -> Val a) -> GVal s -> GVal s
-project r (GVal v) = GVal { val: r v.val, inEdges: r <$> v.inEdges }
-
--- Apply r to vs; result depends on vs as r determines
-applyRel
-   :: forall t s
-    . Traversable t
-   => DepSemiring s
-   => (forall a. DepSemiring a => t (Val a) -> Val a)
-   -> t (GVal s)
-   -> GVal s
-applyRel r vs = GVal { val: r (raw <$> vs), inEdges: r <$> traverse (via identity) vs }
-
--- Build new value by applying r to vs; root also depends on ctrl
-construct
-   :: forall t s
-    . Traversable t
-   => DepSemiring s
-   => Ctrl s
-   -> (forall a. DepSemiring a => t (Val a) -> Val a)
-   -> t (GVal s)
-   -> GVal s
-construct ctrl r vs = GVal (v { inEdges = lift2 (\c (Val α u) -> Val (α + ctrlWeight * c) u) ctrl v.inEdges })
-   where
-   GVal v = applyRel r vs
-
--- Pass on v; every position also depends on ctrl
-deliver :: forall s. DepSemiring s => Ctrl s -> GVal s -> GVal s
-deliver ctrl (GVal v) = GVal (v { inEdges = lift2 ctrlEdge ctrl v.inEdges })
-
--- Build new value from parts vs with constructor mk; root depends on ctrl
-constructFrom
-   :: forall t s
-    . Traversable t
-   => DepSemiring s
-   => Ctrl s
-   -> (forall a. Semiring a => t (Val a) -> BaseVal a)
-   -> t (GVal s)
-   -> GVal s
-constructFrom ctrl mk vs = construct ctrl (mk >>> Val zero) vs
-
--- Application of a function to arguments at a new vertex
-type Apply m s = GVal s -> List (GVal s) -> m (GVal s)
-
--- Foreign function of control input and arguments; evaluator supplies operation for applying a function argument
-type DepOp =
-   forall m s
-    . HasClasses m
-   => MonadLoad m
-   => DepSemiring s
-   => Apply m s
-   -> Ctrl s
-   -> List (GVal s)
-   -> m (GVal s)
-
-fromTotalRel :: (forall a. DepSemiring a => List (Val a) -> Val a) -> DepOp
-fromTotalRel g _ ctrl vs = pure (deliver ctrl (applyRel g vs))
-
--- Same as fromTotalRel, except that f may fail; failure is checked on raw arguments
-fromRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
-fromRel f app ctrl vs = do
-   _ <- orThrow (f (raw <$> vs))
-   fromTotalRel (f >>> definitelyRight) app ctrl vs
-
-data ForeignOp' = ForeignOp'
-   { arity :: Int
-   , depOp :: DepOp
-   }
-
-newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq
-
-instance Eq ForeignOp where
-   eq (ForeignOp (s × _)) (ForeignOp (s' × _)) = s == s'
-
-instance Ord ForeignOp where
-   compare (ForeignOp (s × _)) (ForeignOp (s' × _)) = compare s s'
-
-newtype Env a = Env (Dict (Val a))
-
-instance IsEmpty (Env a) where
-   isEmpty (Env ρ) = isEmpty ρ
-
-instance Set (Env a) String where
-   empty = Env empty
-   filter p (Env ρ) = Env (filter p ρ)
-   size (Env ρ) = size ρ
-   member x (Env ρ) = x ∈ ρ
-   difference (Env ρ) (Env ρ') = Env (difference ρ ρ')
-   union (Env ρ) (Env ρ') = Env (union ρ ρ')
-
-instance Map (Env a) String (Val a) where
-   maplet k v = Env (maplet k v)
-   keys (Env ρ) = keys ρ
-   values (Env ρ) = values ρ
-   filterKeys p (Env ρ) = Env (filterKeys p ρ)
-   unionWith f (Env ρ) (Env ρ') = Env (unionWith f ρ ρ')
-   lookup k (Env ρ) = lookup k ρ
-   delete k (Env ρ) = Env (delete k ρ)
-   insert k v (Env ρ) = Env (insert k v ρ)
-   toUnfoldable (Env ρ) = toUnfoldable ρ
-
-reaches :: Dict Def -> Endo (Set Var)
-reaches ds xs = go (Set.toUnfoldable xs) empty
-   where
-   dom_ds = keys ds
-
-   go :: List Var -> Endo (Set Var)
-   go Nil acc = acc
-   go (x : xs') acc | x ∈ acc = go xs' acc
-   go (x : xs') acc | otherwise =
-      go (Set.toUnfoldable (fv d ∩ dom_ds) <> xs') (singleton x ∪ acc)
-      where
-      d = get x ds
-
-forDefs :: Dict Def -> Def -> Dict Def
-forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
-
--- Wrap internal representations to provide foldable/traversable instances.
-newtype DictRep a = DictRep (Dict (a × Val a))
--- Elements with row and column counts, as int values.
-newtype MatrixRep a = MatrixRep (Array2 (Val a) × Val a × Val a)
-type Array2 a = Array (Array a)
-
-matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
-matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
-
-matrixElement :: forall a. Int -> Int -> Val a -> Val a
-matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
-matrixElement _ _ _ = error absurd
-
-field :: forall a. Int -> Val a -> Val a
-field i (Val _ (Obj _ xvs)) = snd (xvs ! i)
-field _ _ = error absurd
-
-attr :: forall a. Var -> Val a -> Val a
-attr x (Val _ (Obj _ xvs)) = get x (D.fromFoldable xvs)
-attr _ _ = error absurd
-
--- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary, integer of a range.
-element :: forall a. Int -> Val a -> Val a
-element i (Val _ (List vs)) = definitely' (vs A.!! i)
-element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
-element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
-element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
-element i (Val _ (Obj c ((_ × Val β (Lit (Int m))) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
-element _ _ = error absurd
-
-elements :: forall a. Val a -> List (Val a)
-elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
-   where
-   n = definitely' (elementCount v)
-
--- Dependence of the length of a sequence: the root, plus start and stop of a range.
-lengthDep :: forall a. Semiring a => Val a -> a
-lengthDep (Val α (Obj c xvs)) | c == cRange = foldl (+) α (root <<< snd <$> xvs)
-lengthDep (Val α _) = α
-
-elementCount :: forall a. Val a -> Maybe Int
-elementCount (Val _ (List vs)) = Just (A.length vs)
-elementCount (Val _ (Tuple vs)) = Just (A.length vs)
-elementCount (Val _ (Obj c ((_ × Val _ (Lit (Int m))) : (_ × Val _ (Lit (Int n))) : Nil))) | c == cRange =
-   Just (max 0 (n - m))
-elementCount (Val _ (Lit (Str s))) = Just (S.length s)
-elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
-elementCount _ = Nothing
-
-dictEntries :: forall a. Val a -> Dict (a × Val a)
-dictEntries (Val _ (Dictionary (DictRep d))) = d
-dictEntries _ = error absurd
-
-dictEntry :: forall a. String -> Val a -> a × Val a
-dictEntry k = dictEntries >>> get k
-
-fun :: forall a. Val a -> Fun a
-fun (Val _ (Fun φ)) = φ
-fun _ = error absurd
-
-closureEnv :: forall a. Val a -> Env a
-closureEnv (Val _ (Fun (Closure ρ _ _))) = ρ
-closureEnv _ = error absurd
-
-partialFun :: forall a. Val a -> Val a
-partialFun (Val α (Fun (Partial φ _))) = Val α (Fun φ)
-partialFun _ = error absurd
-
-partialArg :: forall a. Int -> Val a -> Val a
-partialArg i (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
-partialArg _ _ = error absurd
-
-matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
-matrixPut i j δv (MatrixRep (vss × h × w)) =
-   MatrixRep (vss' × h × w)
-   where
-   vs_i = vss ! i
-   v_j = vs_i ! j
-   vss' = unsafeUpdateAt i (unsafeUpdateAt j (δv v_j) vs_i) vss
-
-class Highlightable a where
-   highlightIf :: a -> Endo Doc
-
-instance Highlightable Unit where
-   highlightIf _ = identity
-
-instance Highlightable Boolean where
-   highlightIf false = identity
-   highlightIf true = \doc -> text "⸨" <> doc <> text "⸩"
-
-instance Highlightable DepKind where
-   highlightIf Zero = identity
-   highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
-   highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
+instance (HasClasses m, HasModuleStore DepKind m, MonadLoad m) => MonadProgram m
 
 -- ======================
 -- boilerplate
@@ -532,7 +385,7 @@ instance Apply Fun where
    apply (Closure fρ ds d) (Closure ρ _ _) = Closure (fρ <*> ρ) ds d
    apply (Prim op) (Prim _) = Prim op
    apply (Type τ) (Type τ') = Type (τ ≜ τ')
-   apply (Partial fφ fvs) (Partial φ vs) = Partial (fφ <*> φ) (zipWith (<*>) fvs vs)
+   apply (Partial fv fvs) (Partial v vs) = Partial (fv <*> v) (zipWith (<*>) fvs vs)
    apply _ _ = shapeMismatch unit
 
 -- Should require equal domains?
@@ -594,7 +447,7 @@ instance JoinSemilattice a => JoinSemilattice (Fun a) where
    join (Closure ρ ds d) (Closure ρ' _ _) = Closure (ρ ∨ ρ') ds d
    join (Prim φ) (Prim _) = Prim φ -- TODO: require φ == φ'
    join (Type τ) (Type τ') = Type (τ ≜ τ')
-   join (Partial φ vs) (Partial φ' vs') = Partial (φ ∨ φ') (vs ∨ vs')
+   join (Partial v vs) (Partial v' vs') = Partial (v ∨ v') (vs ∨ vs')
    join _ _ = shapeMismatch unit
 
 instance JoinSemilattice a => JoinSemilattice (Env a) where
@@ -621,3 +474,46 @@ derive instance Eq a => Eq (Env a)
 derive instance Newtype (Env a) _
 derive instance Newtype (ValWithDoc a) _
 derive instance Newtype (EnvWithDocs a) _
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (StateT t m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (ReaderT r m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (ExceptT e m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance Eq ForeignOp where
+   eq (ForeignOp (s × _)) (ForeignOp (s' × _)) = s == s'
+
+instance Ord ForeignOp where
+   compare (ForeignOp (s × _)) (ForeignOp (s' × _)) = compare s s'
+
+instance IsEmpty (Env a) where
+   isEmpty (Env ρ) = isEmpty ρ
+
+instance Set (Env a) String where
+   empty = Env empty
+   filter p (Env ρ) = Env (filter p ρ)
+   size (Env ρ) = size ρ
+   member x (Env ρ) = x ∈ ρ
+   difference (Env ρ) (Env ρ') = Env (difference ρ ρ')
+   union (Env ρ) (Env ρ') = Env (union ρ ρ')
+
+instance Map (Env a) String (Val a) where
+   maplet k v = Env (maplet k v)
+   keys (Env ρ) = keys ρ
+   values (Env ρ) = values ρ
+   filterKeys p (Env ρ) = Env (filterKeys p ρ)
+   unionWith f (Env ρ) (Env ρ') = Env (unionWith f ρ ρ')
+   lookup k (Env ρ) = lookup k ρ
+   delete k (Env ρ) = Env (delete k ρ)
+   insert k v (Env ρ) = Env (insert k v ρ)
+   toUnfoldable (Env ρ) = toUnfoldable ρ
