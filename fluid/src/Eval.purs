@@ -40,7 +40,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, members, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, part, position, positionsIn, project, reuseAt, sequenceOf, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, members, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, child, position, positionsIn, project, reuseAt, sequenceOf, valAt)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -191,7 +191,7 @@ eval = { stmt, program }
             ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
          rss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j ->
             after inputs (maplet x (index a 0 i) `unionWith_never` maplet y (index a 1 j)) empty >>= flip expr e
-         pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × part (Element 0) v × part (Element 1) v))) ×
+         pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × child (Element 0) v × child (Element 1) v))) ×
             construct (control ctl)
                ( Map.fromFoldable $
                     [ MatrixRows × reuse (sourceAt a (singleton (Element 0))), MatrixCols × reuse (sourceAt a (singleton (Element 1))) ]

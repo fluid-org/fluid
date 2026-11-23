@@ -53,7 +53,7 @@ scaleSupport w support@(Support ps ws)
    | w == one = support
    | otherwise = assert (w /= zero) (Support ps (mul w <$> ws))
 
--- Sources of the target root, then relation into each part; zero relations absent
+-- Support of target root, then relation into each child; zero relations absent
 data Rel c s = Rel (Support c s) (Map Step (Rel c s))
 
 instance (Set c Path, Semiring s) => Semigroup (Rel c s) where
@@ -153,7 +153,7 @@ bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Bin
 tupling :: forall c s. Set c Path => Semiring s => Map Step (Dependence c s) -> Dependence c s
 tupling δs = Tupling empty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
--- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on support
+-- Dependence of value with children δs, or with nothing reused if δs is empty; root depends on support
 construct :: forall c s. Set c Path => Semiring s => Support c s -> Map Step (Dependence c s) -> Dependence c s
 construct support δs
    | isEmpty δs = NoReuse empty × Rel support empty

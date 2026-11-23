@@ -34,7 +34,7 @@ import Util.Set (class Set, empty, filter, size, union, (∈), (∪))
 
 newtype Vertex = Vertex Int
 
--- Step to part of value; values include families of values such as environments
+-- Step to child of value; values include families of values such as environments
 data Step
    = EdgeSrc Vertex
    | InputsEnv

@@ -101,17 +101,17 @@ pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
    Unbound -> Unbound
    TypeAlias αs τ -> TypeAlias αs τ
 
-part :: forall a. Step -> Val a -> Val a
-part (Field x) v = attr x v
-part (Element i) v = element i v
-part (DictKey k) v = Val (fst (dictEntry k v)) (Lit (Str k))
-part (DictVal k) v = snd (dictEntry k v)
-part (MatrixElement i j) v = matrixElement i j v
-part MatrixRows (Val _ (Matrix (MatrixRep (_ × i × _)))) = i
-part MatrixCols (Val _ (Matrix (MatrixRep (_ × _ × j)))) = j
-part PartialFun (Val _ (Fun (Partial v _))) = v
-part (PartialArg i) (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
-part _ _ = error absurd
+child :: forall a. Step -> Val a -> Val a
+child (Field x) v = attr x v
+child (Element i) v = element i v
+child (DictKey k) v = Val (fst (dictEntry k v)) (Lit (Str k))
+child (DictVal k) v = snd (dictEntry k v)
+child (MatrixElement i j) v = matrixElement i j v
+child MatrixRows (Val _ (Matrix (MatrixRep (_ × i × _)))) = i
+child MatrixCols (Val _ (Matrix (MatrixRep (_ × _ × j)))) = j
+child PartialFun (Val _ (Fun (Partial v _))) = v
+child (PartialArg i) (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
+child _ _ = error absurd
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
 overChildren _ (Lit ℓ) = Lit ℓ
@@ -282,7 +282,7 @@ lengthPositions (a × _) = singleton (sourceRoot a)
 
 -- Part at step of the value at a position
 project :: Step -> Endo Position
-project step (p × v) = (p <> singleton step) × part step v
+project step (p × v) = (p <> singleton step) × child step v
 
 -- Elements of the list or tuple at a position
 elementsAt :: Position -> List Position
@@ -357,7 +357,7 @@ derivative f ctl rs = f (arg <$> rs) <#> \v ->
       | Map.isEmpty ws = r
       | otherwise = r <> ι p (Rel (Support Set.empty ws) Map.empty)
 
--- Step to element i of a sequence, if the element is a part of the sequence
+-- Step to element i of sequence if that element is a child
 elementStep :: Int -> Raw Val -> Maybe Step
 elementStep i (Val _ (List _)) = Just (Element i)
 elementStep i (Val _ (Tuple _)) = Just (Element i)
