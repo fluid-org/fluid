@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, onto, paths, plus, positions, reuse, scale, tupling, under, zeros, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, onto, paths, positions, reuse, tupling, withCtrl, ι)
 import DepGraph (valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
@@ -252,7 +252,7 @@ unitSection (Val _ u) = Val one case u of
    Tuple vs -> Tuple (unitSection <$> vs)
    Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
    Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
-   Fun φ -> Fun (zeros φ)
+   Fun φ -> Fun (φ $> zero)
    Opaque q -> Opaque q
    Module q -> Module q
    Unbound -> Unbound
@@ -260,7 +260,7 @@ unitSection (Val _ u) = Val one case u of
 
 -- Control edge from β to the whole of v
 ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
-ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
+ctrlEdge β v = lift2 add v (mul (ctrlWeight * β) <$> unitSection v)
 
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Path) s
@@ -300,7 +300,7 @@ gval = position >>> reuseAt
 
 -- Add control dependence on each of ps to every position outside a function value
 deliver :: forall s. Set Path -> Endo (GVal s)
-deliver ps = map (under ps)
+deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
 -- Allocate vertex for given value; return vertex with raw value
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Vertex × Raw Val)

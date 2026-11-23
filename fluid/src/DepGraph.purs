@@ -2,7 +2,6 @@ module DepGraph where
 
 import Prelude hiding (absurd, compose)
 
-import Control.Apply (lift2)
 import Control.Monad.State (class MonadState, execState, gets, modify_)
 import Data.Foldable (any, foldMap, foldl, foldr)
 import Data.FoldableWithIndex (foldMapWithIndex, foldlWithIndex)
@@ -30,15 +29,6 @@ class Traversable f <= Paths f where
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
-zeros :: forall f a s. Functor f => Semiring s => f a -> f s
-zeros = map (const zero)
-
-scale :: forall f s. Functor f => Semiring s => s -> f s -> f s
-scale a = map (mul a)
-
-plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
-plus = lift2 add
-
 -- Control sources, then non-zero weight of every other source
 data Support c s = Support c (Map Path s)
 
@@ -52,12 +42,6 @@ control ps = Support ps empty
 -- Dependence on p with weight one
 unitWeight :: forall c s. Set c Path => Semiring s => Path -> Support c s
 unitWeight p = Support empty (maplet p one)
-
-positionsOf :: forall s. Support (Set Path) s -> Set Path
-positionsOf (Support ps ws) = ps ∪ keys ws
-
-weights :: forall s. DepSemiring s => Support PathSet s -> Map Path s
-weights (Support ps ws) = unionWith add (Set.toMap (members ps) $> ctrlWeight) ws
 
 -- Weights of source positions grouped by source vertex
 bySource :: forall a. Map Path a -> Labelling (Map Path a)
@@ -133,10 +117,6 @@ type Dependence c s = Restructuring c × Rel c s
 reuse :: forall c s. Set c Path => Semiring s => Path -> Dependence c s
 reuse p = Reuse empty p × mempty
 
--- Add control dependence of the target on each of ps
-under :: forall c s. Set c Path => c -> Endo (Dependence c s)
-under ps (θ × r) = withCtrl ps θ × r
-
 supp :: forall c s. Set c Path => Semiring s => Dependence c s -> Path -> Support c s
 supp (θ × r) q = case pathAfter q θ of
    Reuse ps p -> Support ps (maplet p one)
@@ -203,7 +183,7 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
       NoReuse _ -> empty
       Parts _ θs -> foldMap ofRestructuring θs
       ExtendEnv _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
-   ofRel (Rel support rs) = Set.mapMaybe L.head (positionsOf support) ∪ foldMap ofRel rs
+   ofRel (Rel (Support ps ws) rs) = Set.mapMaybe L.head (ps ∪ keys ws) ∪ foldMap ofRel rs
 
    holder (EdgeSrc a) = a
    holder _ = error absurd
@@ -327,6 +307,9 @@ bwd g selection = fromSparse g (foldr step (unitWeights selection) (toUnfoldable
    step (b × supports) wss = case lookup b wss of
       Nothing -> wss
       Just ws -> foldlWithIndex addAt wss (bySource (weights (foldlWithIndex (from supports) mempty ws)))
+
+   weights :: Support PathSet s -> Map Path s
+   weights (Support ps ws) = unionWith add (Set.toMap (members ps) $> ctrlWeight) ws
 
    from :: Map Path (Support PathSet s) -> Path -> Support PathSet s -> s -> Support PathSet s
    from supports q support w = maybe support (scaleSupport w >>> (support <> _)) (lookup q supports)
