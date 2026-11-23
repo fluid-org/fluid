@@ -306,7 +306,7 @@ mask keep g = g { edges = mapWithIndex (\b -> Map.filterKeys (_ ∈ get b kept) 
    keptSource (EdgeSrc a : p) = p ∈ get a kept
    keptSource _ = error absurd
 
--- Positions carrying true.
+-- Positions carrying true
 selected :: forall f. Paths f => f Boolean -> Set Path
 selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
 
