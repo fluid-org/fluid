@@ -16,6 +16,10 @@ import Prelude hiding (absurd)
 
 import Bind (Var)
 import Data.Foldable (foldMap)
+import Control.Monad.ST.Global (Global, toEffect)
+import Data.Array.ST (STArray)
+import Data.Array.ST as STA
+import Data.Array.ST.Partial (peek) as STAP
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
@@ -26,11 +30,14 @@ import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
-import Effect.Ref (Ref)
-import Effect.Ref as Ref
+import Data.String (joinWith)
+import Data.String.CodeUnits (length)
 import Effect.Unsafe (unsafePerformEffect)
-import Util (class IsEmpty, type (×), absurd, error, singleton, (×))
-import Util.Map (get, lookup, maplet)
+import Foreign.Object.ST (STObject)
+import Foreign.Object.ST as STO
+import Partial.Unsafe (unsafePartial)
+import Util (class IsEmpty, absurd, error, singleton, (×))
+import Util.Map (maplet)
 import Util.Set (class Set, empty, filter, size, union, (∈), (∪))
 
 newtype Vertex = Vertex Int
@@ -74,28 +81,58 @@ newtype PathSet = PathSet Int
 -- Whether the empty path is a member, then non-empty set of remaining paths after each first step
 data Trie = Trie Boolean (Map Step PathSet)
 
--- Every path set and union computed so far
+-- Every path set and union computed so far; path sets by identity, then identities by key
 type Interned =
-   { ids :: Map Trie PathSet
-   , tries :: Map PathSet Trie
-   , unions :: Map (PathSet × PathSet) PathSet
+   { tries :: STArray Global Trie
+   , ids :: STObject Global PathSet
+   , unions :: STObject Global PathSet
    }
 
-interned :: Ref Interned
-interned = unsafePerformEffect (Ref.new { ids: empty, tries: empty, unions: empty })
+interned :: Interned
+interned = unsafePerformEffect $ toEffect do
+   tries <- STA.new
+   ids <- STO.new
+   unions <- STO.new
+   pure { tries, ids, unions }
+
+-- Equal exactly for equal steps
+stepKey :: Step -> String
+stepKey (EdgeSrc (Vertex a)) = "v" <> show a
+stepKey InputsEnv = "e"
+stepKey InputsCtl = "c"
+stepKey (Binding x) = "b" <> sized x
+stepKey (Field x) = "f" <> sized x
+stepKey (Element i) = "i" <> show i
+stepKey (DictKey k) = "k" <> sized k
+stepKey (DictVal k) = "d" <> sized k
+stepKey (MatrixElement i j) = "m" <> show i <> "," <> show j
+stepKey MatrixRows = "r"
+stepKey MatrixCols = "n"
+stepKey ClosureEnv = "u"
+stepKey PartialFun = "p"
+stepKey (PartialArg i) = "a" <> show i
+
+-- String after its length, since text which follows could otherwise be read as part of the string
+sized :: String -> String
+sized x = show (length x) <> "." <> x
+
+-- Equal exactly for equal tries
+trieKey :: Trie -> String
+trieKey (Trie b children) = (if b then "1" else "0") <>
+   joinWith "" ((Map.toUnfoldable children :: Array _) <#> \(step × PathSet i) -> stepKey step <> "=" <> show i <> ";")
 
 intern :: Trie -> PathSet
-intern t = unsafePerformEffect do
-   { ids } <- Ref.read interned
-   case lookup t ids of
+intern t = unsafePerformEffect $ toEffect do
+   STO.peek k interned.ids >>= case _ of
       Just ps -> pure ps
       Nothing -> do
-         let ps = PathSet (size ids)
-         Ref.modify_ (\r -> r { ids = Map.insert t ps r.ids, tries = Map.insert ps t r.tries }) interned
-         pure ps
+         ps <- STA.push t interned.tries <#> \n -> PathSet (n - 1)
+         STO.poke k ps interned.ids $> ps
+   where
+   k = trieKey t
 
 trie :: PathSet -> Trie
-trie ps = get ps (unsafePerformEffect (Ref.read interned)).tries
+trie (PathSet i) = unsafePerformEffect (toEffect (unsafePartial (STAP.peek i interned.tries)))
 
 pathSet :: Path -> PathSet
 pathSet Nil = intern (Trie true empty)
@@ -115,20 +152,18 @@ instance Set PathSet (List Step) where
    difference ps ps' = filter (not <<< (_ ∈ members ps')) ps
    member p ps = p ∈ members ps
    -- Computed once for each pair of sets
-   union ps ps'
+   union ps@(PathSet i) ps'@(PathSet j)
       | ps == ps' = ps
       | ps > ps' = union ps' ps
-      | otherwise = unsafePerformEffect do
-           { unions } <- Ref.read interned
-           case lookup (ps × ps') unions of
-              Just ps'' -> pure ps''
-              Nothing -> do
-                 let
-                    Trie b children = trie ps
-                    Trie b' children' = trie ps'
-                    ps'' = intern (Trie (b || b') (Map.unionWith union children children'))
-                 Ref.modify_ (\r -> r { unions = Map.insert (ps × ps') ps'' r.unions }) interned
-                 pure ps''
+      | otherwise =
+           unsafePerformEffect $ toEffect do
+              STO.peek k interned.unions >>= case _ of
+                 Just ps'' -> pure ps''
+                 Nothing -> STO.poke k unioned interned.unions $> unioned
+           where
+           k = show i <> "," <> show j
+           unioned = case trie ps × trie ps' of
+              Trie b children × Trie b' children' -> intern (Trie (b || b') (Map.unionWith union children children'))
 
 instance Semigroup PathSet where
    append = union
