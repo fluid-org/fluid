@@ -309,8 +309,8 @@ unitWeights :: forall s. Semiring s => Labelling (Set Path) -> Labelling (Map Pa
 unitWeights = map (Set.toMap >>> map (const one))
 
 -- Weights at each visible vertex as a value, zero where absent.
-dense :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Map Path s) -> Labelling (f s)
-dense g wss = g.vals # mapWithIndex \a v ->
+fromSparse :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Map Path s) -> Labelling (f s)
+fromSparse g wss = g.vals # mapWithIndex \a v ->
    paths v <#> \(p × _) -> fromMaybe zero (lookup a wss >>= lookup p)
 
 -- Forward and backward queries, each the transpose of the other.
@@ -324,7 +324,7 @@ queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Dependence of the selection on the positions of each visible vertex.
 bwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
-bwd g selection = dense g (foldr step (unitWeights selection) (toUnfoldable g.edges :: List _))
+bwd g selection = fromSparse g (foldr step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
    step :: Vertex × Map Path (Support PathSet s) -> Endo (Labelling (Map Path s))
    step (b × supports) wss = case lookup b wss of
@@ -337,7 +337,7 @@ bwd g selection = dense g (foldr step (unitWeights selection) (toUnfoldable g.ed
 
 -- Dependence of the positions of each visible vertex on the selection.
 fwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
-fwd g selection = dense g (foldl step (unitWeights selection) (toUnfoldable g.edges :: List _))
+fwd g selection = fromSparse g (foldl step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
    step :: Labelling (Map Path s) -> Vertex × Map Path (Support PathSet s) -> Labelling (Map Path s)
    step wss (b × supports) = add' b (Map.mapMaybe weight supports) wss
