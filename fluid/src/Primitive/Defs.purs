@@ -43,10 +43,10 @@ import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import Control.Monad.State (class MonadState)
 import DepGraph (DepGraph, construct, control, unitWeight)
-import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot)
 import Literal (Literal(..), showFloat)
-import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
-import Util (MayFail, Endo, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
+import Primitive (binopRel, boolean, ctrlEdge, ctrlEdgeEntry, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
+import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
 import Pretty (prettyP)
@@ -55,7 +55,7 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Val(..), ctrlEdge, deliver, dictEntries, dictionary, elementCount, fromRel, gval, matrixPut, newValue, position, project, reuseAt)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Val(..), deliver, dictEntries, dictionary, elementCount, fromRel, gval, matrixPut, newValue, position, project, reuseAt)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -399,10 +399,6 @@ entryValue
    -> m (Vertex × Raw Val)
 entryValue k d@(a × _) =
    newValue $ deliver (Set.fromFoldable [ sourceRoot a, fst (project (DictKey k) (position d)) ]) (reuseAt (project (DictVal k) (position d)))
-
--- Control edge from β to key and whole value of an entry
-ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
-ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the values at given vertices; root and keys depend on the roots and keys of the dictionaries ds
 dictFrom :: forall s. Semiring s => Path -> List (Vertex × Raw Val) -> List (String × (Vertex × Raw Val)) -> GVal s

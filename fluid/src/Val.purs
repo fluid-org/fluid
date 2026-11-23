@@ -32,7 +32,7 @@ import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
 import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel(..), Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, paths, positions, reuse, tupling, withCtrl, ι)
-import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
+import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, erase, (∧), (∨))
 import Literal (Literal(..))
 import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
 import Types as T
@@ -261,21 +261,6 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 -- Value at the vertex of an expression or returning statement
 valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
 valAt g p = value (get p g.vals)
-
--- Control edge from β to the whole of v
-ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
-ctrlEdge β v = lift2 add v (mul (ctrlWeight * β) <$> unitSection v)
-   where
-   -- Weight 1 at every position except beneath the root of a closure
-   unitSection :: Endo (Val a)
-   unitSection (Val _ u) = Val one case u of
-      Obj c xvs -> Obj c (map unitSection <$> xvs)
-      List vs -> List (unitSection <$> vs)
-      Tuple vs -> Tuple (unitSection <$> vs)
-      Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v') -> one × unitSection v') <$> d))
-      Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
-      Fun φ -> Fun (φ $> zero)
-      _ -> u
 
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Path) s

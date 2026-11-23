@@ -3,6 +3,7 @@ module Primitive where
 import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
+import Control.Apply (lift2)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl)
 import Data.Int (toNumber)
@@ -20,15 +21,15 @@ import Data.String as String
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
-import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, ctrlWeight, erase)
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (MayFail, type (+), type (×), absurd, definitely', error, singleton, (×))
+import Util (MayFail, type (+), type (×), Endo, absurd, definitely', error, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, fromRel, root, ctrlEdge)
+import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, fromRel, root)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -260,6 +261,25 @@ repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
 repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
    where
    deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
+
+-- Control edge from β to the whole of v
+ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
+ctrlEdge β v = lift2 add v (mul (ctrlWeight * β) <$> unitSection v)
+   where
+   -- Weight 1 at every position except beneath the root of a closure
+   unitSection :: Endo (Val a)
+   unitSection (Val _ u) = Val one case u of
+      Obj c xvs -> Obj c (map unitSection <$> xvs)
+      List vs -> List (unitSection <$> vs)
+      Tuple vs -> Tuple (unitSection <$> vs)
+      Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v') -> one × unitSection v') <$> d))
+      Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
+      Fun φ -> Fun (φ $> zero)
+      _ -> u
+
+-- Control edge from β to key and whole value of an entry
+ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
+ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Concatenate sequences given as pairs of root and elements; elements gain control edge from root of same sequence
 concat :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
