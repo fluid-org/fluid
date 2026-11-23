@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, control, extend, materialise, reuse, unitWeight, tupling)
+import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, controlDep, extend, materialise, reuse, dataDep, tupling)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -69,7 +69,7 @@ extendInputs inputs@{ ρ, b } ρ' ps
    | otherwise = newInputs ρ'' (extend (envAt b) (snd <$> ρ')) ctl <#> { ρ: ρ'', b: _ }
         where
         ρ'' = ρ <+> (fst <$> ρ')
-        ctl = if isEmpty ps then reuse (ctlAt b) else construct (control ps) Map.empty
+        ctl = if isEmpty ps then reuse (ctlAt b) else construct (controlDep ps) Map.empty
 
 -- Inputs of a premise with control input dependent on position q
 controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Path -> Inputs -> m Inputs
@@ -128,7 +128,7 @@ object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
 closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
 closure ctl p ρ ds d = Val unit (V.Fun (V.Closure (Env ρ) ds d)) ×
-   construct (control (singleton ctl)) (maplet ClosureEnv (tupling (bindings (mapWithKey captured ρ))))
+   construct (controlDep (singleton ctl)) (maplet ClosureEnv (tupling (bindings (mapWithKey captured ρ))))
    where
    captured x _ = reuse (p <> singleton (Binding x))
 
@@ -141,7 +141,7 @@ closeDefs ctl p ρ ds = ds <#> \d ->
 
 -- Concatenation of the lists at positions rs; root also depends on support
 concatLists :: forall s. Semiring s => Support (Set Path) s -> List Position -> GVal s
-concatLists support rs = sequenceOf V.List (support <> foldMap (fst >>> unitWeight) rs) $
+concatLists support rs = sequenceOf V.List (support <> foldMap (fst >>> dataDep) rs) $
    rs >>= \r -> deliver (singleton (fst r)) <<< reuseAt <$> elementsAt r
 
 -- ======================
@@ -168,20 +168,20 @@ eval = { stmt, program }
    value :: Inputs -> Expr -> m (GVal s)
    value inputs@{ ρ, b } = case _ of
       Var x -> pure (deliver ctl (get x ρ × reuse (envAt b <> singleton (Binding x))))
-      Lit ℓ -> pure (Val unit (V.Lit ℓ) × construct (control ctl) Map.empty)
+      Lit ℓ -> pure (Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty)
       Dictionary ees -> for ees (\(Pair e e') -> dictEntry inputs e e') <#> \kvs ->
-         deliver ctl (dictionary (control ctl) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
+         deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
       DictComp e e' gs -> do
          r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
-         pure $ deliver ctl $ dictionary (unitWeight (fst r)) $
+         pure $ deliver ctl $ dictionary (dataDep (fst r)) $
             elementsAt r <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)
-      List es -> sequenceOf V.List (control ctl) <<< map reuseAt <$> traverse (expr inputs) es
-      Tuple es -> sequenceOf V.Tuple (control ctl) <<< map reuseAt <$> traverse (expr inputs) es
+      List es -> sequenceOf V.List (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
+      Tuple es -> sequenceOf V.Tuple (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
       ListComp e gs -> reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         object classes (control ctl) c <<< map reuseAt <$> traverse (expr inputs) es
+         object classes (controlDep ctl) c <<< map reuseAt <$> traverse (expr inputs) es
       Matrix e (x × y) e' -> do
          r@(_ × v) <- expr inputs e'
          i' × j' <- case v of
@@ -193,7 +193,7 @@ eval = { stmt, program }
          rss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j ->
             extendInputs inputs (maplet x (index r 0 i) `unionWith_never` maplet y (index r 1 j)) empty >>= flip expr e
          pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × child (Element 0) v × child (Element 1) v))) ×
-            construct (control ctl)
+            construct (controlDep ctl)
                ( Map.fromFoldable $
                     [ MatrixRows × reuse (fst (childAt (Element 0) r)), MatrixCols × reuse (fst (childAt (Element 1) r)) ]
                        <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (q × _) -> MatrixElement i j × reuse q)) rss)
@@ -201,9 +201,9 @@ eval = { stmt, program }
          where
          -- Index n along dimension k of the matrix with dimensions at position u
          index :: Position -> Int -> Int -> GVal s
-         index u k n = Val unit (V.Lit (Int n)) × construct (control (singleton (fst (childAt (Element k) u)))) Map.empty
+         index u k n = Val unit (V.Lit (Int n)) × construct (controlDep (singleton (fst (childAt (Element k) u)))) Map.empty
       Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
-      Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (control ctl) Map.empty)
+      Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
       Attribute e x -> do
          r@(_ × v) <- expr inputs e
          case v of
@@ -288,7 +288,7 @@ eval = { stmt, program }
       pure { holds, r }
 
    singletonList :: Inputs -> GVal s -> GVal s
-   singletonList { b } v = sequenceOf V.List (control (singleton (ctlAt b))) (v : Nil)
+   singletonList { b } v = sequenceOf V.List (controlDep (singleton (ctlAt b))) (v : Nil)
 
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
    qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m Position
@@ -300,7 +300,7 @@ eval = { stmt, program }
       elements (Guard e : gs') = do
          { holds, r: q × _ } <- condition inputs e
          if holds then reuseAt <$> (controlledBy q inputs >>= \inputs' -> qualifiers body inputs' gs')
-         else pure (Val unit (V.List []) × construct (control (singleton q)) Map.empty)
+         else pure (Val unit (V.List []) × construct (controlDep (singleton q)) Map.empty)
       elements (Generator p e : gs') = do
          r@(_ × v) <- expr inputs e
          n <- case elementCount v of
@@ -315,7 +315,7 @@ eval = { stmt, program }
                Nothing × qs -> pure (Nil × qs)
                Just (ρ' × _) × qs ->
                   extendInputs inputs ρ' (lengthPositions r ∪ qs) >>= \inputs' -> qualifiers body inputs' gs' <#> \r' -> singleton r' × empty
-         pure (concatLists (control (lengthPositions r ∪ ps)) rs)
+         pure (concatLists (controlDep (lengthPositions r ∪ ps)) rs)
       elements (Decl p e : gs') = do
          r <- expr inputs e
          classes <- askClasses
@@ -368,7 +368,7 @@ eval = { stmt, program }
          r@(Returns _) -> pure r
          r@(Assigns ρ' ps) -> override r <$> (extendInputs inputs ρ' ps >>= flip stmt s')
       where
-      constant = construct (control (singleton (ctlAt b))) Map.empty
+      constant = construct (controlDep (singleton (ctlAt b))) Map.empty
 
    program :: Inputs -> Stmt -> m Position
    program inputs s = output inputs s >>= \r -> newValue (reuseAt r) $> r
@@ -393,7 +393,7 @@ eval = { stmt, program }
          n <- arity'
          let k = length rs
          if k < n then
-            pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (control (singleton ctl))
+            pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (controlDep (singleton ctl))
                (Map.fromFoldable ((PartialFun × reuse q) : mapWithIndex (\i (q' × _) -> PartialArg i × reuse q') rs))
          else if k == n then call φ
          else application ctl f (take n rs) >>= \f' -> apply ctl f' (drop n rs)
@@ -411,7 +411,7 @@ eval = { stmt, program }
       call :: V.Fun Unit -> m (GVal s)
       call = case _ of
          V.Closure (Env ρ) ds (Def xs s) -> do
-            b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (control (singleton q)) Map.empty)
+            b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (controlDep (singleton q)) Map.empty)
             reuseAt <<< asReturns <$> stmt { ρ: ρ'', b } s
             where
             p = q <> singleton ClosureEnv
@@ -420,7 +420,7 @@ eval = { stmt, program }
             ρ'' = ρ <+> (fst <$> ρ')
          V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application q) q rs
          V.Type (T.ClassTy c _) ->
-            askClasses <#> \classes -> object classes (control (singleton q)) c (reuseAt <$> rs)
+            askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs)
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
 

@@ -42,7 +42,7 @@ import Effect.Exception (Error)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import Control.Monad.State (class MonadState)
-import DepGraph (DepGraph, construct, control, unitWeight)
+import DepGraph (DepGraph, construct, controlDep, dataDep)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot)
 import Literal (Literal(..), showFloat)
 import Primitive (binopFun, boolean, ctrlEdge, ctrlEdgeEntry, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
@@ -403,9 +403,9 @@ entryValue k d =
 
 -- Dictionary with the values at given positions; root and keys depend on the roots and keys of the dictionaries ds
 dictFrom :: forall s. Semiring s => Path -> List Position -> List (String × Position) -> GVal s
-dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> unitWeight) ds) $
+dictFrom ctl ds kvs = dictionary (controlDep (singleton ctl) <> foldMap (fst >>> dataDep) ds) $
    kvs <#> \(k × r) ->
-      (Val unit (Lit (Str k)) × construct (foldMap (\d -> unitWeight (fst (childAt (DictKey k) d))) ds) M.empty) × reuseAt r
+      (Val unit (Lit (Str k)) × construct (foldMap (\d -> dataDep (fst (childAt (DictKey k) d))) ds) M.empty) × reuseAt r
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

@@ -40,12 +40,12 @@ instance (Set c Path, Semiring s) => Semigroup (Support c s) where
    append (Support ps ws) (Support ps' ws') = Support (ps ∪ ps') (unionWith add ws ws')
 
 -- Control dependence on each of ps
-control :: forall c s. c -> Support c s
-control ps = Support ps empty
+controlDep :: forall c s. c -> Support c s
+controlDep ps = Support ps empty
 
 -- Dependence on p with weight one
-unitWeight :: forall c s. Set c Path => Semiring s => Path -> Support c s
-unitWeight p = Support empty (maplet p one)
+dataDep :: forall c s. Set c Path => Semiring s => Path -> Support c s
+dataDep p = Support empty (maplet p one)
 
 -- Leave control sources unchanged, since control weight absorbs non-zero w
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
