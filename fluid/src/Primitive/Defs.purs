@@ -45,7 +45,7 @@ import Control.Monad.State (class MonadState)
 import DepGraph (DepGraph, construct, control, unitWeight)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot)
 import Literal (Literal(..), showFloat)
-import Primitive (binopFun, boolean, ctrlEdge, ctrlEdgeEntry, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
+import Primitive (binopFun, boolean, ctrlEdge, ctrlEdgeEntry, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
 import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
@@ -56,7 +56,7 @@ import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
 import Val (BaseVal(..), DepFun, DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Position, Val(..), dictEntries, elementCount, matrixPut)
-import Val.Dependence (deliver, dictionary, fromDepFun, newValue, childAt, reuseAt)
+import Val.Dependence (deliver, dictionary, newValue, childAt, reuseAt)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =

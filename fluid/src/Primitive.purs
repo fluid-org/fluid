@@ -25,12 +25,12 @@ import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, ctrlWeight
 import Literal (Literal(..), eqLiteral)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (MayFail, type (+), type (×), Endo, absurd, definitely', error, singleton, (×))
+import Util (MayFail, type (+), type (×), Endo, absurd, definitely', error, orThrow, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
-import Val.Dependence (fromDepFun)
+import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
+import Val.Dependence (applyDepFun)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -131,6 +131,10 @@ boolean =
    }
 
 -- Need to be careful about type variables escaping higher-rank quantification.
+-- Foreign function with dependence given by f
+fromDepFun :: DepFun -> DepOp
+fromDepFun f _ ctl rs = orThrow (applyDepFun f (singleton ctl) rs)
+
 type Unary i o a =
    { i :: ToFrom i a
    , o :: ToFrom o a

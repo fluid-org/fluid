@@ -20,9 +20,9 @@ import Lattice (class DepSemiring, Lineage(..), Raw, erase)
 import Literal (Literal(..))
 import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
 import Types.Defs (cRange)
-import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, orThrow, singleton, (×))
+import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable)
-import Val (BaseVal(..), DepFun, DepOp, DictRep(..), Env(..), GVal, Label(..), Position, Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), Position, Val(..), child, element, elementCount)
 
 -- Every position within the value at a position
 positionsIn :: Position -> Set Path
@@ -127,7 +127,3 @@ dictionary support kvs =
    key :: Raw Val -> String
    key (Val _ (Lit (Str k))) = k
    key _ = error absurd
-
--- Foreign function with dependence given by f; application of f may fail
-fromDepFun :: DepFun -> DepOp
-fromDepFun f _ ctl rs = orThrow (applyDepFun f (singleton ctl) rs)
