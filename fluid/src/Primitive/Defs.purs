@@ -38,7 +38,6 @@ import Path (Path, Step(..))
 import Types.Defs (cMatrix, cRange, callable, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
 import Cxt (Cxt, CxtEntry(Assigned), generalise)
-import Dict (Dict(..))
 import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
@@ -56,7 +55,7 @@ import Pretty (prettyP)
 import Types (Primitive(..), Type(..), baseType) as T
 import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
-import Util.Set (empty, (∪))
+import Util.Set (empty, (∈), (∪))
 import Util.Map as Dict
 import Util.Map as Map
 import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Position, Val(..), dictEntries, elementCount, matrixPut)
@@ -168,7 +167,7 @@ sorted =
       -> m (List (Position × Set Path))
    merge ps Nil us' = pure (map (ps ∪ _) <$> us')
    merge ps us Nil = pure (map (ps ∪ _) <$> us)
-   merge ps ((u × qs) : us) ((u' × qs') : us') = holds Lt u' u >>= \(b × ps') ->
+   merge ps ((u × qs) : us) ((u' × qs') : us') = compareAt Lt u' u >>= \(b × ps') ->
       let
          ps'' = ps ∪ ps' ∪ qs ∪ qs'
       in
@@ -194,7 +193,7 @@ extremum id op =
    depOp _ _ _ = throw "Single argument expected"
 
    step :: forall m. MonadError Error m => Position × Set Path -> Position -> m (Position × Set Path)
-   step (u × ps) u' = holds op u' u <#> \(b × ps') -> (if b then u' else u) × (ps ∪ ps')
+   step (u × ps) u' = compareAt op u' u <#> \(b × ps') -> (if b then u' else u) × (ps ∪ ps')
 
 exit :: ForeignOp
 exit =
@@ -341,7 +340,7 @@ dict_difference =
    depOp :: DepOp
    depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
-         entryAt (Set.fromFoldable [ fst d, fst d' ]) d <$> entryKeys (es \\ es')
+         entryAt (Set.fromFoldable [ fst d, fst d' ]) d <$> L.fromFoldable (Map.keys (es \\ es'))
    depOp _ _ _ = throw "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
@@ -351,8 +350,8 @@ dict_disjointUnion =
    depOp :: DepOp
    depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
-         (entryAt (singleton (fst d')) d' <$> entryKeys es')
-            <> (entryAt (singleton (fst d)) d <$> entryKeys (unionWith_never es es' \\ es'))
+         L.fromFoldable (Map.keys (unionWith_never es es')) <#> \k ->
+            if k ∈ es then entryAt (singleton (fst d)) d k else entryAt (singleton (fst d')) d' k
    depOp _ _ _ = throw "Dictionaries expected"
 
 foldl_with_index :: ForeignOp
@@ -389,11 +388,7 @@ insert =
    depOp :: DepOp
    depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : k@(_ × Val _ (Lit (Str x))) : v : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d)) $
-         if x `L.elem` entryKeys es then entryKeys es <#> \x' -> if x' == x then new else old x'
-         else (old <$> entryKeys es) <> singleton new
-      where
-      old = entryAt (singleton (fst d)) d
-      new = reuseAt k × reuseAt v
+         (entryAt (singleton (fst d)) d <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt k × reuseAt v)
    depOp _ _ _ = throw "Dictionary, key and value expected"
 
 dict_intersectionWith :: ForeignOp
@@ -424,15 +419,11 @@ dict_map =
    depOp _ _ _ = throw "Function and dictionary expected"
 
 -- Outcome and source positions of comparing the values at two positions
-holds :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)
-holds op u u' = do
+compareAt :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)
+compareAt op u u' = do
    v × δ <- orThrow (applyDepFun (binopFun op) empty (u : u' : Nil) :: MayFail (GVal DepKind))
    b × _ <- orThrow (unpack boolean v)
    pure (b × case supportAt δ Nil of Support ps ws -> ps ∪ Map.keys ws)
-
--- Keys of a dictionary in order of insertion
-entryKeys :: forall a. Dict a -> List String
-entryKeys (Dict es) = L.fromFoldable (O.keys es)
 
 -- Reuse key and value of a dictionary entry under control of given positions
 entryAt :: forall s. Semiring s => Set Path -> Position -> String -> GVal s × GVal s
