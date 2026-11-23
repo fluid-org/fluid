@@ -18,16 +18,15 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
-import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for_, sequence_)
 import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error, message)
-import DepGraph (class Paths, Labelling, VisibleGraph, bwd, fwd, mask, paths, selected)
-import Lattice (class DepSemiring, DepKind(..), 𝔹, botOf, erase)
-import Path (Path, Vertex)
+import DepGraph (Labelling, VisibleGraph, bwd, fwd, mask, paths, selected)
+import Lattice (DepKind(..), 𝔹, botOf, erase)
+import Path (Vertex)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
 import Util (type (×), Endo, spyWhen, (×))
@@ -133,19 +132,13 @@ drawLoaded divId = either failed loaded
    loaded fig = drawFig divId fig *> (placeholder >>= remove)
 
 -- Forward query with backward query as its transpose
-type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
-
-dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
-dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
-
-queries :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Path)) (Labelling (f s))
-queries g = { fwd: fwd g, bwd: bwd g }
+type Queries = { fwd :: Endo (Labelling (Val 𝔹)), bwd :: Endo (Labelling (Val 𝔹)) }
 
 -- Queries over Boolean selections.
-boolean
-   :: ConjugatePair (Labelling (Set Path)) (Labelling (Val DepKind))
-   -> ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
-boolean = dimap (map selected) (map (map (_ /= Zero)))
+boolean :: VisibleGraph Val DepKind -> Queries
+boolean g = { fwd: query (fwd g), bwd: query (bwd g) }
+   where
+   query f = map selected >>> f >>> map (map (_ /= Zero))
 
 figure :: FigGraph -> Fig
 figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
@@ -168,15 +161,13 @@ figure { graph, ins, out, ιs, ignored, linking, rowFilter } =
    nothing = map (const false) <$> graph.vals
 
    -- Queries over the whole graph; queries restricted to data positions other than ignored positions
-   unmasked = boolean (queries graph)
-   masked = boolean $ queries $ graph # mask \p v ->
+   unmasked = boolean graph
+   masked = boolean $ graph # mask \p v ->
       maybe (dataPositions v) (\ps -> lift2 (\b b' -> b && not b') (dataPositions v) (paths v <#> \(q × _) -> q ∈ ps))
          (Map.lookup p ignored)
 
    -- Positions not reached backwards from the output; positions not reached forwards from any input
-   inert
-      :: ConjugatePair (Labelling (Val 𝔹)) (Labelling (Val 𝔹))
-      -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
+   inert :: Queries -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
    inert { fwd, bwd } =
       { bwd: map not <$> bwd (unval out (val everything out))
       , fwd: map not <$> fwd (Map.filterKeys (_ ∈ inputVertices) everything)
