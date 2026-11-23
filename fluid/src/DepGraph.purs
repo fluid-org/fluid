@@ -301,8 +301,8 @@ selected :: forall f. Paths f => f Boolean -> Set Path
 selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
 
 -- Add weights at a vertex.
-add' :: forall s. Semiring s => Vertex -> Map Path s -> Labelling (Map Path s) -> Labelling (Map Path s)
-add' = insertWith (unionWith add)
+addAt :: forall s. Semiring s => Vertex -> Labelling (Map Path s) -> Map Path s -> Labelling (Map Path s)
+addAt a wss ws = insertWith (unionWith add) a ws wss
 
 -- Weight 1 at the selected positions.
 unitWeights :: forall s. Semiring s => Labelling (Set Path) -> Labelling (Map Path s)
@@ -329,8 +329,7 @@ bwd g selection = fromSparse g (foldr step (unitWeights selection) (toUnfoldable
    step :: Vertex × Map Path (Support PathSet s) -> Endo (Labelling (Map Path s))
    step (b × supports) wss = case lookup b wss of
       Nothing -> wss
-      Just ws -> foldlWithIndex (\a wss' ws' -> add' a ws' wss') wss $
-         bySource (weights (foldlWithIndex (from supports) mempty ws))
+      Just ws -> foldlWithIndex addAt wss (bySource (weights (foldlWithIndex (from supports) mempty ws)))
 
    from :: Map Path (Support PathSet s) -> Path -> Support PathSet s -> s -> Support PathSet s
    from supports q support w = maybe support (scaleSupport w >>> (support <> _)) (lookup q supports)
@@ -340,7 +339,7 @@ fwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Se
 fwd g selection = fromSparse g (foldl step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
    step :: Labelling (Map Path s) -> Vertex × Map Path (Support PathSet s) -> Labelling (Map Path s)
-   step wss (b × supports) = add' b (Map.mapMaybe weight supports) wss
+   step wss (b × supports) = addAt b wss (Map.mapMaybe weight supports)
       where
       weightAt :: Path -> s
       weightAt (EdgeSrc a : p) = fromMaybe zero (lookup a wss >>= lookup p)
