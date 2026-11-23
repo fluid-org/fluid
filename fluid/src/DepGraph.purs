@@ -110,22 +110,22 @@ type Dependence c s = Restructuring c × Rel c s
 reuse :: forall c s. Set c Path => Semiring s => Path -> Dependence c s
 reuse p = Reuse empty p × mempty
 
-supp :: forall c s. Set c Path => Semiring s => Dependence c s -> Path -> Support c s
-supp (θ × r) q = case pathAfter q θ of
+supportAt :: forall c s. Set c Path => Semiring s => Dependence c s -> Path -> Support c s
+supportAt (θ × r) q = case pathAfter q θ of
    Reuse ps p -> Support ps (maplet p one)
    θ' -> Support (ctrl θ') empty <> support
    where
    Rel support _ = π q r
 
 -- Control sources which hold every source of every position in qs
-supps :: forall s. Semiring s => Dependence PathSet s -> Set Path -> PathSet
-supps δ qs = foldMap (supp δ >>> \(Support ps ws) -> ps ∪ foldMap pathSet (keys ws)) qs
+supportsAt :: forall s. Semiring s => Dependence PathSet s -> Set Path -> PathSet
+supportsAt δ qs = foldMap (supportAt δ >>> \(Support ps ws) -> ps ∪ foldMap pathSet (keys ws)) qs
 
 restructuringAfter :: forall s. Semiring s => Restructuring (Set Path) -> Dependence PathSet s -> Restructuring PathSet
-restructuringAfter (Reuse ps p) δ@(θ × _) = withCtrl (supps δ ps) (pathAfter p θ)
-restructuringAfter (NoReuse ps) δ = NoReuse (supps δ ps)
-restructuringAfter (Tupling ps θs) δ = Tupling (supps δ ps) (flip restructuringAfter δ <$> θs)
-restructuringAfter (ExtendEnv ps θ θs) δ = ExtendEnv (supps δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
+restructuringAfter (Reuse ps p) δ@(θ × _) = withCtrl (supportsAt δ ps) (pathAfter p θ)
+restructuringAfter (NoReuse ps) δ = NoReuse (supportsAt δ ps)
+restructuringAfter (Tupling ps θs) δ = Tupling (supportsAt δ ps) (flip restructuringAfter δ <$> θs)
+restructuringAfter (ExtendEnv ps θ θs) δ = ExtendEnv (supportsAt δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel PathSet s -> Rel PathSet s
 restructuringAfterRel θ r = case θ of
@@ -140,7 +140,7 @@ restructuringAfterRel θ r = case θ of
 -- Relation after the relation of a dependence
 relAfter :: forall s. DepSemiring s => Rel (Set Path) s -> Dependence PathSet s -> Rel PathSet s
 relAfter (Rel (Support ps ws) rs) δ =
-   Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (supp δ p)) (Support (supps δ ps) empty) ws)
+   Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (supportAt δ p)) (Support (supportsAt δ ps) empty) ws)
       (Map.mapMaybe (flip relAfter δ >>> nonZero) rs)
 
 compose :: forall s. DepSemiring s => Dependence (Set Path) s -> Dependence PathSet s -> Dependence PathSet s
@@ -240,7 +240,7 @@ materialise g visible =
 
    supports :: Vertex -> Dependence PathSet s -> Map Path (Support PathSet s)
    supports a δ = Map.filter (not <<< isEmpty) $
-      Map.fromFoldable (positions (paths (get a vals)) <#> \(q × _) -> q × supp δ q)
+      Map.fromFoldable (positions (paths (get a vals)) <#> \(q × _) -> q × supportAt δ q)
 
 -- Control sources of every support
 controlSets :: forall s. Labelling (Map Path (Support PathSet s)) -> Set PathSet

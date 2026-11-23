@@ -62,9 +62,9 @@ override :: forall s. Result s -> Result s -> Result s
 override (Assigns ρ ps) (Assigns ρ' ps') = Assigns (ρ <+> ρ') (if isEmpty ps' then ps else ps')
 override _ r' = r'
 
--- Inputs of premise which follows bindings ρ' and new sources ps of control input
-after :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Path -> m Inputs
-after inputs@{ ρ, b } ρ' ps
+-- Extend environment of inputs with bindings; non-empty set of positions replaces sources of control input
+extendInputs :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Path -> m Inputs
+extendInputs inputs@{ ρ, b } ρ' ps
    | isEmpty ρ' && isEmpty ps = pure inputs
    | otherwise = newInputs ρ'' (extend (envAt b) (snd <$> ρ')) ctl <#> { ρ: ρ'', b: _ }
         where
@@ -73,7 +73,7 @@ after inputs@{ ρ, b } ρ' ps
 
 -- Inputs of a premise with control input dependent on position q
 controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Path -> Inputs -> m Inputs
-controlledBy q inputs = after inputs empty (singleton q)
+controlledBy q inputs = extendInputs inputs empty (singleton q)
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
 matches :: forall s. Semiring s => ClassTable -> Position -> Pattern -> Maybe (Dict (GVal s)) × List Path
@@ -160,7 +160,7 @@ eval = { stmt, program }
    expr :: Inputs -> Expr -> m Position
    expr inputs e'@(DocExpr e _) = do
       r <- value inputs e' >>= newValue
-      doc <- after inputs (maplet varThis (reuseAt r)) empty >>= flip expr e
+      doc <- extendInputs inputs (maplet varThis (reuseAt r)) empty >>= flip expr e
       attachDoc (sourceVertex (fst r)) (sourceVertex (fst doc)) $> r
    expr inputs e = value inputs e >>= newValue
 
@@ -191,7 +191,7 @@ eval = { stmt, program }
             (i' × j' >= 1 × 1)
             ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
          rss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j ->
-            after inputs (maplet x (index r 0 i) `unionWith_never` maplet y (index r 1 j)) empty >>= flip expr e
+            extendInputs inputs (maplet x (index r 0 i) `unionWith_never` maplet y (index r 1 j)) empty >>= flip expr e
          pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × child (Element 0) v × child (Element 1) v))) ×
             construct (control ctl)
                ( Map.fromFoldable $
@@ -314,13 +314,13 @@ eval = { stmt, program }
             case dispatch classes (singleton (p × unit)) u of
                Nothing × qs -> pure (Nil × qs)
                Just (ρ' × _) × qs ->
-                  after inputs ρ' (lengthPositions r ∪ qs) >>= \inputs' -> qualifiers body inputs' gs' <#> \r' -> singleton r' × empty
+                  extendInputs inputs ρ' (lengthPositions r ∪ qs) >>= \inputs' -> qualifiers body inputs' gs' <#> \r' -> singleton r' × empty
          pure (concatLists (control (lengthPositions r ∪ ps)) rs)
       elements (Decl p e : gs') = do
          r <- expr inputs e
          classes <- askClasses
          ρ' × ps <- destructure classes p r
-         reuseAt <$> (after inputs ρ' ps >>= \inputs' -> qualifiers body inputs' gs')
+         reuseAt <$> (extendInputs inputs ρ' ps >>= \inputs' -> qualifiers body inputs' gs')
 
    stmt :: Inputs -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
@@ -345,7 +345,7 @@ eval = { stmt, program }
          classes <- askClasses
          case dispatch classes (NEL.toList bs) r of
             Nothing × ps -> pure (Assigns empty ps)
-            Just (ρ' × s') × ps -> override (Assigns ρ' ps) <$> (after inputs ρ' ps >>= flip stmt s')
+            Just (ρ' × s') × ps -> override (Assigns ρ' ps) <$> (extendInputs inputs ρ' ps >>= flip stmt s')
       Declare _ -> pure (Assigns empty empty)
       Assign p e -> do
          r <- expr inputs e
@@ -366,14 +366,14 @@ eval = { stmt, program }
       TypeAlias x αs τ -> pure (Assigns (maplet x (Val unit (V.TypeAlias αs τ) × constant)) empty)
       Seq s s' -> stmt inputs s >>= case _ of
          r@(Returns _) -> pure r
-         r@(Assigns ρ' ps) -> override r <$> (after inputs ρ' ps >>= flip stmt s')
+         r@(Assigns ρ' ps) -> override r <$> (extendInputs inputs ρ' ps >>= flip stmt s')
       where
       constant = construct (control (singleton (ctlAt b))) Map.empty
 
    program :: Inputs -> Stmt -> m Position
    program inputs s = output inputs s >>= \r -> newValue (reuseAt r) $> r
       where
-      output inputs' (Seq t t') = asAssigns <$> stmt inputs' t >>= \(ρ × ps) -> after inputs' ρ ps >>= flip output t'
+      output inputs' (Seq t t') = asAssigns <$> stmt inputs' t >>= \(ρ × ps) -> extendInputs inputs' ρ ps >>= flip output t'
       output inputs' (ExprStmt e) = expr inputs' e
       output _ _ = error absurd
 
