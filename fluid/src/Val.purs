@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Restructuring(..), Sources(..), bindings, construct, emptyGraph, newVertex, onto, paths, plus, positions, reuse, scale, tupling, under, zeros, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, onto, paths, plus, positions, reuse, scale, tupling, under, zeros, ι)
 import DepGraph (valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
@@ -356,7 +356,7 @@ derivative f ctl rs = f (arg <$> rs) <#> \v ->
    row :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
    row r (p × Lineage (_ × ws))
       | Map.isEmpty ws = r
-      | otherwise = r <> ι p (onto (Sources Set.empty ws))
+      | otherwise = r <> ι p (onto (Support Set.empty ws))
 
 -- Step to element i of a sequence, if the element is a part of the sequence
 elementStep :: Int -> Raw Val -> Maybe Step
@@ -379,16 +379,16 @@ elementAt i r = case elementStep i (snd r) of
    Just step -> reuseAt (project step (position r))
    Nothing -> computedElement i r
 
--- List or tuple of vs, as mk determines; root depends on srcs
-sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Sources (Set Path) s -> List (GVal s) -> GVal s
-sequenceOf mk srcs vs =
-   Val unit (mk (A.fromFoldable (fst <$> vs))) × construct srcs (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
+-- List or tuple of vs, as mk determines; root depends on support
+sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List (GVal s) -> GVal s
+sequenceOf mk support vs =
+   Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
 
--- Dictionary with the given entries; root depends on srcs
-dictionary :: forall s. Semiring s => Sources (Set Path) s -> List (GVal s × GVal s) -> GVal s
-dictionary srcs kvs =
+-- Dictionary with the given entries; root depends on support
+dictionary :: forall s. Semiring s => Support (Set Path) s -> List (GVal s × GVal s) -> GVal s
+dictionary support kvs =
    Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \((k × _) × v × _) -> key k × unit × v)))) ×
-      construct srcs (Map.fromFoldable (kvs >>= \((k × δ) × _ × δ') -> (DictKey (key k) × δ) : (DictVal (key k) × δ') : Nil))
+      construct support (Map.fromFoldable (kvs >>= \((k × δ) × _ × δ') -> (DictKey (key k) × δ) : (DictVal (key k) × δ') : Nil))
    where
    key :: Raw Val -> String
    key (Val _ (Lit (Str k))) = k

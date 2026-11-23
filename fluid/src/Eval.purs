@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Sources, VisibleGraph, attachDoc, construct, control, extend, materialise, reuse, unitWeight, tupling)
+import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, construct, control, extend, materialise, reuse, unitWeight, tupling)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -120,9 +120,9 @@ destructure classes p u = case dispatch classes (singleton (p × unit)) u of
    Just (ρ × _) × qs -> pure (ρ × qs)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP (snd u) <> " does not match " <> prettyP p)
 
-object :: forall s. Semiring s => ClassTable -> Sources (Set Path) s -> Name -> List (GVal s) -> GVal s
-object classes srcs c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst <$> vs))) ×
-   construct srcs (Map.fromFoldable (zip (Field <$> fieldNames classes c) (snd <$> vs)))
+object :: forall s. Semiring s => ClassTable -> Support (Set Path) s -> Name -> List (GVal s) -> GVal s
+object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst <$> vs))) ×
+   construct support (Map.fromFoldable (zip (Field <$> fieldNames classes c) (snd <$> vs)))
 
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
 closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
@@ -138,9 +138,9 @@ closeDefs ctl p ρ ds = ds <#> \d ->
    in
       closure ctl p (restrict (fv ds' ∪ fv d) ρ) ds' d
 
--- Concatenation of the lists at vertices rs; root also depends on srcs
-concatLists :: forall s. Semiring s => Sources (Set Path) s -> List (Vertex × Raw Val) -> GVal s
-concatLists srcs rs = sequenceOf V.List (srcs <> foldMap (fst >>> sourceRoot >>> unitWeight) rs) $
+-- Concatenation of the lists at vertices rs; root also depends on support
+concatLists :: forall s. Semiring s => Support (Set Path) s -> List (Vertex × Raw Val) -> GVal s
+concatLists support rs = sequenceOf V.List (support <> foldMap (fst >>> sourceRoot >>> unitWeight) rs) $
    rs >>= \r@(a × _) -> deliver (singleton (sourceRoot a)) <<< reuseAt <$> elementsAt (position r)
 
 -- ======================
