@@ -22,14 +22,14 @@ import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Labelling, SparseRel(..), VisibleGraph, paths, positions, sparseRel)
+import DepGraph (Labelling, Support(..), VisibleGraph, bySource, controlSets, paths, positions)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
 import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
-import Path (Path, Vertex(..))
+import Path (Path, PathSet, Vertex(..), members, pathSet, sourceAt)
 import Pretty (prettyP)
 import Util (type (×), MayFail, absurd, definitely', error, (!), (×))
 import Util.Map (get, insert, lookup, maplet, toUnfoldable)
@@ -63,15 +63,19 @@ type VertexWithDocRep = Int × Maybe Int
 -- Position in a value as its index under the position ordering
 type PosRep = Int
 
--- Dependence relation as target position ↦ source position ↦ weight
-type RelRep = Array (PosRep × Array (PosRep × Int))
+-- Source positions by source vertex
+type SourcesRep a = Array (Int × Array a)
+
+-- Index of control sources among the path sets, then weight of every other source
+type SupportRep = Int × SourcesRep (PosRep × Int)
 
 type Classes = Object (Array FieldName) -- class ↦ field names
 
 type FigGraphRep =
    { classes :: Classes
    , vals :: Array (Int × Json)
-   , edges :: Array (Int × Array (Int × RelRep)) -- target ↦ source ↦ relation
+   , pathSets :: Array (SourcesRep PosRep)
+   , edges :: Array (Int × Array (PosRep × SupportRep)) -- target ↦ position ↦ support
    , ins :: Array (String × VertexWithDocRep)
    , out :: VertexWithDocRep
    , intermediates :: Array (Int × VertexWithDocRep)
@@ -86,8 +90,9 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    pure $ encodeJson
       ( { classes: unions (classes <$> Map.values graph.vals)
         , vals
-        , edges: Map.toUnfoldable graph.edges <#> \(b × rs) ->
-             encodeVertex b × (Map.toUnfoldable rs <#> \(a × r) -> encodeVertex a × encodeRel (index b) (index a) r)
+        , pathSets: pathSets <#> \ps -> map (map fst) <$> encodeSources (Set.toMap (members ps))
+        , edges: Map.toUnfoldable graph.edges <#> \(b × supports) ->
+             encodeVertex b × reindex (index b) (encodeSupport <$> supports)
         , ins: map encodeVertexWithDoc <$> D.toArrayWithKey (×) ins
         , out: encodeVertexWithDoc out
         , intermediates: labelling encodeVertexWithDoc ιs
@@ -122,9 +127,17 @@ encodeFigGraph { graph, ins, out, ιs, ignored, linking, rowFilter } = do
    index :: Vertex -> Path -> PosRep
    index a p = get p (get a indices)
 
-   -- Relation with every target position indexed by tgt; src indexes every source position
-   encodeRel :: (Path -> PosRep) -> (Path -> PosRep) -> SparseRel DepKind -> RelRep
-   encodeRel tgt src (SparseRel { in_ }) = reindex tgt (in_ <#> (map encodeDepKind >>> reindex src))
+   pathSets :: Array PathSet
+   pathSets = Set.toUnfoldable (controlSets graph.edges)
+
+   pathSetIndex :: Map.Map PathSet Int
+   pathSetIndex = Map.fromFoldable (mapWithIndex (flip (×)) pathSets)
+
+   encodeSupport :: Support PathSet DepKind -> SupportRep
+   encodeSupport (Support ps ws) = get ps pathSetIndex × encodeSources (encodeDepKind <$> ws)
+
+   encodeSources :: forall a. Map.Map Path a -> SourcesRep (PosRep × a)
+   encodeSources ws = Map.toUnfoldable (bySource ws) <#> \(a × ws') -> encodeVertex a × reindex (index a) ws'
 
    reindex :: forall a. (Path -> PosRep) -> Map.Map Path a -> Array (PosRep × a)
    reindex f m = Map.toUnfoldable (Map.fromFoldable (lmap f <$> (Map.toUnfoldable m :: Array _)))
@@ -137,11 +150,15 @@ decodeFigGraph json = do
       -- Paths at each vertex in the position ordering
       pathsAt = vals <#> \v -> A.fromFoldable (fst <$> positions (paths v))
       path a i = get (Vertex a) pathsAt ! i
+      source a i = sourceAt (Vertex a) (path a i)
+      pathSets = rep.pathSets <#> foldMap \(a × is) -> foldMap (source a >>> pathSet) is
+      decodeSupport (k × ws) = Support (pathSets ! k) $
+         Map.fromFoldable (ws >>= \(a × ws') -> bimap (source a) decodeDepKind <$> ws')
    pure
       { graph:
            { vals
-           , edges: Map.fromFoldable $ rep.edges <#> \(b × rs) ->
-                Vertex b × Map.fromFoldable (rs <#> \(a × r) -> Vertex a × decodeRel (path b) (path a) r)
+           , edges: Map.fromFoldable $ rep.edges <#> \(b × supports) ->
+                Vertex b × Map.fromFoldable (bimap (path b) decodeSupport <$> supports)
            }
       , ins: D.fromFoldable (map decodeVertexWithDoc <$> rep.ins)
       , out: decodeVertexWithDoc rep.out
@@ -156,10 +173,6 @@ decodeFigGraph json = do
 
    decodeVertexWithDoc :: VertexWithDocRep -> VertexWithDoc
    decodeVertexWithDoc (p × d) = Vertex p × (Vertex <$> d)
-
-   -- Relation with every target index mapped to a path by tgt; src maps every source index
-   decodeRel :: (PosRep -> Path) -> (PosRep -> Path) -> RelRep -> SparseRel DepKind
-   decodeRel tgt src = map (bimap tgt (map (bimap src decodeDepKind) >>> Map.fromFoldable)) >>> Map.fromFoldable >>> sparseRel
 
 encodeDepKind :: DepKind -> Int
 encodeDepKind Zero = error absurd

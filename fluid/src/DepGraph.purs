@@ -48,6 +48,9 @@ instance (Semigroup c, Semiring s) => Semigroup (Support c s) where
 instance (Monoid c, Semiring s) => Monoid (Support c s) where
    mempty = Support mempty empty
 
+instance IsEmpty c => IsEmpty (Support c s) where
+   isEmpty (Support ps ws) = isEmpty ps && isEmpty ws
+
 -- Control dependence on each of ps
 control :: forall c s. c -> Support c s
 control ps = Support ps empty
@@ -61,6 +64,13 @@ positionsOf (Support ps ws) = ps ∪ Map.keys ws
 
 weights :: forall s. DepSemiring s => Support PathSet s -> Map Path s
 weights (Support ps ws) = unionWith add (Set.toMap (members ps) $> ctrlWeight) ws
+
+-- Weights of source positions grouped by source vertex
+bySource :: forall a. Map Path a -> Labelling (Map Path a)
+bySource ws = fromFoldableWith Map.union $
+   (Map.toUnfoldable ws :: List _) <#> case _ of
+      (EdgeSrc a : p) × w -> a × maplet p w
+      _ -> error absurd
 
 -- Product of non-zero w with the weight of every source; unchanged for a source with control weight
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
@@ -78,8 +88,8 @@ instance (Monoid c, Semiring s) => Monoid (Rel c s) where
    mempty = Rel mempty empty
 
 nonZero :: forall c s. IsEmpty c => Rel c s -> Maybe (Rel c s)
-nonZero r@(Rel (Support ps ws) rs)
-   | isEmpty ps && isEmpty ws && isEmpty rs = Nothing
+nonZero r@(Rel support rs)
+   | isEmpty support && isEmpty rs = Nothing
    | otherwise = Just r
 
 -- Relation of the target root to the given sources
@@ -191,6 +201,8 @@ extend p δs
    | isEmpty δs = reuse p
    | otherwise = ExtendEnv mempty (Reuse mempty p) (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
 
+type Labelling a = Map Vertex a
+
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence (Set Path) s -> Set Vertex
 vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
@@ -204,9 +216,6 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
 
    holder (EdgeSrc a) = a
    holder _ = error absurd
-
-type Labelling a = Map Vertex a
-type Edges r = Labelling (Labelling r) -- target ↦ source ↦ dependence relation
 
 -- Vertices labelled by values of shape f; at most one edge into each vertex
 type DepGraph (f :: Type -> Type) s =
@@ -232,22 +241,10 @@ newVertex v δ = do
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
 attachDoc a b = modify_ \g -> g { docs = Map.insert a b g.docs }
 
--- Pair present exactly when its weight is non-zero
-newtype SparseRel s = SparseRel
-   { out :: Map Path (Map Path s) -- source ↦ labelled target neighbours
-   , in_ :: Map Path (Map Path s) -- target ↦ labelled source neighbours
-   }
-
-sparseRel :: forall s. Map Path (Map Path s) -> SparseRel s
-sparseRel in_ = SparseRel { out, in_ }
-   where
-   out = fromFoldableWith Map.union
-      (Map.toUnfoldable in_ >>= \(q × m) -> (Map.toUnfoldable m :: List _) <#> \(p × w) -> p × maplet q w)
-
--- Visible vertices with their values; edges labelled by the dependence relations left by hiding every other vertex
+-- Visible vertices with values; edges left by hiding every other vertex
 type VisibleGraph (f :: Type -> Type) s =
    { vals :: Labelling (f Unit)
-   , edges :: Edges (SparseRel s)
+   , edges :: Labelling (Map Path (Support PathSet s)) -- target ↦ position ↦ non-empty support
    }
 
 -- Relies on edges running from earlier to later vertices in evaluation order.
@@ -264,7 +261,7 @@ materialise g visible =
       if a ∈ visible then
          { θs: free a (Map.insert (EdgeSrc a) (Reuse mempty (sourceRoot a)) θs)
          , rs: free a rs
-         , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
+         , edges: Map.insert a (supports a (θ' × r')) edges
          }
       else { θs: free a (Map.insert (EdgeSrc a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (EdgeSrc a) rs), edges }
       where
@@ -284,37 +281,34 @@ materialise g visible =
    byLastDependent = fromFoldableWith (<>) $
       (Map.toUnfoldable lastDependent :: List _) <#> \(b × a) -> a × (b : Nil)
 
-   -- Edges into a visible vertex from each visible vertex
-   edgesInto :: Vertex -> Dependence PathSet s -> Labelling (Map Path (Map Path s))
-   edgesInto a δ = foldl (unionWith Map.union) empty $
-      positions (paths (get a vals)) <#> \(q × _) -> maplet q <$> bySource (weights (supp δ q))
+   supports :: Vertex -> Dependence PathSet s -> Map Path (Support PathSet s)
+   supports a δ = Map.filter (not <<< isEmpty) $
+      Map.fromFoldable (positions (paths (get a vals)) <#> \(q × _) -> q × supp δ q)
 
-   bySource :: Map Path s -> Labelling (Map Path s)
-   bySource row = fromFoldableWith Map.union $
-      (Map.toUnfoldable row :: List _) <#> case _ of
-         (EdgeSrc b : p) × w -> b × maplet p w
-         _ -> error absurd
+-- Control sources of every support
+controlSets :: forall s. Labelling (Map Path (Support PathSet s)) -> Set PathSet
+controlSets = foldMap (foldMap \(Support ps _) -> singleton ps)
 
--- Restrict every dependence relation to the positions where the predicate holds.
+-- Restrict every support and target to the positions which satisfy the predicate
 mask :: forall f s. Paths f => (Vertex -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
-mask keep g = g { edges = mapWithIndex (\b -> mapWithIndex (rel b)) g.edges }
+mask keep g = g { edges = mapWithIndex (\b -> Map.filterKeys (_ ∈ get b kept) >>> Map.mapMaybe restrict) g.edges }
    where
    kept = mapWithIndex (\a -> keep a >>> selected) g.vals
-   rel b a (SparseRel r) = SparseRel { in_: only ps_b ps_a r.in_, out: only ps_a ps_b r.out }
+
+   restrict (Support ps ws) = if isEmpty support then Nothing else Just support
       where
-      ps_b = get b kept
-      ps_a = get a kept
-   only ps ps' m = Map.filter (not <<< isEmpty) $
-      Map.filterKeys (_ ∈ ps') <$> Map.filterKeys (_ ∈ ps) m
+      support = Support (get ps restricted) (Map.filterKeys keptSource ws)
+
+   restricted :: Map PathSet PathSet
+   restricted = Set.toMap (controlSets g.edges) # mapWithIndex \ps _ ->
+      foldMap pathSet (Set.filter keptSource (members ps))
+
+   keptSource (EdgeSrc a : p) = p ∈ get a kept
+   keptSource _ = error absurd
 
 -- Positions carrying true.
 selected :: forall f. Paths f => f Boolean -> Set Path
 selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
-
--- Sparse dependence relation applied to sparse weights.
-applySparse :: forall s. Semiring s => Map Path (Map Path s) -> Map Path s -> Map Path s
-applySparse r w = foldl (unionWith add) empty $
-   mapWithIndex (\p w' -> maybe empty (map (w' * _)) (lookup p r)) w
 
 -- Add weights at a vertex.
 add' :: forall s. Semiring s => Vertex -> Map Path s -> Labelling (Map Path s) -> Labelling (Map Path s)
@@ -335,23 +329,36 @@ type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
 dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
 dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
 
-queries :: forall f s. Paths f => Semiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Path)) (Labelling (f s))
+queries :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Path)) (Labelling (f s))
 queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Dependence of the selection on the positions of each visible vertex.
-bwd :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
+bwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step (p × sources) ws = case lookup p ws of
+   step (b × supports) ws = case lookup b ws of
       Nothing -> ws
-      Just w -> foldlWithIndex (\q ws' (SparseRel r) -> add' q (applySparse r.in_ w) ws') ws sources
+      Just w -> foldlWithIndex (\a ws' w' -> add' a w' ws') ws (bySource (weights (foldlWithIndex (from supports) mempty w)))
+
+   from supports q support w = maybe support (scaleSupport w >>> (support <> _)) (lookup q supports)
 
 -- Dependence of the positions of each visible vertex on the selection.
-fwd :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
+fwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable g.edges :: List _))
    where
-   step ws (p × sources) = foldlWithIndex (\q ws' r -> maybe ws' (into p ws' r) (lookup q ws)) ws sources
-   into p ws (SparseRel r) w = add' p (applySparse r.out w) ws
+   step ws (b × supports) = add' b (Map.mapMaybe weight supports) ws
+      where
+      weightAt (EdgeSrc a : p) = fromMaybe zero (lookup a ws >>= lookup p)
+      weightAt _ = error absurd
+
+      -- Whether each set of control sources has a member with non-zero weight
+      reached :: Map PathSet Boolean
+      reached = Set.toMap (controlSets (maplet b supports)) # mapWithIndex \ps _ ->
+         any (weightAt >>> (_ /= zero)) (members ps)
+
+      weight (Support ps ws') = if w == zero then Nothing else Just w
+         where
+         w = foldlWithIndex (\p w' x -> w' + weightAt p * x) (if get ps reached then ctrlWeight else zero) ws'
 
 -- ======================
 -- boilerplate
