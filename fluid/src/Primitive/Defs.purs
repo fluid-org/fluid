@@ -152,7 +152,6 @@ sorted =
    depOp _ _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ _ = throw "Single argument expected"
 
-   -- Each element carries source positions of every comparison which placed that element
    sort :: forall m. MonadError Error m => List (Position × Set Path) -> m (List (Position × Set Path))
    sort us
       | L.length us < 2 = pure us
