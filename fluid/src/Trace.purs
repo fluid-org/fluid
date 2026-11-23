@@ -13,6 +13,9 @@ import Util.Pair (Pair)
 data Trace v a
    = ExprTrace (ExprTrace v a)
    | QualifierTrace (QualifierTrace v a)
+   | StmtTrace (StmtTrace a)
+
+data StmtTrace a = Returned a --for now
 
 data ExprTrace v a
    = Variable Var
@@ -55,6 +58,7 @@ type CompYield v b = { bindings :: Dict v, body :: b }
 
 derive instance Foldable (ExprTrace v)
 derive instance Foldable (QualifierTrace v)
+derive instance Foldable StmtTrace
 derive instance Foldable (Trace v)
 
 premises :: forall f a. Foldable f => f a -> List a

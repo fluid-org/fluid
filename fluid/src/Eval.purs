@@ -393,7 +393,7 @@ eval = { stmt, program }
 
    stmt :: Inputs s -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
-      Returns r -> Returns <$> newValue (gval r)
+      Returns r -> Returns <$> record (gval r × Tr.StmtTrace (Tr.Returned (fst r)))
       Assigns ρ ctrl -> uncurry Assigns <$> newAssigns ρ ctrl
 
    -- Result of a statement, before vertex is allocated
