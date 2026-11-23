@@ -93,12 +93,11 @@ onto srcs = Rel srcs empty
 π Nil r = r
 π (step : p) (Rel _ rs) = maybe mempty (π p) (lookup step rs)
 
--- Target depends with control weight on source positions c of each constructor
 data Restructuring c
    = Reuse c Path
    | NoReuse c
    | Parts c (Map Step (Restructuring c))
-   | ExtendEnv c (Restructuring c) (Dict (Restructuring c)) -- environment, then members added or replaced
+   | ExtendEnv c (Restructuring c) (Dict (Restructuring c))
 
 ctrl :: forall c. Restructuring c -> c
 ctrl (Reuse ps _) = ps
