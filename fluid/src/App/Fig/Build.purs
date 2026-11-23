@@ -30,7 +30,7 @@ import Pretty (prettyP)
 import Util (type (×), isEmpty, throw, (×))
 import Util.Map (get)
 import Util.Set ((∈))
-import Val (class MonadProgram, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, valAt, withDoc)
+import Val (class MonadProgram, BaseVal(..), EnvWithDocs(..), Val(..), unvals, val, valAt)
 
 -- Options in the form decoded from JSON; delete once the options are decoded directly
 type JsonOptions =
@@ -79,7 +79,7 @@ figGraphTimed { linking, ignoreInputs, rowFilter } fluidSrc = do
    pure $
       { graph
       , ins
-      , out: withDoc g out
+      , out: out × Map.lookup out g.docs
       , ιs: mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) g.docs)
       , ignored: selected <$> unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
       , linking

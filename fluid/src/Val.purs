@@ -183,26 +183,9 @@ child PartialFun (Val _ (Fun (Partial v _))) = v
 child (PartialArg i) (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 child _ _ = error absurd
 
-overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
-overChildren _ (Lit ℓ) = Lit ℓ
-overChildren _ (Opaque q) = Opaque q
-overChildren _ (Module q) = Module q
-overChildren _ Unbound = Unbound
-overChildren _ (TypeAlias αs τ) = TypeAlias αs τ
-overChildren f (Obj c xvs) = Obj c (map f <$> xvs)
-overChildren f (List vs) = List (f <$> vs)
-overChildren f (Tuple vs) = Tuple (f <$> vs)
-overChildren f (Dictionary (DictRep d)) = Dictionary (DictRep (map f <$> d))
-overChildren f (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (map f) vss × i × j))
-overChildren f (Fun φ) = Fun (overFun φ)
-   where
-   overFun (Closure (Env ρ) ds d) = Closure (Env (f <$> ρ)) ds d
-   overFun (Partial v vs) = Partial (f v) (f <$> vs)
-   overFun φ' = φ'
-
 -- False at shape positions.
 dataPositions :: forall a. Val a -> Val Boolean
-dataPositions (Val _ u) = Val (not container) (overChildren dataPositions (false <$ u))
+dataPositions (Val _ u) = Val (not container) (overChildren (false <$ u))
    where
    container = case u of
       Obj _ _ -> true
@@ -212,21 +195,26 @@ dataPositions (Val _ u) = Val (not container) (overChildren dataPositions (false
       Matrix _ -> true
       _ -> false
 
-reaches :: Dict Def -> Endo (Set Var)
-reaches ds xs = go (Set.toUnfoldable xs) empty
+   overChildren :: Endo (BaseVal Boolean)
+   overChildren (Obj c xvs) = Obj c (map dataPositions <$> xvs)
+   overChildren (List vs) = List (dataPositions <$> vs)
+   overChildren (Tuple vs) = Tuple (dataPositions <$> vs)
+   overChildren (Dictionary (DictRep d)) = Dictionary (DictRep (map dataPositions <$> d))
+   overChildren (Matrix (MatrixRep (vss × i × j))) = Matrix (MatrixRep (map (map dataPositions) vss × i × j))
+   overChildren (Fun (Closure (Env ρ) ds d)) = Fun (Closure (Env (dataPositions <$> ρ)) ds d)
+   overChildren (Fun (Partial v vs)) = Fun (Partial (dataPositions v) (dataPositions <$> vs))
+   overChildren u' = u'
+
+forDefs :: Dict Def -> Def -> Dict Def
+forDefs ds d = restrict (reaches (Set.toUnfoldable (fv d ∩ dom_ds)) empty) ds
    where
    dom_ds = keys ds
 
-   go :: List Var -> Endo (Set Var)
-   go Nil acc = acc
-   go (x : xs') acc | x ∈ acc = go xs' acc
-   go (x : xs') acc | otherwise =
-      go (Set.toUnfoldable (fv d ∩ dom_ds) <> xs') (singleton x ∪ acc)
-      where
-      d = get x ds
-
-forDefs :: Dict Def -> Def -> Dict Def
-forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
+   reaches :: List Var -> Endo (Set Var)
+   reaches Nil acc = acc
+   reaches (x : xs) acc
+      | x ∈ acc = reaches xs acc
+      | otherwise = reaches (Set.toUnfoldable (fv (get x ds) ∩ dom_ds) <> xs) (singleton x ∪ acc)
 
 class Highlightable a where
    highlightIf :: a -> Endo Doc
@@ -256,9 +244,6 @@ instance (Ann a, BoundedLattice b) => Ann (a × b)
 -- Vertex with the vertex of its doc, if any.
 type VertexWithDoc = Vertex × Maybe Vertex
 
-withDoc :: forall f s. DepGraph f s -> Vertex -> VertexWithDoc
-withDoc g p = p × Map.lookup p g.docs
-
 -- Value with its doc, as shown in a figure.
 newtype ValWithDoc a = ValWithDoc { val :: Val a, doc :: Maybe (Val a) }
 newtype EnvWithDocs a = EnvWithDocs (Dict (ValWithDoc a))
@@ -277,24 +262,20 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
 valAt g p = value (get p g.vals)
 
--- Weight 1 at every position except beneath the root of a closure
-unitSection :: forall a s. Semiring s => Val a -> Val s
-unitSection (Val _ u) = Val one case u of
-   Lit ℓ -> Lit ℓ
-   Obj c xvs -> Obj c (map unitSection <$> xvs)
-   List vs -> List (unitSection <$> vs)
-   Tuple vs -> Tuple (unitSection <$> vs)
-   Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v) -> one × unitSection v) <$> d))
-   Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
-   Fun φ -> Fun (φ $> zero)
-   Opaque q -> Opaque q
-   Module q -> Module q
-   Unbound -> Unbound
-   TypeAlias αs τ -> TypeAlias αs τ
-
 -- Control edge from β to the whole of v
 ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
 ctrlEdge β v = lift2 add v (mul (ctrlWeight * β) <$> unitSection v)
+   where
+   -- Weight 1 at every position except beneath the root of a closure
+   unitSection :: Endo (Val a)
+   unitSection (Val _ u) = Val one case u of
+      Obj c xvs -> Obj c (map unitSection <$> xvs)
+      List vs -> List (unitSection <$> vs)
+      Tuple vs -> Tuple (unitSection <$> vs)
+      Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v') -> one × unitSection v') <$> d))
+      Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
+      Fun φ -> Fun (φ $> zero)
+      _ -> u
 
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Path) s
@@ -315,7 +296,7 @@ lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
    Set.fromFoldable (sourceRoot a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
 lengthPositions (a × _) = singleton (sourceRoot a)
 
--- Part at step of the value at a position
+-- Child at step of the value at a position
 project :: Step -> Endo Position
 project step (p × v) = (p <> singleton step) × child step v
 
