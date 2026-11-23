@@ -21,9 +21,9 @@ import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (fst, snd)
 import Lattice (class DepSemiring, ctrlWeight)
-import Util (type (×), Endo, absurd, error, singleton, (×))
+import Util (type (×), Endo, absurd, error, isEmpty, singleton, (×))
 import Util.Map (get, maplet)
-import Util.Set ((∪))
+import Util.Set (empty, size, (∈), (∪))
 import Unsafe.Reference (unsafeRefEq)
 
 newtype Vertex = Vertex Int
@@ -80,8 +80,8 @@ unionShared ps ps'
    | otherwise = argument (ps ∪ ps')
         where
         argument qs
-           | Set.size qs == Set.size ps = ps
-           | Set.size qs == Set.size ps' = ps'
+           | size qs == size ps = ps
+           | size qs == size ps' = ps'
            | otherwise = qs
 
 -- Sources of a target position: set of sources with control weight, then non-zero weight of every other source
@@ -91,15 +91,15 @@ instance Semiring s => Semigroup (Sources s) where
    append (Sources ps ws) (Sources ps' ws') = Sources (unionShared ps ps') (unionWith add ws ws')
 
 instance Semiring s => Monoid (Sources s) where
-   mempty = Sources Set.empty Map.empty
+   mempty = Sources empty empty
 
 -- Control dependence on each of ps
 control :: forall s. Set Path -> Sources s
-control ps = Sources ps Map.empty
+control ps = Sources ps empty
 
 -- Dependence on p with weight one
 unitWeight :: forall s. Semiring s => Path -> Sources s
-unitWeight p = Sources Set.empty (Map.singleton p one)
+unitWeight p = Sources empty (Map.singleton p one)
 
 positionsOf :: forall s. Sources s -> Set Path
 positionsOf (Sources ps ws) = ps ∪ Map.keys ws
@@ -120,19 +120,19 @@ instance Semiring s => Semigroup (Rel s) where
    append (Rel srcs rs) (Rel srcs' rs') = Rel (srcs <> srcs') (unionWith append rs rs')
 
 instance Semiring s => Monoid (Rel s) where
-   mempty = Rel mempty Map.empty
+   mempty = Rel mempty empty
 
 nonZero :: forall s. Rel s -> Maybe (Rel s)
 nonZero r@(Rel (Sources ps ws) rs)
-   | Set.isEmpty ps && Map.isEmpty ws && Map.isEmpty rs = Nothing
+   | isEmpty ps && isEmpty ws && isEmpty rs = Nothing
    | otherwise = Just r
 
 -- Relation of the target root to the given sources
 onto :: forall s. Sources s -> Rel s
-onto srcs = Rel srcs Map.empty
+onto srcs = Rel srcs empty
 
 ι :: forall s. Semiring s => Path -> Endo (Rel s)
-ι p r = foldr (\step r' -> Rel mempty (maybe Map.empty (maplet step) (nonZero r'))) r p
+ι p r = foldr (\step r' -> Rel mempty (maybe empty (maplet step) (nonZero r'))) r p
 
 π :: forall s. Semiring s => Path -> Endo (Rel s)
 π Nil r = r
@@ -148,7 +148,7 @@ data Form
    | Extend Restructuring (Map Step Restructuring) -- restructuring into environment; restructuring into each replacement member
 
 restructuring :: Form -> Restructuring
-restructuring = Restructuring Set.empty
+restructuring = Restructuring empty
 
 withCtrl :: Set Path -> Endo Restructuring
 withCtrl ps' (Restructuring ps ψ) = Restructuring (unionShared ps ps') ψ
@@ -181,7 +181,7 @@ under ps (θ × r) = withCtrl ps θ × r
 supp :: forall s. Semiring s => Dependence s -> Path -> Sources s
 supp (θ × r) q = case pathAfter q θ of
    Restructuring ps (Reuse p) -> Sources ps (Map.singleton p one)
-   Restructuring ps _ -> Sources ps Map.empty <> srcs
+   Restructuring ps _ -> Sources ps empty <> srcs
    where
    Rel srcs _ = π q r
 
@@ -209,7 +209,7 @@ restructuringAfterRel (Restructuring _ ψ) r = case ψ of
 -- Relation after the relation of a dependence
 relAfter :: forall s. DepSemiring s => Rel s -> Dependence s -> Rel s
 relAfter (Rel (Sources ps ws) rs) δ =
-   Rel (foldlWithIndex (\p srcs w -> srcs <> scaleSources w (supp δ p)) (Sources (supps δ ps) Map.empty) ws)
+   Rel (foldlWithIndex (\p srcs w -> srcs <> scaleSources w (supp δ p)) (Sources (supps δ ps) empty) ws)
       (Map.mapMaybe (flip relAfter δ >>> nonZero) rs)
 
 compose :: forall s. DepSemiring s => Dependence s -> Dependence s -> Dependence s
@@ -221,13 +221,13 @@ tupling δs = restructuring (Family (fst <$> δs)) × Rel mempty (Map.mapMaybe (
 -- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on srcs
 construct :: forall s. Semiring s => Sources s -> Map Step (Dependence s) -> Dependence s
 construct srcs δs
-   | Map.isEmpty δs = restructuring Zero × onto srcs
+   | isEmpty δs = restructuring Zero × onto srcs
    | otherwise = map (onto srcs <> _) (tupling δs)
 
 -- Dependence of the environment at position p with members δs replaced or added
 extend :: forall s. Semiring s => Path -> Map Step (Dependence s) -> Dependence s
 extend p δs
-   | Map.isEmpty δs = reuse p
+   | isEmpty δs = reuse p
    | otherwise =
         restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
@@ -237,7 +237,7 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    where
    ofRestructuring (Restructuring ps ψ) = Set.mapMaybe L.head ps ∪ case ψ of
       Reuse p -> Set.mapMaybe L.head (singleton p)
-      Zero -> Set.empty
+      Zero -> empty
       Family θs -> foldMap ofRestructuring θs
       Extend θ' θs -> ofRestructuring θ' ∪ foldMap ofRestructuring θs
    ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
@@ -257,7 +257,7 @@ type DepGraph (f :: Type -> Type) s =
    }
 
 emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: Map.empty, docs: Map.empty, edges: Map.empty }
+emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
 
 valAt :: forall f s. DepGraph f s -> Vertex -> f Unit
 valAt g a = get a g.vals
@@ -294,14 +294,14 @@ type VisibleGraph (f :: Type -> Type) s =
 materialise :: forall f s. Paths f => DepSemiring s => DepGraph f s -> Set Vertex -> VisibleGraph f s
 materialise g visible =
    { vals
-   , edges: (foldl step { θs: Map.empty, rs: Map.empty, edges: Map.empty } (Map.toUnfoldable g.edges :: List _)).edges
+   , edges: (foldl step { θs: empty, rs: empty, edges: empty } (Map.toUnfoldable g.edges :: List _)).edges
    }
    where
-   vals = Map.filterKeys (_ `Set.member` visible) g.vals
+   vals = Map.filterKeys (_ ∈ visible) g.vals
 
    -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
    step { θs, rs, edges } (a × (_ × δ)) =
-      if Set.member a visible then
+      if a ∈ visible then
          { θs: free a (Map.insert (Source a) (restructuring (Reuse (singleton (Source a)))) θs)
          , rs: free a rs
          , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
@@ -316,7 +316,7 @@ materialise g visible =
 
    -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
    lastDependent :: Labelling Vertex
-   lastDependent = foldlWithIndex dependent Map.empty g.edges
+   lastDependent = foldlWithIndex dependent empty g.edges
       where
       dependent a m (bs × _) = foldl (\m' b -> Map.insert b a m') (Map.insert a a m) bs
 
@@ -326,7 +326,7 @@ materialise g visible =
 
    -- Edges into a visible vertex from each visible vertex
    edgesInto :: Vertex -> Dependence s -> Labelling (Map Path (Map Path s))
-   edgesInto a δ = foldl (unionWith Map.union) Map.empty $
+   edgesInto a δ = foldl (unionWith Map.union) empty $
       positions (paths (get a vals)) <#> \(q × _) -> maplet q <$> bySource (weights (supp δ q))
 
    bySource :: Map Path s -> Labelling (Map Path s)
@@ -344,8 +344,8 @@ mask keep g = g { edges = mapWithIndex (\b -> mapWithIndex (rel b)) g.edges }
       where
       ps_b = get b kept
       ps_a = get a kept
-   only ps ps' m = Map.filter (not <<< Map.isEmpty) $
-      Map.filterKeys (_ `Set.member` ps') <$> Map.filterKeys (_ `Set.member` ps) m
+   only ps ps' m = Map.filter (not <<< isEmpty) $
+      Map.filterKeys (_ ∈ ps') <$> Map.filterKeys (_ ∈ ps) m
 
 -- Positions carrying true.
 selected :: forall f. Paths f => f Boolean -> Set Path
@@ -353,8 +353,8 @@ selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else No
 
 -- Sparse dependence relation applied to sparse weights.
 applySparse :: forall s. Semiring s => Map Path (Map Path s) -> Map Path s -> Map Path s
-applySparse r w = foldl (unionWith add) Map.empty $
-   mapWithIndex (\p w' -> maybe Map.empty (map (w' * _)) (lookup p r)) w
+applySparse r w = foldl (unionWith add) empty $
+   mapWithIndex (\p w' -> maybe empty (map (w' * _)) (lookup p r)) w
 
 -- Add weights at a vertex.
 add' :: forall s. Semiring s => Vertex -> Map Path s -> Labelling (Map Path s) -> Labelling (Map Path s)
