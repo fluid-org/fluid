@@ -82,13 +82,13 @@ newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd
 -- Apply f to the values at rs under control of ctl; read dependence from annotations of result
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
 applyDepFun f ctl rs = f (arg <$> rs) <#> \v ->
-   erase v × NoReuse ctl × foldl row mempty (positions (paths v))
+   erase v × NoReuse ctl × foldl addSupport mempty (positions (paths v))
    where
    arg :: Position -> Val (Lineage Path s)
    arg (q × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one)
 
-   row :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
-   row r (p × Lineage (_ × ws))
+   addSupport :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
+   addSupport r (p × Lineage (_ × ws))
       | Map.isEmpty ws = r
       | otherwise = r <> ι p (Rel (Support Set.empty ws) Map.empty)
 
@@ -113,7 +113,7 @@ elementAt i r = case elementStep i (snd r) of
    Just step -> reuseAt (childAt step r)
    Nothing -> computedElement i r
 
--- List or tuple of vs, as mk determines; root depends on support
+-- Build sequence from vs with constructor mk; root depends on support
 sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List (GVal s) -> GVal s
 sequenceOf mk support vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
