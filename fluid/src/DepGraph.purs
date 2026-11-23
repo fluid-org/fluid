@@ -19,7 +19,7 @@ import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
 import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceRoot)
-import Util (class IsEmpty, type (×), Endo, absurd, error, isEmpty, singleton, (×))
+import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (×))
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
 
@@ -72,11 +72,11 @@ bySource ws = fromFoldableWith union $
       (EdgeSrc a : p) × w -> a × maplet p w
       _ -> error absurd
 
--- Scale by non-zero w; control weight absorbs w
+-- Leave control sources unchanged, since control weight absorbs non-zero w
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
 scaleSupport w support@(Support ps ws)
    | w == one = support
-   | otherwise = Support ps (mul w <$> ws)
+   | otherwise = assert (w /= zero) (Support ps (mul w <$> ws))
 
 -- Sources of the target root, then relation into each part; zero relations absent
 data Rel c s = Rel (Support c s) (Map Step (Rel c s))
