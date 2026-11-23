@@ -97,7 +97,9 @@ keyNotFound k = "Key " <> show k <> " not found"
 
 -- Both arguments explicit, since the point-free form is slower
 get :: forall a k b. Show k => Map a k b => k -> a -> b
-get k m = definitely (keyNotFound k) (lookup k m)
+get k m = case lookup k m of
+   Just v -> v
+   Nothing -> error (keyNotFound k)
 
 findWithDefault :: forall k v. Ord k => v -> k -> M.Map k v -> v
 findWithDefault d k = maybe d identity <<< M.lookup k
