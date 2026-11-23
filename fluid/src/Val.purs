@@ -282,12 +282,12 @@ lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
 lengthPositions (a × _) = singleton (sourceRoot a)
 
 -- Child at step of the value at a position
-project :: Step -> Endo Position
-project step (p × v) = (p <> singleton step) × child step v
+childAt :: Step -> Endo Position
+childAt step (p × v) = (p <> singleton step) × child step v
 
 -- Elements of the list or tuple at a position
 elementsAt :: Position -> List Position
-elementsAt u = (\i -> project (Element i) u) <$> L.take n (L.range 0 n)
+elementsAt u = (\i -> childAt (Element i) u) <$> L.take n (L.range 0 n)
    where
    n = definitely' (elementCount (snd u))
 
@@ -372,7 +372,7 @@ computedElement i r = definitelyRight (derivative elementOf Set.empty (singleton
 -- Element i of the sequence at a vertex
 elementAt :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
 elementAt i r = case elementStep i (snd r) of
-   Just step -> reuseAt (project step (position r))
+   Just step -> reuseAt (childAt step (position r))
    Nothing -> computedElement i r
 
 -- List or tuple of vs, as mk determines; root depends on support

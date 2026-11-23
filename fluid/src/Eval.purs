@@ -40,7 +40,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, child, position, positionsIn, project, reuseAt, sequenceOf, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, child, position, positionsIn, childAt, reuseAt, sequenceOf, valAt)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -85,10 +85,10 @@ matches classes u@(q × Val _ v) p = second (q : _) case v, p of
    V.Lit ℓ', PLit ℓ | eqLiteral ℓ ℓ' -> Just empty × Nil
    V.Obj c' xvs, PConstr c ps Nil
       | c `elem` ancestors classes c' ->
-           matchesMany classes ((\(x × _) -> project (Field x) u) <$> take (length ps) xvs) ps
+           matchesMany classes ((\(x × _) -> childAt (Field x) u) <$> take (length ps) xvs) ps
    V.Dictionary (DictRep xvs), PRecord xps ->
-      case traverse (\(x × p') -> lookup x xvs $> (x × project (DictVal x) u × p')) xps of
-         Just kvs -> second ((kvs <#> \(x × _) -> fst (project (DictKey x) u)) <> _)
+      case traverse (\(x × p') -> lookup x xvs $> (x × childAt (DictVal x) u × p')) xps of
+         Just kvs -> second ((kvs <#> \(x × _) -> fst (childAt (DictKey x) u)) <> _)
             (matchesMany classes (fst <<< snd <$> kvs) (snd <<< snd <$> kvs))
          Nothing -> Nothing × Nil
    V.List vs, PList ps | A.length vs == length ps -> matchesMany classes (elementsAt u) ps
@@ -173,7 +173,7 @@ eval = { stmt, program }
       DictComp e e' gs -> do
          r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
          pure $ deliver ctl $ dictionary (unitWeight (sourceRoot (fst r))) $
-            elementsAt (position r) <#> \kv -> reuseAt (project (Element 0) kv) × reuseAt (project (Element 1) kv)
+            elementsAt (position r) <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)
       List es -> sequenceOf V.List (control ctl) <<< map gval <$> traverse (expr inputs) es
       Tuple es -> sequenceOf V.Tuple (control ctl) <<< map gval <$> traverse (expr inputs) es
       ListComp e gs -> gval <$> qualifiers (\inputs' -> expr inputs' e <#> (gval >>> singletonList inputs')) inputs gs
@@ -208,7 +208,7 @@ eval = { stmt, program }
          case v of
             Val _ (V.Obj c xvs) -> do
                _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
-               pure (deliver (singleton (sourceRoot a)) (reuseAt (project (Field x) (position r))))
+               pure (deliver (singleton (sourceRoot a)) (reuseAt (childAt (Field x) (position r))))
             _ -> throw $ "Found " <> prettyP v <> ", expected object"
       Subscript e e' -> do
          r@(_ × v) <- expr inputs e
@@ -219,7 +219,7 @@ eval = { stmt, program }
          case u, u' of
             V.Dictionary (DictRep d), V.Lit (Str k) -> do
                _ <- withMsg "Dict lookup" $ lookup k d # orElse ("Key \"" <> k <> "\" not found")
-               subscript r r' (reuseAt (project (DictVal k) (position r))) (singleton (fst (project (DictKey k) (position r))))
+               subscript r r' (reuseAt (childAt (DictVal k) (position r))) (singleton (fst (childAt (DictKey k) (position r))))
             V.Dictionary _, _ -> throw $ "Found " <> prettyP v' <> ", expected str"
             _, V.Lit (Int i) | Just n <- elementCount v -> do
                let i' = if i < 0 then n + i else i
@@ -230,7 +230,7 @@ eval = { stmt, program }
             V.Lit (Str _), _ -> throw $ "Found " <> prettyP v' <> ", expected int"
             V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
                unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
-               subscript r r' (reuseAt (project (MatrixElement i j) (position r))) empty
+               subscript r r' (reuseAt (childAt (MatrixElement i j) (position r))) empty
             V.Matrix _, _ -> throw $ "Found " <> prettyP v' <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
          where
@@ -308,7 +308,7 @@ eval = { stmt, program }
          classes <- askClasses
          rs × ps <- fold <$> for (L.take n (L.range 0 n)) \i -> do
             u <- case elementStep i v of
-               Just step -> pure (project step (position r))
+               Just step -> pure (childAt step (position r))
                Nothing -> position <$> newValue (computedElement i r)
             case dispatch classes (singleton (p × unit)) u of
                Nothing × qs -> pure (Nil × qs)
@@ -385,8 +385,8 @@ eval = { stmt, program }
    apply :: Path -> Vertex × Raw Val -> List (Vertex × Raw Val) -> m (GVal s)
    apply ctl f@(a × v) rs = case v of
       Val _ (V.Fun (V.Partial _ us)) -> do
-         f' <- newValue (deliver (singleton (sourceRoot a)) (reuseAt (project PartialFun (position f))))
-         rs' <- for (mapWithIndex const us) \i -> newValue (reuseAt (project (PartialArg i) (position f)))
+         f' <- newValue (deliver (singleton (sourceRoot a)) (reuseAt (childAt PartialFun (position f))))
+         rs' <- for (mapWithIndex const us) \i -> newValue (reuseAt (childAt (PartialArg i) (position f)))
          apply ctl f' (rs' <> rs)
       Val _ (V.Fun φ) -> do
          n <- arity'
