@@ -45,12 +45,6 @@ data Support c s = Support c (Map Path s)
 instance (Set c Path, Semiring s) => Semigroup (Support c s) where
    append (Support ps ws) (Support ps' ws') = Support (ps ∪ ps') (unionWith add ws ws')
 
-instance (Set c Path, Semiring s) => Monoid (Support c s) where
-   mempty = Support empty empty
-
-instance IsEmpty c => IsEmpty (Support c s) where
-   isEmpty (Support ps ws) = isEmpty ps && isEmpty ws
-
 -- Control dependence on each of ps
 control :: forall c s. c -> Support c s
 control ps = Support ps empty
@@ -83,9 +77,6 @@ data Rel c s = Rel (Support c s) (Map Step (Rel c s))
 
 instance (Set c Path, Semiring s) => Semigroup (Rel c s) where
    append (Rel support rs) (Rel support' rs') = Rel (support <> support') (unionWith append rs rs')
-
-instance (Set c Path, Semiring s) => Monoid (Rel c s) where
-   mempty = Rel mempty empty
 
 nonZero :: forall c s. IsEmpty c => Rel c s -> Maybe (Rel c s)
 nonZero r@(Rel support rs)
@@ -362,3 +353,11 @@ fwd g selection = dense g (foldl step (unitWeights selection) (toUnfoldable g.ed
 -- ======================
 -- boilerplate
 -- ======================
+instance (Set c Path, Semiring s) => Monoid (Support c s) where
+   mempty = Support empty empty
+
+instance IsEmpty c => IsEmpty (Support c s) where
+   isEmpty (Support ps ws) = isEmpty ps && isEmpty ws
+
+instance (Set c Path, Semiring s) => Monoid (Rel c s) where
+   mempty = Rel mempty empty
