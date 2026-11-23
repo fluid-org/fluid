@@ -51,11 +51,11 @@ type Path = List Step
 ε = Nil
 
 -- Position p of source vertex a
-at :: Vertex -> Path -> Path
-at a p = Source a : p
+sourceAt :: Vertex -> Path -> Path
+sourceAt a p = Source a : p
 
 vertex :: Vertex -> Path
-vertex a = at a ε
+vertex a = sourceAt a ε
 
 -- Whether the step leads from a function value to a value held by the function
 uncl :: Step -> Boolean

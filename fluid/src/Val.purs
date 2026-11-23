@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), at, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, vertex, zeros, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, vertex, zeros, ι)
 import DepGraph (Vertex, Form(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
@@ -272,12 +272,12 @@ position (a × v) = vertex a × v
 
 -- Every position in the value of a vertex
 positionsIn :: Dep.Vertex × Raw Val -> Set Path
-positionsIn (a × v) = Set.fromFoldable (at a <<< fst <$> positions (paths v))
+positionsIn (a × v) = Set.fromFoldable (sourceAt a <<< fst <$> positions (paths v))
 
 -- Positions which determine the length of the sequence at a vertex: the root, plus start and stop of a range
 lengthPositions :: Dep.Vertex × Raw Val -> Set Path
 lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
-   Set.fromFoldable (vertex a : (xvs <#> \(x × _) -> at a (singleton (Field x))))
+   Set.fromFoldable (vertex a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
 lengthPositions (a × _) = singleton (vertex a)
 
 -- Part at step of the value at a position
@@ -307,11 +307,11 @@ newValue (v × δ) = newVertex (Value v) δ <#> (_ × v)
 
 -- Position of the environment at inputs vertex b
 envAt :: Dep.Vertex -> Path
-envAt b = at b (singleton InEnv)
+envAt b = sourceAt b (singleton InEnv)
 
 -- Control position at inputs vertex b
 ctlAt :: Dep.Vertex -> Path
-ctlAt b = at b (singleton InCtl)
+ctlAt b = sourceAt b (singleton InCtl)
 
 -- Allocate inputs vertex for environment ρ with dependence δ; control position has dependence δ'
 newInputs
@@ -336,7 +336,7 @@ newBindings
    => Dict (GVal s)
    -> m (Dep.Vertex × Dict (GVal s))
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (members ρ)) <#> \a ->
-   a × mapWithKey (\x (v × _) -> v × reuse (at a (singleton (Binding x)))) ρ
+   a × mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
 -- Result of f at the values of vertices rs, if any; dependence is the derivative of f, plus control dependence on ctl
 derivative
@@ -350,7 +350,7 @@ derivative f ctl rs = f (arg <$> rs) <#> \v ->
    erase v × under ctl (restructuring Dep.Zero × foldl row mempty (positions (paths v)))
    where
    arg :: Dep.Vertex × Raw Val -> Val (Lineage Path s)
-   arg (a × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (at a p) one)
+   arg (a × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (sourceAt a p) one)
 
    row :: Rel s -> Path × Lineage Path s -> Rel s
    row r (p × Lineage (_ × ws))

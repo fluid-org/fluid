@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Vertex, Path, Sources, Step(..), VisibleGraph, at, attachDoc, construct, control, extend, materialise, reuse, source, tupling, vertex)
+import DepGraph (DepGraph, Vertex, Path, Sources, Step(..), VisibleGraph, sourceAt, attachDoc, construct, control, extend, materialise, reuse, source, tupling, vertex)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -193,13 +193,13 @@ eval = { stmt, program }
          pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × part (Element 0) v × part (Element 1) v))) ×
             construct (control ctl)
                ( Map.fromFoldable $
-                    [ MatrixRows × reuse (at a (singleton (Element 0))), MatrixCols × reuse (at a (singleton (Element 1))) ]
+                    [ MatrixRows × reuse (sourceAt a (singleton (Element 0))), MatrixCols × reuse (sourceAt a (singleton (Element 1))) ]
                        <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (a' × _) -> MatrixElement i j × reuse (vertex a'))) rss)
                )
          where
          -- Index n along dimension k of the matrix with dimensions at vertex a
          index :: Vertex -> Int -> Int -> GVal s
-         index a k n = Val unit (V.Lit (Int n)) × construct (control (singleton (at a (singleton (Element k))))) Map.empty
+         index a k n = Val unit (V.Lit (Int n)) × construct (control (singleton (sourceAt a (singleton (Element k))))) Map.empty
       Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
       Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (control ctl) Map.empty)
       Attribute e x -> do
@@ -412,7 +412,7 @@ eval = { stmt, program }
             b <- newInputs ρ'' (extend p (members ρ')) (construct (source (vertex a)) Map.empty)
             gval <<< asReturns <$> stmt { ρ: ρ'', b } s
             where
-            p = at a (singleton ClosureEnv)
+            p = sourceAt a (singleton ClosureEnv)
             args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (gval r)) empty (zip xs rs)
             ρ' = closeDefs (vertex a) p ρ ds <+> args
             ρ'' = ρ <+> (fst <$> ρ')
