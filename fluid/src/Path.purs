@@ -14,6 +14,7 @@ module Path
 import Prelude
 
 import Bind (Var)
+import Data.Foldable (foldMap)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
@@ -29,7 +30,7 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Util (class IsEmpty, type (×), singleton, (×))
 import Util.Map (get, lookup, maplet)
-import Util.Set (empty, size, (∪))
+import Util.Set (class Set, empty, filter, size, union, (∈), (∪))
 
 newtype Vertex = Vertex Int
 
@@ -99,11 +100,19 @@ members :: PathSet -> Set Path
 members ps = case trie ps of
    Trie b children -> (if b then singleton Nil else empty) ∪ foldMapWithIndex (\step -> Set.map (step : _) <<< members) children
 
--- Union computed once for each pair of sets
-instance Semigroup PathSet where
-   append ps ps'
+instance IsEmpty PathSet where
+   isEmpty ps = ps == empty
+
+instance Set PathSet (List Step) where
+   empty = intern (Trie false empty)
+   filter p ps = foldMap pathSet (Set.filter p (members ps))
+   size ps = size (members ps)
+   difference ps ps' = filter (not <<< (_ ∈ members ps')) ps
+   member p ps = p ∈ members ps
+   -- Computed once for each pair of sets
+   union ps ps'
       | ps == ps' = ps
-      | ps > ps' = append ps' ps
+      | ps > ps' = union ps' ps
       | otherwise = unsafePerformEffect do
            { unions } <- Ref.read interned
            case lookup (ps × ps') unions of
@@ -112,15 +121,15 @@ instance Semigroup PathSet where
                  let
                     Trie b children = trie ps
                     Trie b' children' = trie ps'
-                    ps'' = intern (Trie (b || b') (Map.unionWith append children children'))
+                    ps'' = intern (Trie (b || b') (Map.unionWith union children children'))
                  Ref.modify_ (\r -> r { unions = Map.insert (ps × ps') ps'' r.unions }) interned
                  pure ps''
 
-instance Monoid PathSet where
-   mempty = intern (Trie false empty)
+instance Semigroup PathSet where
+   append = union
 
-instance IsEmpty PathSet where
-   isEmpty ps = ps == mempty
+instance Monoid PathSet where
+   mempty = empty
 
 -- ======================
 -- boilerplate
