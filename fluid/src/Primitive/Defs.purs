@@ -286,14 +286,17 @@ matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (m@(_ × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : ix@(_ × Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ])) : v : Nil) =
-      pure $ deliver (singleton ctl) $ Val unit (Matrix (matrixPut i j (const (snd v)) r)) ×
-         construct (dataDep (fst m)) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> Array.concat (mapWithIndex (mapWithIndex <<< element) vss)))
-      where
-      kept step = step × snd (deliver (singleton (fst m)) (reuseAt (childAt step m)))
-      element i' j' _
-         | i' == i && j' == j = MatrixElement i j × snd (deliver (positionsIn ix) (reuseAt v))
-         | otherwise = kept (MatrixElement i' j')
+   depOp _ ctl (m@(_ × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : ix : v : Nil)
+      | Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) <- snd ix =
+           let
+              kept step = step × snd (deliver (singleton (fst m)) (reuseAt (childAt step m)))
+              element i' j' _
+                 | i' == i && j' == j = MatrixElement i j × snd (deliver (positionsIn ix) (reuseAt v))
+                 | otherwise = kept (MatrixElement i' j')
+              elements = Array.concat (mapWithIndex (mapWithIndex <<< element) vss)
+           in
+              pure $ deliver (singleton ctl) $ Val unit (Matrix (matrixPut i j (const (snd v)) r)) ×
+                 construct (dataDep (fst m)) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> elements))
    depOp _ _ _ = throw "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -349,7 +352,8 @@ dict_disjointUnion =
    depOp :: DepOp
    depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
-         (entryAt (singleton (fst d')) d' <$> entryKeys es') <> (entryAt (singleton (fst d)) d <$> entryKeys (unionWith_never es es' \\ es'))
+         (entryAt (singleton (fst d')) d' <$> entryKeys es')
+            <> (entryAt (singleton (fst d)) d <$> entryKeys (unionWith_never es es' \\ es'))
    depOp _ _ _ = throw "Dictionaries expected"
 
 foldl_with_index :: ForeignOp
