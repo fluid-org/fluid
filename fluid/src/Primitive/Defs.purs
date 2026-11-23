@@ -41,7 +41,7 @@ import Effect.Exception (Error)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import Control.Monad.State (class MonadState)
-import DepGraph (DepGraph, Vertex, Path, Step(..), construct, control, source, vertex)
+import DepGraph (DepGraph, Vertex, Path, Step(..), construct, control, unitWeight, sourceRoot)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
 import Literal (Literal(..), showFloat)
 import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
@@ -207,7 +207,7 @@ loadJson =
            classes <- askClasses
            json <- loadJsonFile path
            v <- orThrow (jsonVal classes τ json)
-           pure (deliver (Set.fromFoldable (ctl : (vertex <<< fst <$> rs))) (v × construct mempty M.empty))
+           pure (deliver (Set.fromFoldable (ctl : (sourceRoot <<< fst <$> rs))) (v × construct mempty M.empty))
    depOp _ _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
@@ -397,7 +397,7 @@ entryValue
    -> Vertex × Raw Val
    -> m (Vertex × Raw Val)
 entryValue k d@(a × _) =
-   newValue $ deliver (Set.fromFoldable [ vertex a, fst (project (Key k) (position d)) ]) (reuseAt (project (Entry k) (position d)))
+   newValue $ deliver (Set.fromFoldable [ sourceRoot a, fst (project (Key k) (position d)) ]) (reuseAt (project (Entry k) (position d)))
 
 -- Control edge from β to key and whole value of an entry
 ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
@@ -405,9 +405,9 @@ ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
 
 -- Dictionary with the values at given vertices; root and keys depend on the roots and keys of the dictionaries ds
 dictFrom :: forall s. Semiring s => Path -> List (Vertex × Raw Val) -> List (String × (Vertex × Raw Val)) -> GVal s
-dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> vertex >>> source) ds) $
+dictFrom ctl ds kvs = dictionary (control (singleton ctl) <> foldMap (fst >>> sourceRoot >>> unitWeight) ds) $
    kvs <#> \(k × r) ->
-      (Val unit (Lit (Str k)) × construct (foldMap (\d -> source (fst (project (Key k) (position d)))) ds) M.empty) × gval r
+      (Val unit (Lit (Str k)) × construct (foldMap (\d -> unitWeight (fst (project (Key k) (position d)))) ds) M.empty) × gval r
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

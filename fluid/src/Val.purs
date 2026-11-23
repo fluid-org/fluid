@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, vertex, zeros, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, sourceRoot, zeros, ι)
 import DepGraph (Vertex, Form(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
@@ -268,7 +268,7 @@ type GVal s = Raw Val × Dependence s
 type Position = Path × Raw Val
 
 position :: Dep.Vertex × Raw Val -> Position
-position (a × v) = vertex a × v
+position (a × v) = sourceRoot a × v
 
 -- Every position in the value of a vertex
 positionsIn :: Dep.Vertex × Raw Val -> Set Path
@@ -277,8 +277,8 @@ positionsIn (a × v) = Set.fromFoldable (sourceAt a <<< fst <$> positions (paths
 -- Positions which determine the length of the sequence at a vertex: the root, plus start and stop of a range
 lengthPositions :: Dep.Vertex × Raw Val -> Set Path
 lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
-   Set.fromFoldable (vertex a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
-lengthPositions (a × _) = singleton (vertex a)
+   Set.fromFoldable (sourceRoot a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
+lengthPositions (a × _) = singleton (sourceRoot a)
 
 -- Part at step of the value at a position
 project :: Step -> Endo Position

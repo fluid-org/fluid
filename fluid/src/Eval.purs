@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Vertex, Path, Sources, Step(..), VisibleGraph, sourceAt, attachDoc, construct, control, extend, materialise, reuse, source, tupling, vertex)
+import DepGraph (DepGraph, Vertex, Path, Sources, Step(..), VisibleGraph, sourceAt, attachDoc, construct, control, extend, materialise, reuse, unitWeight, tupling, sourceRoot)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -71,7 +71,7 @@ after inputs@{ ρ, b } ρ' ps
 
 -- Inputs of a premise with control input dependent on the root at vertex a
 controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Vertex -> Inputs -> m Inputs
-controlledBy a inputs = after inputs empty (singleton (vertex a))
+controlledBy a inputs = after inputs empty (singleton (sourceRoot a))
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
 matches :: forall s. Semiring s => ClassTable -> Position -> Pattern -> Maybe (Dict (GVal s)) × List Path
@@ -139,8 +139,8 @@ closeDefs ctl p ρ ds = ds <#> \d ->
 
 -- Concatenation of the lists at vertices rs; root also depends on srcs
 concatLists :: forall s. Semiring s => Sources s -> List (Vertex × Raw Val) -> GVal s
-concatLists srcs rs = sequenceOf V.List (srcs <> foldMap (fst >>> vertex >>> source) rs) $
-   rs >>= \r@(a × _) -> deliver (singleton (vertex a)) <<< reuseAt <$> elementsAt (position r)
+concatLists srcs rs = sequenceOf V.List (srcs <> foldMap (fst >>> sourceRoot >>> unitWeight) rs) $
+   rs >>= \r@(a × _) -> deliver (singleton (sourceRoot a)) <<< reuseAt <$> elementsAt (position r)
 
 -- ======================
 -- Evaluation
@@ -171,7 +171,7 @@ eval = { stmt, program }
          deliver ctl (dictionary (control ctl) (kvs <#> \(k × r) -> gval k × gval r))
       DictComp e e' gs -> do
          r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
-         pure $ deliver ctl $ dictionary (source (vertex (fst r))) $
+         pure $ deliver ctl $ dictionary (unitWeight (sourceRoot (fst r))) $
             elementsAt (position r) <#> \kv -> reuseAt (project (Element 0) kv) × reuseAt (project (Element 1) kv)
       List es -> sequenceOf V.List (control ctl) <<< map gval <$> traverse (expr inputs) es
       Tuple es -> sequenceOf V.Tuple (control ctl) <<< map gval <$> traverse (expr inputs) es
@@ -194,7 +194,7 @@ eval = { stmt, program }
             construct (control ctl)
                ( Map.fromFoldable $
                     [ MatrixRows × reuse (sourceAt a (singleton (Element 0))), MatrixCols × reuse (sourceAt a (singleton (Element 1))) ]
-                       <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (a' × _) -> MatrixElement i j × reuse (vertex a'))) rss)
+                       <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (a' × _) -> MatrixElement i j × reuse (sourceRoot a'))) rss)
                )
          where
          -- Index n along dimension k of the matrix with dimensions at vertex a
@@ -207,7 +207,7 @@ eval = { stmt, program }
          case v of
             Val _ (V.Obj c xvs) -> do
                _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
-               pure (deliver (singleton (vertex a)) (reuseAt (project (Field x) (position r))))
+               pure (deliver (singleton (sourceRoot a)) (reuseAt (project (Field x) (position r))))
             _ -> throw $ "Found " <> prettyP v <> ", expected object"
       Subscript e e' -> do
          r@(_ × v) <- expr inputs e
@@ -235,7 +235,7 @@ eval = { stmt, program }
          where
          -- Part u of the value at vertex r, at the index at vertex r'; ps are further control positions
          subscript :: Vertex × Raw Val -> Vertex × Raw Val -> GVal s -> Set Path -> m (GVal s)
-         subscript r r' u ps = pure (deliver (singleton (vertex (fst r)) ∪ ps ∪ positionsIn r') u)
+         subscript r r' u ps = pure (deliver (singleton (sourceRoot (fst r)) ∪ ps ∪ positionsIn r') u)
       ModMember q x -> do
          { modules } <- moduleStore
          deliver ctl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
@@ -298,7 +298,7 @@ eval = { stmt, program }
       elements (Guard e : gs') = do
          { holds, r: a × _ } <- condition inputs e
          if holds then gval <$> (controlledBy a inputs >>= \inputs' -> qualifiers body inputs' gs')
-         else pure (Val unit (V.List []) × construct (control (singleton (vertex a))) Map.empty)
+         else pure (Val unit (V.List []) × construct (control (singleton (sourceRoot a))) Map.empty)
       elements (Generator p e : gs') = do
          r@(_ × v) <- expr inputs e
          n <- case elementCount v of
@@ -354,7 +354,7 @@ eval = { stmt, program }
       ExprStmt e -> expr inputs e $> Assigns empty empty
       Assert e e_opt -> do
          { holds, r: a × _ } <- condition inputs e
-         if holds then pure (Assigns empty (singleton (vertex a)))
+         if holds then pure (Assigns empty (singleton (sourceRoot a)))
          else case e_opt of
             Nothing -> throw "AssertionError"
             Just e' -> do
@@ -384,7 +384,7 @@ eval = { stmt, program }
    apply :: Path -> Vertex × Raw Val -> List (Vertex × Raw Val) -> m (GVal s)
    apply ctl f@(a × v) rs = case v of
       Val _ (V.Fun (V.Partial _ us)) -> do
-         f' <- newValue (deliver (singleton (vertex a)) (reuseAt (project PartialFun (position f))))
+         f' <- newValue (deliver (singleton (sourceRoot a)) (reuseAt (project PartialFun (position f))))
          rs' <- for (mapWithIndex const us) \i -> newValue (reuseAt (project (PartialArg i) (position f)))
          apply ctl f' (rs' <> rs)
       Val _ (V.Fun φ) -> do
@@ -392,7 +392,7 @@ eval = { stmt, program }
          let k = length rs
          if k < n then
             pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (control (singleton ctl))
-               (Map.fromFoldable ((PartialFun × reuse (vertex a)) : mapWithIndex (\i (a' × _) -> PartialArg i × reuse (vertex a')) rs))
+               (Map.fromFoldable ((PartialFun × reuse (sourceRoot a)) : mapWithIndex (\i (a' × _) -> PartialArg i × reuse (sourceRoot a')) rs))
          else if k == n then call φ
          else application ctl f (take n rs) >>= \f' -> apply ctl f' (drop n rs)
          where
@@ -409,16 +409,16 @@ eval = { stmt, program }
       call :: V.Fun Unit -> m (GVal s)
       call = case _ of
          V.Closure (Env ρ) ds (Def xs s) -> do
-            b <- newInputs ρ'' (extend p (members ρ')) (construct (control (singleton (vertex a))) Map.empty)
+            b <- newInputs ρ'' (extend p (members ρ')) (construct (control (singleton (sourceRoot a))) Map.empty)
             gval <<< asReturns <$> stmt { ρ: ρ'', b } s
             where
             p = sourceAt a (singleton ClosureEnv)
             args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (gval r)) empty (zip xs rs)
-            ρ' = closeDefs (vertex a) p ρ ds <+> args
+            ρ' = closeDefs (sourceRoot a) p ρ ds <+> args
             ρ'' = ρ <+> (fst <$> ρ')
-         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application (vertex a)) (vertex a) rs
+         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application (sourceRoot a)) (sourceRoot a) rs
          V.Type (T.ClassTy c _) ->
-            askClasses <#> \classes -> object classes (control (singleton (vertex a))) c (gval <$> rs)
+            askClasses <#> \classes -> object classes (control (singleton (sourceRoot a))) c (gval <$> rs)
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
 

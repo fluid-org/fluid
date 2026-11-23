@@ -54,8 +54,8 @@ type Path = List Step
 sourceAt :: Vertex -> Path -> Path
 sourceAt a p = Source a : p
 
-vertex :: Vertex -> Path
-vertex a = sourceAt a ε
+sourceRoot :: Vertex -> Path
+sourceRoot a = sourceAt a ε
 
 -- Whether the step leads from a function value to a value held by the function
 uncl :: Step -> Boolean
@@ -105,8 +105,8 @@ control :: forall s. Set Path -> Sources s
 control ps = Sources ps Map.empty
 
 -- Dependence on p with weight one
-source :: forall s. Semiring s => Path -> Sources s
-source p = Sources Set.empty (Map.singleton p one)
+unitWeight :: forall s. Semiring s => Path -> Sources s
+unitWeight p = Sources Set.empty (Map.singleton p one)
 
 positionsOf :: forall s. Sources s -> Set Path
 positionsOf (Sources ps ws) = ps ∪ Map.keys ws
