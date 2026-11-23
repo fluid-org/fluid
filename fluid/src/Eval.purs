@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, construct, control, extend, materialise, reuse, unitWeight, tupling)
+import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, control, extend, materialise, reuse, unitWeight, tupling)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -40,7 +40,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, members, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, child, position, positionsIn, project, reuseAt, sequenceOf, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, child, position, positionsIn, project, reuseAt, sequenceOf, valAt)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -127,9 +127,9 @@ object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
 closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
 closure ctl p ρ ds d = Val unit (V.Fun (V.Closure (Env ρ) ds d)) ×
-   construct (control (singleton ctl)) (maplet ClosureEnv (tupling (members (mapWithKey captured ρ))))
+   construct (control (singleton ctl)) (maplet ClosureEnv (tupling (bindings (mapWithKey captured ρ))))
    where
-   captured x v = v × reuse (p <> singleton (Binding x))
+   captured x _ = reuse (p <> singleton (Binding x))
 
 closeDefs :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Dict (GVal s)
 closeDefs ctl p ρ ds = ds <#> \d ->
@@ -425,7 +425,7 @@ eval = { stmt, program }
 
 -- Inputs vertex for environment ρ; control position depends on nothing
 topLevel :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m Inputs
-topLevel ρ = newInputs (fst <$> ρ) (tupling (members ρ)) (construct mempty Map.empty) <#> { ρ: fst <$> ρ, b: _ }
+topLevel ρ = newInputs (fst <$> ρ) (tupling (bindings (snd <$> ρ))) (construct mempty Map.empty) <#> { ρ: fst <$> ρ, b: _ }
 
 -- Evaluate module q at a new vertex; bindings of body override module value of each submodule
 evalModule

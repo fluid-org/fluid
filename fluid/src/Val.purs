@@ -340,18 +340,14 @@ newInputs
    -> m Vertex
 newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InputsEnv × δ, InputsCtl × δ' ]))
 
--- Dependence of each member of an environment
-members :: forall s. Dict (GVal s) -> Map Step (Dependence (Set Path) s)
-members ρ = bindings (snd <$> ρ)
-
--- Allocate vertex for bindings ρ; return vertex and bindings which reuse the vertex members
+-- Allocate vertex for bindings ρ; return vertex with each binding as reuse of its position
 newBindings
    :: forall m s
     . MonadState (DepGraph Label s) m
    => Semiring s
    => Dict (GVal s)
    -> m (Vertex × Dict (GVal s))
-newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (members ρ)) <#> \a ->
+newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
    a × mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
 -- Result of f at the values of vertices rs, if any; dependence is the derivative of f, plus control dependence on ctl

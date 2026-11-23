@@ -131,11 +131,11 @@ restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel
 restructuringAfterRel θ r = case θ of
    Reuse _ p -> π p r
    NoReuse _ -> mempty
-   Tupling _ θs -> Rel mempty (members θs)
+   Tupling _ θs -> Rel mempty (relsAfter θs)
    ExtendEnv _ θ' θs -> case restructuringAfterRel θ' r × bindings θs of
-      Rel support rs × θs' -> Rel support (members θs' ∪ difference rs θs')
+      Rel support rs × θs' -> Rel support (relsAfter θs' ∪ difference rs θs')
    where
-   members = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
+   relsAfter = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
 
 -- Relation after the relation of a dependence
 relAfter :: forall s. DepSemiring s => Rel (Set Path) s -> Dependence PathSet s -> Rel PathSet s
@@ -146,7 +146,6 @@ relAfter (Rel (Support ps ws) rs) δ =
 compose :: forall s. DepSemiring s => Dependence (Set Path) s -> Dependence PathSet s -> Dependence PathSet s
 compose (θ' × r') δ@(_ × r) = restructuringAfter θ' δ × (restructuringAfterRel θ' r <> relAfter r' δ)
 
--- Members of an environment by step
 bindings :: forall a. Dict a -> Map Step a
 bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
 
@@ -159,7 +158,7 @@ construct support δs
    | isEmpty δs = NoReuse empty × Rel support empty
    | otherwise = map (Rel support empty <> _) (tupling δs)
 
--- Dependence of the environment at position p with members δs replaced or added
+-- Dependence of environment at position p with bindings δs added or replaced
 extend :: forall c s. Set c Path => Semiring s => Path -> Dict (Dependence c s) -> Dependence c s
 extend p δs
    | isEmpty δs = reuse p
