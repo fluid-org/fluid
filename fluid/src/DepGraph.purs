@@ -95,30 +95,30 @@ onto srcs = Rel srcs empty
 
 -- Target depends with control weight on source positions c of each constructor
 data Restructuring c
-   = Reuse c Path -- subvalue of source at path
-   | Zero c -- nothing reused
-   | Family c (Map Step (Restructuring c)) -- restructuring into each part
-   | Extend c (Restructuring c) (Dict (Restructuring c)) -- environment, then members added or replaced
+   = Reuse c Path
+   | NoReuse c
+   | Parts c (Map Step (Restructuring c))
+   | ExtendEnv c (Restructuring c) (Dict (Restructuring c)) -- environment, then members added or replaced
 
 ctrl :: forall c. Restructuring c -> c
 ctrl (Reuse ps _) = ps
-ctrl (Zero ps) = ps
-ctrl (Family ps _) = ps
-ctrl (Extend ps _ _) = ps
+ctrl (NoReuse ps) = ps
+ctrl (Parts ps _) = ps
+ctrl (ExtendEnv ps _ _) = ps
 
 withCtrl :: forall c. Semigroup c => c -> Endo (Restructuring c)
 withCtrl ps' (Reuse ps p) = Reuse (ps <> ps') p
-withCtrl ps' (Zero ps) = Zero (ps <> ps')
-withCtrl ps' (Family ps θs) = Family (ps <> ps') θs
-withCtrl ps' (Extend ps θ θs) = Extend (ps <> ps') θ θs
+withCtrl ps' (NoReuse ps) = NoReuse (ps <> ps')
+withCtrl ps' (Parts ps θs) = Parts (ps <> ps') θs
+withCtrl ps' (ExtendEnv ps θ θs) = ExtendEnv (ps <> ps') θ θs
 
 pathAfter :: forall c. Monoid c => Path -> Restructuring c -> Restructuring c
 pathAfter Nil θ = θ
 pathAfter p@(step : p') θ = (if any intoClosure p then identity else withCtrl (ctrl θ)) case θ of
    Reuse _ q -> Reuse mempty (q <> p)
-   Zero _ -> Zero mempty
-   Family _ θs -> pathAfter p' (get step θs)
-   Extend _ θ' θs -> case step of
+   NoReuse _ -> NoReuse mempty
+   Parts _ θs -> pathAfter p' (get step θs)
+   ExtendEnv _ θ' θs -> case step of
       Binding x | Just θ'' <- lookup x θs -> pathAfter p' θ''
       _ -> pathAfter p θ'
    where
@@ -150,16 +150,16 @@ supps δ qs = foldMap (supp δ >>> \(Sources ps ws) -> ps <> foldMap pathSet (Ma
 
 restructuringAfter :: forall s. Semiring s => Restructuring (Set Path) -> Dependence PathSet s -> Restructuring PathSet
 restructuringAfter (Reuse ps p) δ@(θ × _) = withCtrl (supps δ ps) (pathAfter p θ)
-restructuringAfter (Zero ps) δ = Zero (supps δ ps)
-restructuringAfter (Family ps θs) δ = Family (supps δ ps) (flip restructuringAfter δ <$> θs)
-restructuringAfter (Extend ps θ θs) δ = Extend (supps δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
+restructuringAfter (NoReuse ps) δ = NoReuse (supps δ ps)
+restructuringAfter (Parts ps θs) δ = Parts (supps δ ps) (flip restructuringAfter δ <$> θs)
+restructuringAfter (ExtendEnv ps θ θs) δ = ExtendEnv (supps δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel PathSet s -> Rel PathSet s
 restructuringAfterRel θ r = case θ of
    Reuse _ p -> π p r
-   Zero _ -> mempty
-   Family _ θs -> Rel mempty (members θs)
-   Extend _ θ' θs -> case restructuringAfterRel θ' r × bindings θs of
+   NoReuse _ -> mempty
+   Parts _ θs -> Rel mempty (members θs)
+   ExtendEnv _ θ' θs -> case restructuringAfterRel θ' r × bindings θs of
       Rel srcs rs × θs' -> Rel srcs (Map.union (members θs') (Map.difference rs θs'))
    where
    members = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
@@ -178,19 +178,19 @@ bindings :: forall a. Dict a -> Map Step a
 bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
 
 tupling :: forall c s. IsEmpty c => Monoid c => Semiring s => Map Step (Dependence c s) -> Dependence c s
-tupling δs = Family mempty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+tupling δs = Parts mempty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
 -- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on srcs
 construct :: forall c s. IsEmpty c => Monoid c => Semiring s => Sources c s -> Map Step (Dependence c s) -> Dependence c s
 construct srcs δs
-   | isEmpty δs = Zero mempty × onto srcs
+   | isEmpty δs = NoReuse mempty × onto srcs
    | otherwise = map (onto srcs <> _) (tupling δs)
 
 -- Dependence of the environment at position p with members δs replaced or added
 extend :: forall c s. IsEmpty c => Monoid c => Semiring s => Path -> Dict (Dependence c s) -> Dependence c s
 extend p δs
    | isEmpty δs = reuse p
-   | otherwise = Extend mempty (Reuse mempty p) (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
+   | otherwise = ExtendEnv mempty (Reuse mempty p) (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
 
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence (Set Path) s -> Set Vertex
@@ -198,9 +198,9 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    where
    ofRestructuring θ' = Set.mapMaybe L.head (ctrl θ') ∪ case θ' of
       Reuse _ p -> Set.mapMaybe L.head (singleton p)
-      Zero _ -> empty
-      Family _ θs -> foldMap ofRestructuring θs
-      Extend _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
+      NoReuse _ -> empty
+      Parts _ θs -> foldMap ofRestructuring θs
+      ExtendEnv _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
    ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
 
    holder (EdgeSrc a) = a
@@ -269,7 +269,7 @@ materialise g visible =
          }
       else { θs: free a (Map.insert (EdgeSrc a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (EdgeSrc a) rs), edges }
       where
-      θ' × r' = compose δ (Family mempty θs × Rel mempty rs)
+      θ' × r' = compose δ (Parts mempty θs × Rel mempty rs)
 
    -- Free the entry of each vertex which has a as last dependent
    free :: forall a. Vertex -> Endo (Map Step a)
