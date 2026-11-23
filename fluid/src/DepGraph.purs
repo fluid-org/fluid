@@ -57,13 +57,6 @@ sourceAt a p = Source a : p
 sourceRoot :: Vertex -> Path
 sourceRoot a = sourceAt a ε
 
--- Whether the step leads from a function value to a value held by the function
-uncl :: Step -> Boolean
-uncl ClosureEnv = true
-uncl PartialFun = true
-uncl (PartialArg _) = true
-uncl _ = false
-
 -- Labels with a path to each position
 class Traversable f <= Paths f where
    paths :: forall a. f a -> f (Path × a)
@@ -162,13 +155,19 @@ withCtrl ps' (Restructuring ps ψ) = Restructuring (unionShared ps ps') ψ
 
 pathAfter :: Path -> Restructuring -> Restructuring
 pathAfter Nil θ = θ
-pathAfter p@(step : p') (Restructuring ps ψ) = (if any uncl p then identity else withCtrl ps) case ψ of
+pathAfter p@(step : p') (Restructuring ps ψ) = (if any intoClosure p then identity else withCtrl ps) case ψ of
    Reuse q -> restructuring (Reuse (q <> p))
    Zero -> restructuring Zero
    Family θs -> pathAfter p' (get step θs)
    Extend θ θs -> case lookup step θs of
       Just θ' -> pathAfter p' θ'
       Nothing -> pathAfter p θ
+   where
+   intoClosure :: Step -> Boolean
+   intoClosure ClosureEnv = true
+   intoClosure PartialFun = true
+   intoClosure (PartialArg _) = true
+   intoClosure _ = false
 
 type Dependence s = Restructuring × Rel s
 
