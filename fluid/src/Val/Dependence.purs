@@ -79,7 +79,7 @@ newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
    mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
--- Apply f to the values at rs under control of ctl; read dependence from annotations of result
+-- Read dependence of result from its annotations and given control positions
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
 applyDepFun f ctl rs = f (arg <$> rs) <#> \v ->
    erase v × NoReuse ctl × foldl addSupport mempty (positions (paths v))
