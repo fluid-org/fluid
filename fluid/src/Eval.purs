@@ -275,10 +275,10 @@ eval = { stmt, program }
       ModMember q x -> untraced do
          { modules } <- moduleStore
          deliver ctrl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
-      App e es -> untraced do
-         f <- gval <$> expr inputs e
-         vs <- traverse (expr inputs >>> map gval) es
-         withMsg ("In " <> funName e) $ apply ctrl f vs
+      App e es -> do
+         f <- expr inputs e
+         args <- traverse (expr inputs) es
+         withMsg ("In " <> funName e) $ apply ctrl f args
       BinOp e op e' -> do
          left <- expr inputs e
          right <- expr inputs e'
@@ -449,20 +449,42 @@ eval = { stmt, program }
 
    -- Apply f to vs at a new vertex
    application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
-   application ctrl f vs = gval <$> (apply ctrl f vs >>= newValue)
+   application ctrl f vs = do
+      v × _ <- applyGVal ctrl f vs
+      gval <$> newValue v
+
+   --applyGVal returns mkTrace, a function: Deriv -> List Deriv -> Tr.ExprTrace ...
+   --that takes the fun and args Derivs and constructs a Trace node.
+   --Closure mkTraces already contain the callee and thus only expect the first two arguments.
+   --This was not needed before, where apply's helper function was nested inside apply, but now applyGVal is used by external functions..
+   --maybe think of practicality of this?
+
+   apply
+      :: Ctrl s
+      -> (Deriv × Raw Val)
+      -> List (Deriv × Raw Val)
+      -> m (GVal s × Tr.ExprTrace (Label Unit) Deriv)
+   apply ctrl fn args = do
+      v × mkTrace <- applyGVal ctrl (gval fn) (gval <$> args)
+      pure (v × mkTrace (fst fn) (fst <$> args))
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
-   apply ctrl f vs = case raw f of
+   applyGVal
+      :: Ctrl s
+      -> GVal s
+      -> List (GVal s)
+      -> m (GVal s × (Deriv -> List Deriv -> Tr.ExprTrace (Label Unit) Deriv))
+   applyGVal ctrl f vs = case raw f of
       Val _ (V.Fun (V.Partial _ us)) ->
-         apply ctrl (project partialFun f) (mapWithIndex (\i _ -> project (partialArg i) f) us <> vs)
+         applyGVal ctrl (project partialFun f) (mapWithIndex (\i _ -> project (partialArg i) f) us <> vs)
       Val _ (V.Fun φ) -> do
          n <- arity'
          let k = length vs
-         if k < n then pure (partial unit)
+         if k < n then pure (partial unit × Tr.PartialApplication)
          else if k == n then call φ vs
-         else application ctrl f (take n vs) >>= \v -> apply ctrl v (drop n vs)
+         --overapplication
+         else application ctrl f (take n vs) >>= \v -> applyGVal ctrl v (drop n vs)
          where
          arity' :: m Int
          arity' = case φ of
@@ -481,17 +503,28 @@ eval = { stmt, program }
       _ -> throw $ "Found " <> prettyP (raw f) <> ", expected function"
       where
       -- Apply φ to vs', taking the root of the function value as control input
-      call :: V.Fun Unit -> List (GVal s) -> m (GVal s)
+      call
+         :: V.Fun Unit
+         -> List (GVal s)
+         -> m (GVal s × (Deriv -> List Deriv -> Tr.ExprTrace (Label Unit) Deriv))
       call φ vs' = case φ of
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
                ρ1' = mapWithKey (\y _ -> project (closureEnv >>> get y) f) ρ1
                ρ2 = closeDefs { ctrl: ctrl', ρ: ρ1' } ds
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
-            gval <<< asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
-         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application ctrl') ctrl' vs'
-         V.Type (T.ClassTy c _) ->
-            askClasses <#> \classes -> constructFrom ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
+            --already capture callee Deriv inside mkTrace
+            r <- asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
+            pure (gval r × \fn args -> Tr.Application fn args (fst r))
+         V.Prim (ForeignOp (name × ForeignOp' { depOp })) -> do
+            v <- depOp (application ctrl') ctrl' vs'
+            pure (v × Tr.PrimitiveOp name)
+         V.Type (T.ClassTy c _) -> do
+            classes <- askClasses
+            pure
+               ( constructFrom ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
+                    × \_ args -> Tr.ObjectConstructor c args
+               )
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
          where
