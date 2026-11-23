@@ -39,11 +39,9 @@ data Support c s = Support c (Map Path s)
 instance (Set c Path, Semiring s) => Semigroup (Support c s) where
    append (Support ps ws) (Support ps' ws') = Support (ps ∪ ps') (unionWith add ws ws')
 
--- Control dependence on each of ps
 controlDep :: forall c s. c -> Support c s
 controlDep ps = Support ps empty
 
--- Dependence on p with weight one
 dataDep :: forall c s. Set c Path => Semiring s => Path -> Support c s
 dataDep p = Support empty (maplet p one)
 
