@@ -138,16 +138,15 @@ onto srcs = Rel srcs empty
 π Nil r = r
 π (step : p) (Rel _ rs) = maybe mempty (π p) (lookup step rs)
 
--- Control dependence of the target on a set of source positions, with a form
-data Restructuring = Restructuring (Set Path) Form
+data Restructuring = Restructuring (Set Path) BaseRestructuring
 
-data Form
+data BaseRestructuring
    = Reuse Path -- subvalue of source at path
    | Zero -- nothing reused
    | Family (Map Step Restructuring) -- restructuring into each part
    | Extend Restructuring (Map Step Restructuring) -- restructuring into environment; restructuring into each replacement member
 
-restructuring :: Form -> Restructuring
+restructuring :: BaseRestructuring -> Restructuring
 restructuring = Restructuring empty
 
 withCtrl :: Set Path -> Endo Restructuring

@@ -32,7 +32,7 @@ import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
 import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, sourceRoot, zeros, ι)
-import DepGraph (Vertex, Form(..), valAt) as Dep
+import DepGraph (Vertex, BaseRestructuring(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
 import Types as T
