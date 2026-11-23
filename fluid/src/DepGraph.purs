@@ -81,19 +81,19 @@ onto support = Rel support empty
 data Restructuring c
    = Reuse c Path
    | NoReuse c
-   | Parts c (Map Step (Restructuring c))
+   | Tupling c (Map Step (Restructuring c))
    | ExtendEnv c (Restructuring c) (Dict (Restructuring c))
 
 ctrl :: forall c. Restructuring c -> c
 ctrl (Reuse ps _) = ps
 ctrl (NoReuse ps) = ps
-ctrl (Parts ps _) = ps
+ctrl (Tupling ps _) = ps
 ctrl (ExtendEnv ps _ _) = ps
 
 withCtrl :: forall c. Set c Path => c -> Endo (Restructuring c)
 withCtrl ps' (Reuse ps p) = Reuse (ps ∪ ps') p
 withCtrl ps' (NoReuse ps) = NoReuse (ps ∪ ps')
-withCtrl ps' (Parts ps θs) = Parts (ps ∪ ps') θs
+withCtrl ps' (Tupling ps θs) = Tupling (ps ∪ ps') θs
 withCtrl ps' (ExtendEnv ps θ θs) = ExtendEnv (ps ∪ ps') θ θs
 
 pathAfter :: forall c. Set c Path => Path -> Restructuring c -> Restructuring c
@@ -101,7 +101,7 @@ pathAfter Nil θ = θ
 pathAfter p@(step : p') θ = (if any intoClosure p then identity else withCtrl (ctrl θ)) case θ of
    Reuse _ q -> Reuse empty (q <> p)
    NoReuse _ -> NoReuse empty
-   Parts _ θs -> pathAfter p' (get step θs)
+   Tupling _ θs -> pathAfter p' (get step θs)
    ExtendEnv _ θ' θs -> case step of
       Binding x | Just θ'' <- lookup x θs -> pathAfter p' θ''
       _ -> pathAfter p θ'
@@ -131,14 +131,14 @@ supps δ qs = foldMap (supp δ >>> \(Support ps ws) -> ps ∪ foldMap pathSet (k
 restructuringAfter :: forall s. Semiring s => Restructuring (Set Path) -> Dependence PathSet s -> Restructuring PathSet
 restructuringAfter (Reuse ps p) δ@(θ × _) = withCtrl (supps δ ps) (pathAfter p θ)
 restructuringAfter (NoReuse ps) δ = NoReuse (supps δ ps)
-restructuringAfter (Parts ps θs) δ = Parts (supps δ ps) (flip restructuringAfter δ <$> θs)
+restructuringAfter (Tupling ps θs) δ = Tupling (supps δ ps) (flip restructuringAfter δ <$> θs)
 restructuringAfter (ExtendEnv ps θ θs) δ = ExtendEnv (supps δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel PathSet s -> Rel PathSet s
 restructuringAfterRel θ r = case θ of
    Reuse _ p -> π p r
    NoReuse _ -> mempty
-   Parts _ θs -> Rel mempty (members θs)
+   Tupling _ θs -> Rel mempty (members θs)
    ExtendEnv _ θ' θs -> case restructuringAfterRel θ' r × bindings θs of
       Rel support rs × θs' -> Rel support (members θs' ∪ difference rs θs')
    where
@@ -158,7 +158,7 @@ bindings :: forall a. Dict a -> Map Step a
 bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
 
 tupling :: forall c s. Set c Path => Semiring s => Map Step (Dependence c s) -> Dependence c s
-tupling δs = Parts empty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+tupling δs = Tupling empty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
 -- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on support
 construct :: forall c s. Set c Path => Semiring s => Support c s -> Map Step (Dependence c s) -> Dependence c s
@@ -181,7 +181,7 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    ofRestructuring θ' = Set.mapMaybe L.head (ctrl θ') ∪ case θ' of
       Reuse _ p -> Set.mapMaybe L.head (singleton p)
       NoReuse _ -> empty
-      Parts _ θs -> foldMap ofRestructuring θs
+      Tupling _ θs -> foldMap ofRestructuring θs
       ExtendEnv _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
    ofRel (Rel (Support ps ws) rs) = Set.mapMaybe L.head (ps ∪ keys ws) ∪ foldMap ofRel rs
 
@@ -227,7 +227,7 @@ materialise g visible =
    where
    vals = filterKeys (_ ∈ visible) g.vals
 
-   -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
+   -- Compose dependence of a with tupling which holds dependence of each earlier vertex on visible vertices
    step { θs, rs, edges } (a × (_ × δ)) =
       if a ∈ visible then
          { θs: free a (insert (EdgeSrc a) (Reuse empty (sourceRoot a)) θs)
@@ -236,7 +236,7 @@ materialise g visible =
          }
       else { θs: free a (insert (EdgeSrc a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (EdgeSrc a) rs), edges }
       where
-      θ' × r' = compose δ (Parts empty θs × Rel mempty rs)
+      θ' × r' = compose δ (Tupling empty θs × Rel mempty rs)
 
    -- Free the entry of each vertex which has a as last dependent
    free :: forall a. Vertex -> Endo (Map Step a)
