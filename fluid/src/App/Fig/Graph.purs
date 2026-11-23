@@ -22,13 +22,14 @@ import Data.Set as Set
 import Data.String (Pattern(..), split)
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst, snd)
-import DepGraph (Vertex(..), Labelling, Path, SparseRel(..), VisibleGraph, paths, positions, sparseRel)
+import DepGraph (Labelling, SparseRel(..), VisibleGraph, paths, positions, sparseRel)
 import Dict (Dict(..))
 import Dict as D
 import Foreign.Object (Object)
 import Foreign.Object as O
 import Lattice (DepKind(..))
 import Literal (Literal(..))
+import Path (Path, Vertex(..))
 import Pretty (prettyP)
 import Util (type (×), MayFail, absurd, definitely', error, (!), (×))
 import Util.Map (get, insert, lookup, maplet, toUnfoldable)

@@ -31,10 +31,11 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Path, Rel, Sources(..), Step(..), bindings, sourceAt, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, sourceRoot, zeros, ι)
-import DepGraph (Vertex, BaseRestructuring(..), valAt) as Dep
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Sources(..), bindings, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, zeros, ι)
+import DepGraph (BaseRestructuring(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
+import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -219,9 +220,9 @@ class (HasClasses m, HasModuleStore DepKind m, MonadLoad m) <= MonadProgram m
 instance (HasClasses m, HasModuleStore DepKind m, MonadLoad m) => MonadProgram m
 
 -- Vertex with the vertex of its doc, if any.
-type VertexWithDoc = Dep.Vertex × Maybe Dep.Vertex
+type VertexWithDoc = Vertex × Maybe Vertex
 
-withDoc :: forall f s. DepGraph f s -> Dep.Vertex -> VertexWithDoc
+withDoc :: forall f s. DepGraph f s -> Vertex -> VertexWithDoc
 withDoc g p = p × Map.lookup p g.docs
 
 -- Value with its doc, as shown in a figure.
@@ -239,7 +240,7 @@ unvals :: forall a. Dict VertexWithDoc -> EnvWithDocs a -> Labelling (Val a)
 unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 
 -- Value at the vertex of an expression or returning statement
-valAt :: forall s. DepGraph Label s -> Dep.Vertex -> Raw Val
+valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
 valAt g p = value (Dep.valAt g p)
 
 -- Weight 1 at every position except beneath the root of a closure
@@ -262,20 +263,20 @@ ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
 ctrlEdge β v = plus v (scale (ctrlWeight * β) (unitSection v))
 
 -- Value with its dependence on the values of vertices already in the graph
-type GVal s = Raw Val × Dependence s
+type GVal s = Raw Val × Dependence (Set Path) s
 
 -- Position in the value of a vertex, with the value at that position
 type Position = Path × Raw Val
 
-position :: Dep.Vertex × Raw Val -> Position
+position :: Vertex × Raw Val -> Position
 position (a × v) = sourceRoot a × v
 
 -- Every position in the value of a vertex
-positionsIn :: Dep.Vertex × Raw Val -> Set Path
+positionsIn :: Vertex × Raw Val -> Set Path
 positionsIn (a × v) = Set.fromFoldable (sourceAt a <<< fst <$> positions (paths v))
 
 -- Positions which determine the length of the sequence at a vertex: the root, plus start and stop of a range
-lengthPositions :: Dep.Vertex × Raw Val -> Set Path
+lengthPositions :: Vertex × Raw Val -> Set Path
 lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
    Set.fromFoldable (sourceRoot a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
 lengthPositions (a × _) = singleton (sourceRoot a)
@@ -294,7 +295,7 @@ elementsAt u = (\i -> project (Element i) u) <$> L.take n (L.range 0 n)
 reuseAt :: forall s. Semiring s => Position -> GVal s
 reuseAt (p × v) = v × reuse p
 
-gval :: forall s. Semiring s => Dep.Vertex × Raw Val -> GVal s
+gval :: forall s. Semiring s => Vertex × Raw Val -> GVal s
 gval = position >>> reuseAt
 
 -- Add control dependence on each of ps to every position outside a function value
@@ -302,15 +303,15 @@ deliver :: forall s. Set Path -> Endo (GVal s)
 deliver ps = map (under ps)
 
 -- Allocate vertex for given value; return vertex with raw value
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Dep.Vertex × Raw Val)
+newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Vertex × Raw Val)
 newValue (v × δ) = newVertex (Value v) δ <#> (_ × v)
 
 -- Position of the environment at inputs vertex b
-envAt :: Dep.Vertex -> Path
+envAt :: Vertex -> Path
 envAt b = sourceAt b (singleton InEnv)
 
 -- Control position at inputs vertex b
-ctlAt :: Dep.Vertex -> Path
+ctlAt :: Vertex -> Path
 ctlAt b = sourceAt b (singleton InCtl)
 
 -- Allocate inputs vertex for environment ρ with dependence δ; control position has dependence δ'
@@ -319,13 +320,13 @@ newInputs
     . MonadState (DepGraph Label s) m
    => Semiring s
    => Dict (Raw Val)
-   -> Dependence s
-   -> Dependence s
-   -> m Dep.Vertex
+   -> Dependence (Set Path) s
+   -> Dependence (Set Path) s
+   -> m Vertex
 newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InEnv × δ, InCtl × δ' ]))
 
 -- Dependence of each member of an environment
-members :: forall s. Dict (GVal s) -> Map Step (Dependence s)
+members :: forall s. Dict (GVal s) -> Map Step (Dependence (Set Path) s)
 members ρ = bindings (snd <$> ρ)
 
 -- Allocate vertex for bindings ρ; return vertex and bindings which reuse the vertex members
@@ -334,7 +335,7 @@ newBindings
     . MonadState (DepGraph Label s) m
    => Semiring s
    => Dict (GVal s)
-   -> m (Dep.Vertex × Dict (GVal s))
+   -> m (Vertex × Dict (GVal s))
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (members ρ)) <#> \a ->
    a × mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
@@ -344,15 +345,15 @@ derivative
     . DepSemiring s
    => (forall a. DepSemiring a => List (Val a) -> MayFail (Val a))
    -> Set Path
-   -> List (Dep.Vertex × Raw Val)
+   -> List (Vertex × Raw Val)
    -> MayFail (GVal s)
 derivative f ctl rs = f (arg <$> rs) <#> \v ->
    erase v × under ctl (restructuring Dep.Zero × foldl row mempty (positions (paths v)))
    where
-   arg :: Dep.Vertex × Raw Val -> Val (Lineage Path s)
+   arg :: Vertex × Raw Val -> Val (Lineage Path s)
    arg (a × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (sourceAt a p) one)
 
-   row :: Rel s -> Path × Lineage Path s -> Rel s
+   row :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
    row r (p × Lineage (_ × ws))
       | Map.isEmpty ws = r
       | otherwise = r <> ι p (onto (Sources Set.empty ws))
@@ -365,7 +366,7 @@ elementStep i (Val _ (Dictionary (DictRep d))) = Just (Key (fst (definitely' (to
 elementStep _ _ = Nothing
 
 -- Element i computed from the sequence at a vertex
-computedElement :: forall s. DepSemiring s => Int -> Dep.Vertex × Raw Val -> GVal s
+computedElement :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
 computedElement i r = definitelyRight (derivative elementOf Set.empty (singleton r))
    where
    elementOf :: forall a. List (Val a) -> MayFail (Val a)
@@ -373,18 +374,18 @@ computedElement i r = definitelyRight (derivative elementOf Set.empty (singleton
    elementOf _ = error absurd
 
 -- Element i of the sequence at a vertex
-elementAt :: forall s. DepSemiring s => Int -> Dep.Vertex × Raw Val -> GVal s
+elementAt :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
 elementAt i r = case elementStep i (snd r) of
    Just step -> reuseAt (project step (position r))
    Nothing -> computedElement i r
 
 -- List or tuple of vs, as mk determines; root depends on srcs
-sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Sources s -> List (GVal s) -> GVal s
+sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Sources (Set Path) s -> List (GVal s) -> GVal s
 sequenceOf mk srcs vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct srcs (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
 
 -- Dictionary with the given entries; root depends on srcs
-dictionary :: forall s. Semiring s => Sources s -> List (GVal s × GVal s) -> GVal s
+dictionary :: forall s. Semiring s => Sources (Set Path) s -> List (GVal s × GVal s) -> GVal s
 dictionary srcs kvs =
    Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \((k × _) × v × _) -> key k × unit × v)))) ×
       construct srcs (Map.fromFoldable (kvs >>= \((k × δ) × _ × δ') -> (Key (key k) × δ) : (Entry (key k) × δ') : Nil))
@@ -394,7 +395,7 @@ dictionary srcs kvs =
    key _ = error absurd
 
 -- Application of a function to arguments at a new vertex
-type Apply m = Dep.Vertex × Raw Val -> List (Dep.Vertex × Raw Val) -> m (Dep.Vertex × Raw Val)
+type Apply m = Vertex × Raw Val -> List (Vertex × Raw Val) -> m (Vertex × Raw Val)
 
 -- Foreign function of control position and argument vertices; evaluator supplies operation for applying a
 -- function argument
@@ -406,7 +407,7 @@ type DepOp =
    => DepSemiring s
    => Apply m
    -> Path
-   -> List (Dep.Vertex × Raw Val)
+   -> List (Vertex × Raw Val)
    -> m (GVal s)
 
 -- Foreign function with derivative given by f; application of f may fail

@@ -19,11 +19,12 @@ import Data.String.CodePoints (takeWhile) as S
 import Data.Tuple (fst)
 import Effect.Exception (Error)
 import Eval (Eval, documentedAs, evalProgram, visibleGraph)
-import DepGraph (DepGraph, Vertex, Labelling, Path, bwd, fwd, selected)
+import DepGraph (DepGraph, Labelling, bwd, fwd, selected)
 import File (File, Folder(..), loadFile)
 import Lattice (class BotOf, class MeetSemilattice, class Neg, DepKind(..), botOf, 𝔹)
 import Module (Config, prepConfig, throwParseFailure)
 import Parse (parseProgram)
+import Path (Path, Vertex)
 import Pretty (class Pretty, compare, prettyP)
 import SExpr (Stmt) as SE
 import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)

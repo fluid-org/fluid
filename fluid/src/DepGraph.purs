@@ -2,61 +2,26 @@ module DepGraph where
 
 import Prelude hiding (absurd, compose)
 
-import Bind (Var)
 import Control.Apply (lift2)
 import Control.Monad.State (class MonadState, execState, gets, modify_)
 import Data.Foldable (any, foldMap, foldl, foldr)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Generic.Rep (class Generic)
 import Data.List (List(..), (:))
 import Data.List as L
 import Data.Map (Map, fromFoldableWith, insertWith, unionWith)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
-import Util (type (×), Endo, absurd, error, isEmpty, singleton, (×))
+import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceRoot)
+import Util (class IsEmpty, type (×), Endo, absurd, error, isEmpty, singleton, (×))
 import Util.Map (get, lookup, maplet, toUnfoldable)
-import Util.Set (empty, size, (∈), (∪))
-import Unsafe.Reference (unsafeRefEq)
-
-newtype Vertex = Vertex Int
-
--- Step to part of value or member of family
-data Step
-   = Source Vertex -- of edge
-   | InEnv -- environment of inputs
-   | InCtl -- control input
-   | Binding Var
-   | Field Var
-   | Element Int -- of list or tuple
-   | Key String -- of dictionary entry
-   | Entry String -- value of dictionary entry
-   | MatrixElement Int Int
-   | MatrixRows
-   | MatrixCols
-   | ClosureEnv
-   | PartialFun
-   | PartialArg Int
-
-type Path = List Step
-
-ε :: Path
-ε = Nil
-
--- Position p of source vertex a
-sourceAt :: Vertex -> Path -> Path
-sourceAt a p = Source a : p
-
-sourceRoot :: Vertex -> Path
-sourceRoot a = sourceAt a ε
+import Util.Set (empty, (∈), (∪))
 
 -- Labels with a path to each position
 class Traversable f <= Paths f where
@@ -74,86 +39,76 @@ scale a = map (mul a)
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
 
--- Same as union, except that a result equal to ps or ps' is that argument
-unionShared :: Set Path -> Set Path -> Set Path
-unionShared ps ps'
-   | unsafeRefEq ps ps' = ps
-   | otherwise = argument (ps ∪ ps')
-        where
-        argument qs
-           | size qs == size ps = ps
-           | size qs == size ps' = ps'
-           | otherwise = qs
+-- Sources of a target position: control sources as a set c, then non-zero weight of every other source
+data Sources c s = Sources c (Map Path s)
 
--- Sources of a target position: set of sources with control weight, then non-zero weight of every other source
-data Sources s = Sources (Set Path) (Map Path s)
+instance (Semigroup c, Semiring s) => Semigroup (Sources c s) where
+   append (Sources ps ws) (Sources ps' ws') = Sources (ps <> ps') (unionWith add ws ws')
 
-instance Semiring s => Semigroup (Sources s) where
-   append (Sources ps ws) (Sources ps' ws') = Sources (unionShared ps ps') (unionWith add ws ws')
-
-instance Semiring s => Monoid (Sources s) where
-   mempty = Sources empty empty
+instance (Monoid c, Semiring s) => Monoid (Sources c s) where
+   mempty = Sources mempty empty
 
 -- Control dependence on each of ps
-control :: forall s. Set Path -> Sources s
+control :: forall c s. c -> Sources c s
 control ps = Sources ps empty
 
 -- Dependence on p with weight one
-unitWeight :: forall s. Semiring s => Path -> Sources s
-unitWeight p = Sources empty (Map.singleton p one)
+unitWeight :: forall c s. Monoid c => Semiring s => Path -> Sources c s
+unitWeight p = Sources mempty (Map.singleton p one)
 
-positionsOf :: forall s. Sources s -> Set Path
+positionsOf :: forall s. Sources (Set Path) s -> Set Path
 positionsOf (Sources ps ws) = ps ∪ Map.keys ws
 
-weights :: forall s. DepSemiring s => Sources s -> Map Path s
-weights (Sources ps ws) = unionWith add (Set.toMap ps $> ctrlWeight) ws
+weights :: forall s. DepSemiring s => Sources PathSet s -> Map Path s
+weights (Sources ps ws) = unionWith add (Set.toMap (members ps) $> ctrlWeight) ws
 
 -- Product of non-zero w with the weight of every source; unchanged for a source with control weight
-scaleSources :: forall s. Eq s => Semiring s => s -> Endo (Sources s)
+scaleSources :: forall c s. Eq s => Semiring s => s -> Endo (Sources c s)
 scaleSources w srcs@(Sources ps ws)
    | w == one = srcs
    | otherwise = Sources ps (mul w <$> ws)
 
 -- Sources of the target root, then relation into each part; zero relations absent
-data Rel s = Rel (Sources s) (Map Step (Rel s))
+data Rel c s = Rel (Sources c s) (Map Step (Rel c s))
 
-instance Semiring s => Semigroup (Rel s) where
+instance (Semigroup c, Semiring s) => Semigroup (Rel c s) where
    append (Rel srcs rs) (Rel srcs' rs') = Rel (srcs <> srcs') (unionWith append rs rs')
 
-instance Semiring s => Monoid (Rel s) where
+instance (Monoid c, Semiring s) => Monoid (Rel c s) where
    mempty = Rel mempty empty
 
-nonZero :: forall s. Rel s -> Maybe (Rel s)
+nonZero :: forall c s. IsEmpty c => Rel c s -> Maybe (Rel c s)
 nonZero r@(Rel (Sources ps ws) rs)
    | isEmpty ps && isEmpty ws && isEmpty rs = Nothing
    | otherwise = Just r
 
 -- Relation of the target root to the given sources
-onto :: forall s. Sources s -> Rel s
+onto :: forall c s. Sources c s -> Rel c s
 onto srcs = Rel srcs empty
 
-ι :: forall s. Semiring s => Path -> Endo (Rel s)
+ι :: forall c s. IsEmpty c => Monoid c => Semiring s => Path -> Endo (Rel c s)
 ι p r = foldr (\step r' -> Rel mempty (maybe empty (maplet step) (nonZero r'))) r p
 
-π :: forall s. Semiring s => Path -> Endo (Rel s)
+π :: forall c s. Monoid c => Semiring s => Path -> Endo (Rel c s)
 π Nil r = r
 π (step : p) (Rel _ rs) = maybe mempty (π p) (lookup step rs)
 
-data Restructuring = Restructuring (Set Path) BaseRestructuring
+-- Control dependence of the target on a set c of source positions
+data Restructuring c = Restructuring c (BaseRestructuring c)
 
-data BaseRestructuring
+data BaseRestructuring c
    = Reuse Path -- subvalue of source at path
    | Zero -- nothing reused
-   | Family (Map Step Restructuring) -- restructuring into each part
-   | Extend Restructuring (Dict Restructuring) -- environment, then members added or replaced
+   | Family (Map Step (Restructuring c)) -- restructuring into each part
+   | Extend (Restructuring c) (Dict (Restructuring c)) -- environment, then members added or replaced
 
-restructuring :: BaseRestructuring -> Restructuring
-restructuring = Restructuring empty
+restructuring :: forall c. Monoid c => BaseRestructuring c -> Restructuring c
+restructuring = Restructuring mempty
 
-withCtrl :: Set Path -> Endo Restructuring
-withCtrl ps' (Restructuring ps ψ) = Restructuring (unionShared ps ps') ψ
+withCtrl :: forall c. Semigroup c => c -> Endo (Restructuring c)
+withCtrl ps' (Restructuring ps ψ) = Restructuring (ps <> ps') ψ
 
-pathAfter :: Path -> Restructuring -> Restructuring
+pathAfter :: forall c. Monoid c => Path -> Restructuring c -> Restructuring c
 pathAfter Nil θ = θ
 pathAfter p@(step : p') (Restructuring ps ψ) = (if any intoClosure p then identity else withCtrl ps) case ψ of
    Reuse q -> restructuring (Reuse (q <> p))
@@ -169,34 +124,34 @@ pathAfter p@(step : p') (Restructuring ps ψ) = (if any intoClosure p then ident
    intoClosure (PartialArg _) = true
    intoClosure _ = false
 
-type Dependence s = Restructuring × Rel s
+type Dependence c s = Restructuring c × Rel c s
 
-reuse :: forall s. Semiring s => Path -> Dependence s
+reuse :: forall c s. Monoid c => Semiring s => Path -> Dependence c s
 reuse p = restructuring (Reuse p) × mempty
 
 -- Add control dependence of the target on each of ps
-under :: forall s. Set Path -> Endo (Dependence s)
+under :: forall c s. Semigroup c => c -> Endo (Dependence c s)
 under ps (θ × r) = withCtrl ps θ × r
 
-supp :: forall s. Semiring s => Dependence s -> Path -> Sources s
+supp :: forall c s. Monoid c => Semiring s => Dependence c s -> Path -> Sources c s
 supp (θ × r) q = case pathAfter q θ of
    Restructuring ps (Reuse p) -> Sources ps (Map.singleton p one)
    Restructuring ps _ -> Sources ps empty <> srcs
    where
    Rel srcs _ = π q r
 
--- Sources of every position in qs
-supps :: forall s. Semiring s => Dependence s -> Set Path -> Set Path
-supps δ qs = positionsOf (foldMap (supp δ) qs)
+-- Control sources which hold every source of every position in qs
+supps :: forall s. Semiring s => Dependence PathSet s -> Set Path -> PathSet
+supps δ qs = foldMap (supp δ >>> \(Sources ps ws) -> ps <> foldMap pathSet (Map.keys ws)) qs
 
-restructuringAfter :: forall s. Semiring s => Restructuring -> Dependence s -> Restructuring
+restructuringAfter :: forall s. Semiring s => Restructuring (Set Path) -> Dependence PathSet s -> Restructuring PathSet
 restructuringAfter (Restructuring ps ψ) δ@(θ × _) = withCtrl (supps δ ps) case ψ of
    Reuse p -> pathAfter p θ
    Zero -> restructuring Zero
    Family θs -> restructuring (Family (flip restructuringAfter δ <$> θs))
    Extend θ' θs -> restructuring (Extend (restructuringAfter θ' δ) (flip restructuringAfter δ <$> θs))
 
-restructuringAfterRel :: forall s. Semiring s => Restructuring -> Rel s -> Rel s
+restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel PathSet s -> Rel PathSet s
 restructuringAfterRel (Restructuring _ ψ) r = case ψ of
    Reuse p -> π p r
    Zero -> mempty
@@ -207,36 +162,36 @@ restructuringAfterRel (Restructuring _ ψ) r = case ψ of
    members = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
 
 -- Relation after the relation of a dependence
-relAfter :: forall s. DepSemiring s => Rel s -> Dependence s -> Rel s
+relAfter :: forall s. DepSemiring s => Rel (Set Path) s -> Dependence PathSet s -> Rel PathSet s
 relAfter (Rel (Sources ps ws) rs) δ =
    Rel (foldlWithIndex (\p srcs w -> srcs <> scaleSources w (supp δ p)) (Sources (supps δ ps) empty) ws)
       (Map.mapMaybe (flip relAfter δ >>> nonZero) rs)
 
-compose :: forall s. DepSemiring s => Dependence s -> Dependence s -> Dependence s
+compose :: forall s. DepSemiring s => Dependence (Set Path) s -> Dependence PathSet s -> Dependence PathSet s
 compose (θ' × r') δ@(_ × r) = restructuringAfter θ' δ × (restructuringAfterRel θ' r <> relAfter r' δ)
 
 -- Members of an environment by step
 bindings :: forall a. Dict a -> Map Step a
 bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
 
-tupling :: forall s. Semiring s => Map Step (Dependence s) -> Dependence s
+tupling :: forall c s. IsEmpty c => Monoid c => Semiring s => Map Step (Dependence c s) -> Dependence c s
 tupling δs = restructuring (Family (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
 -- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on srcs
-construct :: forall s. Semiring s => Sources s -> Map Step (Dependence s) -> Dependence s
+construct :: forall c s. IsEmpty c => Monoid c => Semiring s => Sources c s -> Map Step (Dependence c s) -> Dependence c s
 construct srcs δs
    | isEmpty δs = restructuring Zero × onto srcs
    | otherwise = map (onto srcs <> _) (tupling δs)
 
 -- Dependence of the environment at position p with members δs replaced or added
-extend :: forall s. Semiring s => Path -> Dict (Dependence s) -> Dependence s
+extend :: forall c s. IsEmpty c => Monoid c => Semiring s => Path -> Dict (Dependence c s) -> Dependence c s
 extend p δs
    | isEmpty δs = reuse p
    | otherwise =
         restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
 
 -- Vertices which hold the source positions
-vertices :: forall s. Dependence s -> Set Vertex
+vertices :: forall s. Dependence (Set Path) s -> Set Vertex
 vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    where
    ofRestructuring (Restructuring ps ψ) = Set.mapMaybe L.head ps ∪ case ψ of
@@ -257,7 +212,7 @@ type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
    , docs :: Labelling Vertex -- documented vertex ↦ vertex of doc
-   , edges :: Labelling (Set Vertex × Dependence s) -- target ↦ sources, with dependence on their values
+   , edges :: Labelling (Set Vertex × Dependence (Set Path) s) -- target ↦ sources and dependence on their values
    }
 
 emptyGraph :: forall f s. DepGraph f s
@@ -266,7 +221,7 @@ emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
 valAt :: forall f s. DepGraph f s -> Vertex -> f Unit
 valAt g a = get a g.vals
 
-newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence s -> m Vertex
+newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Path) s -> m Vertex
 newVertex v δ = do
    size <- gets _.size
    let a = Vertex size
@@ -306,7 +261,7 @@ materialise g visible =
    -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
    step { θs, rs, edges } (a × (_ × δ)) =
       if a ∈ visible then
-         { θs: free a (Map.insert (Source a) (restructuring (Reuse (singleton (Source a)))) θs)
+         { θs: free a (Map.insert (Source a) (restructuring (Reuse (sourceRoot a))) θs)
          , rs: free a rs
          , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
          }
@@ -329,7 +284,7 @@ materialise g visible =
       (Map.toUnfoldable lastDependent :: List _) <#> \(b × a) -> a × (b : Nil)
 
    -- Edges into a visible vertex from each visible vertex
-   edgesInto :: Vertex -> Dependence s -> Labelling (Map Path (Map Path s))
+   edgesInto :: Vertex -> Dependence PathSet s -> Labelling (Map Path (Map Path s))
    edgesInto a δ = foldl (unionWith Map.union) empty $
       positions (paths (get a vals)) <#> \(q × _) -> maplet q <$> bySource (weights (supp δ q))
 
@@ -400,14 +355,3 @@ fwd g selection = dense g (foldl step (unitWeights selection) (Map.toUnfoldable 
 -- ======================
 -- boilerplate
 -- ======================
-derive instance Eq Vertex
-derive instance Ord Vertex
-derive instance Eq Step
-derive instance Ord Step
-derive instance Generic Step _
-
-instance Show Step where
-   show = genericShow
-
-derive instance Newtype Vertex _
-derive newtype instance Show Vertex
