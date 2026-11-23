@@ -72,7 +72,7 @@ bySource ws = fromFoldableWith union $
       (EdgeSrc a : p) × w -> a × maplet p w
       _ -> error absurd
 
--- Product of non-zero w with the weight of every source; unchanged for a source with control weight
+-- Scale by non-zero w; control weight absorbs w
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
 scaleSupport w support@(Support ps ws)
    | w == one = support
