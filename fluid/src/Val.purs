@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, onto, paths, positions, reuse, tupling, withCtrl, ι)
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel(..), Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, paths, positions, reuse, tupling, withCtrl, ι)
 import DepGraph (valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
@@ -356,7 +356,7 @@ derivative f ctl rs = f (arg <$> rs) <#> \v ->
    row :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
    row r (p × Lineage (_ × ws))
       | Map.isEmpty ws = r
-      | otherwise = r <> ι p (onto (Support Set.empty ws))
+      | otherwise = r <> ι p (Rel (Support Set.empty ws) Map.empty)
 
 -- Step to element i of a sequence, if the element is a part of the sequence
 elementStep :: Int -> Raw Val -> Maybe Step

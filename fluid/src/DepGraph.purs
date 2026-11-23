@@ -67,10 +67,6 @@ nonZero r@(Rel support rs)
    | isEmpty support && isEmpty rs = Nothing
    | otherwise = Just r
 
--- Relation of the target root to the given sources
-onto :: forall c s. Support c s -> Rel c s
-onto support = Rel support empty
-
 ι :: forall c s. Set c Path => Semiring s => Path -> Endo (Rel c s)
 ι p r = foldr (\step r' -> Rel mempty (maybe empty (maplet step) (nonZero r'))) r p
 
@@ -163,8 +159,8 @@ tupling δs = Tupling empty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> n
 -- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on support
 construct :: forall c s. Set c Path => Semiring s => Support c s -> Map Step (Dependence c s) -> Dependence c s
 construct support δs
-   | isEmpty δs = NoReuse empty × onto support
-   | otherwise = map (onto support <> _) (tupling δs)
+   | isEmpty δs = NoReuse empty × Rel support empty
+   | otherwise = map (Rel support empty <> _) (tupling δs)
 
 -- Dependence of the environment at position p with members δs replaced or added
 extend :: forall c s. Set c Path => Semiring s => Path -> Dict (Dependence c s) -> Dependence c s
