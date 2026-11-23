@@ -310,8 +310,8 @@ unitWeights = map (Set.toMap >>> map (const one))
 
 -- Weights at each visible vertex as a value, zero where absent.
 dense :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Map Path s) -> Labelling (f s)
-dense g ws = g.vals # mapWithIndex \a v ->
-   paths v <#> \(p × _) -> fromMaybe zero (lookup a ws >>= lookup p)
+dense g wss = g.vals # mapWithIndex \a v ->
+   paths v <#> \(p × _) -> fromMaybe zero (lookup a wss >>= lookup p)
 
 -- Forward and backward queries, each the transpose of the other.
 type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
@@ -326,19 +326,24 @@ queries g = { fwd: fwd g, bwd: bwd g }
 bwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 bwd g selection = dense g (foldr step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
-   step (b × supports) ws = case lookup b ws of
-      Nothing -> ws
-      Just w -> foldlWithIndex (\a ws' w' -> add' a w' ws') ws (bySource (weights (foldlWithIndex (from supports) mempty w)))
+   step :: Vertex × Map Path (Support PathSet s) -> Endo (Labelling (Map Path s))
+   step (b × supports) wss = case lookup b wss of
+      Nothing -> wss
+      Just ws -> foldlWithIndex (\a wss' ws' -> add' a ws' wss') wss $
+         bySource (weights (foldlWithIndex (from supports) mempty ws))
 
+   from :: Map Path (Support PathSet s) -> Path -> Support PathSet s -> s -> Support PathSet s
    from supports q support w = maybe support (scaleSupport w >>> (support <> _)) (lookup q supports)
 
 -- Dependence of the positions of each visible vertex on the selection.
 fwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 fwd g selection = dense g (foldl step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
-   step ws (b × supports) = add' b (Map.mapMaybe weight supports) ws
+   step :: Labelling (Map Path s) -> Vertex × Map Path (Support PathSet s) -> Labelling (Map Path s)
+   step wss (b × supports) = add' b (Map.mapMaybe weight supports) wss
       where
-      weightAt (EdgeSrc a : p) = fromMaybe zero (lookup a ws >>= lookup p)
+      weightAt :: Path -> s
+      weightAt (EdgeSrc a : p) = fromMaybe zero (lookup a wss >>= lookup p)
       weightAt _ = error absurd
 
       -- Whether each set of control sources has a member with non-zero weight
@@ -346,9 +351,10 @@ fwd g selection = dense g (foldl step (unitWeights selection) (toUnfoldable g.ed
       reached = Set.toMap (controlSets (maplet b supports)) # mapWithIndex \ps _ ->
          any (weightAt >>> (_ /= zero)) (members ps)
 
-      weight (Support ps ws') = if w == zero then Nothing else Just w
+      weight :: Support PathSet s -> Maybe s
+      weight (Support ps ws) = if w == zero then Nothing else Just w
          where
-         w = foldlWithIndex (\p w' x -> w' + weightAt p * x) (if get ps reached then ctrlWeight else zero) ws'
+         w = foldlWithIndex (\p w' x -> w' + weightAt p * x) (if get ps reached then ctrlWeight else zero) ws
 
 -- ======================
 -- boilerplate
