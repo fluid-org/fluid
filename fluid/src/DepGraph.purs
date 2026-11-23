@@ -29,6 +29,10 @@ class Traversable f <= Paths f where
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
+-- Positions carrying true
+selected :: forall f. Paths f => f Boolean -> Set Path
+selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
+
 -- Control sources, then non-zero weight of every other source
 data Support c s = Support c (Map Path s)
 
@@ -42,13 +46,6 @@ control ps = Support ps empty
 -- Dependence on p with weight one
 unitWeight :: forall c s. Set c Path => Semiring s => Path -> Support c s
 unitWeight p = Support empty (maplet p one)
-
--- Weights of source positions grouped by source vertex
-bySource :: forall a. Map Path a -> Labelling (Map Path a)
-bySource ws = fromFoldableWith union $
-   (toUnfoldable ws :: List _) <#> case _ of
-      (EdgeSrc a : p) × w -> a × maplet p w
-      _ -> error absurd
 
 -- Leave control sources unchanged, since control weight absorbs non-zero w
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
@@ -170,6 +167,17 @@ extend p δs
 
 type Labelling a = Map Vertex a
 
+-- Vertices labelled by values of shape f; at most one edge into each vertex
+type DepGraph (f :: Type -> Type) s =
+   { size :: Int -- vertices allocated so far
+   , vals :: Labelling (f Unit)
+   , docs :: Labelling Vertex -- documented vertex ↦ vertex of doc
+   , edges :: Labelling (Set Vertex × Dependence (Set Path) s) -- target ↦ sources and dependence on their values
+   }
+
+emptyGraph :: forall f s. DepGraph f s
+emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
+
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence (Set Path) s -> Set Vertex
 vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
@@ -183,17 +191,6 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
 
    holder (EdgeSrc a) = a
    holder _ = error absurd
-
--- Vertices labelled by values of shape f; at most one edge into each vertex
-type DepGraph (f :: Type -> Type) s =
-   { size :: Int -- vertices allocated so far
-   , vals :: Labelling (f Unit)
-   , docs :: Labelling Vertex -- documented vertex ↦ vertex of doc
-   , edges :: Labelling (Set Vertex × Dependence (Set Path) s) -- target ↦ sources and dependence on their values
-   }
-
-emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
 
 newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Path) s -> m Vertex
 newVertex v δ = do
@@ -253,6 +250,13 @@ materialise g visible =
 controlSets :: forall s. Labelling (Map Path (Support PathSet s)) -> Set PathSet
 controlSets = foldMap (foldMap \(Support ps _) -> singleton ps)
 
+-- Weights of source positions grouped by source vertex
+bySource :: forall a. Map Path a -> Labelling (Map Path a)
+bySource ws = fromFoldableWith union $
+   (toUnfoldable ws :: List _) <#> case _ of
+      (EdgeSrc a : p) × w -> a × maplet p w
+      _ -> error absurd
+
 -- Restrict every support and target to the positions which satisfy the predicate
 mask :: forall f s. Paths f => (Vertex -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
 mask keep g = g { edges = mapWithIndex (\b -> filterKeys (sourceAt b >>> (_ ∈ kept)) >>> restrict) g.edges }
@@ -266,10 +270,6 @@ mask keep g = g { edges = mapWithIndex (\b -> filterKeys (sourceAt b >>> (_ ∈ 
    restricted :: Map PathSet PathSet
    restricted = Set.toMap (controlSets g.edges) # mapWithIndex \ps _ -> filter (_ ∈ kept) ps
 
--- Positions carrying true
-selected :: forall f. Paths f => f Boolean -> Set Path
-selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
-
 -- Add weights at a vertex.
 addAt :: forall s. Semiring s => Vertex -> Labelling (Map Path s) -> Map Path s -> Labelling (Map Path s)
 addAt a wss ws = insertWith (unionWith add) a ws wss
@@ -282,15 +282,6 @@ unitWeights = map (Set.toMap >>> map (const one))
 fromSparse :: forall f s. Paths f => Semiring s => VisibleGraph f s -> Labelling (Map Path s) -> Labelling (f s)
 fromSparse g wss = g.vals # mapWithIndex \a v ->
    paths v <#> \(p × _) -> fromMaybe zero (lookup a wss >>= lookup p)
-
--- Forward and backward queries, each the transpose of the other.
-type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
-
-dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
-dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
-
-queries :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Path)) (Labelling (f s))
-queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Dependence of the selection on the positions of each visible vertex.
 bwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)

@@ -25,8 +25,8 @@ import Data.Tuple (fst)
 import Effect (Effect)
 import Effect.Class.Console (log)
 import Effect.Exception (Error, message)
-import DepGraph (ConjugatePair, Labelling, dimap, mask, paths, queries, selected)
-import Lattice (DepKind(..), 𝔹, botOf, erase)
+import DepGraph (class Paths, Labelling, VisibleGraph, bwd, fwd, mask, paths, selected)
+import Lattice (class DepSemiring, DepKind(..), 𝔹, botOf, erase)
 import Path (Path, Vertex)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
@@ -131,6 +131,15 @@ drawLoaded divId = either failed loaded
    placeholder = rootSelect ("#" <> divId <> " > .fig-loading")
    failed err = log (show err) *> void (placeholder >>= setAttrs [ classes [ "fig-error" ] ] >>= setText (message err))
    loaded fig = drawFig divId fig *> (placeholder >>= remove)
+
+-- Forward query with backward query as its transpose
+type ConjugatePair a b = { fwd :: a -> b, bwd :: a -> b }
+
+dimap :: forall a a' b b'. (a' -> a) -> (b -> b') -> ConjugatePair a b -> ConjugatePair a' b'
+dimap f g pair = { fwd: g <<< pair.fwd <<< f, bwd: g <<< pair.bwd <<< f }
+
+queries :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> ConjugatePair (Labelling (Set Path)) (Labelling (f s))
+queries g = { fwd: fwd g, bwd: bwd g }
 
 -- Queries over Boolean selections.
 boolean
