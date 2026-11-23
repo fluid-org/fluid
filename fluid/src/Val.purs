@@ -56,6 +56,27 @@ data BaseVal a
    | Unbound
    | TypeAlias (List Var) T.Type
 
+data Fun a
+   = Closure (Env a) (Dict Def) Def
+   | Prim ForeignOp
+   | Type T.Type
+   | Partial (Val a) (List (Val a)) -- function applied to fewer arguments than arity; function is not partial
+
+newtype Env a = Env (Dict (Val a))
+
+-- Wrap internal representations to provide foldable and traversable instances
+newtype DictRep a = DictRep (Dict (a × Val a))
+-- Elements, then row count and column count as int values
+newtype MatrixRep a = MatrixRep (Array2 (Val a) × Val a × Val a)
+type Array2 a = Array (Array a)
+
+data ForeignOp' = ForeignOp'
+   { arity :: Int
+   , depOp :: DepOp
+   }
+
+newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq
+
 root :: forall a. Val a -> a
 root (Val α _) = α
 
@@ -101,6 +122,55 @@ pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
    Unbound -> Unbound
    TypeAlias αs τ -> TypeAlias αs τ
 
+matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
+matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
+
+matrixElement :: forall a. Int -> Int -> Val a -> Val a
+matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
+matrixElement _ _ _ = error absurd
+
+attr :: forall a. Var -> Val a -> Val a
+attr x (Val _ (Obj _ xvs)) = get x (D.fromFoldable xvs)
+attr _ _ = error absurd
+
+-- Element of list or tuple, character of string, key of dictionary or integer of range at index i
+element :: forall a. Int -> Val a -> Val a
+element i (Val _ (List vs)) = definitely' (vs A.!! i)
+element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
+element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
+element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
+element i (Val _ (Obj c ((_ × Val β (Lit (Int m))) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
+element _ _ = error absurd
+
+elements :: forall a. Val a -> List (Val a)
+elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
+   where
+   n = definitely' (elementCount v)
+
+elementCount :: forall a. Val a -> Maybe Int
+elementCount (Val _ (List vs)) = Just (A.length vs)
+elementCount (Val _ (Tuple vs)) = Just (A.length vs)
+elementCount (Val _ (Obj c ((_ × Val _ (Lit (Int m))) : (_ × Val _ (Lit (Int n))) : Nil))) | c == cRange =
+   Just (max 0 (n - m))
+elementCount (Val _ (Lit (Str s))) = Just (S.length s)
+elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
+elementCount _ = Nothing
+
+dictEntries :: forall a. Val a -> Dict (a × Val a)
+dictEntries (Val _ (Dictionary (DictRep d))) = d
+dictEntries _ = error absurd
+
+dictEntry :: forall a. String -> Val a -> a × Val a
+dictEntry k = dictEntries >>> get k
+
+matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
+matrixPut i j δv (MatrixRep (vss × h × w)) =
+   MatrixRep (vss' × h × w)
+   where
+   vs_i = vss ! i
+   v_j = vs_i ! j
+   vss' = unsafeUpdateAt i (unsafeUpdateAt j (δv v_j) vs_i) vss
+
 child :: forall a. Step -> Val a -> Val a
 child (Field x) v = attr x v
 child (Element i) v = element i v
@@ -142,11 +212,36 @@ dataPositions (Val _ u) = Val (not container) (overChildren dataPositions (false
       Matrix _ -> true
       _ -> false
 
-data Fun a
-   = Closure (Env a) (Dict Def) Def
-   | Prim ForeignOp
-   | Type T.Type
-   | Partial (Val a) (List (Val a)) -- function applied to fewer arguments than arity; function is not partial
+reaches :: Dict Def -> Endo (Set Var)
+reaches ds xs = go (Set.toUnfoldable xs) empty
+   where
+   dom_ds = keys ds
+
+   go :: List Var -> Endo (Set Var)
+   go Nil acc = acc
+   go (x : xs') acc | x ∈ acc = go xs' acc
+   go (x : xs') acc | otherwise =
+      go (Set.toUnfoldable (fv d ∩ dom_ds) <> xs') (singleton x ∪ acc)
+      where
+      d = get x ds
+
+forDefs :: Dict Def -> Def -> Dict Def
+forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
+
+class Highlightable a where
+   highlightIf :: a -> Endo Doc
+
+instance Highlightable Unit where
+   highlightIf _ = identity
+
+instance Highlightable Boolean where
+   highlightIf false = identity
+   highlightIf true = \doc -> text "⸨" <> doc <> text "⸩"
+
+instance Highlightable DepKind where
+   highlightIf Zero = identity
+   highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
+   highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
 
 class (Highlightable a, BoundedLattice a) <= Ann a
 
@@ -157,66 +252,6 @@ instance Highlightable a => Highlightable (a × b) where
    highlightIf (a × _) doc = highlightIf a doc
 
 instance (Ann a, BoundedLattice b) => Ann (a × b)
-
--- Module parsed but not yet loaded, or loaded with its environment
-data ModuleState s = Parsed Module | Loaded (Dict (GVal s))
-
-loadedEnv :: forall s. ModuleState s -> Maybe (Dict (GVal s))
-loadedEnv (Parsed _) = Nothing
-loadedEnv (Loaded ρ) = Just ρ
-
-type ModuleStore s =
-   { modules :: Map ModuleName (ModuleState s)
-   , depGraph :: DepGraph Label s
-   }
-
-emptyModuleStore :: forall s. ModuleStore s
-emptyModuleStore = { modules: Map.empty, depGraph: emptyGraph }
-
-class Monad m <= HasModuleStore s m | m -> s where
-   moduleStore :: m (ModuleStore s)
-   modifyModuleStore :: (ModuleStore s -> ModuleStore s) -> m Unit
-
-instance (Monad m, HasModuleStore s m) => HasModuleStore s (StateT t m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
-instance (Monad m, HasModuleStore s m) => HasModuleStore s (ReaderT r m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
-instance (Monad m, HasModuleStore s m) => HasModuleStore s (ExceptT e m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
-instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w m) where
-   moduleStore = lift moduleStore
-   modifyModuleStore = lift <<< modifyModuleStore
-
--- Monad for evaluating program into dependence graph with weights in s
-class
-   ( HasClasses m
-   , HasModuleStore s m
-   , MonadLoad m
-   , MonadState (DepGraph Label s) m
-   , DepSemiring s
-   ) <=
-   MonadEval s m
-   | m -> s
-
-instance
-   ( HasClasses m
-   , HasModuleStore s m
-   , MonadLoad m
-   , MonadState (DepGraph Label s) m
-   , DepSemiring s
-   ) =>
-   MonadEval s m
-
--- Monad for loading and evaluating program
-class (HasClasses m, HasModuleStore DepKind m, MonadLoad m) <= MonadProgram m
-
-instance (HasClasses m, HasModuleStore DepKind m, MonadLoad m) => MonadProgram m
 
 -- Vertex with the vertex of its doc, if any.
 type VertexWithDoc = Vertex × Maybe Vertex
@@ -413,128 +448,49 @@ type DepOp =
 fromRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
 fromRel f _ ctl rs = orThrow (derivative f (singleton ctl) rs)
 
-data ForeignOp' = ForeignOp'
-   { arity :: Int
-   , depOp :: DepOp
+-- Module parsed but not yet loaded, or loaded with its environment
+data ModuleState s = Parsed Module | Loaded (Dict (GVal s))
+
+loadedEnv :: forall s. ModuleState s -> Maybe (Dict (GVal s))
+loadedEnv (Parsed _) = Nothing
+loadedEnv (Loaded ρ) = Just ρ
+
+type ModuleStore s =
+   { modules :: Map ModuleName (ModuleState s)
+   , depGraph :: DepGraph Label s
    }
 
-newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identifier for Eq
+emptyModuleStore :: forall s. ModuleStore s
+emptyModuleStore = { modules: Map.empty, depGraph: emptyGraph }
 
-instance Eq ForeignOp where
-   eq (ForeignOp (s × _)) (ForeignOp (s' × _)) = s == s'
+class Monad m <= HasModuleStore s m | m -> s where
+   moduleStore :: m (ModuleStore s)
+   modifyModuleStore :: (ModuleStore s -> ModuleStore s) -> m Unit
 
-instance Ord ForeignOp where
-   compare (ForeignOp (s × _)) (ForeignOp (s' × _)) = compare s s'
+-- Monad for evaluating program into dependence graph with weights in s
+class
+   ( HasClasses m
+   , HasModuleStore s m
+   , MonadLoad m
+   , MonadState (DepGraph Label s) m
+   , DepSemiring s
+   ) <=
+   MonadEval s m
+   | m -> s
 
-newtype Env a = Env (Dict (Val a))
+instance
+   ( HasClasses m
+   , HasModuleStore s m
+   , MonadLoad m
+   , MonadState (DepGraph Label s) m
+   , DepSemiring s
+   ) =>
+   MonadEval s m
 
-instance IsEmpty (Env a) where
-   isEmpty (Env ρ) = isEmpty ρ
+-- Monad for loading and evaluating program
+class (HasClasses m, HasModuleStore DepKind m, MonadLoad m) <= MonadProgram m
 
-instance Set (Env a) String where
-   empty = Env empty
-   filter p (Env ρ) = Env (filter p ρ)
-   size (Env ρ) = size ρ
-   member x (Env ρ) = x ∈ ρ
-   difference (Env ρ) (Env ρ') = Env (difference ρ ρ')
-   union (Env ρ) (Env ρ') = Env (union ρ ρ')
-
-instance Map (Env a) String (Val a) where
-   maplet k v = Env (maplet k v)
-   keys (Env ρ) = keys ρ
-   values (Env ρ) = values ρ
-   filterKeys p (Env ρ) = Env (filterKeys p ρ)
-   unionWith f (Env ρ) (Env ρ') = Env (unionWith f ρ ρ')
-   lookup k (Env ρ) = lookup k ρ
-   delete k (Env ρ) = Env (delete k ρ)
-   insert k v (Env ρ) = Env (insert k v ρ)
-   toUnfoldable (Env ρ) = toUnfoldable ρ
-
-reaches :: Dict Def -> Endo (Set Var)
-reaches ds xs = go (Set.toUnfoldable xs) empty
-   where
-   dom_ds = keys ds
-
-   go :: List Var -> Endo (Set Var)
-   go Nil acc = acc
-   go (x : xs') acc | x ∈ acc = go xs' acc
-   go (x : xs') acc | otherwise =
-      go (Set.toUnfoldable (fv d ∩ dom_ds) <> xs') (singleton x ∪ acc)
-      where
-      d = get x ds
-
-forDefs :: Dict Def -> Def -> Dict Def
-forDefs ds d = restrict (reaches ds (fv d ∩ Set.fromFoldable (keys ds))) ds
-
--- Wrap internal representations to provide foldable/traversable instances.
-newtype DictRep a = DictRep (Dict (a × Val a))
--- Elements with row and column counts, as int values.
-newtype MatrixRep a = MatrixRep (Array2 (Val a) × Val a × Val a)
-type Array2 a = Array (Array a)
-
-matrixGet :: forall a. Int -> Int -> MatrixRep a -> Val a
-matrixGet i j (MatrixRep (vss × _ × _)) = definitely' ((_ A.!! j) =<< vss A.!! i)
-
-matrixElement :: forall a. Int -> Int -> Val a -> Val a
-matrixElement i j (Val _ (Matrix r)) = matrixGet i j r
-matrixElement _ _ _ = error absurd
-
-attr :: forall a. Var -> Val a -> Val a
-attr x (Val _ (Obj _ xvs)) = get x (D.fromFoldable xvs)
-attr _ _ = error absurd
-
--- i-th element of a sequence: element of a list or tuple, character of a string, key of a dictionary, integer of a range.
-element :: forall a. Int -> Val a -> Val a
-element i (Val _ (List vs)) = definitely' (vs A.!! i)
-element i (Val _ (Tuple vs)) = definitely' (vs A.!! i)
-element i (Val α (Lit (Str s))) = Val α (Lit (Str (definitely' (S.singleton <$> S.codePointAt i s))))
-element i (Val _ (Dictionary (DictRep d))) = let k × (β × _) = definitely' (toUnfoldable d L.!! i) in Val β (Lit (Str k))
-element i (Val _ (Obj c ((_ × Val β (Lit (Int m))) : _ : Nil))) | c == cRange = Val β (Lit (Int (m + i)))
-element _ _ = error absurd
-
-elements :: forall a. Val a -> List (Val a)
-elements v = (\i -> element i v) <$> L.take n (L.range 0 n)
-   where
-   n = definitely' (elementCount v)
-
-elementCount :: forall a. Val a -> Maybe Int
-elementCount (Val _ (List vs)) = Just (A.length vs)
-elementCount (Val _ (Tuple vs)) = Just (A.length vs)
-elementCount (Val _ (Obj c ((_ × Val _ (Lit (Int m))) : (_ × Val _ (Lit (Int n))) : Nil))) | c == cRange =
-   Just (max 0 (n - m))
-elementCount (Val _ (Lit (Str s))) = Just (S.length s)
-elementCount (Val _ (Dictionary (DictRep d))) = Just (size d)
-elementCount _ = Nothing
-
-dictEntries :: forall a. Val a -> Dict (a × Val a)
-dictEntries (Val _ (Dictionary (DictRep d))) = d
-dictEntries _ = error absurd
-
-dictEntry :: forall a. String -> Val a -> a × Val a
-dictEntry k = dictEntries >>> get k
-
-matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
-matrixPut i j δv (MatrixRep (vss × h × w)) =
-   MatrixRep (vss' × h × w)
-   where
-   vs_i = vss ! i
-   v_j = vs_i ! j
-   vss' = unsafeUpdateAt i (unsafeUpdateAt j (δv v_j) vs_i) vss
-
-class Highlightable a where
-   highlightIf :: a -> Endo Doc
-
-instance Highlightable Unit where
-   highlightIf _ = identity
-
-instance Highlightable Boolean where
-   highlightIf false = identity
-   highlightIf true = \doc -> text "⸨" <> doc <> text "⸩"
-
-instance Highlightable DepKind where
-   highlightIf Zero = identity
-   highlightIf Ctrl = \doc -> text "⟪" <> doc <> text "⟫"
-   highlightIf Data = \doc -> text "⸨" <> doc <> text "⸩"
+instance (HasClasses m, HasModuleStore DepKind m, MonadLoad m) => MonadProgram m
 
 -- ======================
 -- boilerplate
@@ -679,3 +635,46 @@ derive instance Eq a => Eq (Env a)
 derive instance Newtype (Env a) _
 derive instance Newtype (ValWithDoc a) _
 derive instance Newtype (EnvWithDocs a) _
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (StateT t m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (ReaderT r m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance (Monad m, HasModuleStore s m) => HasModuleStore s (ExceptT e m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance (Monad m, HasModuleStore s m, Monoid w) => HasModuleStore s (WriterT w m) where
+   moduleStore = lift moduleStore
+   modifyModuleStore = lift <<< modifyModuleStore
+
+instance Eq ForeignOp where
+   eq (ForeignOp (s × _)) (ForeignOp (s' × _)) = s == s'
+
+instance Ord ForeignOp where
+   compare (ForeignOp (s × _)) (ForeignOp (s' × _)) = compare s s'
+
+instance IsEmpty (Env a) where
+   isEmpty (Env ρ) = isEmpty ρ
+
+instance Set (Env a) String where
+   empty = Env empty
+   filter p (Env ρ) = Env (filter p ρ)
+   size (Env ρ) = size ρ
+   member x (Env ρ) = x ∈ ρ
+   difference (Env ρ) (Env ρ') = Env (difference ρ ρ')
+   union (Env ρ) (Env ρ') = Env (union ρ ρ')
+
+instance Map (Env a) String (Val a) where
+   maplet k v = Env (maplet k v)
+   keys (Env ρ) = keys ρ
+   values (Env ρ) = values ρ
+   filterKeys p (Env ρ) = Env (filterKeys p ρ)
+   unionWith f (Env ρ) (Env ρ') = Env (unionWith f ρ ρ')
+   lookup k (Env ρ) = lookup k ρ
+   delete k (Env ρ) = Env (delete k ρ)
+   insert k v (Env ρ) = Env (insert k v ρ)
+   toUnfoldable (Env ρ) = toUnfoldable ρ
