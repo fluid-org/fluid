@@ -395,7 +395,7 @@ arityMismatch what q αs τs =
    what <> " " <> quoted (dottedName q) <> " expects " <> show (length αs) <> " type argument(s); got " <> show (length τs)
 
 typeArgsFor :: List Var -> Map.Map Var T.Type -> CheckM (List T.Type)
-typeArgsFor αs γ = for αs \α -> maybe (throwError $ "Type parameter " <> quoted α <> " does not have type argument") pure (lookup α γ)
+typeArgsFor αs γ = for αs \α -> maybe (throwError $ "Type parameter " <> quoted α <> " has no type argument") pure (lookup α γ)
 
 annotated :: Cxt -> Maybe S.TypeExpr -> S.Expr -> CheckM (T.Type × E.Expr)
 annotated cxt (Just ψ) e = synth cxt ψ >>= \τ -> (τ × _) <$> check cxt e τ
@@ -453,7 +453,7 @@ instance Synth S.Expr (T.Type × E.Expr) where
          _ -> error absurd
    synth cxt (S.Attribute e y) = case resolveName cxt =<< asName e of
       Just (ModChecked q cxt') -> do
-         unless (y ∈ cxt') $ throwError $ "module " <> quoted (dottedName q) <> " does not have member " <> quoted y
+         unless (y ∈ cxt') $ throwError $ "module " <> quoted (dottedName q) <> " has no member " <> quoted y
          (_ × E.ModMember q y) <$> varType cxt' y
       _ -> do
          σ × e' <- synth cxt e
