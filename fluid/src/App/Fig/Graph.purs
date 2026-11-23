@@ -66,7 +66,7 @@ type PosRep = Int
 -- Source positions by source vertex
 type SourcesRep a = Array (Int × Array a)
 
--- Index of control sources among the path sets, then weight of every other source
+-- Control sources as index among path sets
 type SupportRep = Int × SourcesRep (PosRep × Int)
 
 type Classes = Object (Array FieldName) -- class ↦ field names
