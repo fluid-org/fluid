@@ -31,13 +31,13 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel(..), Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, paths, positions, reuse, tupling, withCtrl, ι)
-import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, erase, (∧), (∨))
+import DepGraph (class Paths, DepGraph, Dependence, Labelling, emptyGraph, paths)
+import Lattice (class BoundedLattice, class DepSemiring, class JoinSemilattice, class MeetSemilattice, DepKind(..), Raw, (∧), (∨))
 import Literal (Literal(..))
-import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
+import Path (Path, Step(..), Vertex)
 import Types as T
 import Pretty.Doc (Doc, text)
-import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', definitelyRight, error, isEmpty, orThrow, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (class IsEmpty, type (×), Endo, absurd, definitely', error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
@@ -265,131 +265,6 @@ valAt g p = value (get p g.vals)
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Path) s
 
--- Position in the value of a vertex, with the value at that position
-type Position = Path × Raw Val
-
-position :: Vertex × Raw Val -> Position
-position (a × v) = sourceRoot a × v
-
--- Every position in the value of a vertex
-positionsIn :: Vertex × Raw Val -> Set Path
-positionsIn (a × v) = Set.fromFoldable (sourceAt a <<< fst <$> positions (paths v))
-
--- Positions which determine the length of the sequence at a vertex: the root, plus start and stop of a range
-lengthPositions :: Vertex × Raw Val -> Set Path
-lengthPositions (a × Val _ (Obj c xvs)) | c == cRange =
-   Set.fromFoldable (sourceRoot a : (xvs <#> \(x × _) -> sourceAt a (singleton (Field x))))
-lengthPositions (a × _) = singleton (sourceRoot a)
-
--- Child at step of the value at a position
-childAt :: Step -> Endo Position
-childAt step (p × v) = (p <> singleton step) × child step v
-
--- Elements of the list or tuple at a position
-elementsAt :: Position -> List Position
-elementsAt u = (\i -> childAt (Element i) u) <$> L.take n (L.range 0 n)
-   where
-   n = definitely' (elementCount (snd u))
-
--- Value at a position, as a value which reuses that position
-reuseAt :: forall s. Semiring s => Position -> GVal s
-reuseAt (p × v) = v × reuse p
-
-gval :: forall s. Semiring s => Vertex × Raw Val -> GVal s
-gval = position >>> reuseAt
-
--- Add control dependence on each of ps to every position outside a function value
-deliver :: forall s. Set Path -> Endo (GVal s)
-deliver ps (v × θ × r) = v × withCtrl ps θ × r
-
--- Allocate vertex for given value; return vertex with raw value
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m (Vertex × Raw Val)
-newValue (v × δ) = newVertex (Value v) δ <#> (_ × v)
-
--- Position of the environment at inputs vertex b
-envAt :: Vertex -> Path
-envAt b = sourceAt b (singleton InputsEnv)
-
--- Control position at inputs vertex b
-ctlAt :: Vertex -> Path
-ctlAt b = sourceAt b (singleton InputsCtl)
-
--- Allocate inputs vertex for environment ρ with dependence δ; control position has dependence δ'
-newInputs
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => Dict (Raw Val)
-   -> Dependence (Set Path) s
-   -> Dependence (Set Path) s
-   -> m Vertex
-newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InputsEnv × δ, InputsCtl × δ' ]))
-
--- Allocate vertex for bindings ρ; return vertex with each binding as reuse of its position
-newBindings
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => Dict (GVal s)
-   -> m (Vertex × Dict (GVal s))
-newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
-   a × mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
-
--- Result of f at the values of vertices rs, if any; dependence is the derivative of f, plus control dependence on ctl
-derivative
-   :: forall s
-    . DepSemiring s
-   => (forall a. DepSemiring a => List (Val a) -> MayFail (Val a))
-   -> Set Path
-   -> List (Vertex × Raw Val)
-   -> MayFail (GVal s)
-derivative f ctl rs = f (arg <$> rs) <#> \v ->
-   erase v × NoReuse ctl × foldl row mempty (positions (paths v))
-   where
-   arg :: Vertex × Raw Val -> Val (Lineage Path s)
-   arg (a × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (sourceAt a p) one)
-
-   row :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
-   row r (p × Lineage (_ × ws))
-      | Map.isEmpty ws = r
-      | otherwise = r <> ι p (Rel (Support Set.empty ws) Map.empty)
-
--- Step to element i of sequence if that element is a child
-elementStep :: Int -> Raw Val -> Maybe Step
-elementStep i (Val _ (List _)) = Just (Element i)
-elementStep i (Val _ (Tuple _)) = Just (Element i)
-elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely' (toUnfoldable d L.!! i))))
-elementStep _ _ = Nothing
-
--- Element i computed from the sequence at a vertex
-computedElement :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
-computedElement i r = definitelyRight (derivative elementOf Set.empty (singleton r))
-   where
-   elementOf :: forall a. List (Val a) -> MayFail (Val a)
-   elementOf (v : Nil) = pure (element i v)
-   elementOf _ = error absurd
-
--- Element i of the sequence at a vertex
-elementAt :: forall s. DepSemiring s => Int -> Vertex × Raw Val -> GVal s
-elementAt i r = case elementStep i (snd r) of
-   Just step -> reuseAt (childAt step (position r))
-   Nothing -> computedElement i r
-
--- List or tuple of vs, as mk determines; root depends on support
-sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List (GVal s) -> GVal s
-sequenceOf mk support vs =
-   Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
-
--- Dictionary with the given entries; root depends on support
-dictionary :: forall s. Semiring s => Support (Set Path) s -> List (GVal s × GVal s) -> GVal s
-dictionary support kvs =
-   Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \((k × _) × v × _) -> key k × unit × v)))) ×
-      construct support (Map.fromFoldable (kvs >>= \((k × δ) × _ × δ') -> (DictKey (key k) × δ) : (DictVal (key k) × δ') : Nil))
-   where
-   key :: Raw Val -> String
-   key (Val _ (Lit (Str k))) = k
-   key _ = error absurd
-
 -- Application of a function to arguments at a new vertex
 type Apply m = Vertex × Raw Val -> List (Vertex × Raw Val) -> m (Vertex × Raw Val)
 
@@ -405,10 +280,6 @@ type DepOp =
    -> Path
    -> List (Vertex × Raw Val)
    -> m (GVal s)
-
--- Foreign function with derivative given by f; application of f may fail
-fromRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
-fromRel f _ ctl rs = orThrow (derivative f (singleton ctl) rs)
 
 -- Module parsed but not yet loaded, or loaded with its environment
 data ModuleState s = Parsed Module | Loaded (Dict (GVal s))

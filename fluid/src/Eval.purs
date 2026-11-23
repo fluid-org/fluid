@@ -40,7 +40,8 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementCount, elementStep, elementsAt, envAt, forDefs, gval, lengthPositions, modifyModuleStore, moduleStore, newBindings, newInputs, newValue, child, position, positionsIn, childAt, reuseAt, sequenceOf, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
+import Val.Dependence (Position, computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementStep, elementsAt, envAt, gval, lengthPositions, newBindings, newInputs, newValue, position, positionsIn, childAt, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }

@@ -55,7 +55,8 @@ import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Val(..), deliver, dictEntries, dictionary, elementCount, fromRel, gval, matrixPut, newValue, position, childAt, reuseAt)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Val(..), dictEntries, elementCount, matrixPut)
+import Val.Dependence (deliver, dictionary, fromRel, gval, newValue, position, childAt, reuseAt)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
