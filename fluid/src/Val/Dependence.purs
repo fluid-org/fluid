@@ -4,7 +4,7 @@ import Prelude hiding (absurd)
 
 import Control.Monad.State (class MonadState)
 import Data.Array (fromFoldable) as A
-import Data.Foldable (foldl)
+import Data.Foldable (foldMap, foldl)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.List ((!!), range, take) as L
@@ -13,7 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (fst, snd)
-import DepGraph (Dependence, DepGraph, Rel(..), Restructuring(..), Support(..), bindings, construct, newVertex, paths, positions, reuse, tupling, withCtrl, ι)
+import DepGraph (bindings, construct, dataDep, Dependence, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), tupling, withCtrl, ι)
 import Dict (Dict)
 import Dict as D
 import Lattice (class DepSemiring, Lineage(..), Raw, erase)
@@ -117,6 +117,11 @@ elementAt i r = case elementStep i (snd r) of
 sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List (GVal s) -> GVal s
 sequenceOf mk support vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
+
+-- Concatenate sequences at given positions with constructor mk; root depends on support and each sequence
+concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List Position -> GVal s
+concatOf mk support rs = sequenceOf mk (support <> foldMap (fst >>> dataDep) rs) $
+   rs >>= \r -> deliver (singleton (fst r)) <<< reuseAt <$> elementsAt r
 
 -- Dictionary with the given entries; root depends on support
 dictionary :: forall s. Semiring s => Support (Set Path) s -> List (GVal s × GVal s) -> GVal s

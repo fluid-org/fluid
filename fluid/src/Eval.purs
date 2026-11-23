@@ -7,7 +7,7 @@ import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
 import Data.Either (either)
-import Data.Foldable (elem, fold, foldM, foldMap, foldl)
+import Data.Foldable (elem, fold, foldM, foldl)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), drop, elemIndex, length, take, zip, (:))
 import Data.List as L
@@ -34,14 +34,14 @@ import Operator (binopSymbol, unopSymbol)
 import Path (Path, Step(..), Vertex, sourceVertex)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binopFun, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
+import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
 import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (computedElement, ctlAt, deliver, dictionary, applyDepFun, elementAt, elementStep, elementsAt, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, childAt, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, computedElement, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -138,11 +138,6 @@ closeDefs ctl p ρ ds = ds <#> \d ->
       ds' = ds `forDefs` d
    in
       closure ctl p (restrict (fv ds' ∪ fv d) ρ) ds' d
-
--- Concatenation of the lists at positions rs; root also depends on support
-concatLists :: forall s. Semiring s => Support (Set Path) s -> List Position -> GVal s
-concatLists support rs = sequenceOf V.List (support <> foldMap (fst >>> dataDep) rs) $
-   rs >>= \r -> deliver (singleton (fst r)) <<< reuseAt <$> elementsAt r
 
 -- ======================
 -- Evaluation
@@ -246,8 +241,9 @@ eval = { stmt, program }
          rs <- traverse (expr inputs) es
          withMsg ("In " <> funName e) $ apply (ctlAt b) f rs
       BinOp e op e' -> do
-         rs <- traverse (expr inputs) (e : e' : Nil)
-         withMsg ("In " <> binopSymbol op) $ orThrow (applyDepFun (binopFun op) ctl rs)
+         r <- expr inputs e
+         r' <- expr inputs e'
+         withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ctl r r')
       UnOp op e -> do
          r <- expr inputs e
          withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) ctl (r : Nil))
@@ -315,7 +311,7 @@ eval = { stmt, program }
                Nothing × qs -> pure (Nil × qs)
                Just (ρ' × _) × qs ->
                   extendInputs inputs ρ' (lengthPositions r ∪ qs) >>= \inputs' -> qualifiers body inputs' gs' <#> \r' -> singleton r' × empty
-         pure (concatLists (controlDep (lengthPositions r ∪ ps)) rs)
+         pure (concatOf V.List (controlDep (lengthPositions r ∪ ps)) rs)
       elements (Decl p e : gs') = do
          r <- expr inputs e
          classes <- askClasses

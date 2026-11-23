@@ -2,8 +2,11 @@ module DepGraph where
 
 import Prelude hiding (absurd, compose)
 
+import Control.Monad.ST (for, foreach) as ST
 import Control.Monad.State (class MonadState, execState, gets, modify_)
-import Data.Foldable (any, foldMap, foldl, foldr)
+import Data.Array (mapWithIndex, replicate) as A
+import Data.Array.ST (modify, peek, poke, run, thaw) as STA
+import Data.Foldable (any, foldMap, foldl, foldr, for_, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex, foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
@@ -18,7 +21,7 @@ import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
 import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceAt, sourceRoot, sourceVertex)
-import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (×))
+import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (!), (×))
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
 
@@ -224,17 +227,16 @@ materialise g visible =
 
    -- Free the entry of each vertex which has a as last dependent
    free :: forall a. Vertex -> Endo (Map Step a)
-   free a xs = foldr (EdgeSrc >>> delete) xs (fromMaybe Nil (lookup a byLastDependent))
+   free (Vertex a) xs = foldr (EdgeSrc >>> delete) xs (byLastDependent ! a)
 
-   -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
-   lastDependent :: Labelling Vertex
-   lastDependent = foldlWithIndex dependent empty g.edges
-      where
-      dependent a m (bs × _) = foldl (\m' b -> insert b a m') (insert a a m) bs
-
-   byLastDependent :: Labelling (List Vertex)
-   byLastDependent = fromFoldableWith (<>) $
-      (toUnfoldable lastDependent :: List _) <#> \(b × a) -> a × (b : Nil)
+   -- Vertices without dependents count as dependent on themselves
+   byLastDependent :: Array (List Vertex)
+   byLastDependent = STA.run do
+      lastDependent <- STA.thaw (A.mapWithIndex const (A.replicate g.size unit))
+      ST.foreach (toUnfoldable g.edges) \(Vertex a × bs × _) -> for_ bs \(Vertex b) -> STA.poke b a lastDependent
+      vertices' <- STA.thaw (A.replicate g.size Nil)
+      ST.for 0 g.size \b -> STA.peek b lastDependent >>= traverse_ \a -> STA.modify a (Vertex b : _) vertices'
+      pure vertices'
 
    supports :: Vertex -> Dependence PathSet s -> Map Path (Support PathSet s)
    supports a δ = Map.filter (not <<< isEmpty) $
