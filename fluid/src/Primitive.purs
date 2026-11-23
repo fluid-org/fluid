@@ -3,13 +3,11 @@ module Primitive where
 import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
-import Control.Apply (lift2)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl)
 import Data.Int (toNumber)
 import Data.Int as Int
 import Data.Array (replicate)
-import Data.Array as A
 import Data.List (List(..), fromFoldable, (:))
 import Data.List (concat) as L
 import Data.Number as N
@@ -19,18 +17,20 @@ import Data.Set as Set
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.Tuple (fst, snd)
+import DepGraph (dataDep)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
-import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, ctrlWeight, erase)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
 import Literal (Literal(..), eqLiteral)
+import Path (Path)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
-import Util (MayFail, type (+), type (×), Endo, absurd, definitely', error, orThrow, singleton, (×))
+import Util (type (+), type (×), MayFail, absurd, definitely', error, orThrow, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
-import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
-import Val.Dependence (applyDepFun)
+import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), GVal, Position, ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
+import Val.Dependence (applyDepFun, concatOf, deliver, elementsAt, reuseAt, sequenceOf)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -174,6 +174,19 @@ unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val
 unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 unopFun _ _ = error absurd
 
+-- Apply binary operator to the values at two positions; a sequence reuses the elements of the operands
+applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
+applyBinop Add ctl r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (deliver ctl (concatOf List mempty (r : r' : Nil)))
+applyBinop Add ctl r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (deliver ctl (concatOf Tuple mempty (r : r' : Nil)))
+applyBinop Mul ctl l@(_ × Val _ (List _)) k@(_ × Val _ (Lit (Int n))) = pure (deliver ctl (repeatList l k n))
+applyBinop Mul ctl k@(_ × Val _ (Lit (Int n))) l@(_ × Val _ (List _)) = pure (deliver ctl (repeatList l k n))
+applyBinop op ctl r r' = applyDepFun (binopFun op) ctl (r : r' : Nil)
+
+-- List at l repeated n times, for the integer n at k
+repeatList :: forall s. Semiring s => Position -> Position -> Int -> GVal s
+repeatList l k n = sequenceOf List (dataDep (fst k) <> (if n <= 0 then mempty else dataDep (fst l))) $
+   L.concat (fromFoldable (replicate n (deliver (singleton (fst l)) <<< reuseAt <$> elementsAt l)))
+
 type Operand = Int + Number + String
 
 binop :: forall a. DepSemiring a => Binop -> Val a -> Val a -> MayFail (BaseVal a × Set a)
@@ -187,12 +200,8 @@ binop In v v' = first (Lit <<< Bool) <$> contains v' v
 binop NotIn v v' = first (Lit <<< Bool <<< not) <$> contains v' v
 binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
-binop Add (Val α (List vs)) (Val β (List vs')) = pure (first List (concat ((α × vs) : (β × vs') : Nil)))
-binop Add (Val α (Tuple vs)) (Val β (Tuple vs')) = pure (first Tuple (concat ((α × vs) : (β × vs') : Nil)))
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
-binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
-binop Mul (Val α (Lit (Int n))) (Val β (List vs)) = pure (repeatList vs β n α)
 binop op (Val α u) (Val β u') = do
    x <- intOrNumberOrString.unpack u
    y <- intOrNumberOrString.unpack u'
@@ -264,34 +273,6 @@ vertices2 (Val α _) (Val β _) = Set.fromFoldable [ α, β ]
 
 repeatStr :: forall a. Ord a => String -> a -> Int -> a -> BaseVal a × Set a
 repeatStr w α n β = Lit (Str (String.joinWith "" (replicate n w))) × deps
-   where
-   deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
-
--- Control edge from β to the whole of v
-ctrlEdge :: forall a. DepSemiring a => a -> Endo (Val a)
-ctrlEdge β v = lift2 add v (mul (ctrlWeight * β) <$> unitSection v)
-   where
-   -- Weight 1 at every position except beneath the root of a closure
-   unitSection :: Endo (Val a)
-   unitSection (Val _ u) = Val one case u of
-      Obj c xvs -> Obj c (map unitSection <$> xvs)
-      List vs -> List (unitSection <$> vs)
-      Tuple vs -> Tuple (unitSection <$> vs)
-      Dictionary (DictRep d) -> Dictionary (DictRep ((\(_ × v') -> one × unitSection v') <$> d))
-      Matrix (MatrixRep (vss × i × j)) -> Matrix (MatrixRep (map (map unitSection) vss × unitSection i × unitSection j))
-      Fun φ -> Fun (φ $> zero)
-      _ -> u
-
--- Control edge from β to key and whole value of an entry
-ctrlEdgeEntry :: forall a. DepSemiring a => a -> Endo (a × Val a)
-ctrlEdgeEntry β (α × v) = (α + ctrlWeight * β) × ctrlEdge β v
-
--- Concatenate sequences given as pairs of root and elements; elements gain control edge from root of same sequence
-concat :: forall a. DepSemiring a => List (a × Array (Val a)) -> Array (Val a) × Set a
-concat seqs = A.concatMap (\(α × vs) -> ctrlEdge α <$> vs) (A.fromFoldable seqs) × Set.fromFoldable (fst <$> seqs)
-
-repeatList :: forall a. DepSemiring a => Array (Val a) -> a -> Int -> a -> BaseVal a × Set a
-repeatList vs α n β = List (A.concat (replicate n (ctrlEdge α <$> vs))) × deps
    where
    deps = if n <= 0 then singleton β else Set.fromFoldable [ α, β ]
 
