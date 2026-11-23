@@ -201,7 +201,7 @@ vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
       Extend θ' θs -> ofRestructuring θ' ∪ foldMap ofRestructuring θs
    ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
 
-   holder (Source a) = a
+   holder (EdgeSrc a) = a
    holder _ = error absurd
 
 type Labelling a = Map Vertex a
@@ -261,17 +261,17 @@ materialise g visible =
    -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
    step { θs, rs, edges } (a × (_ × δ)) =
       if a ∈ visible then
-         { θs: free a (Map.insert (Source a) (restructuring (Reuse (sourceRoot a))) θs)
+         { θs: free a (Map.insert (EdgeSrc a) (restructuring (Reuse (sourceRoot a))) θs)
          , rs: free a rs
          , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
          }
-      else { θs: free a (Map.insert (Source a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (Source a) rs), edges }
+      else { θs: free a (Map.insert (EdgeSrc a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (EdgeSrc a) rs), edges }
       where
       θ' × r' = compose δ (restructuring (Family θs) × Rel mempty rs)
 
    -- Free the entry of each vertex which has a as last dependent
    free :: forall a. Vertex -> Endo (Map Step a)
-   free a xs = foldr (Source >>> Map.delete) xs (fromMaybe Nil (lookup a byLastDependent))
+   free a xs = foldr (EdgeSrc >>> Map.delete) xs (fromMaybe Nil (lookup a byLastDependent))
 
    -- Last dependent of each vertex; vertex without dependents counts as dependent on itself
    lastDependent :: Labelling Vertex
@@ -291,7 +291,7 @@ materialise g visible =
    bySource :: Map Path s -> Labelling (Map Path s)
    bySource row = fromFoldableWith Map.union $
       (Map.toUnfoldable row :: List _) <#> case _ of
-         (Source b : p) × w -> b × maplet p w
+         (EdgeSrc b : p) × w -> b × maplet p w
          _ -> error absurd
 
 -- Restrict every dependence relation to the positions where the predicate holds.

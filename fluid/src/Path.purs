@@ -35,7 +35,7 @@ newtype Vertex = Vertex Int
 
 -- Step to part of value; values include families of values such as environments
 data Step
-   = Source Vertex -- of edge
+   = EdgeSrc Vertex
    | InputsEnv
    | InputsCtl
    | Binding Var
@@ -57,7 +57,7 @@ type Path = List Step
 
 -- Position p of source vertex a
 sourceAt :: Vertex -> Path -> Path
-sourceAt a p = Source a : p
+sourceAt a p = EdgeSrc a : p
 
 sourceRoot :: Vertex -> Path
 sourceRoot a = sourceAt a ε
