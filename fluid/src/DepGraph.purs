@@ -195,9 +195,6 @@ type DepGraph (f :: Type -> Type) s =
 emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
 
-valAt :: forall f s. DepGraph f s -> Vertex -> f Unit
-valAt g a = get a g.vals
-
 newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Path) s -> m Vertex
 newVertex v δ = do
    size <- gets _.size

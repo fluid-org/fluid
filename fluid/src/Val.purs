@@ -32,7 +32,6 @@ import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
 import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel(..), Restructuring(..), Support(..), bindings, construct, emptyGraph, newVertex, paths, positions, reuse, tupling, withCtrl, ι)
-import DepGraph (valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
 import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
@@ -110,8 +109,8 @@ part (DictVal k) v = snd (dictEntry k v)
 part (MatrixElement i j) v = matrixElement i j v
 part MatrixRows (Val _ (Matrix (MatrixRep (_ × i × _)))) = i
 part MatrixCols (Val _ (Matrix (MatrixRep (_ × _ × j)))) = j
-part PartialFun v = partialFun v
-part (PartialArg i) v = partialArg i v
+part PartialFun (Val _ (Fun (Partial v _))) = v
+part (PartialArg i) (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
 part _ _ = error absurd
 
 overChildren :: forall a. Endo (Val a) -> Endo (BaseVal a)
@@ -241,7 +240,7 @@ unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 
 -- Value at the vertex of an expression or returning statement
 valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
-valAt g p = value (Dep.valAt g p)
+valAt g p = value (get p g.vals)
 
 -- Weight 1 at every position except beneath the root of a closure
 unitSection :: forall a s. Semiring s => Val a -> Val s
@@ -513,18 +512,6 @@ dictEntries _ = error absurd
 
 dictEntry :: forall a. String -> Val a -> a × Val a
 dictEntry k = dictEntries >>> get k
-
-closureEnv :: forall a. Val a -> Env a
-closureEnv (Val _ (Fun (Closure ρ _ _))) = ρ
-closureEnv _ = error absurd
-
-partialFun :: forall a. Val a -> Val a
-partialFun (Val _ (Fun (Partial v _))) = v
-partialFun _ = error absurd
-
-partialArg :: forall a. Int -> Val a -> Val a
-partialArg i (Val _ (Fun (Partial _ vs))) = definitely' (vs L.!! i)
-partialArg _ _ = error absurd
 
 matrixPut :: forall a. Int -> Int -> Endo (Val a) -> Endo (MatrixRep a)
 matrixPut i j δv (MatrixRep (vss × h × w)) =
