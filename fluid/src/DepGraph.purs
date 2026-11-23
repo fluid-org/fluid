@@ -39,7 +39,7 @@ scale a = map (mul a)
 plus :: forall f s. Apply f => Semiring s => f s -> f s -> f s
 plus = lift2 add
 
--- Sources of a target position: control sources as a set c, then non-zero weight of every other source
+-- Control sources, then non-zero weight of every other source
 data Support c s = Support c (Map Path s)
 
 instance (Semigroup c, Semiring s) => Semigroup (Support c s) where
