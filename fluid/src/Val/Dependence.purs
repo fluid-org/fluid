@@ -22,7 +22,7 @@ import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, orThrow, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable)
-import Val (BaseVal(..), DepOp, DictRep(..), Env(..), GVal, Label(..), Position, Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepFun, DepOp, DictRep(..), Env(..), GVal, Label(..), Position, Val(..), child, element, elementCount)
 
 -- Every position within the value at a position
 positionsIn :: Position -> Set Path
@@ -79,15 +79,9 @@ newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
    mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
--- Result of f at the values at rs, if any; dependence is the derivative of f, plus control dependence on ctl
-derivative
-   :: forall s
-    . DepSemiring s
-   => (forall a. DepSemiring a => List (Val a) -> MayFail (Val a))
-   -> Set Path
-   -> List Position
-   -> MayFail (GVal s)
-derivative f ctl rs = f (arg <$> rs) <#> \v ->
+-- Apply f to the values at rs under control of ctl; read dependence from annotations of result
+applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
+applyDepFun f ctl rs = f (arg <$> rs) <#> \v ->
    erase v × NoReuse ctl × foldl row mempty (positions (paths v))
    where
    arg :: Position -> Val (Lineage Path s)
@@ -107,7 +101,7 @@ elementStep _ _ = Nothing
 
 -- Element i computed from the sequence at a position
 computedElement :: forall s. DepSemiring s => Int -> Position -> GVal s
-computedElement i r = definitelyRight (derivative elementOf Set.empty (singleton r))
+computedElement i r = definitelyRight (applyDepFun elementOf Set.empty (singleton r))
    where
    elementOf :: forall a. List (Val a) -> MayFail (Val a)
    elementOf (v : Nil) = pure (element i v)
@@ -134,6 +128,6 @@ dictionary support kvs =
    key (Val _ (Lit (Str k))) = k
    key _ = error absurd
 
--- Foreign function with derivative given by f; application of f may fail
-fromRel :: (forall a. DepSemiring a => List (Val a) -> MayFail (Val a)) -> DepOp
-fromRel f _ ctl rs = orThrow (derivative f (singleton ctl) rs)
+-- Foreign function with dependence given by f; application of f may fail
+fromDepFun :: DepFun -> DepOp
+fromDepFun f _ ctl rs = orThrow (applyDepFun f (singleton ctl) rs)

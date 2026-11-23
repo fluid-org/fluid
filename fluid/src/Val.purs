@@ -37,7 +37,7 @@ import Literal (Literal(..))
 import Path (Path, Step(..), Vertex)
 import Types as T
 import Pretty.Doc (Doc, text)
-import Util (class IsEmpty, type (×), Endo, absurd, definitely', error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
+import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
 import Util.Map (class Map, delete, filterKeys, get, insert, intersectionWith, keys, lookup, mapWithKey, maplet, restrict, toUnfoldable, unionWith, values)
 import Util.Set (class Set, difference, empty, filter, size, union, (∈), (∪))
 
@@ -267,6 +267,9 @@ type GVal s = Raw Val × Dependence (Set Path) s
 
 -- Source position, then value at that position
 type Position = Path × Raw Val
+
+-- Function on annotated values; dependence left to the annotations
+type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
 
 -- Application of a function to arguments; result at a new vertex
 type Apply m = Position -> List Position -> m Position

@@ -34,14 +34,14 @@ import Operator (binopSymbol, unopSymbol)
 import Path (Path, Step(..), Vertex, sourceVertex)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binopRel, boolean, dropα, int, string, typeMismatch, unopRel, unpack, unpack')
+import Primitive (binopFun, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
 import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (computedElement, ctlAt, deliver, dictionary, derivative, elementAt, elementStep, elementsAt, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, childAt, reuseAt, sequenceOf)
+import Val.Dependence (computedElement, ctlAt, deliver, dictionary, applyDepFun, elementAt, elementStep, elementsAt, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, childAt, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -247,10 +247,10 @@ eval = { stmt, program }
          withMsg ("In " <> funName e) $ apply (ctlAt b) f rs
       BinOp e op e' -> do
          rs <- traverse (expr inputs) (e : e' : Nil)
-         withMsg ("In " <> binopSymbol op) $ orThrow (derivative (binopRel op) ctl rs)
+         withMsg ("In " <> binopSymbol op) $ orThrow (applyDepFun (binopFun op) ctl rs)
       UnOp op e -> do
          r <- expr inputs e
-         withMsg ("In " <> unopSymbol op) $ orThrow (derivative (unopRel op) ctl (r : Nil))
+         withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) ctl (r : Nil))
       And e e' -> do
          { holds, r } <- condition inputs e
          if holds then reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e') else pure (reuseAt r)

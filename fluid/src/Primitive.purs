@@ -30,7 +30,7 @@ import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cRange)
 import Val (BaseVal(..), DictRep(..), ForeignOp(..), ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
-import Val.Dependence (fromRel)
+import Val.Dependence (fromDepFun)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
 -- work with required higher-rank polymorphism.
@@ -142,10 +142,10 @@ unary id f =
    id × Val bot (Fun (Prim (ForeignOp (id × op))))
    where
    op :: ForeignOp'
-   op = ForeignOp' { arity: 1, depOp: fromRel (unsafePartial depRel) }
+   op = ForeignOp' { arity: 1, depOp: fromDepFun (unsafePartial depFun) }
 
-   depRel :: forall a. Partial => List (Val a) -> MayFail (Val a)
-   depRel (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))
+   depFun :: forall a. Partial => List (Val a) -> MayFail (Val a)
+   depFun (Val α v : Nil) = f.i.unpack v <#> \x -> Val α (f.o.pack (f.fwd x))
 
 class As a b where
    as :: a -> b
@@ -162,13 +162,13 @@ union1 f _ (Left x) = f x
 union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
-binopRel :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
-binopRel op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
-binopRel _ _ = error absurd
+binopFun :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
+binopFun op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopFun _ _ = error absurd
 
-unopRel :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
-unopRel op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
-unopRel _ _ = error absurd
+unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
+unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
+unopFun _ _ = error absurd
 
 type Operand = Int + Number + String
 
