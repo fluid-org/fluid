@@ -31,8 +31,8 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Sources(..), bindings, construct, emptyGraph, newVertex, onto, paths, plus, positions, restructuring, reuse, scale, tupling, under, zeros, ι)
-import DepGraph (BaseRestructuring(..), valAt) as Dep
+import DepGraph (class Paths, Dependence, DepGraph, Labelling, Rel, Sources(..), bindings, construct, emptyGraph, newVertex, onto, paths, plus, positions, reuse, scale, tupling, under, zeros, ι)
+import DepGraph (Restructuring(..), valAt) as Dep
 import Lattice (class BoundedLattice, class DepSemiring, DepKind(..), class JoinSemilattice, class MeetSemilattice, Lineage(..), Raw, ctrlWeight, erase, (∧), (∨))
 import Literal (Literal(..))
 import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
@@ -348,7 +348,7 @@ derivative
    -> List (Vertex × Raw Val)
    -> MayFail (GVal s)
 derivative f ctl rs = f (arg <$> rs) <#> \v ->
-   erase v × under ctl (restructuring Dep.Zero × foldl row mempty (positions (paths v)))
+   erase v × Dep.Zero ctl × foldl row mempty (positions (paths v))
    where
    arg :: Vertex × Raw Val -> Val (Lineage Path s)
    arg (a × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (sourceAt a p) one)

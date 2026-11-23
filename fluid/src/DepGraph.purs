@@ -93,30 +93,34 @@ onto srcs = Rel srcs empty
 π Nil r = r
 π (step : p) (Rel _ rs) = maybe mempty (π p) (lookup step rs)
 
--- Control dependence of the target on a set c of source positions
-data Restructuring c = Restructuring c (BaseRestructuring c)
+-- Target depends with control weight on source positions c of each constructor
+data Restructuring c
+   = Reuse c Path -- subvalue of source at path
+   | Zero c -- nothing reused
+   | Family c (Map Step (Restructuring c)) -- restructuring into each part
+   | Extend c (Restructuring c) (Dict (Restructuring c)) -- environment, then members added or replaced
 
-data BaseRestructuring c
-   = Reuse Path -- subvalue of source at path
-   | Zero -- nothing reused
-   | Family (Map Step (Restructuring c)) -- restructuring into each part
-   | Extend (Restructuring c) (Dict (Restructuring c)) -- environment, then members added or replaced
-
-restructuring :: forall c. Monoid c => BaseRestructuring c -> Restructuring c
-restructuring = Restructuring mempty
+ctrl :: forall c. Restructuring c -> c
+ctrl (Reuse ps _) = ps
+ctrl (Zero ps) = ps
+ctrl (Family ps _) = ps
+ctrl (Extend ps _ _) = ps
 
 withCtrl :: forall c. Semigroup c => c -> Endo (Restructuring c)
-withCtrl ps' (Restructuring ps ψ) = Restructuring (ps <> ps') ψ
+withCtrl ps' (Reuse ps p) = Reuse (ps <> ps') p
+withCtrl ps' (Zero ps) = Zero (ps <> ps')
+withCtrl ps' (Family ps θs) = Family (ps <> ps') θs
+withCtrl ps' (Extend ps θ θs) = Extend (ps <> ps') θ θs
 
 pathAfter :: forall c. Monoid c => Path -> Restructuring c -> Restructuring c
 pathAfter Nil θ = θ
-pathAfter p@(step : p') (Restructuring ps ψ) = (if any intoClosure p then identity else withCtrl ps) case ψ of
-   Reuse q -> restructuring (Reuse (q <> p))
-   Zero -> restructuring Zero
-   Family θs -> pathAfter p' (get step θs)
-   Extend θ θs -> case step of
-      Binding x | Just θ' <- lookup x θs -> pathAfter p' θ'
-      _ -> pathAfter p θ
+pathAfter p@(step : p') θ = (if any intoClosure p then identity else withCtrl (ctrl θ)) case θ of
+   Reuse _ q -> Reuse mempty (q <> p)
+   Zero _ -> Zero mempty
+   Family _ θs -> pathAfter p' (get step θs)
+   Extend _ θ' θs -> case step of
+      Binding x | Just θ'' <- lookup x θs -> pathAfter p' θ''
+      _ -> pathAfter p θ'
    where
    intoClosure :: Step -> Boolean
    intoClosure ClosureEnv = true
@@ -127,7 +131,7 @@ pathAfter p@(step : p') (Restructuring ps ψ) = (if any intoClosure p then ident
 type Dependence c s = Restructuring c × Rel c s
 
 reuse :: forall c s. Monoid c => Semiring s => Path -> Dependence c s
-reuse p = restructuring (Reuse p) × mempty
+reuse p = Reuse mempty p × mempty
 
 -- Add control dependence of the target on each of ps
 under :: forall c s. Semigroup c => c -> Endo (Dependence c s)
@@ -135,8 +139,8 @@ under ps (θ × r) = withCtrl ps θ × r
 
 supp :: forall c s. Monoid c => Semiring s => Dependence c s -> Path -> Sources c s
 supp (θ × r) q = case pathAfter q θ of
-   Restructuring ps (Reuse p) -> Sources ps (Map.singleton p one)
-   Restructuring ps _ -> Sources ps empty <> srcs
+   Reuse ps p -> Sources ps (Map.singleton p one)
+   θ' -> Sources (ctrl θ') empty <> srcs
    where
    Rel srcs _ = π q r
 
@@ -145,18 +149,17 @@ supps :: forall s. Semiring s => Dependence PathSet s -> Set Path -> PathSet
 supps δ qs = foldMap (supp δ >>> \(Sources ps ws) -> ps <> foldMap pathSet (Map.keys ws)) qs
 
 restructuringAfter :: forall s. Semiring s => Restructuring (Set Path) -> Dependence PathSet s -> Restructuring PathSet
-restructuringAfter (Restructuring ps ψ) δ@(θ × _) = withCtrl (supps δ ps) case ψ of
-   Reuse p -> pathAfter p θ
-   Zero -> restructuring Zero
-   Family θs -> restructuring (Family (flip restructuringAfter δ <$> θs))
-   Extend θ' θs -> restructuring (Extend (restructuringAfter θ' δ) (flip restructuringAfter δ <$> θs))
+restructuringAfter (Reuse ps p) δ@(θ × _) = withCtrl (supps δ ps) (pathAfter p θ)
+restructuringAfter (Zero ps) δ = Zero (supps δ ps)
+restructuringAfter (Family ps θs) δ = Family (supps δ ps) (flip restructuringAfter δ <$> θs)
+restructuringAfter (Extend ps θ θs) δ = Extend (supps δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel PathSet s -> Rel PathSet s
-restructuringAfterRel (Restructuring _ ψ) r = case ψ of
-   Reuse p -> π p r
-   Zero -> mempty
-   Family θs -> Rel mempty (members θs)
-   Extend θ θs -> case restructuringAfterRel θ r × bindings θs of
+restructuringAfterRel θ r = case θ of
+   Reuse _ p -> π p r
+   Zero _ -> mempty
+   Family _ θs -> Rel mempty (members θs)
+   Extend _ θ' θs -> case restructuringAfterRel θ' r × bindings θs of
       Rel srcs rs × θs' -> Rel srcs (Map.union (members θs') (Map.difference rs θs'))
    where
    members = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
@@ -175,30 +178,29 @@ bindings :: forall a. Dict a -> Map Step a
 bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
 
 tupling :: forall c s. IsEmpty c => Monoid c => Semiring s => Map Step (Dependence c s) -> Dependence c s
-tupling δs = restructuring (Family (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
+tupling δs = Family mempty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
 -- Dependence of a value built around parts δs, or with nothing reused if δs is empty; root depends on srcs
 construct :: forall c s. IsEmpty c => Monoid c => Semiring s => Sources c s -> Map Step (Dependence c s) -> Dependence c s
 construct srcs δs
-   | isEmpty δs = restructuring Zero × onto srcs
+   | isEmpty δs = Zero mempty × onto srcs
    | otherwise = map (onto srcs <> _) (tupling δs)
 
 -- Dependence of the environment at position p with members δs replaced or added
 extend :: forall c s. IsEmpty c => Monoid c => Semiring s => Path -> Dict (Dependence c s) -> Dependence c s
 extend p δs
    | isEmpty δs = reuse p
-   | otherwise =
-        restructuring (Extend (restructuring (Reuse p)) (fst <$> δs)) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
+   | otherwise = Extend mempty (Reuse mempty p) (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
 
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence (Set Path) s -> Set Vertex
 vertices (θ × r) = Set.map holder (ofRestructuring θ ∪ ofRel r)
    where
-   ofRestructuring (Restructuring ps ψ) = Set.mapMaybe L.head ps ∪ case ψ of
-      Reuse p -> Set.mapMaybe L.head (singleton p)
-      Zero -> empty
-      Family θs -> foldMap ofRestructuring θs
-      Extend θ' θs -> ofRestructuring θ' ∪ foldMap ofRestructuring θs
+   ofRestructuring θ' = Set.mapMaybe L.head (ctrl θ') ∪ case θ' of
+      Reuse _ p -> Set.mapMaybe L.head (singleton p)
+      Zero _ -> empty
+      Family _ θs -> foldMap ofRestructuring θs
+      Extend _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
    ofRel (Rel srcs rs) = Set.mapMaybe L.head (positionsOf srcs) ∪ foldMap ofRel rs
 
    holder (EdgeSrc a) = a
@@ -261,13 +263,13 @@ materialise g visible =
    -- Tupled dependence of every vertex so far on the visible vertices, as restructurings θs and relations rs
    step { θs, rs, edges } (a × (_ × δ)) =
       if a ∈ visible then
-         { θs: free a (Map.insert (EdgeSrc a) (restructuring (Reuse (sourceRoot a))) θs)
+         { θs: free a (Map.insert (EdgeSrc a) (Reuse mempty (sourceRoot a)) θs)
          , rs: free a rs
          , edges: Map.insert a (sparseRel <$> edgesInto a (θ' × r')) edges
          }
       else { θs: free a (Map.insert (EdgeSrc a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (EdgeSrc a) rs), edges }
       where
-      θ' × r' = compose δ (restructuring (Family θs) × Rel mempty rs)
+      θ' × r' = compose δ (Family mempty θs × Rel mempty rs)
 
    -- Free the entry of each vertex which has a as last dependent
    free :: forall a. Vertex -> Endo (Map Step a)
