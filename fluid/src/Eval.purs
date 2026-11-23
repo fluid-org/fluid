@@ -1,6 +1,6 @@
 module Eval where
 
-import Prelude hiding (absurd, apply)
+import Prelude hiding (absurd)
 
 import Bind (dottedName, prefixOf, varAnon, varThis)
 import Control.Alt ((<|>))
@@ -47,6 +47,8 @@ import Val (BaseVal(..), Fun(..), Label(..), dictEntry, value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, BaseVal, Ctrl, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Val(..), closureEnv, construct, constructFrom, deliver, field, forDefs, fromTotalRel, fun, gval, element, elementCount, lengthDep, matrixElement, modifyModuleStore, moduleStore, newAssigns, newValue, partialArg, partialFun, project, fromRel, raw, root, toDict, valAt, via)
 
 type Inputs s = { ctrl :: Ctrl s, ρ :: Dict (GVal s) }
+
+type MkTrace m = Deriv -> List Deriv -> m (Tr.ExprTrace (Label Unit) Deriv)
 
 -- Returned value, or the bindings and control position introduced
 data Result s = Returns (Deriv × Raw Val) | Assigns (Dict (GVal s)) (Maybe (Ctrl s))
@@ -278,7 +280,10 @@ eval = { stmt, program }
       App e es -> do
          f <- expr inputs e
          args <- traverse (expr inputs) es
-         withMsg ("In " <> funName e) $ apply ctrl f args
+         withMsg ("In " <> funName e) do
+            v × mkTrace <- applyGVal ctrl 0 (gval f) (gval <$> args)
+            trace <- mkTrace (fst f) (fst <$> args)
+            pure (v × trace)
       BinOp e op e' -> do
          left <- expr inputs e
          right <- expr inputs e'
@@ -450,41 +455,56 @@ eval = { stmt, program }
    -- Apply f to vs at a new vertex
    application :: Ctrl s -> GVal s -> List (GVal s) -> m (GVal s)
    application ctrl f vs = do
-      v × _ <- applyGVal ctrl f vs
+      v × _ <- applyGVal ctrl 0 f vs
       gval <$> newValue v
 
-   --applyGVal returns mkTrace, a function: Deriv -> List Deriv -> Tr.ExprTrace ...
-   --that takes the fun and args Derivs and constructs a Trace node.
+   --applyGVal returns  mkTrace, a function: Deriv -> List Deriv -> m (Tr.ExprTrace ...)
+   --that takes the fun and args Derivs and constructs a Trace record.
+   --(and also attaches traces to existing intermediate function vertices,
+   --these are built during intermediate evaluation and deferred inside the mkTrace).
    --Closure mkTraces already contain the callee and thus only expect the first two arguments.
-   --This was not needed before, where apply's helper function was nested inside apply, but now applyGVal is used by external functions..
-   --maybe think of practicality of this?
-
-   apply
-      :: Ctrl s
-      -> (Deriv × Raw Val)
-      -> List (Deriv × Raw Val)
-      -> m (GVal s × Tr.ExprTrace (Label Unit) Deriv)
-   apply ctrl fn args = do
-      v × mkTrace <- applyGVal ctrl (gval fn) (gval <$> args)
-      pure (v × mkTrace (fst fn) (fst <$> args))
 
    -- Apply f to vs, partially if vs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
    applyGVal
       :: Ctrl s
+      -> Int
       -> GVal s
       -> List (GVal s)
-      -> m (GVal s × (Deriv -> List Deriv -> Tr.ExprTrace (Label Unit) Deriv))
-   applyGVal ctrl f vs = case raw f of
+      -> m (GVal s × MkTrace m)
+   applyGVal ctrl stored f vs = case raw f of
       Val _ (V.Fun (V.Partial _ us)) ->
-         applyGVal ctrl (project partialFun f) (mapWithIndex (\i _ -> project (partialArg i) f) us <> vs)
+         applyGVal ctrl (stored + length us) (project partialFun f) (mapWithIndex (\i _ -> project (partialArg i) f) us <> vs)
       Val _ (V.Fun φ) -> do
          n <- arity'
          let k = length vs
-         if k < n then pure (partial unit × Tr.PartialApplication)
+         if k < n then pure (partial unit × \fn args -> pure (Tr.PartialApplication fn args))
          else if k == n then call φ vs
+         else do 
          --overapplication
-         else application ctrl f (take n vs) >>= \v -> applyGVal ctrl v (drop n vs)
+         --p = f(10); p(20, 30)   # f accepts two arguments and returns another function
+         --vs = [10, 20, 30]
+         --fn = ID(p)
+         --args = [ID(20), ID(30)]
+         --stored = 1
+         --n = 2
+            --eval + alloc first stage for f arity
+            --(evaluate f(10, 20) and allocate its result at r)
+            firstValue × firstMkTrace <- applyGVal ctrl 0 f (take n vs)
+            r <- newValue firstValue
+            --apply remaining arguments to intermediate r
+            --(apply the function at r to the remaining argument, 30)
+            v × restMkTrace <- applyGVal ctrl 0 (gval r) (drop n vs)
+            let consumed = max 0 (n - stored) --additional arguments newly consumed for THIS function
+            pure
+               ( v × \fn args -> do
+                  --build first stage trace
+                  trace <- firstMkTrace fn (take consumed args)
+                  --add this trace to intermediate vertex
+                  addTrace (fst r) (Tr.ExprTrace trace)
+                  --returns remaining trace with additional arguments for interm function
+                  restMkTrace (fst r) (drop consumed args)
+               )
          where
          arity' :: m Int
          arity' = case φ of
@@ -506,7 +526,7 @@ eval = { stmt, program }
       call
          :: V.Fun Unit
          -> List (GVal s)
-         -> m (GVal s × (Deriv -> List Deriv -> Tr.ExprTrace (Label Unit) Deriv))
+         -> m (GVal s × MkTrace m)
       call φ vs' = case φ of
          V.Closure (Env ρ1) ds (Def xs s) -> do
             let
@@ -515,15 +535,15 @@ eval = { stmt, program }
                ρ3 = foldl (\ρ (x × v) -> if x == varAnon then ρ else ρ `unionWith_never` maplet x v) empty (zip xs vs')
             --already capture callee Deriv inside mkTrace
             r <- asReturns <$> stmt { ctrl: ctrl', ρ: ρ1' <+> ρ2 <+> ρ3 } s
-            pure (gval r × \fn args -> Tr.Application fn args (fst r))
+            pure (gval r × \fn args -> pure (Tr.Application fn args (fst r)))
          V.Prim (ForeignOp (name × ForeignOp' { depOp })) -> do
             v <- depOp (application ctrl') ctrl' vs'
-            pure (v × Tr.PrimitiveOp name)
+            pure (v × \fn args -> pure (Tr.PrimitiveOp name fn args))
          V.Type (T.ClassTy c _) -> do
             classes <- askClasses
             pure
                ( constructFrom ctrl' (V.Obj c <<< zip (fieldNames classes c)) vs'
-                    × \_ args -> Tr.ObjectConstructor c args
+                    × \_ args -> pure (Tr.ObjectConstructor c args) --ever used?
                )
          V.Type _ -> error absurd
          V.Partial _ _ -> error absurd
