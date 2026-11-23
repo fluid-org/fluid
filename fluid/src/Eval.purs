@@ -126,7 +126,7 @@ object classes srcs c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst <$
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
 closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
 closure ctl p ρ ds d = Val unit (V.Fun (V.Closure (Env ρ) ds d)) ×
-   construct (control (singleton ctl)) (maplet Uncl (tupling (members (mapWithKey captured ρ))))
+   construct (control (singleton ctl)) (maplet ClosureEnv (tupling (members (mapWithKey captured ρ))))
    where
    captured x v = v × reuse (p <> singleton (Binding x))
 
@@ -412,7 +412,7 @@ eval = { stmt, program }
             b <- newInputs ρ'' (extend p (members ρ')) (construct (source (vertex a)) Map.empty)
             gval <<< asReturns <$> stmt { ρ: ρ'', b } s
             where
-            p = at a (singleton Uncl)
+            p = at a (singleton ClosureEnv)
             args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (gval r)) empty (zip xs rs)
             ρ' = closeDefs (vertex a) p ρ ds <+> args
             ρ'' = ρ <+> (fst <$> ρ')

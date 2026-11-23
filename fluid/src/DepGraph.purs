@@ -41,7 +41,7 @@ data Step
    | MatrixElement Int Int
    | MatrixRows
    | MatrixCols
-   | Uncl -- environment of closure
+   | ClosureEnv
    | PartialFun
    | PartialArg Int
 
@@ -59,7 +59,7 @@ vertex a = at a ε
 
 -- Whether the step leads from a function value to a value held by the function
 uncl :: Step -> Boolean
-uncl Uncl = true
+uncl ClosureEnv = true
 uncl PartialFun = true
 uncl (PartialArg _) = true
 uncl _ = false

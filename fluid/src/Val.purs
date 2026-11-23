@@ -91,7 +91,7 @@ pathsFrom p (Val α u) = Val (L.reverse p × α) case u of
       mapWithIndex (\i' -> mapWithIndex (\j' -> pathsFrom (MatrixElement i' j' : p))) vss
          × pathsFrom (MatrixRows : p) i
          × pathsFrom (MatrixCols : p) j
-   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (mapWithKey (\x -> pathsFrom (Binding x : Uncl : p)) ρ)) ds d)
+   Fun (Closure (Env ρ) ds d) -> Fun (Closure (Env (mapWithKey (\x -> pathsFrom (Binding x : ClosureEnv : p)) ρ)) ds d)
    Fun (Prim φ) -> Fun (Prim φ)
    Fun (Type τ) -> Fun (Type τ)
    Fun (Partial v vs) ->
