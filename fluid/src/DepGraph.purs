@@ -5,7 +5,7 @@ import Prelude hiding (absurd, compose)
 import Control.Apply (lift2)
 import Control.Monad.State (class MonadState, execState, gets, modify_)
 import Data.Foldable (any, foldMap, foldl, foldr)
-import Data.FoldableWithIndex (foldlWithIndex)
+import Data.FoldableWithIndex (foldMapWithIndex, foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List (List(..), (:))
 import Data.List as L
@@ -18,7 +18,7 @@ import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
-import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceRoot)
+import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceAt, sourceRoot)
 import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (×))
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
@@ -282,19 +282,16 @@ controlSets = foldMap (foldMap \(Support ps _) -> singleton ps)
 
 -- Restrict every support and target to the positions which satisfy the predicate
 mask :: forall f s. Paths f => (Vertex -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
-mask keep g = g { edges = mapWithIndex (\b -> filterKeys (_ ∈ get b kept) >>> Map.mapMaybe restrict) g.edges }
+mask keep g = g { edges = mapWithIndex (\b -> filterKeys (sourceAt b >>> (_ ∈ kept)) >>> restrict) g.edges }
    where
-   kept = mapWithIndex (\a -> keep a >>> selected) g.vals
+   kept :: Set Path
+   kept = foldMapWithIndex (\a v -> Set.map (sourceAt a) (selected (keep a v))) g.vals
 
-   restrict (Support ps ws) = if isEmpty support then Nothing else Just support
-      where
-      support = Support (get ps restricted) (filterKeys keptSource ws)
+   restrict :: Endo (Map Path (Support PathSet s))
+   restrict = map (\(Support ps ws) -> Support (get ps restricted) (filterKeys (_ ∈ kept) ws)) >>> Map.filter (not <<< isEmpty)
 
    restricted :: Map PathSet PathSet
-   restricted = Set.toMap (controlSets g.edges) # mapWithIndex \ps _ -> filter keptSource ps
-
-   keptSource (EdgeSrc a : p) = p ∈ get a kept
-   keptSource _ = error absurd
+   restricted = Set.toMap (controlSets g.edges) # mapWithIndex \ps _ -> filter (_ ∈ kept) ps
 
 -- Positions carrying true
 selected :: forall f. Paths f => f Boolean -> Set Path
