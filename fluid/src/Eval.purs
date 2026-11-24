@@ -239,7 +239,7 @@ eval = { stmt, program }
       App e es -> do
          f <- expr inputs e
          rs <- traverse (expr inputs) es
-         withMsg ("In " <> funName e) $ apply (ctlAt b) f rs
+         withMsg ("In " <> funName e) $ apply f rs
       BinOp e op e' -> do
          r <- expr inputs e
          r' <- expr inputs e'
@@ -373,26 +373,25 @@ eval = { stmt, program }
       output inputs' (ExprStmt e) = expr inputs' e
       output _ _ = error absurd
 
-   -- Apply f to rs at a new vertex; a partial application depends on control position ctl
-   application :: Path -> Position -> List Position -> m Position
-   application ctl f rs = apply ctl f rs >>= newValue
+   application :: Position -> List Position -> m Position
+   application f rs = apply f rs >>= newValue
 
    -- Apply f to rs, partially if rs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Path -> Position -> List Position -> m (GVal s)
-   apply ctl f@(q × v) rs = case v of
+   apply :: Position -> List Position -> m (GVal s)
+   apply f@(q × v) rs = case v of
       Val _ (V.Fun (V.Partial _ us)) -> do
          f' <- newValue (deliver (singleton q) (reuseAt (childAt PartialFun f)))
          rs' <- for (mapWithIndex const us) \i -> newValue (reuseAt (childAt (PartialArg i) f))
-         apply ctl f' (rs' <> rs)
+         apply f' (rs' <> rs)
       Val _ (V.Fun φ) -> do
          n <- arity'
          let k = length rs
          if k < n then
-            pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (controlDep (singleton ctl))
+            pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (controlDep (singleton q))
                (Map.fromFoldable ((PartialFun × reuse q) : mapWithIndex (\i (q' × _) -> PartialArg i × reuse q') rs))
          else if k == n then call φ
-         else application ctl f (take n rs) >>= \f' -> apply ctl f' (drop n rs)
+         else application f (take n rs) >>= \f' -> apply f' (drop n rs)
          where
          arity' :: m Int
          arity' = case φ of
@@ -414,7 +413,7 @@ eval = { stmt, program }
             args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs)
             ρ' = closeDefs q p ρ ds <+> args
             ρ'' = ρ <+> (fst <$> ρ')
-         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application q) q rs
+         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp application q rs
          V.Type (T.ClassTy c _) ->
             askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs)
          V.Type _ -> error absurd
