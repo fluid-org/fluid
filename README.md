@@ -3,8 +3,8 @@
 A pure functional dialect of Python, based on [PurePy](https://github.com/pure-py/pure-py-spec), with a dependency-tracking runtime for creating interactive outputs linked to data.
 
 [![build](https://github.com/fluid-org/fluid/actions/workflows/build.yml/badge.svg)](https://github.com/fluid-org/fluid/actions/workflows/build.yml)
-[![version](https://img.shields.io/github/package-json/v/fluid-org/fluid/develop?filename=fluid%2Fpackage.json&label=version)](https://github.com/fluid-org/fluid/blob/develop/fluid/package.json)
-[![PurePy](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/fluid-org/fluid/develop/fluid/test/spec-compliance.json)](https://github.com/fluid-org/fluid/blob/develop/fluid/test/spec-gaps.txt)
+[![version](https://img.shields.io/github/package-json/v/fluid-org/fluid/release?filename=fluid%2Fpackage.json&label=version)](https://github.com/fluid-org/fluid/blob/release/fluid/package.json)
+[![PurePy](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/fluid-org/fluid/release/fluid/test/spec-compliance.json)](https://github.com/fluid-org/fluid/blob/release/fluid/test/spec-gaps.txt)
 
 ## Getting started
 

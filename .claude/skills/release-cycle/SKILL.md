@@ -10,12 +10,13 @@ description: Fluid's branching model, milestone lifecycle, deployment and npm pu
 All issues belong to a milestone. Milestones named `<repo> <major>.<minor>` (e.g. `fluid 1.0`).
 
 ```
-issue branch → milestone branch → develop → staging → release
+issue branch → milestone branch → staging → release
 ```
 
 - **Milestone branches**: named to match milestone (e.g. `fluid-1.0`).
 - **Issue branches**: named `<issue-number>-<short-description>`, branched from milestone branch; PRs target milestone branch.
-- **PRs to develop**: developer decides when to merge. [Milestone report](../../../docs/workflow/milestone-report.md) generated at this point.
+- **Merge to `staging`**: timing decided by developer
+- **[Milestone report](../../../docs/workflow/milestone-report.md)**: generated at merge to `staging`
 - **Release notes**: one line per closed issue of the milestone, giving its title; omit issues that only aggregate others (e.g. a sync to a PurePy version). Classify an issue only as its issue states; otherwise Other.
 
 ## Issue lifecycle
@@ -34,14 +35,15 @@ Adding to milestone bumps Proposed → Planned. Can be done autonomously. Afterw
 ## Deployment
 
 ```
-develop → staging → release
+milestone branch → staging → release
 ```
 
 Managed manually by developer:
-1. Merge `develop` to `staging` — triggers deploy to GitHub Pages (f.luid.org).
-2. Test live site.
-3. If good: merge `staging` to `release`.
-4. If broken: reset `staging` to `release`.
+1. Create `staging` from `release` if absent
+2. Merge milestone branch to `staging` (triggers deploy to GitHub Pages, f.luid.org)
+3. Test live site
+4. Merge `staging` to `release` if site works
+5. Reset `staging` to `release` if site is broken
 
 ## NPM publishing
 
