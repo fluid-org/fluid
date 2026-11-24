@@ -1,5 +1,5 @@
 import {
-   checkAlignment, checkWidthApprox, getBoundingBox,
+   checkAlignment, checkCount, checkWidthApprox, getBoundingBox,
    testMobile, testURL, waitFor
 } from "@fluid-org/fluid/script/webtest-lib.mjs"
 
@@ -46,6 +46,8 @@ export const main = async () => {
          await checkHeaderAlignment(page)
          await waitFor(page, "h3.title")
          await checkWidthApprox(page, ".grid-container .flex-left-align", 800)
+         await waitFor(page, ".code-examples .cm-editor")
+         await checkCount(page, ".code-examples .cm-editor", 5)
       }
    ])
 
