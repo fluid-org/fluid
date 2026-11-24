@@ -26,20 +26,21 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, controlDep, extend, materialise, reuse, dataDep, tupling)
+import DepGraph (DepGraph, Support, VisibleGraph, addTrace, attachDoc, bindings, construct, controlDep, extend, materialise, reuse, dataDep, tupling)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Path (Path, Step(..), Vertex, sourceVertex)
 import Pretty (prettyP)
+import Trace as Tr
 import Types (Type(..)) as T
 import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
 import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
-import Val (BaseVal(..), Fun(..), value) as V
+import Val (BaseVal(..), Fun(..), Label(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
 import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
@@ -154,30 +155,45 @@ eval = { stmt, program }
    where
    expr :: Inputs -> Expr -> m Position
    expr inputs e'@(DocExpr e _) = do
-      r <- value inputs e' >>= newValue
+      v × trace <- value inputs e'
+      r <- record (v × Tr.ExprTrace trace)
       doc <- extendInputs inputs (maplet varThis (reuseAt r)) empty >>= flip expr e
       attachDoc (sourceVertex (fst r)) (sourceVertex (fst doc)) $> r
-   expr inputs e = value inputs e >>= newValue
+   expr inputs e = do
+      v × trace <- value inputs e
+      record (v × Tr.ExprTrace trace)
+
+   record :: GVal s × Tr.Trace (Label Unit) Path -> m Position
+   record (v × trace) = do
+      r <- newValue v
+      addTrace (sourceVertex (fst r)) trace
+      pure r
+
+   --value-only trace fallback, temporary
+   untraced :: m (GVal s) -> m (GVal s × Tr.ExprTrace (Label Unit) Path)
+   untraced computation = do
+      v <- computation
+      pure (v × Tr.valueTrace (V.Value (fst v)))
 
    -- Value of an expression, before vertex is allocated
-   value :: Inputs -> Expr -> m (GVal s)
+   value :: Inputs -> Expr -> m (GVal s × Tr.ExprTrace (Label Unit) Path)
    value inputs@{ ρ, b } = case _ of
-      Var x -> pure (deliver ctl (get x ρ × reuse (envAt b <> singleton (Binding x))))
-      Lit ℓ -> pure (Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty)
-      Dictionary ees -> for ees (\(Pair e e') -> dictEntry inputs e e') <#> \kvs ->
+      Var x -> pure (deliver ctl (get x ρ × reuse (envAt b <> singleton (Binding x))) × Tr.Variable x)
+      Lit ℓ -> pure ((Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty) × Tr.Literal ℓ)
+      Dictionary ees -> untraced $ for ees (\(Pair e e') -> dictEntry inputs e e') <#> \kvs ->
          deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
-      DictComp e e' gs -> do
+      DictComp e e' gs -> untraced do
          r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
          pure $ deliver ctl $ dictionary (dataDep (fst r)) $
             elementsAt r <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)
-      List es -> sequenceOf V.List (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
-      Tuple es -> sequenceOf V.Tuple (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
-      ListComp e gs -> reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
-      Constr c es -> do
+      List es -> untraced $ sequenceOf V.List (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
+      Tuple es -> untraced $ sequenceOf V.Tuple (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
+      ListComp e gs -> untraced $ reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
+      Constr c es -> untraced do
          classes <- askClasses
          checkArity c (length es) classes
          object classes (controlDep ctl) c <<< map reuseAt <$> traverse (expr inputs) es
-      Matrix e (x × y) e' -> do
+      Matrix e (x × y) e' -> untraced do
          r@(_ × v) <- expr inputs e'
          i' × j' <- case v of
             Val _ (V.Tuple [ Val _ (V.Lit (Int i')), Val _ (V.Lit (Int j')) ]) -> pure (i' × j')
@@ -197,16 +213,16 @@ eval = { stmt, program }
          -- Index n along dimension k of the matrix with dimensions at position u
          index :: Position -> Int -> Int -> GVal s
          index u k n = Val unit (V.Lit (Int n)) × construct (controlDep (singleton (fst (childAt (Element k) u)))) Map.empty
-      Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
-      Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
-      Attribute e x -> do
+      Lambda d -> untraced $ pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
+      Type τ -> untraced $ pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
+      Attribute e x -> untraced do
          r@(_ × v) <- expr inputs e
          case v of
             Val _ (V.Obj c xvs) -> do
                _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
                pure (deliver (singleton (fst r)) (reuseAt (childAt (Field x) r)))
             _ -> throw $ "Found " <> prettyP v <> ", expected object"
-      Subscript e e' -> do
+      Subscript e e' -> untraced do
          r@(_ × v) <- expr inputs e
          r'@(_ × v') <- expr inputs e'
          let
@@ -233,30 +249,30 @@ eval = { stmt, program }
          -- Child u of the value at r, at the index at r'; ps are further control positions
          subscript :: Position -> Position -> GVal s -> Set Path -> m (GVal s)
          subscript r r' u ps = pure (deliver (singleton (fst r) ∪ ps ∪ positionsIn r') u)
-      ModMember q x -> do
+      ModMember q x -> untraced do
          { modules } <- moduleStore
          deliver ctl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
-      App e es -> do
+      App e es -> untraced do
          f <- expr inputs e
          rs <- traverse (expr inputs) es
          withMsg ("In " <> funName e) $ apply f rs
-      BinOp e op e' -> do
+      BinOp e op e' -> untraced do
          r <- expr inputs e
          r' <- expr inputs e'
          withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ctl r r')
-      UnOp op e -> do
+      UnOp op e -> untraced do
          r <- expr inputs e
          withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) ctl (r : Nil))
-      And e e' -> do
+      And e e' -> untraced do
          { holds, r } <- condition inputs e
          if holds then reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e') else pure (reuseAt r)
-      Or e e' -> do
+      Or e e' -> untraced do
          { holds, r } <- condition inputs e
          if holds then pure (reuseAt r) else reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e')
-      Cond e1 e e2 -> do
+      Cond e1 e e2 -> untraced do
          { holds, r } <- condition inputs e
          reuseAt <$> (controlledBy (fst r) inputs >>= flip expr (if holds then e1 else e2))
-      DocExpr _ e -> reuseAt <$> expr inputs e
+      DocExpr _ e -> untraced $ reuseAt <$> expr inputs e
       where
       ctl = singleton (ctlAt b)
 
