@@ -99,7 +99,6 @@ elementStep i (Val _ (Tuple _)) = Just (Element i)
 elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely' (toUnfoldable d L.!! i))))
 elementStep _ _ = Nothing
 
--- Element i of sequence at position r
 elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
 elementAt i r = case elementStep i (snd r) of
    Just step -> reuseAt (childAt step r)
