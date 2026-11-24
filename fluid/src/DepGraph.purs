@@ -21,6 +21,7 @@ import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
 import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceAt, sourceRoot, sourceVertex)
+import Trace as Tr
 import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (!), (×))
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
@@ -171,12 +172,13 @@ type Labelling a = Map Vertex a
 type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
+   , traces :: Labelling (Tr.Trace (f Unit) Path)
    , docs :: Labelling Vertex -- documented vertex ↦ vertex of doc
    , edges :: Labelling (Set Vertex × Dependence (Set Path) s) -- target ↦ sources and dependence on their values
    }
 
 emptyGraph :: forall f s. DepGraph f s
-emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
+emptyGraph = { size: 0, vals: empty, traces: empty, docs: empty, edges: empty }
 
 -- Vertices which hold the source positions
 vertices :: forall s. Dependence (Set Path) s -> Set Vertex
@@ -195,6 +197,9 @@ newVertex v δ = do
    let a = Vertex size
    modify_ \g -> g { size = size + 1, vals = insert a v g.vals, edges = insert a (vertices δ × δ) g.edges }
    pure a
+
+addTrace :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Tr.Trace (f Unit) Path -> m Unit
+addTrace a trace = modify_ \g -> g { traces = insert a trace g.traces }
 
 attachDoc :: forall f s m. MonadState (DepGraph f s) m => Vertex -> Vertex -> m Unit
 attachDoc a b = modify_ \g -> g { docs = insert a b g.docs }
