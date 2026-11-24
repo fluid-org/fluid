@@ -41,7 +41,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, computedElement, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, computedElements, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -303,10 +303,10 @@ eval = { stmt, program }
             Just n -> pure n
             Nothing -> throw ("Found " <> prettyP v <> ", expected list, tuple, str or dict")
          classes <- askClasses
-         rs × ps <- fold <$> for (L.take n (L.range 0 n)) \i -> do
-            u <- case elementStep i v of
-               Just step -> pure (childAt step r)
-               Nothing -> newValue (computedElement i r)
+         us <- case traverse (flip elementStep v) (L.take n (L.range 0 n)) of
+            Just steps -> pure (flip childAt r <$> steps)
+            Nothing -> elementsAt <$> newValue (computedElements r)
+         rs × ps <- fold <$> for us \u ->
             case dispatch classes (singleton (p × unit)) u of
                Nothing × qs -> pure (Nil × qs)
                Just (ρ' × _) × qs ->

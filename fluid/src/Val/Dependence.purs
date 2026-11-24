@@ -107,6 +107,12 @@ computedElement i r = definitelyRight (applyDepFun elementOf Set.empty (singleto
    elementOf (v : Nil) = pure (element i v)
    elementOf _ = error absurd
 
+-- List of elements computed from string or range at position r
+computedElements :: forall s. DepSemiring s => Position -> GVal s
+computedElements r = sequenceOf List (foldMap dataDep (lengthPositions r)) (flip computedElement r <$> L.take n (L.range 0 n))
+   where
+   n = definitely' (elementCount (snd r))
+
 -- Element i of the sequence at a position
 elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
 elementAt i r = case elementStep i (snd r) of
