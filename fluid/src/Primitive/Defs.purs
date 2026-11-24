@@ -364,10 +364,7 @@ foldl_with_index =
       r' <- newValue (deliver (singleton ctl) (reuseAt r))
       reuseAt <$> foldM (step g') r' (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
       where
-      step g' acc (k × _) = do
-         key <- newValue (reuseAt (childAt (DictKey k) d))
-         u <- entryValue k d
-         apply g' (key : acc : u : Nil)
+      step g' acc (k × _) = entryValue k d >>= \u -> apply g' (childAt (DictKey k) d : acc : u : Nil)
    depOp _ _ _ = throw "Function, value and dictionary expected"
 
 get :: ForeignOp
