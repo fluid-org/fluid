@@ -140,11 +140,11 @@ sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (l@(_ × Val _ (List _)) : Nil) = sort (elementsAt l <#> (_ × empty)) <#> \us ->
+   depOp ctl (l@(_ × Val _ (List _)) : Nil) = sort (elementsAt l <#> (_ × empty)) <#> \us ->
       deliver (singleton ctl) $ sequenceOf List (dataDep (fst l)) $
          us <#> \(u × ps) -> deliver (singleton (fst l) ∪ ps) (reuseAt u)
-   depOp _ _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
-   depOp _ _ _ = throw "Single argument expected"
+   depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
+   depOp _ _ = throw "Single argument expected"
 
    sort :: forall m. MonadError Error m => List (Position × Set Path) -> m (List (Position × Set Path))
    sort us
@@ -180,12 +180,12 @@ extremum id op =
    ForeignOp (id × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (l@(_ × Val _ (List _)) : Nil) = case elementsAt l of
+   depOp ctl (l@(_ × Val _ (List _)) : Nil) = case elementsAt l of
       Nil -> throw ("ValueError: " <> id <> "() iterable argument is empty")
       u : us -> foldM step (u × empty) us <#> \(u' × ps) ->
          deliver (Set.fromFoldable [ ctl, fst l ] ∪ ps) (reuseAt u')
-   depOp _ _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
-   depOp _ _ _ = throw "Single argument expected"
+   depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
+   depOp _ _ = throw "Single argument expected"
 
    step :: forall m. MonadError Error m => Position × Set Path -> Position -> m (Position × Set Path)
    step (u × ps) u' = compareAt op u' u <#> \(b × ps') -> (if b then u' else u) × (ps ∪ ps')
@@ -212,13 +212,13 @@ loadJson =
    ForeignOp ("load_json" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl rs
+   depOp ctl rs
       | Val _ (Fun (Type τ)) : Val _ (Lit (Str path)) : Nil <- snd <$> rs = do
            classes <- askClasses
            json <- loadJsonFile path
            v <- orThrow (jsonVal classes τ json)
            pure (deliver (Set.fromFoldable (ctl : (fst <$> rs))) (v × construct mempty M.empty))
-   depOp _ _ _ = throw "Type and string expected"
+   depOp _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
 loadJsonFile path = do
@@ -269,17 +269,17 @@ dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (m@(_ × Val _ (Matrix _)) : Nil) =
+   depOp ctl (m@(_ × Val _ (Matrix _)) : Nil) =
       pure $ deliver (singleton ctl) $ sequenceOf Tuple (dataDep (fst m)) $
          deliver (singleton (fst m)) <<< reuseAt <$> (childAt MatrixRows m : childAt MatrixCols m : Nil)
-   depOp _ _ _ = throw "Matrix expected"
+   depOp _ _ = throw "Matrix expected"
 
 matrixUpdate :: ForeignOp
 matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (m@(_ × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : ix : v : Nil)
+   depOp ctl (m@(_ × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : ix : v : Nil)
       | Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) <- snd ix =
            let
               kept step = step × snd (deliver (singleton (fst m)) (reuseAt (childAt step m)))
@@ -290,7 +290,7 @@ matrixUpdate =
            in
               pure $ deliver (singleton ctl) $ Val unit (Matrix (matrixPut i j (const (snd v)) r)) ×
                  construct (dataDep (fst m)) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> elements))
-   depOp _ _ _ = throw "Matrix, pair of integers and value expected"
+   depOp _ _ = throw "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
 find_str =
@@ -333,42 +333,42 @@ dict_difference =
    ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
+   depOp ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
          entryAt (Set.fromFoldable [ fst d, fst d' ]) d <$> L.fromFoldable (Map.keys (es \\ es'))
-   depOp _ _ _ = throw "Dictionaries expected."
+   depOp _ _ = throw "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
 dict_disjointUnion =
    ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
+   depOp ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
          L.fromFoldable (Map.keys (unionWith_never es es')) <#> \k ->
             if k ∈ es then entryAt (singleton (fst d)) d k else entryAt (singleton (fst d')) d' k
-   depOp _ _ _ = throw "Dictionaries expected"
+   depOp _ _ = throw "Dictionaries expected"
 
 get :: ForeignOp
 get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (k@(_ × Val _ (Lit (Str x))) : d@(_ × Val _ (Dictionary (DictRep es))) : Nil) =
+   depOp ctl (k@(_ × Val _ (Lit (Str x))) : d@(_ × Val _ (Dictionary (DictRep es))) : Nil) =
       pure $ deliver (singleton ctl) case lookup x es of
          Nothing -> Val unit (Lit None) × construct (dataDep (fst k) <> dataDep (fst d)) M.empty
          Just _ -> deliver (Set.fromFoldable [ fst k, fst d, fst (childAt (DictKey x) d) ]) (reuseAt (childAt (DictVal x) d))
-   depOp _ _ _ = throw "String and dictionary expected"
+   depOp _ _ = throw "String and dictionary expected"
 
 insert :: ForeignOp
 insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp _ ctl (d@(_ × Val _ (Dictionary (DictRep es))) : k@(_ × Val _ (Lit (Str x))) : v : Nil) =
+   depOp ctl (d@(_ × Val _ (Dictionary (DictRep es))) : k@(_ × Val _ (Lit (Str x))) : v : Nil) =
       pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d)) $
          (entryAt (singleton (fst d)) d <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt k × reuseAt v)
-   depOp _ _ _ = throw "Dictionary, key and value expected"
+   depOp _ _ = throw "Dictionary, key and value expected"
 
 -- Outcome and source positions of comparing the values at two positions
 compareAt :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)

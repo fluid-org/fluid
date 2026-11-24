@@ -271,19 +271,13 @@ type Position = Path × Raw Val
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
 
--- Application of a function to arguments; result at a new vertex
-type Apply m = Position -> List Position -> m Position
-
--- Foreign function of control position and arguments; evaluator supplies operation for applying a
--- function argument
+-- Foreign function of control position and arguments
 type DepOp =
    forall m s
     . HasClasses m
    => MonadLoad m
-   => MonadState (DepGraph Label s) m
    => DepSemiring s
-   => Apply m
-   -> Path
+   => Path
    -> List Position
    -> m (GVal s)
 

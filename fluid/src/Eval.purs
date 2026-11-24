@@ -373,9 +373,6 @@ eval = { stmt, program }
       output inputs' (ExprStmt e) = expr inputs' e
       output _ _ = error absurd
 
-   application :: Position -> List Position -> m Position
-   application f rs = apply f rs >>= newValue
-
    -- Apply f to rs, partially if rs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
    apply :: Position -> List Position -> m (GVal s)
@@ -391,7 +388,7 @@ eval = { stmt, program }
             pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (controlDep (singleton q))
                (Map.fromFoldable ((PartialFun × reuse q) : mapWithIndex (\i (q' × _) -> PartialArg i × reuse q') rs))
          else if k == n then call φ
-         else application f (take n rs) >>= \f' -> apply f' (drop n rs)
+         else apply f (take n rs) >>= newValue >>= \f' -> apply f' (drop n rs)
          where
          arity' :: m Int
          arity' = case φ of
@@ -413,7 +410,7 @@ eval = { stmt, program }
             args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs)
             ρ' = closeDefs q p ρ ds <+> args
             ρ'' = ρ <+> (fst <$> ρ')
-         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp application q rs
+         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp q rs
          V.Type (T.ClassTy c _) ->
             askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs)
          V.Type _ -> error absurd

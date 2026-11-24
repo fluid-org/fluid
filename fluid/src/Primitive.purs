@@ -133,7 +133,7 @@ boolean =
 -- Need to be careful about type variables escaping higher-rank quantification.
 -- Foreign function with dependence given by f
 fromDepFun :: DepFun -> DepOp
-fromDepFun f _ ctl rs = orThrow (applyDepFun f (singleton ctl) rs)
+fromDepFun f ctl rs = orThrow (applyDepFun f (singleton ctl) rs)
 
 type Unary i o a =
    { i :: ToFrom i a
