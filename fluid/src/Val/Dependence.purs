@@ -99,25 +99,21 @@ elementStep i (Val _ (Tuple _)) = Just (Element i)
 elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely' (toUnfoldable d L.!! i))))
 elementStep _ _ = Nothing
 
--- Element i computed from the sequence at a position
-computedElement :: forall s. DepSemiring s => Int -> Position -> GVal s
-computedElement i r = definitelyRight (applyDepFun elementOf Set.empty (singleton r))
+-- Element i of sequence at position r
+elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
+elementAt i r = case elementStep i (snd r) of
+   Just step -> reuseAt (childAt step r)
+   Nothing -> definitelyRight (applyDepFun elementOf Set.empty (singleton r))
    where
    elementOf :: forall a. List (Val a) -> MayFail (Val a)
    elementOf (v : Nil) = pure (element i v)
    elementOf _ = error absurd
 
--- List of elements computed from string or range at position r
-computedElements :: forall s. DepSemiring s => Position -> GVal s
-computedElements r = sequenceOf List (foldMap dataDep (lengthPositions r)) (flip computedElement r <$> L.take n (L.range 0 n))
+-- String or range at position r as list of elements
+explode :: forall s. DepSemiring s => Position -> GVal s
+explode r = sequenceOf List (foldMap dataDep (lengthPositions r)) (flip elementAt r <$> L.take n (L.range 0 n))
    where
    n = definitely' (elementCount (snd r))
-
--- Element i of the sequence at a position
-elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
-elementAt i r = case elementStep i (snd r) of
-   Just step -> reuseAt (childAt step r)
-   Nothing -> computedElement i r
 
 -- Build sequence from vs with constructor mk; root depends on support
 sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List (GVal s) -> GVal s

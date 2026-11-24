@@ -41,7 +41,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, computedElements, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -305,7 +305,7 @@ eval = { stmt, program }
          classes <- askClasses
          us <- case traverse (flip elementStep v) (L.take n (L.range 0 n)) of
             Just steps -> pure (flip childAt r <$> steps)
-            Nothing -> elementsAt <$> newValue (computedElements r)
+            Nothing -> elementsAt <$> newValue (explode r)
          rs × ps <- fold <$> for us \u ->
             case dispatch classes (singleton (p × unit)) u of
                Nothing × qs -> pure (Nil × qs)
