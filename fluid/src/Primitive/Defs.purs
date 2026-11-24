@@ -11,7 +11,7 @@ import Data.Argonaut.Decode (parseJson)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldM, foldMap)
+import Data.Foldable (foldM)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (ceil, floor, toNumber)
 import Data.Int (quot, rem) as I
@@ -31,7 +31,7 @@ import Data.String (Pattern(..))
 import Data.String as String
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
-import Data.Traversable (for, traverse)
+import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
 import Path (Path, Step(..))
@@ -43,8 +43,7 @@ import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
-import Control.Monad.State (class MonadState)
-import DepGraph (DepGraph, Support(..), construct, controlDep, dataDep, supportAt)
+import DepGraph (Support(..), construct, dataDep, supportAt)
 import Lattice (class BoundedJoinSemilattice, DepKind, Raw, bot)
 import Literal (Literal(..), showFloat)
 import Primitive (binopFun, boolean, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
@@ -56,10 +55,9 @@ import Types (Primitive(..), Type(..), baseType) as T
 import Types.Defs (float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Set (empty, (∈), (∪))
-import Util.Map as Dict
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, Label, MatrixRep(..), Position, Val(..), dictEntries, elementCount, matrixPut)
-import Val.Dependence (applyDepFun, childAt, deliver, dictionary, elementsAt, newValue, positionsIn, reuseAt, sequenceOf)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Position, Val(..), elementCount, matrixPut)
+import Val.Dependence (applyDepFun, childAt, deliver, dictionary, elementsAt, positionsIn, reuseAt, sequenceOf)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
 extern (ForeignOp (id × φ)) =
@@ -87,14 +85,11 @@ predefined = M.fromFoldable
         , extern loadJson × generalise (callable [ T.TypeTy (var "T"), T.str ] (var "T"))
         , unary "str_to_float" { i: string, o: number, fwd: definitely' <<< fromString } × generalise (callable [ T.str ] T.float)
         , unary "num_to_str" { i: intOrNumber, o: string, fwd: numToStr } × generalise (callable [ T.float ] T.str) -- rename to 'str' (more Pythonic)
-        -- TODO: rename the rest of these (apart from dict_map?) to lose the dict_ prefix
+        -- TODO: rename rest of these to lose dict_ prefix
         , extern dict_difference × generalise (callable [ T.DictTy (var "T"), T.DictTy (var "U") ] (T.DictTy (var "T")))
         , extern dict_disjointUnion × generalise (callable [ T.DictTy (var "T"), T.DictTy (var "T") ] (T.DictTy (var "T")))
-        , extern foldl_with_index × generalise (callable [ callable [ T.str, var "U", var "T" ] (var "U"), var "U", T.DictTy (var "T") ] (var "U"))
         , extern get × generalise (callable [ T.str, T.DictTy (var "T") ] (T.UnionTy (var "T") T.none))
         , extern insert × generalise (callable [ T.DictTy (var "T"), T.str, var "T" ] (T.DictTy (var "T")))
-        , extern dict_intersectionWith × generalise (callable [ callable [ var "T", var "U" ] (var "V"), T.DictTy (var "T"), T.DictTy (var "U") ] (T.DictTy (var "V")))
-        , extern dict_map × generalise (callable [ callable [ var "T" ] (var "U"), T.DictTy (var "T") ] (T.DictTy (var "U")))
         , extern matrixUpdate × generalise (callable [ matrix (var "T"), T.intPair, var "T" ] (matrix (var "T")))
         , extern find_str × generalise (callable [ T.str, T.str ] T.int)
         , extern search × generalise (callable [ T.str, T.str ] (T.UnionTy T.int T.none))
@@ -354,19 +349,6 @@ dict_disjointUnion =
             if k ∈ es then entryAt (singleton (fst d)) d k else entryAt (singleton (fst d')) d' k
    depOp _ _ _ = throw "Dictionaries expected"
 
-foldl_with_index :: ForeignOp
-foldl_with_index =
-   ForeignOp ("foldl_with_index" × ForeignOp' { arity: 3, depOp })
-   where
-   depOp :: DepOp
-   depOp apply ctl (g : r : d : Nil) = do
-      g' <- newValue (deliver (singleton ctl) (reuseAt g))
-      r' <- newValue (deliver (singleton ctl) (reuseAt r))
-      reuseAt <$> foldM (step g') r' (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
-      where
-      step g' acc (k × _) = entryValue k d >>= \u -> apply g' (childAt (DictKey k) d : acc : u : Nil)
-   depOp _ _ _ = throw "Function, value and dictionary expected"
-
 get :: ForeignOp
 get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp })
@@ -388,33 +370,6 @@ insert =
          (entryAt (singleton (fst d)) d <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt k × reuseAt v)
    depOp _ _ _ = throw "Dictionary, key and value expected"
 
-dict_intersectionWith :: ForeignOp
-dict_intersectionWith =
-   ForeignOp ("dict_intersectionWith" × ForeignOp' { arity: 3, depOp })
-   where
-   depOp :: DepOp
-   depOp apply ctl (g : d1 : d2 : Nil) = do
-      g' <- newValue (deliver (singleton ctl) (reuseAt g))
-      dictFrom ctl (d1 : d2 : Nil) <$>
-         for (L.filter (\(k × _) -> lookup k (dictEntries (snd d2)) /= Nothing) (Dict.toUnfoldable (dictEntries (snd d1))))
-            \(k × _) -> (k × _) <$> do
-               u1 <- entryValue k d1
-               u2 <- entryValue k d2
-               apply g' (u1 : u2 : Nil)
-   depOp _ _ _ = throw "Function and two dictionaries expected"
-
-dict_map :: ForeignOp
-dict_map =
-   ForeignOp ("dict_map" × ForeignOp' { arity: 2, depOp })
-   where
-   depOp :: DepOp
-   depOp apply ctl (g : d : Nil) = do
-      g' <- newValue (deliver (singleton ctl) (reuseAt g))
-      dictFrom ctl (singleton d) <$>
-         for (Dict.toUnfoldable (dictEntries (snd d)) :: List (String × (Unit × Raw Val)))
-            \(k × _) -> (k × _) <$> (entryValue k d >>= \u -> apply g' (singleton u))
-   depOp _ _ _ = throw "Function and dictionary expected"
-
 -- Outcome and source positions of comparing the values at two positions
 compareAt :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)
 compareAt op u u' = do
@@ -425,23 +380,6 @@ compareAt op u u' = do
 -- Reuse key and value of a dictionary entry under control of given positions
 entryAt :: forall s. Semiring s => Set Path -> Position -> String -> GVal s × GVal s
 entryAt ps d k = deliver ps (reuseAt (childAt (DictKey k) d)) × deliver ps (reuseAt (childAt (DictVal k) d))
-
--- Entry k of the dictionary at position d, as a value at a new vertex
-entryValue
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => String
-   -> Position
-   -> m Position
-entryValue k d =
-   newValue $ deliver (Set.fromFoldable [ fst d, fst (childAt (DictKey k) d) ]) (reuseAt (childAt (DictVal k) d))
-
--- Dictionary with the values at given positions; root and keys depend on the roots and keys of the dictionaries ds
-dictFrom :: forall s. Semiring s => Path -> List Position -> List (String × Position) -> GVal s
-dictFrom ctl ds kvs = dictionary (controlDep (singleton ctl) <> foldMap (fst >>> dataDep) ds) $
-   kvs <#> \(k × r) ->
-      (Val unit (Lit (Str k)) × construct (foldMap (\d -> dataDep (fst (childAt (DictKey k) d))) ds) M.empty) × reuseAt r
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

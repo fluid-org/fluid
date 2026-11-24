@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from fluid.prelude import mean
+from fluid.prelude import dict_map, mean
 
 @dataclass
 class Ensemble:
