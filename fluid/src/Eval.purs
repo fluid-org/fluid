@@ -41,7 +41,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, computedElement, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -239,7 +239,7 @@ eval = { stmt, program }
       App e es -> do
          f <- expr inputs e
          rs <- traverse (expr inputs) es
-         withMsg ("In " <> funName e) $ apply (ctlAt b) f rs
+         withMsg ("In " <> funName e) $ apply f rs
       BinOp e op e' -> do
          r <- expr inputs e
          r' <- expr inputs e'
@@ -303,10 +303,10 @@ eval = { stmt, program }
             Just n -> pure n
             Nothing -> throw ("Found " <> prettyP v <> ", expected list, tuple, str or dict")
          classes <- askClasses
-         rs × ps <- fold <$> for (L.take n (L.range 0 n)) \i -> do
-            u <- case elementStep i v of
-               Just step -> pure (childAt step r)
-               Nothing -> newValue (computedElement i r)
+         us <- case traverse (flip elementStep v) (L.take n (L.range 0 n)) of
+            Just steps -> pure (flip childAt r <$> steps)
+            Nothing -> elementsAt <$> newValue (explode r)
+         rs × ps <- fold <$> for us \u ->
             case dispatch classes (singleton (p × unit)) u of
                Nothing × qs -> pure (Nil × qs)
                Just (ρ' × _) × qs ->
@@ -373,52 +373,49 @@ eval = { stmt, program }
       output inputs' (ExprStmt e) = expr inputs' e
       output _ _ = error absurd
 
-   -- Apply f to rs at a new vertex; a partial application depends on control position ctl
-   application :: Path -> Position -> List Position -> m Position
-   application ctl f rs = apply ctl f rs >>= newValue
-
    -- Apply f to rs, partially if rs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Path -> Position -> List Position -> m (GVal s)
-   apply ctl f@(q × v) rs = case v of
-      Val _ (V.Fun (V.Partial _ us)) -> do
-         f' <- newValue (deliver (singleton q) (reuseAt (childAt PartialFun f)))
-         rs' <- for (mapWithIndex const us) \i -> newValue (reuseAt (childAt (PartialArg i) f))
-         apply ctl f' (rs' <> rs)
-      Val _ (V.Fun φ) -> do
-         n <- arity'
-         let k = length rs
-         if k < n then
-            pure $ Val unit (V.Fun (V.Partial v (snd <$> rs))) × construct (controlDep (singleton ctl))
-               (Map.fromFoldable ((PartialFun × reuse q) : mapWithIndex (\i (q' × _) -> PartialArg i × reuse q') rs))
-         else if k == n then call φ
-         else application ctl f (take n rs) >>= \f' -> apply ctl f' (drop n rs)
-         where
-         arity' :: m Int
-         arity' = case φ of
-            V.Closure _ _ (Def xs _) -> pure (length xs)
-            V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
-            V.Type (T.ClassTy c _) -> askClasses >>= arity c
-            V.Type τ -> throw ("Not callable: " <> prettyP τ)
-            V.Partial _ _ -> error absurd
-      _ -> throw $ "Found " <> prettyP v <> ", expected function"
+   apply :: Position -> List Position -> m (GVal s)
+   apply f@(q × v) rs = case v of
+      Val _ (V.Fun (V.Partial _ us)) ->
+         applyFun (childAt PartialFun f) (mapWithIndex (\i _ -> childAt (PartialArg i) f) us <> rs)
+      _ -> applyFun f rs
       where
-      -- Call function with arguments rs; control input depends on the root of the function value
-      call :: V.Fun Unit -> m (GVal s)
-      call = case _ of
-         V.Closure (Env ρ) ds (Def xs s) -> do
-            b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (controlDep (singleton q)) Map.empty)
-            reuseAt <<< asReturns <$> stmt { ρ: ρ'', b } s
+      applyFun :: Position -> List Position -> m (GVal s)
+      applyFun g@(q' × u) rs' = case u of
+         Val _ (V.Fun φ) -> do
+            n <- arity'
+            let k = length rs'
+            if k < n then
+               pure $ Val unit (V.Fun (V.Partial u (snd <$> rs'))) × construct (controlDep (singleton q))
+                  (Map.fromFoldable ((PartialFun × reuse q') : mapWithIndex (\i (p × _) -> PartialArg i × reuse p) rs'))
+            else if k == n then call φ
+            else applyFun g (take n rs') >>= newValue >>= \f' -> apply f' (drop n rs')
             where
-            p = q <> singleton ClosureEnv
-            args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs)
-            ρ' = closeDefs q p ρ ds <+> args
-            ρ'' = ρ <+> (fst <$> ρ')
-         V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (application q) q rs
-         V.Type (T.ClassTy c _) ->
-            askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs)
-         V.Type _ -> error absurd
-         V.Partial _ _ -> error absurd
+            arity' :: m Int
+            arity' = case φ of
+               V.Closure _ _ (Def xs _) -> pure (length xs)
+               V.Prim (ForeignOp (_ × ForeignOp' φ')) -> pure φ'.arity
+               V.Type (T.ClassTy c _) -> askClasses >>= arity c
+               V.Type τ -> throw ("Not callable: " <> prettyP τ)
+               V.Partial _ _ -> error absurd
+         _ -> throw $ "Found " <> prettyP u <> ", expected function"
+         where
+         call :: V.Fun Unit -> m (GVal s)
+         call = case _ of
+            V.Closure (Env ρ) ds (Def xs s) -> do
+               b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (controlDep (singleton q)) Map.empty)
+               reuseAt <<< asReturns <$> stmt { ρ: ρ'', b } s
+               where
+               p = q' <> singleton ClosureEnv
+               args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
+               ρ' = closeDefs q p ρ ds <+> args
+               ρ'' = ρ <+> (fst <$> ρ')
+            V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp q rs'
+            V.Type (T.ClassTy c _) ->
+               askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs')
+            V.Type _ -> error absurd
+            V.Partial _ _ -> error absurd
 
 -- Inputs vertex for environment ρ; control position depends on nothing
 topLevel :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m Inputs

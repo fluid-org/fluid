@@ -1,4 +1,5 @@
 from typing import Callable
+from fluid.prelude import dict_map
 
 d: dict[str, int] = {}
 e: dict[str, int] = { "a": 5, "a" + "b": 6 }

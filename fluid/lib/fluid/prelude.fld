@@ -155,6 +155,15 @@ def scanl[A, B](op: Callable[[A, B], A], z: A, xs: list[B]) -> list[A]:
 def map[A, B](f: Callable[[A], B], xs: list[A]) -> list[B]:
   return [f(x) for x in xs]
 
+def dict_map[A, B](f: Callable[[A], B], d: dict[str, A]) -> dict[str, B]:
+  return { k: f(d[k]) for k in d }
+
+def dict_intersectionWith[A, B, C](f: Callable[[A, B], C], d1: dict[str, A], d2: dict[str, B]) -> dict[str, C]:
+  return { k: f(d1[k], d2[k]) for k in d1 if k in d2 }
+
+def foldl_with_index[A, B](f: Callable[[str, B, A], B], z: B, d: dict[str, A]) -> B:
+  return foldl(lambda acc, k: f(k, acc, d[k]), z, [k for k in d])
+
 def join(xs: list[str]) -> str:
   return foldr(lambda x, y: x + y, "", xs)
 
