@@ -1,0 +1,7 @@
+from typing import Callable
+from fluid.prelude import map
+
+def add(x: int, y: int) -> int:
+  return x + y
+incr: Callable[[int], int] = add(1)
+map(incr, [4, 6, 12, 14])

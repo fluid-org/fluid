@@ -1,0 +1,12 @@
+from fluid.prelude import compare, Empty, EQ, LT, NonEmpty, SearchTree
+
+def lookup[V](k: float, Empty(): SearchTree[float, V]) -> V | None:
+  return None
+def lookup[V](k: float, NonEmpty(left, (key, val), right): SearchTree[float, V]) -> V | None:
+  match compare(k, key):
+    case LT():
+      return lookup(k, left)
+    case EQ():
+      return val
+    case _:
+      return lookup(k, right)

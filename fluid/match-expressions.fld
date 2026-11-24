@@ -1,6 +1,0 @@
-def lookup(k, Empty): None
-def lookup(k, NonEmpty(left, (key, val), right)):
-  match compare(k, key):
-    case LT: lookup(k, left)
-    case EQ: Some(val)
-    case GT: lookup(k, right)

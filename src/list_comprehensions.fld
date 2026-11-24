@@ -1,0 +1,4 @@
+from fluid.prelude import filter
+
+squares: list[int] = [x * x for x in range(1, 6)]
+evens: list[int] = filter(lambda x: x % 2 == 0, squares)

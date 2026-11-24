@@ -1,0 +1,2 @@
+person: dict[str, str | int] = { "name": "Alice", "age": 30 }
+describe: str | int = person["name"]

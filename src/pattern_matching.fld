@@ -1,0 +1,7 @@
+def factorial(0: int) -> int:
+  return 1
+def factorial(n: int) -> int:
+  return n * factorial(n - 1)
+
+def distance((x1, y1): tuple[float, float], (x2, y2): tuple[float, float]) -> float:
+  return sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)

@@ -1,3 +1,0 @@
-def add(x, y): x + y
-def incr: add(1)
-map(incr, [4, 6, 12, 14])
