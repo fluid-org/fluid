@@ -200,17 +200,18 @@ complexOperand _ = Nothing
 -- Apply arithmetic operator to parts of complex operands
 complexBinop :: forall a. DepSemiring a => Binop -> ComplexOperand a -> ComplexOperand a -> MayFail (Val a)
 complexBinop op (α × x × y) (β × x' × y') = case op of
-   Add -> complexVal (α `add` β) <$> arith Add x x' <*> arith Add y y'
-   Sub -> complexVal (α `add` β) <$> arith Sub x x' <*> arith Sub y y'
-   Mul -> complexVal (α `add` β) <$> (join (arith Sub <$> arith Mul x x' <*> arith Mul y y'))
+   Add -> result <$> arith Add x x' <*> arith Add y y'
+   Sub -> result <$> arith Sub x x' <*> arith Sub y y'
+   Mul -> result <$> join (arith Sub <$> arith Mul x x' <*> arith Mul y y')
       <*> join (arith Add <$> arith Mul x y' <*> arith Mul y x')
    Div -> do
       d <- join (arith Add <$> arith Mul x' x' <*> arith Mul y' y')
       re <- join (arith Add <$> arith Mul x x' <*> arith Mul y y')
       im <- join (arith Sub <$> arith Mul y x' <*> arith Mul x y')
-      complexVal (α `add` β) <$> arith Div re d <*> arith Div im d
+      result <$> arith Div re d <*> arith Div im d
    _ -> error absurd
    where
+   result = complexVal (α `add` β)
    arith op' u u' = binopFun op' (u : u' : Nil)
 
 -- Concatenation and repetition reuse elements of operand sequences
