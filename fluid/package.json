@@ -77,8 +77,8 @@
     "node": ">=22"
   },
   "bin": {
-    "fluid": "./dist/fluid/shared/fluid.mjs",
-    "install-website": "./script/install-website.sh"
+    "fluid": "dist/fluid/shared/fluid.mjs",
+    "install-website": "script/install-website.sh"
   },
   "svelte": "./web/lib/index.js",
   "exports": {
