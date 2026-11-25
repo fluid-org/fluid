@@ -3,7 +3,8 @@
 set -xe
 cd "$(dirname "$0")/.."
 
-RELEASE=$(node -p "require('./package.json').version")
+VERSION=$(node -p "require('./package.json').version")
+RELEASE=${VERSION%-next.0}
 if [ "$GITHUB_REF_NAME" != "fluid-${RELEASE%.*}" ]; then
    echo "Branch $GITHUB_REF_NAME is not milestone branch of version $RELEASE" >&2
    exit 1

@@ -47,4 +47,4 @@ Managed manually by developer:
 
 ## NPM publishing
 
-Package version names release of completed milestone (e.g. `fluid 1.2` → `1.2.0`). Every push to milestone branch publishes next pre-release (`1.2.0-next.N`) under dist-tag `next` once tests pass; see [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).
+On creating a milestone branch, set the package version to `X.Y.Z-next.0`, where `X.Y.Z` is the release of the completed milestone (e.g. `1.2.0-next.0` for `fluid 1.2`). Every push to the milestone branch then publishes the next pre-release (`1.2.0-next.N`) under the dist-tag `next`, once the tests pass; see [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).
