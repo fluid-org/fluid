@@ -16,6 +16,34 @@ jobs:
   build:
     uses: ./.github/workflows/test.yml
 
+  publish-npm:
+    runs-on: ubuntu-22.04
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'fluid-')
+    concurrency: publish-npm
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        registry-url: https://registry.npmjs.org
+    - name: install npm with trusted publishing
+      run: npm install -g npm@^11.5.1
+    - name: cache PureScript dependencies
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-spago-${{ hashFiles('**/*.dhall') }}
+        path: fluid/.spago
+    - name: publish
+      run: |
+        yarn install
+        fluid/script/build-publish.sh
+
   deploy-fluid-org:
     runs-on: ubuntu-22.04
     needs: build

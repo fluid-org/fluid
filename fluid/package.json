@@ -4,7 +4,7 @@
   "description": "A pure functional dialect of Python, based on PurePy, with a dependency-tracking runtime for creating interactive outputs linked to data.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fluid-org/fluid.git#release"
+    "url": "git+https://github.com/fluid-org/fluid.git"
   },
   "keywords": [
     "PureScript",

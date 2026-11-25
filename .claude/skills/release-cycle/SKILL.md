@@ -47,4 +47,4 @@ Managed manually by developer:
 
 ## NPM publishing
 
-Package version tracks milestone (e.g. `fluid 1.0` → `1.0.x`). Before publishing: run `./script/test-website-all.sh`; working tree clean (publish script commits the version bump). Publish per [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).
+Package version tracks milestone (e.g. `fluid 1.0` → `1.0.x`). Every push to milestone branch publishes next patch version once tests pass; see [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).

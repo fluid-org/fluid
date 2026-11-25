@@ -87,23 +87,9 @@ Opens a browser window; check the JavaScript console for test results.
 
 ## Publishing to npm
 
-From the monorepo root:
+The `publish-npm` job of the build workflow publishes on every push to the current milestone branch, once the tests pass. It sets the package version to the next patch version after the latest `vX.Y.*` tag, builds in production mode, stages the `article` website, publishes to npm and pushes the tag `vX.Y.Z`. The version in `fluid/package.json` gives the milestone (e.g. `1.1.x` for milestone `fluid 1.1`); the job doesn't update that file.
 
-```bash
-yarn workspace @fluid-org/fluid build-publish
-```
-
-Bumps the patch version, commits, tags `vX.Y.Z`, builds in production mode, stages the `article` website, and publishes to npm. Version tracks milestone (e.g. `0.12.x` for milestone `fluid 0.12`). After it succeeds, push manually:
-
-```bash
-git push && git push --tags
-```
-
-Requires an npm automation token in `~/.npmrc` (bypasses 2FA):
-
-```
-//registry.npmjs.org/:_authToken=npm_...
-```
+Authentication is by [trusted publishing](https://docs.npmjs.com/trusted-publishers), which is configured on npmjs.com for the workflow `build.yml` and doesn't need a token.
 
 ## VS Code
 

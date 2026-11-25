@@ -45,7 +45,7 @@ jobs:
     - name: test-website
       run: |
         ./script/test-website-all.sh
-    # Validate packaging only; publishing is manual (build-publish.sh runs these scripts first)
+    # Validate packaging only; publish-npm job of build workflow publishes
     - name: test-package
       run: |
         fluid/script/build-package.sh && fluid/script/test-package.sh
