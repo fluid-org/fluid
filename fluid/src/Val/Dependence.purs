@@ -13,7 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (fst, snd)
-import DepGraph (bindings, construct, dataDep, Dependence, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), tupling, withCtrl, ι)
+import DepGraph (bindings, construct, controlDep, dataDep, Dependence, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), tupling, withCtrl, ι)
 import Dict (Dict)
 import Dict as D
 import Lattice (class DepSemiring, Lineage(..), Raw, erase)
@@ -81,16 +81,22 @@ newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd
 
 -- Read dependence of result from its annotations and given control positions
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
-applyDepFun f ctl rs = f (arg <$> rs) <#> \v ->
-   erase v × NoReuse ctl × foldl addSupport mempty (positions (paths v))
-   where
-   arg :: Position -> Val (Lineage Path s)
-   arg (q × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one)
+applyDepFun f ctl rs = withLineage f rs <#> \v ->
+   erase v × NoReuse ctl × foldl (addSupport Set.empty) mempty (positions (paths v))
 
-   addSupport :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
-   addSupport r (p × Lineage (_ × ws))
-      | Map.isEmpty ws = r
-      | otherwise = r <> ι p (Rel (Support Set.empty ws) Map.empty)
+-- Same as applyDepFun, except control positions only at positions of result without other support
+applyOperator :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
+applyOperator f ctl rs = withLineage f rs <#> \v ->
+   erase v × NoReuse Set.empty × foldl (addSupport ctl) mempty (positions (paths v))
+
+-- Result of f at arguments annotated with their positions
+withLineage :: forall s. DepSemiring s => DepFun -> List Position -> MayFail (Val (Lineage Path s))
+withLineage f rs = f (rs <#> \(q × v) -> paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one))
+
+-- Add support of position p from its annotation, or control positions ctl if annotation is empty
+addSupport :: forall s. Semiring s => Set Path -> Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
+addSupport ctl r (p × Lineage (_ × ws)) =
+   r <> ι p (Rel (if Map.isEmpty ws then controlDep ctl else Support Set.empty ws) Map.empty)
 
 -- Step to element i of sequence if that element is a child
 elementStep :: Int -> Raw Val -> Maybe Step
