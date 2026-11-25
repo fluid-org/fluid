@@ -1,6 +1,6 @@
 from typing import Callable
 from fnum import minimal, eq
-from fluid.prelude import abs, FNum, foldl, InfNum, Infty, max, min
+from fluid.prelude import FNum, foldl, InfNum, Infty, max, min
 
 type Cell = tuple[int, int]
 type CostMatrix = Matrix[InfNum]

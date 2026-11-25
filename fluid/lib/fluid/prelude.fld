@@ -170,7 +170,7 @@ def join(xs: list[str]) -> str:
 def intersperse[A](xs: list[A], sep: A) -> list[A]:
   return [y for i in range(0, len(xs)) for y in ([xs[i]] if i == 0 else [sep, xs[i]])]
 
-# sum, fsum, max, min, fmax, fmin, abs: one type each, pending protocols
+# sum, fsum, max, min, fmax, fmin: one type each, pending protocols
 # (pure-py/pure-py-spec#233); retire with Python's builtins.
 def sum(xs: list[int]) -> int:
   return foldr(lambda x, y: x + y, 0, xs)
@@ -215,9 +215,6 @@ def fmin(n: float, m: float) -> float:
 
 def zip[A, B](xs: list[A], ys: list[B]) -> list[tuple[A, B]]:
   return [(xs[i], ys[i]) for i in range(0, min(len(xs), len(ys)))]
-
-def abs(x: int) -> int:
-  return -x if x < 0 else x
 
 def nub[A](xs: list[A]) -> list[A]:
   return [xs[i] for i in range(0, len(xs)) if xs[i] not in take(i, xs)]
