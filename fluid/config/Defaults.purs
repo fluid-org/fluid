@@ -26,10 +26,12 @@ checkingDefaults =
 type TimingConfig =
    { loadFig :: Boolean
    , selectionResult :: Boolean
+   , benchmark :: Boolean -- log measurements of each test program
    }
 
 timingDefaults :: TimingConfig
 timingDefaults =
    { loadFig: false
    , selectionResult: false
+   , benchmark: false
    }

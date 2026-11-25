@@ -21,7 +21,9 @@ import Test.Specs.LinkedInputs (linkedInputs_cases)
 import Test.Specs.LinkedOutputs (linkedOutputs_cases)
 import Test.Specs.Misc (misc_cases)
 import Test.Specs.Paragraph (paragraph_cases)
+import Test.Benchmark.Util (logRow)
 import Test.Util (TestSuite, fluidSrcPaths)
+import Test.Util.Debug (timing)
 import Test.Util.Mocha (run)
 import Test.Util.Suite (BenchSuite, SuiteFactory, depSuite, illFormedSuite, intermediatesSuite, linkedInputsSuite, linkedOutputsSuite, suite)
 import Util ((×))
@@ -56,7 +58,8 @@ illFormedTests :: forall m. MonadProgram m => TestSuite m
 illFormedTests = illFormedSuite illFormed_cases <> (second (withRoots [ Folder "test/lib/predefined" ]) <$> illFormedSuite shadow_cases)
 
 asTestSuite :: forall m. MonadAff m => MonadError Error m => LoadFile m => BenchSuite m -> TestSuite m
-asTestSuite suite = second void <$> suite (1 × false)
+asTestSuite suite = suite ((if timing.benchmark then 10 else 1) × false) <#> \(name × test) ->
+   name × (test >>= \row -> when timing.benchmark (logRow name row))
 
 benchmarks :: forall m. MonadProgram m => Array (BenchSuite m)
 benchmarks =

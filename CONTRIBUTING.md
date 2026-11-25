@@ -62,6 +62,15 @@ yarn workspace @fluid-org/fluid spec-compliance
 
 Runs the PurePy conformance suite, from the `purepy` release named in `fluid/purepy-version` and installed with [uv](https://docs.astral.sh/uv/), with Fluid as checker. Gaps, corpus programs Fluid gets wrong, are listed in `fluid/test/spec-gaps.txt`, and extensions, corpus programs Fluid accepts by design ahead of or beyond the spec, in `fluid/test/spec-extensions.txt` under comment lines naming the PurePy issue; `spec-compliance --update` rewrites the gaps list and the badge in `fluid/test/spec-compliance.json`.
 
+### Measurements
+
+Set `benchmark = true` on `timing` in `fluid/config/prod/Debug.purs` and run the unit tests. Each test program then runs ten times after a warm-up run. Each measurement is logged as a line `BENCH,<test>,<measurement>,<mean>,<standard error>`, with times in milliseconds:
+
+- `Dep`: evaluation time
+- `Dep-Vertices`, `Dep-Edges`, `Dep-Control`, `Dep-Data`: vertices, source vertices, control sources and data sources of the dependence graph
+- `Visible`, `Query` (dependence tests only): time to build the visible graph and answer the query
+- `Visible-Vertices`, `Visible-Positions`, `Visible-Control`, `Visible-Control-Sets`, `Visible-Data` (dependence tests only): vertices, target positions, control sources, distinct control sets and data sources of the visible graph
+
 ### Website tests (Puppeteer)
 
 Tests all SvelteKit websites with Puppeteer (Chrome and Firefox). Slow (a few minutes per website), so run after changes to parsing, desugaring, evaluation or well-formedness, before pushing a completed piece of work, or when in doubt about wider impact:
