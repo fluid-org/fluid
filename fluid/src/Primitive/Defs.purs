@@ -47,7 +47,7 @@ import File (class LoadFile, File(..), loadFileFromPath)
 import DepGraph (Support(..), construct, dataDep, supportAt)
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, DepKind, Raw, bot)
 import Literal (Literal(..), showFloat)
-import Primitive (binopFun, boolean, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
+import Primitive (binopFun, boolean, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack, unpackFloat)
 import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
@@ -136,8 +136,8 @@ abs_ =
    depFun (Val α (Lit (Int n)) : Nil) = Right (Val α (Lit (Int (abs n))))
    depFun (Val α (Lit (Float x)) : Nil) = Right (Val α (Lit (Float (abs x))))
    depFun (Val α (Obj c ((_ × re) : (_ × im) : Nil)) : Nil) | c == cComplex = do
-      x × β <- unpack number re
-      y × β' <- unpack number im
+      x × β <- unpackFloat re
+      y × β' <- unpackFloat im
       pure (Val (α `add` β `add` β') (Lit (Float (N.sqrt (x * x + y * y)))))
    depFun (Val _ u : Nil) = Left (typeMismatch u "int, float or complex")
    depFun _ = Left "Single argument expected"

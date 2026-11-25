@@ -11,6 +11,6 @@ w: complex = 3.5 - 1j
   z + w, z - w, z * w, z / (1 + 1j),
   z + 1, 2.5 * z, scale(z, 2),
   z.real, z.imag, conjugate(z), abs(3 + 4j), abs(-2),
-  z == 1 + 2j, z != w, 1j * 1j == -1, complex(2, 0) == 2.0, z == 1, complex(1, 2).real,
+  z == 1 + 2j, z != w, 1j * 1j == -1, complex(2, 0) == 2.0, z == 1, complex(1.0, 2.0).real,
   z ** 2, z ** -1, 2 ** 1j, z ** w
 ]

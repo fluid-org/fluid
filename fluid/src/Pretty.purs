@@ -6,6 +6,7 @@ import Bind (Bind, Var, dottedName, (↦))
 import Data.Foldable (intercalate)
 import Data.List (List(..), fromFoldable, (:))
 import Data.List.NonEmpty (NonEmptyList(..), last, toList)
+import Data.Int (toNumber)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype)
 import Data.NonEmpty ((:|))
@@ -429,12 +430,13 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Dictionary (DictRep svs))
       | isEmpty svs = text "{}"
       | otherwise = record (pretty <$> (toUnfoldable svs))
-   pretty (V.Obj c ((_ × Val α (V.Lit (Float x))) : (_ × Val β (V.Lit (Float y))) : Nil)) | c == cComplex =
-      if x == 0.0 then highlightIf β (text (showPart y)) <> text "j"
-      else parens $ highlightIf α (text (showPart x))
-         <> text (if String.take 1 (showPart y) == "-" then "" else "+")
-         <> highlightIf β (text (showPart y))
-         <> text "j"
+   pretty (V.Obj c ((_ × Val α (V.Lit ℓ)) : (_ × Val β (V.Lit ℓ')) : Nil))
+      | c == cComplex, Just x <- part ℓ, Just y <- part ℓ' =
+           if x == 0.0 then highlightIf β (text (showPart y)) <> text "j"
+           else parens $ highlightIf α (text (showPart x))
+              <> text (if String.take 1 (showPart y) == "-" then "" else "+")
+              <> highlightIf β (text (showPart y))
+              <> text "j"
    pretty (V.Obj c xvs) = prettyConstr (last c) (snd <$> xvs)
    pretty (V.List vs) = brackets (prettyList vs)
    pretty (V.Tuple vs) = tuple (pretty <$> fromFoldable vs)
@@ -462,6 +464,12 @@ compare op1 op2 x y =
       right = if y_minus_x == botOf x then "" else op2 <> " but not " <> op1 <> ":\n" <> prettyP y_minus_x
    in
       left × right
+
+-- Int or float as part of complex number
+part :: Literal -> Maybe Number
+part (Int n) = Just (toNumber n)
+part (Float x) = Just x
+part _ = Nothing
 
 -- Float as part of complex number; no ".0" on integral value
 showPart :: Number -> String

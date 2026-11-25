@@ -43,6 +43,10 @@ type ToFrom d a =
 unpack :: forall d a. ToFrom d a -> Val a -> MayFail (d × a)
 unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
 
+-- Int or float as float
+unpackFloat :: forall a. Val a -> MayFail (Number × a)
+unpackFloat v = first (either toNumber identity) <$> unpack intOrNumber v
+
 -- For values whose shape is known.
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
 unpack' toFrom = unpack toFrom >>> either error identity
@@ -255,7 +259,7 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
    result u u' = (α `add` β) × u × u'
 
    arith op' u u' = binopFun op' (u : u' : Nil)
-   part u = fst <$> unpack number u
+   part u = fst <$> unpackFloat u
    one = zero × constant 1.0 × constant 0.0
    nan = Val (root x' `add` root y') (Lit (Float N.nan))
 
@@ -269,10 +273,6 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
 
 divisionByZero :: forall a. MayFail a
 divisionByZero = Left "ZeroDivisionError: division by zero"
-
-toFloat :: forall a. List (Val a) -> MayFail (Val a)
-toFloat (Val α (Lit (Int n)) : Nil) = pure (Val α (Lit (Float (toNumber n))))
-toFloat _ = error absurd
 
 -- Concatenation and repetition reuse elements of operand sequences
 applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
