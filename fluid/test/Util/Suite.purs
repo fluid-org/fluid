@@ -76,7 +76,8 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
 
 depSuite :: forall m. MonadProgram m => Array DepSpec -> TestSuite m
 depSuite specs = specs >>= \{ file, queries } -> queries <#> \query ->
-   depName file query × (testDep (File file) query >>= \row -> when timing.benchmark (logRow (depName file query) row))
+   depName file query ×
+      (testDep (File file) query >>= \row -> when timing.benchmark (logRow (depName file query) row))
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)

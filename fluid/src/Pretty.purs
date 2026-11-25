@@ -431,7 +431,8 @@ instance Highlightable a => Pretty (BaseVal a) where
       | otherwise = record (pretty <$> (toUnfoldable svs))
    pretty (V.Obj c ((_ × Val α (V.Lit (Float x))) : (_ × Val β (V.Lit (Float y))) : Nil)) | c == cComplex =
       if x == 0.0 then highlightIf β (text (showPart y)) <> text "j"
-      else parens $ highlightIf α (text (showPart x)) <> text (if String.take 1 (showPart y) == "-" then "" else "+")
+      else parens $ highlightIf α (text (showPart x))
+         <> text (if String.take 1 (showPart y) == "-" then "" else "+")
          <> highlightIf β (text (showPart y))
          <> text "j"
    pretty (V.Obj c xvs) = prettyConstr (last c) (snd <$> xvs)

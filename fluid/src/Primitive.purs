@@ -169,8 +169,10 @@ union1 _ g (Right x) = g x
 -- Dependence relations of the operators, from the positions their evaluation inspects.
 binopFun :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
 binopFun op (v : v' : Nil)
-   | op `elem` [ Add, Sub, Mul, Div, Pow ], isComplex v || isComplex v', Just z <- complexOperand v, Just w <- complexOperand v' =
-        complexBinop op z w
+   | op `elem` [ Add, Sub, Mul, Div, Pow ]
+   , isComplex v || isComplex v'
+   , Just z <- complexOperand v
+   , Just w <- complexOperand v' = complexBinop op z w
    | otherwise = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 binopFun _ _ = error absurd
 
@@ -225,7 +227,7 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
          denom <- flip (arith Add) y' =<< arith Mul x' ratio
          result <$> (flip (arith Div) denom =<< flip (arith Add) y =<< arith Mul x ratio)
             <*> (flip (arith Div) denom =<< flip (arith Sub) x =<< arith Mul y ratio)
-      else pure (result (Val (root x' `add` root y') (Lit (Float N.nan))) (Val (root x' `add` root y') (Lit (Float N.nan))))
+      else pure (result nan nan)
    Pow -> do
       a <- part x
       b <- part y
@@ -239,9 +241,12 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
          γ = foldl add zero (root <$> [ x, y, x', y' ])
          -- Each part of power depends on every part of base and exponent
          power (_ × Val _ u × Val _ u') = result (Val γ u) (Val γ u')
-      if a == 0.0 && b == 0.0 && (b' /= 0.0 || a' < 0.0) then Left "ZeroDivisionError: zero to a negative or complex power"
+      if a == 0.0 && b == 0.0 && (b' /= 0.0 || a' < 0.0) then
+         Left "ZeroDivisionError: zero to a negative or complex power"
       else if b' == 0.0 && a' == N.floor a' && N.abs a' <= 100.0 then
-         power <$> if a' > 0.0 then powu one z (Int.floor a') else complexArith Div one =<< powu one z (Int.floor (-a'))
+         power <$>
+            if a' > 0.0 then powu one z (Int.floor a')
+            else complexArith Div one =<< powu one z (Int.floor (-a'))
       else if a == 0.0 && b == 0.0 then pure (power (zero × constant 0.0 × constant 0.0))
       else pure (power (zero × constant (len * N.cos phase) × constant (len * N.sin phase)))
    _ -> error absurd
@@ -252,6 +257,7 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
    arith op' u u' = binopFun op' (u : u' : Nil)
    part u = fst <$> unpack number u
    one = zero × constant 1.0 × constant 0.0
+   nan = Val (root x' `add` root y') (Lit (Float N.nan))
 
    -- Multiply r by nth power of p by repeated squaring
    powu :: ComplexOperand a -> ComplexOperand a -> Int -> MayFail (ComplexOperand a)
@@ -389,8 +395,10 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    Lit (Float _), Lit (Bool _) -> undefined unit
    Fun _, Fun _ -> undefined unit
    Obj c _, Obj d _ | c == cRange && d == cRange -> eqElems both (elements v) (elements v')
-   Obj c ((_ × x) : (_ × y) : Nil), Lit ℓ | c == cComplex && isNumber ℓ -> eqElems both (x : y : Nil) (v' : Val β (Lit (Float 0.0)) : Nil)
-   Lit ℓ, Obj c ((_ × x) : (_ × y) : Nil) | c == cComplex && isNumber ℓ -> eqElems both (v : Val α (Lit (Float 0.0)) : Nil) (x : y : Nil)
+   Obj c ((_ × x) : (_ × y) : Nil), Lit ℓ
+      | c == cComplex && isNumber ℓ -> eqElems both (x : y : Nil) (v' : Val β (Lit (Float 0.0)) : Nil)
+   Lit ℓ, Obj c ((_ × x) : (_ × y) : Nil)
+      | c == cComplex && isNumber ℓ -> eqElems both (v : Val α (Lit (Float 0.0)) : Nil) (x : y : Nil)
    Obj c xvs, Obj d yus
       | c == d -> eqElems both (snd <$> xvs) (snd <$> yus)
       | otherwise -> pure (false × both)

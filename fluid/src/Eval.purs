@@ -128,7 +128,8 @@ object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst
 
 -- Argument at position r as field of class c
 field :: forall s. DepSemiring s => Name -> Position -> GVal s
-field c r@(_ × Val _ (V.Lit (Int _))) | c == cComplex = definitelyRight (applyDepFun toFloat Set.empty (singleton r))
+field c r@(_ × Val _ (V.Lit (Int _)))
+   | c == cComplex = definitelyRight (applyDepFun toFloat Set.empty (singleton r))
 field _ r = reuseAt r
 
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl

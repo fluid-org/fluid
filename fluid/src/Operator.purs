@@ -102,9 +102,11 @@ binopOverloads classes op = case op of
    Le -> ordering
    Gt -> ordering
    Ge -> ordering
-   Add -> arithmetic int : arithmetic float : complexArithmetic <> (both str str : concatList classes : concatTuple classes : Nil)
+   Add -> arithmetic int : arithmetic float : complexArithmetic
+      <> (both str str : concatList classes : concatTuple classes : Nil)
    Sub -> arithmetic int : arithmetic float : complexArithmetic
-   Mul -> arithmetic int : arithmetic float : complexArithmetic <> (repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil)
+   Mul -> arithmetic int : arithmetic float : complexArithmetic
+      <> (repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil)
    Div -> arithmetic float : complexArithmetic
    FloorDiv -> arithmetic int : arithmetic float : Nil
    Mod -> arithmetic int : arithmetic float : Nil
@@ -116,7 +118,8 @@ binopOverloads classes op = case op of
    arithmetic τ = both τ τ
 
    -- One operand complex and other operand complex or float
-   complexArithmetic = operands complex complex complex : operands complex float complex : operands float complex complex : Nil
+   complexArithmetic =
+      operands complex complex complex : operands complex float complex : operands float complex complex : Nil
    complexEquality = operands complex float bool : operands float complex bool : Nil
    operands bound bound' result σ τ = whenever (sub σ bound && sub τ bound') ((bound : bound' : Nil) × result)
    ordering = both float bool : both str bool : Nil
