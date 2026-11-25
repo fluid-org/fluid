@@ -196,6 +196,11 @@ dep_cases =
           [ Bwd Output (\_ -> select) "⟪(3+⸨4⸩j)⟫\n⟪(5+⸨6⸩j)⟫\n⸨10.0⸩"
           ]
      }
+   , { file: "dependence/complex_pow.fld"
+     , queries:
+          [ Bwd Output (\_ -> select) "⟪(⸨1⸩+⸨2⸩j)⟫\n⸨2.0⸩\n⸨-3.0⸩"
+          ]
+     }
    , { file: "dependence/nth.fld"
      , queries:
           [ Bwd Output (\_ -> select) "⟪[3, ⸨4⸩, 5]⟫\n⸨4⸩"

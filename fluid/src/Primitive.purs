@@ -237,11 +237,13 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
          len = if b' /= 0.0 then N.pow vabs a' / N.exp (at * b') else N.pow vabs a'
          phase = if b' /= 0.0 then at * a' + b' * N.log vabs else at * a'
          γ = foldl add zero (root <$> [ x, y, x', y' ])
+         -- Each part of power depends on every part of base and exponent
+         power (_ × Val _ u × Val _ u') = result (Val γ u) (Val γ u')
       if a == 0.0 && b == 0.0 && (b' /= 0.0 || a' < 0.0) then Left "ZeroDivisionError: zero to a negative or complex power"
       else if b' == 0.0 && a' == N.floor a' && N.abs a' <= 100.0 then
-         if a' > 0.0 then powu one z (Int.floor a') else complexArith Div one =<< powu one z (Int.floor (-a'))
-      else if a == 0.0 && b == 0.0 then pure (result (constant 0.0) (constant 0.0))
-      else pure (result (Val γ (Lit (Float (len * N.cos phase)))) (Val γ (Lit (Float (len * N.sin phase)))))
+         power <$> if a' > 0.0 then powu one z (Int.floor a') else complexArith Div one =<< powu one z (Int.floor (-a'))
+      else if a == 0.0 && b == 0.0 then pure (power (zero × constant 0.0 × constant 0.0))
+      else pure (power (zero × constant (len * N.cos phase) × constant (len * N.sin phase)))
    _ -> error absurd
    where
    result :: Val a -> Val a -> ComplexOperand a
