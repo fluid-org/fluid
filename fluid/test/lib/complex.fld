@@ -1,4 +1,4 @@
-from fluid.prelude import conjugate
+from numpy import conjugate
 
 def scale(z: complex, k: float) -> complex:
   return z * k
