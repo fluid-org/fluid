@@ -79,24 +79,18 @@ newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
    mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
 
--- Read dependence of result from its annotations and given control positions
-applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
-applyDepFun f ctl rs = withLineage f rs <#> \v ->
-   erase v × NoReuse ctl × foldl (addSupport Set.empty) mempty (positions (paths v))
+-- Read dependence of result from its annotations. Root depends on ctl; positions without other support
+-- depend on ctl'.
+applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> Set Path -> List Position -> MayFail (GVal s)
+applyDepFun f ctl ctl' rs = f (arg <$> rs) <#> \v ->
+   erase v × NoReuse ctl × foldl addSupport mempty (positions (paths v))
+   where
+   arg :: Position -> Val (Lineage Path s)
+   arg (q × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one)
 
--- Same as applyDepFun, except control positions only at positions of result without other support
-applyOperator :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)
-applyOperator f ctl rs = withLineage f rs <#> \v ->
-   erase v × NoReuse Set.empty × foldl (addSupport ctl) mempty (positions (paths v))
-
--- Result of f at arguments annotated with their positions
-withLineage :: forall s. DepSemiring s => DepFun -> List Position -> MayFail (Val (Lineage Path s))
-withLineage f rs = f (rs <#> \(q × v) -> paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one))
-
--- Add support of position p from its annotation, or control positions ctl if annotation is empty
-addSupport :: forall s. Semiring s => Set Path -> Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
-addSupport ctl r (p × Lineage (_ × ws)) =
-   r <> ι p (Rel (if Map.isEmpty ws then controlDep ctl else Support Set.empty ws) Map.empty)
+   addSupport :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
+   addSupport r (p × Lineage (_ × ws)) =
+      r <> ι p (Rel (if Map.isEmpty ws then controlDep ctl' else Support Set.empty ws) Map.empty)
 
 -- Step to element i of sequence if that element is a child
 elementStep :: Int -> Raw Val -> Maybe Step
@@ -108,7 +102,7 @@ elementStep _ _ = Nothing
 elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
 elementAt i r = case elementStep i (snd r) of
    Just step -> reuseAt (childAt step r)
-   Nothing -> definitelyRight (applyDepFun elementOf Set.empty (singleton r))
+   Nothing -> definitelyRight (applyDepFun elementOf Set.empty Set.empty (singleton r))
    where
    elementOf :: forall a. List (Val a) -> MayFail (Val a)
    elementOf (v : Nil) = pure (element i v)

@@ -42,7 +42,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyOperator, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
@@ -249,7 +249,7 @@ eval = { stmt, program }
          withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ctl r r')
       UnOp op e -> do
          r <- expr inputs e
-         withMsg ("In " <> unopSymbol op) $ orThrow (applyOperator (unopFun op) ctl (r : Nil))
+         withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) Set.empty ctl (r : Nil))
       And e e' -> do
          { holds, r } <- condition inputs e
          if holds then reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e') else pure (reuseAt r)

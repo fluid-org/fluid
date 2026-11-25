@@ -390,7 +390,7 @@ insert =
 -- Outcome and source positions of comparing the values at two positions
 compareAt :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)
 compareAt op u u' = do
-   v × δ <- orThrow (applyDepFun (binopFun op) empty (u : u' : Nil) :: MayFail (GVal DepKind))
+   v × δ <- orThrow (applyDepFun (binopFun op) empty empty (u : u' : Nil) :: MayFail (GVal DepKind))
    b × _ <- orThrow (unpack boolean v)
    pure (b × case supportAt δ Nil of Support ps ws -> ps ∪ Map.keys ws)
 
