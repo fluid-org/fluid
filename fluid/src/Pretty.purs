@@ -429,12 +429,11 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Dictionary (DictRep svs))
       | isEmpty svs = text "{}"
       | otherwise = record (pretty <$> (toUnfoldable svs))
-   pretty (V.Obj c ((_ × Val α (V.Lit x)) : (_ × Val β (V.Lit y)) : Nil))
-      | c == cComplex, Just re <- complexPart x, Just im <- complexPart y =
-           if re == "0" then highlightIf β (text im) <> text "j"
-           else parens $ highlightIf α (text re) <> text (if String.take 1 im == "-" then "" else "+")
-              <> highlightIf β (text im)
-              <> text "j"
+   pretty (V.Obj c ((_ × Val α (V.Lit (Float x))) : (_ × Val β (V.Lit (Float y))) : Nil)) | c == cComplex =
+      if x == 0.0 then highlightIf β (text (showPart y)) <> text "j"
+      else parens $ highlightIf α (text (showPart x)) <> text (if String.take 1 (showPart y) == "-" then "" else "+")
+         <> highlightIf β (text (showPart y))
+         <> text "j"
    pretty (V.Obj c xvs) = prettyConstr (last c) (snd <$> xvs)
    pretty (V.List vs) = brackets (prettyList vs)
    pretty (V.Tuple vs) = tuple (pretty <$> fromFoldable vs)
@@ -462,11 +461,6 @@ compare op1 op2 x y =
       right = if y_minus_x == botOf x then "" else op2 <> " but not " <> op1 <> ":\n" <> prettyP y_minus_x
    in
       left × right
-
-complexPart :: Literal -> Maybe String
-complexPart (Int n) = Just (show n)
-complexPart (Float x) = Just (showPart x)
-complexPart _ = Nothing
 
 -- Float as part of complex number; no ".0" on integral value
 showPart :: Number -> String

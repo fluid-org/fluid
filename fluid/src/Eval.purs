@@ -27,16 +27,16 @@ import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
 import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, controlDep, extend, materialise, reuse, dataDep, tupling)
-import Lattice (DepKind, Raw)
+import Lattice (class DepSemiring, DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Path (Path, Step(..), Vertex, sourceVertex)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
+import Primitive (applyBinop, boolean, dropα, int, string, toFloat, typeMismatch, unopFun, unpack, unpack')
 import Types.Defs (cComplex)
-import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
+import Util (type (×), absurd, check, definitely', definitelyRight, error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
@@ -126,6 +126,11 @@ object :: forall s. Semiring s => ClassTable -> Support (Set Path) s -> Name -> 
 object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst <$> vs))) ×
    construct support (Map.fromFoldable (zip (Field <$> fieldNames classes c) (snd <$> vs)))
 
+-- Argument at position r as field of class c
+field :: forall s. DepSemiring s => Name -> Position -> GVal s
+field c r@(_ × Val _ (V.Lit (Int _))) | c == cComplex = definitelyRight (applyDepFun toFloat Set.empty (singleton r))
+field _ r = reuseAt r
+
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
 closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
 closure ctl p ρ ds d = Val unit (V.Fun (V.Closure (Env ρ) ds d)) ×
@@ -179,7 +184,7 @@ eval = { stmt, program }
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         object classes (controlDep ctl) c <<< map reuseAt <$> traverse (expr inputs) es
+         object classes (controlDep ctl) c <<< map (field c) <$> traverse (expr inputs) es
       Matrix e (x × y) e' -> do
          r@(_ × v) <- expr inputs e'
          i' × j' <- case v of
@@ -417,7 +422,7 @@ eval = { stmt, program }
                ρ'' = ρ <+> (fst <$> ρ')
             V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp q rs'
             V.Type (T.ClassTy c _) ->
-               askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs')
+               askClasses <#> \classes -> object classes (controlDep (singleton q)) c (field c <$> rs')
             V.Type _ -> error absurd
             V.Partial _ _ -> error absurd
 

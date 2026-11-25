@@ -93,8 +93,8 @@ least classes os = snd <$> find (\(σs × _) -> all (\(τs × _) -> and (zipWith
 
 binopOverloads :: ClassTable -> Binop -> List (Type -> Type -> Maybe Overload)
 binopOverloads classes op = case op of
-   Eq -> equality classes : Nil
-   Ne -> equality classes : Nil
+   Eq -> equality classes : complexEquality
+   Ne -> equality classes : complexEquality
    In -> membership
    NotIn -> membership
    BitOr -> Nil
@@ -108,7 +108,7 @@ binopOverloads classes op = case op of
    Div -> arithmetic float : complexArithmetic
    FloorDiv -> arithmetic int : arithmetic float : Nil
    Mod -> arithmetic int : arithmetic float : Nil
-   Pow -> powerInt classes : arithmetic float : Nil
+   Pow -> powerInt classes : arithmetic float : complexArithmetic
    where
    sub σ τ = subtype classes σ τ
 
@@ -116,8 +116,9 @@ binopOverloads classes op = case op of
    arithmetic τ = both τ τ
 
    -- One operand complex and other operand complex or float
-   complexArithmetic = operands complex complex : operands complex float : operands float complex : Nil
-   operands bound bound' σ τ = whenever (sub σ bound && sub τ bound') ((bound : bound' : Nil) × complex)
+   complexArithmetic = operands complex complex complex : operands complex float complex : operands float complex complex : Nil
+   complexEquality = operands complex float bool : operands float complex bool : Nil
+   operands bound bound' result σ τ = whenever (sub σ bound && sub τ bound') ((bound : bound' : Nil) × result)
    ordering = both float bool : both str bool : Nil
 
    membership = membershipList classes : membershipTuple classes : both str bool : membershipDict classes : Nil

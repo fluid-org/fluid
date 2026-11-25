@@ -136,14 +136,11 @@ abs_ =
    depFun (Val α (Lit (Int n)) : Nil) = Right (Val α (Lit (Int (abs n))))
    depFun (Val α (Lit (Float x)) : Nil) = Right (Val α (Lit (Float (abs x))))
    depFun (Val α (Obj c ((_ × re) : (_ × im) : Nil)) : Nil) | c == cComplex = do
-      x × β <- part re
-      y × β' <- part im
+      x × β <- unpack number re
+      y × β' <- unpack number im
       pure (Val (α `add` β `add` β') (Lit (Float (N.sqrt (x * x + y * y)))))
    depFun (Val _ u : Nil) = Left (typeMismatch u "int, float or complex")
    depFun _ = Left "Single argument expected"
-
-   part :: forall a. Val a -> MayFail (Number × a)
-   part v = lmap (toNumber `union1` identity) <$> unpack intOrNumber v
 
 len :: ForeignOp
 len =
