@@ -1,3 +1,2 @@
-# Stands in for conjugate method of complex until methods supported
 def conjugate(z: complex) -> complex:
   return z.real - z.imag * 1j
