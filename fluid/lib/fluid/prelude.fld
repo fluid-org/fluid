@@ -72,6 +72,9 @@ def curry[A, B, C](f: Callable[[tuple[A, B]], C], x: A, y: B) -> C:
 def uncurry[A, B, C](f: Callable[[A, B], C], (x, y): tuple[A, B]) -> C:
   return f(x, y)
 
+def conjugate(z: complex) -> complex:
+  return z.real - z.imag * 1j
+
 def const[A, B](x: A, _: B) -> A:
   return x
 

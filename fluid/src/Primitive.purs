@@ -21,7 +21,8 @@ import DepGraph (dataDep)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
-import Literal (Literal(..), eqLiteral)
+import Data.Maybe (Maybe(..), isJust, maybe)
+import Literal (Literal(..), complex, eqLiteral, numberPart)
 import Path (Path)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
@@ -174,6 +175,12 @@ unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val
 unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 unopFun _ _ = error absurd
 
+-- Real or imaginary part of number, by attribute name
+partFun :: forall a. String -> List (Val a) -> MayFail (Val a)
+partFun x (Val α u@(Lit ℓ) : Nil) = maybe (Left (typeMismatch u "object")) (pure <<< Val α <<< Lit) (numberPart x ℓ)
+partFun _ (Val _ u : Nil) = Left (typeMismatch u "object")
+partFun _ _ = error absurd
+
 -- Concatenation and repetition reuse elements of operand sequences
 applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
 applyBinop Add ctl r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (deliver ctl (concatOf List mempty (r : r' : Nil)))
@@ -202,6 +209,8 @@ binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
+binop op (Val α (Lit (Complex x y))) (Val β (Lit ℓ)) | Just w <- complex ℓ = complexBinop op ((x × y) × α) (w × β)
+binop op (Val α (Lit ℓ)) (Val β (Lit (Complex x y))) | Just z <- complex ℓ = complexBinop op (z × α) ((x × y) × β)
 binop op (Val α u) (Val β u') = do
    x <- intOrNumberOrString.unpack u
    y <- intOrNumberOrString.unpack u'
@@ -243,7 +252,7 @@ binop op (Val α u) (Val β u') = do
    floorDiv m n = Int.floor (toNumber m / toNumber n)
 
    nonZero :: Operand -> MayFail Unit
-   nonZero y = when (isZero y) (Left "ZeroDivisionError: division by zero")
+   nonZero y = when (isZero y) divisionByZero
 
    isZero :: Operand -> Boolean
    isZero (Left 0) = true
@@ -264,6 +273,30 @@ binop op (Val α u) (Val β u') = do
    ordering (Left m) (Left n) = pure (compare m n)
    ordering x y = compare <$> float x <*> float y
 
+divisionByZero :: forall a. MayFail a
+divisionByZero = Left "ZeroDivisionError: division by zero"
+
+-- Arithmetic on operands given as real and imaginary part
+complexBinop :: forall a. Ord a => Binop -> (Number × Number) × a -> (Number × Number) × a -> MayFail (BaseVal a × Set a)
+complexBinop op ((x × y) × α) ((x' × y') × β) = case op of
+   Add -> pure (Lit (Complex (x + x') (y + y')) × both)
+   Sub -> pure (Lit (Complex (x - x') (y - y')) × both)
+   Mul -> pure (Lit (Complex (x * x' - y * y') (x * y' + y * x')) × zeroDeps)
+   Div
+      | d == 0.0 -> divisionByZero
+      | otherwise -> pure (Lit (Complex ((x * x' + y * y') / d) ((y * x' - x * y') / d)) × both)
+   _ -> error absurd
+   where
+   d = x' * x' + y' * y'
+   both = Set.fromFoldable [ α, β ]
+
+   -- Zero operand determines result, so dependencies of zero operand alone
+   zeroDeps :: Set a
+   zeroDeps
+      | x == 0.0 && y == 0.0 = singleton α
+      | x' == 0.0 && y' == 0.0 = singleton β
+      | otherwise = both
+
 bothNan :: forall a. Val a -> Val a -> Boolean
 bothNan (Val _ (Lit (Float r))) (Val _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
 bothNan _ _ = false
@@ -283,7 +316,9 @@ unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × singleton α)
 unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × singleton α)
 unop Pos (Val α u@(Lit (Int _))) = pure (u × singleton α)
 unop Pos (Val α u@(Lit (Float _))) = pure (u × singleton α)
-unop _ (Val _ u) = Left (typeMismatch u "int or float")
+unop Neg (Val α (Lit (Complex x y))) = pure (Lit (Complex (negate x) (negate y)) × singleton α)
+unop Pos (Val α u@(Lit (Complex _ _))) = pure (u × singleton α)
+unop _ (Val _ u) = Left (typeMismatch u "int, float or complex")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp v@(Val α u) v'@(Val β u') = case u, u' of
@@ -330,14 +365,10 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
 
    sameKind :: Literal -> Literal -> Boolean
    sameKind ℓ ℓ' = case ℓ, ℓ' of
-      Int _, Int _ -> true
-      Int _, Float _ -> true
-      Float _, Int _ -> true
-      Float _, Float _ -> true
       Str _, Str _ -> true
       Bool _, Bool _ -> true
       None, None -> true
-      _, _ -> false
+      _, _ -> isJust (complex ℓ) && isJust (complex ℓ')
 
 eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> MayFail (Boolean × Set a)
 eqElems αs Nil Nil = pure (true × αs)

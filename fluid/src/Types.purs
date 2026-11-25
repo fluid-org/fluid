@@ -25,6 +25,7 @@ data Primitive
    | Bool
    | Int
    | Float
+   | Complex
    | Str
    | Sized
 
@@ -49,6 +50,7 @@ primitiveName None = "None"
 primitiveName Bool = "bool"
 primitiveName Int = "int"
 primitiveName Float = "float"
+primitiveName Complex = "complex"
 primitiveName Str = "str"
 primitiveName Sized = "Sized"
 
@@ -79,6 +81,7 @@ typeCtrs = fromFoldable ((\c -> typeCtrName c × c) <$> (upFromIncluding bottom 
 baseType :: Type -> Type
 baseType (LitTy (L.Int _)) = PrimitiveTy Int
 baseType (LitTy (L.Float _)) = PrimitiveTy Float
+baseType (LitTy (L.Complex _ _)) = PrimitiveTy Complex
 baseType (LitTy (L.Str _)) = PrimitiveTy Str
 baseType (LitTy (L.Bool _)) = PrimitiveTy Bool
 baseType (LitTy L.None) = PrimitiveTy None

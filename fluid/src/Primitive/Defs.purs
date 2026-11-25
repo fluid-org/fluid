@@ -24,6 +24,7 @@ import Data.Map as M
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (wrap)
 import Data.Number (fromString)
+import Data.Ord (abs)
 import Data.Number (cos, e, exp, floor, log, pi, round, sin, sqrt, tan) as N
 import Data.Set (Set)
 import Data.Set as Set
@@ -52,7 +53,7 @@ import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
 import Pretty (prettyP)
 import Types (Primitive(..), Type(..), baseType) as T
-import Types.Defs (float, int, intPair, none, object, str) as T
+import Types.Defs (complex, float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Set (empty, (∈), (∪))
 import Util.Map as Map
@@ -73,9 +74,10 @@ predefinedClasses = M.fromFoldable
 
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
-   [ predefinedModule builtins [ "None", "object", "bool", "int", "float", "str", "list", "dict", "tuple", "type" ]
+   [ predefinedModule builtins [ "None", "object", "bool", "int", "float", "complex", "str", "list", "dict", "tuple", "type" ]
         [ cRange, cMatrix ]
         [ extern print_ × generalise (callable [ T.object ] T.none)
+        , extern abs_ × generalise (callable [ T.complex ] T.float)
         , extern len × generalise (callable [ T.PrimitiveTy T.Sized ] T.int)
         , extern sorted × generalise (callable [ T.ListTy (var "T") ] (T.ListTy (var "T")))
         , extern min_ × generalise (callable [ T.ListTy (var "T") ] (var "T"))
@@ -124,6 +126,17 @@ predefined = M.fromFoldable
       bindings = cons ((varName × Val bot (Lit (Str (dottedName q)))) × Assigned T.str) members
          <> (classes <#> \c -> (last c × Val bot (Fun (Type (T.ClassTy c Nil)))) × Cxt.Type c)
          <> (names <#> \x -> (x × Val bot (Opaque (qual q x))) × Cxt.PredefName)
+
+abs_ :: ForeignOp
+abs_ =
+   ForeignOp ("abs" × ForeignOp' { arity: 1, depOp: fromDepFun depFun })
+   where
+   depFun :: forall a. List (Val a) -> MayFail (Val a)
+   depFun (Val α (Lit (Int n)) : Nil) = Right (Val α (Lit (Int (abs n))))
+   depFun (Val α (Lit (Float x)) : Nil) = Right (Val α (Lit (Float (abs x))))
+   depFun (Val α (Lit (Complex x y)) : Nil) = Right (Val α (Lit (Float (N.sqrt (x * x + y * y)))))
+   depFun (Val _ u : Nil) = Left (typeMismatch u "int, float or complex")
+   depFun _ = Left "Single argument expected"
 
 len :: ForeignOp
 len =

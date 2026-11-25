@@ -15,7 +15,7 @@ import Expr (Binop(..), Unop(..))
 import Literal as L
 import Parsing.Expr (Assoc(..))
 import Types (Type(..), baseType)
-import Types.Defs (bool, float, int, str)
+import Types.Defs (bool, complex, float, int, str)
 import Util (type (×), definitely', whenever, (×))
 
 data Operator = Binary Binop | Unary Unop | AndOp | OrOp
@@ -102,10 +102,10 @@ binopOverloads classes op = case op of
    Le -> ordering
    Gt -> ordering
    Ge -> ordering
-   Add -> arithmetic int : arithmetic float : both str str : concatList classes : concatTuple classes : Nil
-   Sub -> arithmetic int : arithmetic float : Nil
-   Mul -> arithmetic int : arithmetic float : repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil
-   Div -> arithmetic float : Nil
+   Add -> arithmetic int : arithmetic float : arithmetic complex : both str str : concatList classes : concatTuple classes : Nil
+   Sub -> arithmetic int : arithmetic float : arithmetic complex : Nil
+   Mul -> arithmetic int : arithmetic float : arithmetic complex : repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil
+   Div -> arithmetic float : arithmetic complex : Nil
    FloorDiv -> arithmetic int : arithmetic float : Nil
    Mod -> arithmetic int : arithmetic float : Nil
    Pow -> powerInt classes : arithmetic float : Nil
@@ -161,8 +161,8 @@ powerInt _ _ _ = Nothing
 unopOverloads :: ClassTable -> Unop -> List (Type -> Maybe Overload)
 unopOverloads classes op = case op of
    Not -> sign bool : Nil
-   Pos -> sign int : sign float : Nil
-   Neg -> sign int : sign float : Nil
+   Pos -> sign int : sign float : sign complex : Nil
+   Neg -> sign int : sign float : sign complex : Nil
    where
    sign τ σ = whenever (subtype classes σ τ) ((τ : Nil) × τ)
 

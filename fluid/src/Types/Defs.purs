@@ -26,6 +26,9 @@ int = PrimitiveTy Int
 float :: Type
 float = PrimitiveTy Float
 
+complex :: Type
+complex = PrimitiveTy Complex
+
 str :: Type
 str = PrimitiveTy Str
 

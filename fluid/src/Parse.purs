@@ -23,7 +23,7 @@ import Data.String.CodeUnits as SCU
 import Data.Tuple (uncurry)
 import Data.Traversable (foldr)
 import Literal (Literal(..))
-import Parse.Number (float, integer)
+import Parse.Number (float, imaginary, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, lookAhead, many, many1, notFollowedBy, option, optionMaybe, sepBy1, try, (<?>))
@@ -53,7 +53,9 @@ simplePattern :: Parser Pattern
 simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    where
    pLit :: Parser Pattern
-   pLit = literal <#> PLit
+   pLit = literal >>= case _ of
+      Complex _ _ -> fail "complex in literal pattern prohibited"
+      ℓ -> pure (PLit ℓ)
 
    pVar :: Parser Pattern
    pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
@@ -129,6 +131,7 @@ typeExpr = defer \_ -> do
    ctrApp T.TypeTyCtr = TypeTy <$> brackets typeExpr
    ctrApp T.LiteralCtr = brackets literal >>= case _ of
       Float _ -> fail "float in literal type prohibited"
+      Complex _ _ -> fail "complex in literal type prohibited"
       ℓ -> pure (LitTy ℓ)
 
    typeArgs :: Parser (List TypeExpr)
@@ -142,7 +145,8 @@ typeParams = do
 
 literal :: Parser Literal
 literal =
-   try (float <#> Float)
+   try (imaginary <#> Complex 0.0)
+      <|> try (float <#> Float)
       <|> (integer <#> Int)
       <|> (stringLiteral <#> Str)
       <|> (reserved "True" $> Bool true)

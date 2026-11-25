@@ -1,0 +1,15 @@
+from fluid.prelude import conjugate
+
+def scale(z: complex, k: float) -> complex:
+  return z * k
+
+z: complex = 1 + 2j
+w: complex = 3.5 - 1j
+
+[
+  z, w, 2j, -z,
+  z + w, z - w, z * w, z / (1 + 1j),
+  z + 1, 2.5 * z, scale(z, 2),
+  z.real, z.imag, conjugate(z), abs(3 + 4j), abs(-2),
+  z == 1 + 2j, z != w, 2 + 0j == 2, 1j * 1j == -1
+]

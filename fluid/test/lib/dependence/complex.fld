@@ -1,0 +1,4 @@
+z: complex = @doc("z") 3 + 4j
+w: complex = @doc("w") 0j
+
+(z * w).imag
