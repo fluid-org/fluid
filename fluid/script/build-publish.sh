@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Publish next pre-release of milestone to npm under next dist-tag; run by build workflow
+# Publish milestone to npm; run by build workflow
+# Without argument: publish next pre-release under dist-tag "next"
+# With argument "release": publish completed milestone, then commit and tag its version
 set -xe
 cd "$(dirname "$0")/.."
 
@@ -8,6 +10,11 @@ RELEASE=${VERSION%-next.0}
 if [ "$GITHUB_REF_NAME" != "fluid-${RELEASE%.*}" ]; then
    echo "Branch $GITHUB_REF_NAME is not milestone branch of version $RELEASE" >&2
    exit 1
+fi
+if [ "$VERSION" = "$RELEASE" ]; then
+   echo "Version $RELEASE already released" >&2
+   [ "$1" = release ] && exit 1
+   exit 0
 fi
 
 N=$(npm view @fluid-org/fluid versions --json | python3 -c '
@@ -20,7 +27,20 @@ if release in versions:
 print(max([0] + [int(v[len(prefix):]) for v in versions if v.startswith(prefix)]) + 1)
 ' "$RELEASE")
 
-npm version "$RELEASE-next.$N" --no-git-tag-version --workspaces-update=false
-./script/build-package.sh
-./script/test-package.sh
-npm publish --workspaces=false --access public --tag next
+# Publish as version $1, with remaining arguments as options of npm publish
+publish() {
+   npm version "$1" --no-git-tag-version --workspaces-update=false
+   ./script/build-package.sh
+   ./script/test-package.sh
+   npm publish --workspaces=false --access public "${@:2}"
+}
+
+if [ "$1" = release ]; then
+   publish "$RELEASE"
+   git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+      commit -m "Release $RELEASE" package.json
+   git tag "v$RELEASE"
+   git push --atomic origin "HEAD:refs/heads/$GITHUB_REF_NAME" "v$RELEASE"
+else
+   publish "$RELEASE-next.$N" --tag next
+fi
