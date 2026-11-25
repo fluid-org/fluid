@@ -166,8 +166,6 @@ subtype classes σ τ
            PrimitiveTy Never, _ -> true
            _, PrimitiveTy Object -> true
            PrimitiveTy Int, PrimitiveTy Float -> true
-           PrimitiveTy Int, PrimitiveTy Complex -> true
-           PrimitiveTy Float, PrimitiveTy Complex -> true
            LitTy _, _ -> subtype classes (baseType σ) τ
            ClassTy c σs, ClassTy d τs | c == d -> F.and (zipWith (equiv classes) σs τs)
            ClassTy c σs, _ | Just σ' <- base classes c -> subtype classes (subst σs (get c classes).typeParams σ') τ

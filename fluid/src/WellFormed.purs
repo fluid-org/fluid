@@ -29,7 +29,7 @@ import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst, snd, uncurry)
 import WellFormed.Shapes (Shape, matchesShapes, shapes)
 import Classes (ClassTable, Instance(..), elemType, equiv, fieldNames, fields, fieldsAt, instanceAt, join, joins, meet, subtype, typeArgs)
-import Types.Defs (bool, cMatrix, cParagraph, cRange, complex, float, int, intPair, matrix, never, none, object, str)
+import Types.Defs (bool, cComplex, cMatrix, cParagraph, cRange, complex, float, int, intPair, matrix, never, none, object, str)
 import Cxt (CxtEntry(..), Cxt, WfResult(..), classOf, extend, merge, override, resolveName)
 import Dict as D
 import Util.Map (constMap, get, insert, keys, lookup, maplet)
@@ -169,6 +169,7 @@ class Captures a where
 instance Captures S.Expr where
    captures (S.Var _) = empty
    captures (S.Lit _) = empty
+   captures (S.Imaginary _) = empty
    captures (S.Call e _ es xes) = captures e ∪ unions (captures <$> es) ∪ unions ((captures <<< snd) <$> xes)
    captures (S.Dictionary es) =
       unions ((\(k × v) -> captures k ∪ captures v) <$> es)
@@ -404,7 +405,7 @@ annotated cxt Nothing e = synth cxt e
 instance Synth S.Expr (T.Type × E.Expr) where
    synth cxt (S.Var x) = (_ × E.Var x) <$> varType cxt x
    synth _ (S.Lit n@(Float _)) = pure (float × E.Lit n)
-   synth _ (S.Lit z@(Complex _ _)) = pure (complex × E.Lit z)
+   synth _ (S.Imaginary y) = pure (complex × E.Constr cComplex (E.Lit (Float 0.0) : E.Lit (Float y) : Nil))
    synth _ (S.Lit ℓ) = pure (T.LitTy ℓ × E.Lit ℓ)
    synth cxt (S.Call e ψs es xes) = case className cxt e of
       Just (c × name) -> constr cxt c name ψs es xes
@@ -579,7 +580,6 @@ attributeType :: ClassTable -> T.Type -> Var -> CheckM T.Type
 attributeType classes (T.UnionTy σ σ') y = join classes <$> attributeType classes σ y <*> attributeType classes σ' y
 attributeType classes (T.ClassTy c τs) y =
    maybe (throwError $ "Class " <> quoted (last c) <> " does not have field " <> quoted y) pure (F.lookup y (fieldsAt classes c τs))
-attributeType classes σ y | subtype classes σ complex && (y == "real" || y == "imag") = pure float
 attributeType _ σ _ = throwError $ "Values of type " <> prettyP σ <> " do not have attributes"
 
 subscriptType :: Cxt -> T.Type -> S.Expr -> CheckM (T.Type × E.Expr)

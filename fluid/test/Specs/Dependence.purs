@@ -193,7 +193,7 @@ dep_cases =
      }
    , { file: "dependence/complex.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "(3+4j)\n⸨0j⸩\n⸨0.0⸩"
+          [ Bwd Output (\_ -> select) "⟪(3+⸨4⸩j)⟫\n⟪(5+⸨6⸩j)⟫\n⸨10⸩"
           ]
      }
    , { file: "dependence/nth.fld"

@@ -1,2 +1,2 @@
 def conjugate(z: complex) -> complex:
-  return z.real - z.imag * 1j
+  return complex(z.real, -z.imag)

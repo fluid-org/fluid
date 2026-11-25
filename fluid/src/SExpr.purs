@@ -23,6 +23,7 @@ import Util (type (×), singleton, (×))
 data Expr
    = Var Var
    | Lit Literal
+   | Imaginary Number
    | Call Expr (List TypeExpr) (List Expr) (List (Bind Expr)) -- constructor call when head names a class
    | Dictionary (List (Expr × Expr))
    | Matrix Expr (Var × Var) Expr
@@ -176,6 +177,7 @@ instance Show ParagraphElem where
 instance FV Expr where
    fv (Var x) = singleton x
    fv (Lit _) = empty
+   fv (Imaginary _) = empty
    fv (Call e _ es xes) = fv e ∪ unions (fv <$> es) ∪ unions ((fv <<< snd) <$> xes)
    fv (Dictionary entries) = unions ((\(k × v) -> fv k ∪ fv v) <$> entries)
    fv (Matrix body (x × y) source) = (fv body \\ (singleton x ∪ singleton y)) ∪ fv source

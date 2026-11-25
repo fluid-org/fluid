@@ -1,4 +1,4 @@
-z: complex = @doc("z") 3 + 4j
-w: complex = @doc("w") 0j
+z: complex = @doc("z") complex(3, 4)
+w: complex = @doc("w") complex(5, 6)
 
-(z * w).imag
+(z + w).imag

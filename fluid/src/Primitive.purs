@@ -4,7 +4,8 @@ import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
 import Data.Either (Either(..), either)
-import Data.Foldable (foldl)
+import Data.Foldable (elem, foldl)
+import Data.Maybe (Maybe(..))
 import Data.Int (toNumber)
 import Data.Int as Int
 import Data.Array (replicate)
@@ -21,15 +22,14 @@ import DepGraph (dataDep)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
-import Data.Maybe (Maybe(..), isJust, maybe)
-import Literal (Literal(..), complex, eqLiteral, numberPart)
+import Literal (Literal(..), eqLiteral)
 import Path (Path)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Util (type (+), type (×), MayFail, absurd, definitely', error, orThrow, singleton, (×))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Types.Defs (cRange)
+import Types.Defs (cComplex, cRange, f_imag, f_real)
 import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), GVal, Position, ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
 import Val.Dependence (applyDepFun, concatOf, deliver, elementsAt, reuseAt, sequenceOf)
 
@@ -168,18 +168,50 @@ union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
 binopFun :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
-binopFun op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopFun op (v : v' : Nil)
+   | op `elem` [ Add, Sub, Mul, Div ], isComplex v || isComplex v', Just z <- complexOperand v, Just w <- complexOperand v' =
+        complexBinop op z w
+   | otherwise = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 binopFun _ _ = error absurd
 
 unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
+unopFun op (Val α (Obj c ((_ × x) : (_ × y) : Nil)) : Nil) | c == cComplex =
+   complexVal α <$> unopFun op (x : Nil) <*> unopFun op (y : Nil)
 unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 unopFun _ _ = error absurd
 
--- Real or imaginary part of number, by attribute name
-partFun :: forall a. String -> List (Val a) -> MayFail (Val a)
-partFun x (Val α u@(Lit ℓ) : Nil) = maybe (Left (typeMismatch u "object")) (pure <<< Val α <<< Lit) (numberPart x ℓ)
-partFun _ (Val _ u : Nil) = Left (typeMismatch u "object")
-partFun _ _ = error absurd
+isComplex :: forall a. Val a -> Boolean
+isComplex (Val _ (Obj c _)) = c == cComplex
+isComplex _ = false
+
+complexVal :: forall a. a -> Val a -> Val a -> Val a
+complexVal α x y = Val α (Obj cComplex ((f_real × x) : (f_imag × y) : Nil))
+
+-- Annotation of root with real and imaginary part
+type ComplexOperand a = a × Val a × Val a
+
+-- Complex operand, or int or float operand as complex number with constant zero as imaginary part
+complexOperand :: forall a. Semiring a => Val a -> Maybe (ComplexOperand a)
+complexOperand (Val α (Obj c ((_ × x) : (_ × y) : Nil))) | c == cComplex = Just (α × x × y)
+complexOperand x@(Val _ (Lit (Int _))) = Just (zero × x × Val zero (Lit (Float 0.0)))
+complexOperand x@(Val _ (Lit (Float _))) = Just (zero × x × Val zero (Lit (Float 0.0)))
+complexOperand _ = Nothing
+
+-- Apply arithmetic operator to parts of complex operands
+complexBinop :: forall a. DepSemiring a => Binop -> ComplexOperand a -> ComplexOperand a -> MayFail (Val a)
+complexBinop op (α × x × y) (β × x' × y') = case op of
+   Add -> complexVal (α `add` β) <$> arith Add x x' <*> arith Add y y'
+   Sub -> complexVal (α `add` β) <$> arith Sub x x' <*> arith Sub y y'
+   Mul -> complexVal (α `add` β) <$> (join (arith Sub <$> arith Mul x x' <*> arith Mul y y'))
+      <*> join (arith Add <$> arith Mul x y' <*> arith Mul y x')
+   Div -> do
+      d <- join (arith Add <$> arith Mul x' x' <*> arith Mul y' y')
+      re <- join (arith Add <$> arith Mul x x' <*> arith Mul y y')
+      im <- join (arith Sub <$> arith Mul y x' <*> arith Mul x y')
+      complexVal (α `add` β) <$> arith Div re d <*> arith Div im d
+   _ -> error absurd
+   where
+   arith op' u u' = binopFun op' (u : u' : Nil)
 
 -- Concatenation and repetition reuse elements of operand sequences
 applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
@@ -209,8 +241,6 @@ binop Add (Val α (Lit (Str w))) (Val β (Lit (Str w'))) =
    pure (Lit (Str (w <> w')) × Set.fromFoldable [ α, β ])
 binop Mul (Val α (Lit (Str w))) (Val β (Lit (Int n))) = pure (repeatStr w α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n α)
-binop op (Val α (Lit (Complex x y))) (Val β (Lit ℓ)) | Just w <- complex ℓ = complexBinop op ((x × y) × α) (w × β)
-binop op (Val α (Lit ℓ)) (Val β (Lit (Complex x y))) | Just z <- complex ℓ = complexBinop op (z × α) ((x × y) × β)
 binop op (Val α u) (Val β u') = do
    x <- intOrNumberOrString.unpack u
    y <- intOrNumberOrString.unpack u'
@@ -252,7 +282,7 @@ binop op (Val α u) (Val β u') = do
    floorDiv m n = Int.floor (toNumber m / toNumber n)
 
    nonZero :: Operand -> MayFail Unit
-   nonZero y = when (isZero y) divisionByZero
+   nonZero y = when (isZero y) (Left "ZeroDivisionError: division by zero")
 
    isZero :: Operand -> Boolean
    isZero (Left 0) = true
@@ -273,30 +303,6 @@ binop op (Val α u) (Val β u') = do
    ordering (Left m) (Left n) = pure (compare m n)
    ordering x y = compare <$> float x <*> float y
 
-divisionByZero :: forall a. MayFail a
-divisionByZero = Left "ZeroDivisionError: division by zero"
-
--- Arithmetic on operands given as real and imaginary part
-complexBinop :: forall a. Ord a => Binop -> (Number × Number) × a -> (Number × Number) × a -> MayFail (BaseVal a × Set a)
-complexBinop op ((x × y) × α) ((x' × y') × β) = case op of
-   Add -> pure (Lit (Complex (x + x') (y + y')) × both)
-   Sub -> pure (Lit (Complex (x - x') (y - y')) × both)
-   Mul -> pure (Lit (Complex (x * x' - y * y') (x * y' + y * x')) × zeroDeps)
-   Div
-      | d == 0.0 -> divisionByZero
-      | otherwise -> pure (Lit (Complex ((x * x' + y * y') / d) ((y * x' - x * y') / d)) × both)
-   _ -> error absurd
-   where
-   d = x' * x' + y' * y'
-   both = Set.fromFoldable [ α, β ]
-
-   -- Zero operand determines result, so dependencies of zero operand alone
-   zeroDeps :: Set a
-   zeroDeps
-      | x == 0.0 && y == 0.0 = singleton α
-      | x' == 0.0 && y' == 0.0 = singleton β
-      | otherwise = both
-
 bothNan :: forall a. Val a -> Val a -> Boolean
 bothNan (Val _ (Lit (Float r))) (Val _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
 bothNan _ _ = false
@@ -316,9 +322,7 @@ unop Neg (Val α (Lit (Int n))) = pure (Lit (Int (negate n)) × singleton α)
 unop Neg (Val α (Lit (Float r))) = pure (Lit (Float (negate r)) × singleton α)
 unop Pos (Val α u@(Lit (Int _))) = pure (u × singleton α)
 unop Pos (Val α u@(Lit (Float _))) = pure (u × singleton α)
-unop Neg (Val α (Lit (Complex x y))) = pure (Lit (Complex (negate x) (negate y)) × singleton α)
-unop Pos (Val α u@(Lit (Complex _ _))) = pure (u × singleton α)
-unop _ (Val _ u) = Left (typeMismatch u "int, float or complex")
+unop _ (Val _ u) = Left (typeMismatch u "int or float")
 
 eqOp :: forall a. Ord a => Val a -> Val a -> MayFail (Boolean × Set a)
 eqOp v@(Val α u) v'@(Val β u') = case u, u' of
@@ -365,10 +369,14 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
 
    sameKind :: Literal -> Literal -> Boolean
    sameKind ℓ ℓ' = case ℓ, ℓ' of
+      Int _, Int _ -> true
+      Int _, Float _ -> true
+      Float _, Int _ -> true
+      Float _, Float _ -> true
       Str _, Str _ -> true
       Bool _, Bool _ -> true
       None, None -> true
-      _, _ -> isJust (complex ℓ) && isJust (complex ℓ')
+      _, _ -> false
 
 eqElems :: forall a. Ord a => Set a -> List (Val a) -> List (Val a) -> MayFail (Boolean × Set a)
 eqElems αs Nil Nil = pure (true × αs)

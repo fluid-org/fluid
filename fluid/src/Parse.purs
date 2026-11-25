@@ -53,9 +53,7 @@ simplePattern :: Parser Pattern
 simplePattern = pLit <|> pConstr <|> pVar <|> pRecord <|> pList <|> parensPattern
    where
    pLit :: Parser Pattern
-   pLit = literal >>= case _ of
-      Complex _ _ -> fail "complex in literal pattern prohibited"
-      ℓ -> pure (PLit ℓ)
+   pLit = literal <#> PLit
 
    pVar :: Parser Pattern
    pVar = variable <#> \x -> if x == varAnon then PWild else PVar x
@@ -131,7 +129,6 @@ typeExpr = defer \_ -> do
    ctrApp T.TypeTyCtr = TypeTy <$> brackets typeExpr
    ctrApp T.LiteralCtr = brackets literal >>= case _ of
       Float _ -> fail "float in literal type prohibited"
-      Complex _ _ -> fail "complex in literal type prohibited"
       ℓ -> pure (LitTy ℓ)
 
    typeArgs :: Parser (List TypeExpr)
@@ -145,8 +142,7 @@ typeParams = do
 
 literal :: Parser Literal
 literal =
-   try (imaginary <#> Complex 0.0)
-      <|> try (float <#> Float)
+   try (float <#> Float)
       <|> (integer <#> Int)
       <|> (stringLiteral <#> Str)
       <|> (reserved "True" $> Bool true)
@@ -374,6 +370,7 @@ expr = context "expr" $ cond <?> "expression"
             <|> lambda
             <|> dict
             <|> paragraph
+            <|> try (imaginary <#> Imaginary)
             <|> lit
             <|> var
             <|> parensExpr

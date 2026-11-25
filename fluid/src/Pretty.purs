@@ -6,7 +6,7 @@ import Bind (Bind, Var, dottedName, (↦))
 import Data.Foldable (intercalate)
 import Data.List (List(..), fromFoldable, (:))
 import Data.List.NonEmpty (NonEmptyList(..), last, toList)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype)
 import Data.NonEmpty ((:|))
 import Data.Traversable (class Foldable)
@@ -16,12 +16,14 @@ import Dict (Dict)
 import Expr (Binop(BitOr), Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
-import Literal (Literal(..), showComplex, showFloat)
+import Literal (Literal(..), showFloat)
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
 import SExpr (Branch, Case, Clause(..), Expr(..), Import(..), LambdaClause(..), Module(..), Param(..), ParagraphElem(..), Qualifier(..), Stmt(..), TypeDef(..), TypeExpr(..), VarDef(..), VarDefs)
+import Data.String as String
 import Types as T
+import Types.Defs (cComplex)
 import Util (type (×), isEmpty, singleton, (×))
 import Util.Map (toUnfoldable)
 import Util.Pair (Pair(..))
@@ -151,6 +153,7 @@ instance Pretty Expr where
    pretty (ListComp s qs) = brackets (expr (pretty s) <+> pretty qs)
    pretty (DictComp k s qs) = braces (pretty k <> text ":" <+> expr (pretty s) <+> pretty qs)
    pretty (Paragraph p) = pretty p
+   pretty (Imaginary y) = text (showPart y <> "j")
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e
 
 instance Pretty (List Qualifier) where
@@ -267,7 +270,6 @@ instance Pretty T.Primitive where
 instance Pretty Literal where
    pretty (Int n) = number n
    pretty (Float n) = text (showFloat n)
-   pretty (Complex x y) = text (showComplex x y)
    pretty (Str s) = string s
    pretty (Bool true) = text "True"
    pretty (Bool false) = text "False"
@@ -426,6 +428,12 @@ instance Highlightable a => Pretty (BaseVal a) where
    pretty (V.Dictionary (DictRep svs))
       | isEmpty svs = text "{}"
       | otherwise = record (pretty <$> (toUnfoldable svs))
+   pretty (V.Obj c ((_ × Val α (V.Lit x)) : (_ × Val β (V.Lit y)) : Nil))
+      | c == cComplex, Just re <- complexPart x, Just im <- complexPart y =
+           if re == "0" then highlightIf β (text im) <> text "j"
+           else parens $ highlightIf α (text re) <> text (if String.take 1 im == "-" then "" else "+")
+              <> highlightIf β (text im)
+              <> text "j"
    pretty (V.Obj c xvs) = prettyConstr (last c) (snd <$> xvs)
    pretty (V.List vs) = brackets (prettyList vs)
    pretty (V.Tuple vs) = tuple (pretty <$> fromFoldable vs)
@@ -453,3 +461,12 @@ compare op1 op2 x y =
       right = if y_minus_x == botOf x then "" else op2 <> " but not " <> op1 <> ":\n" <> prettyP y_minus_x
    in
       left × right
+
+complexPart :: Literal -> Maybe String
+complexPart (Int n) = Just (show n)
+complexPart (Float x) = Just (showPart x)
+complexPart _ = Nothing
+
+-- Float as part of complex number; no ".0" on integral value
+showPart :: Number -> String
+showPart x = fromMaybe (showFloat x) (String.stripSuffix (String.Pattern ".0") (showFloat x))

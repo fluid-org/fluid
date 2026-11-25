@@ -36,7 +36,7 @@ import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
 import Path (Path, Step(..))
-import Types.Defs (cMatrix, cRange, callable, matrix, var)
+import Types.Defs (cComplex, cMatrix, cRange, callable, f_imag, f_real, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
 import Cxt (Cxt, CxtEntry(Assigned), generalise)
 import Dict (fromFoldable) as D
@@ -45,7 +45,7 @@ import Effect.Exception (Error)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import DepGraph (Support(..), construct, dataDep, supportAt)
-import Lattice (class BoundedJoinSemilattice, DepKind, Raw, bot)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, DepKind, Raw, bot)
 import Literal (Literal(..), showFloat)
 import Primitive (binopFun, boolean, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
 import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
@@ -68,16 +68,17 @@ predefinedClasses :: ClassTable
 predefinedClasses = M.fromFoldable
    [ cRange × { typeParams: Nil, fields: ("start" × int) : ("stop" × int) : Nil, base: Nothing }
    , cMatrix × { typeParams: "T" : Nil, fields: Nil, base: Nothing }
+   , cComplex × { typeParams: Nil, fields: (f_real × T.float) : (f_imag × T.float) : Nil, base: Nothing }
    ]
    where
    int = T.PrimitiveTy T.Int
 
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
-   [ predefinedModule builtins [ "None", "object", "bool", "int", "float", "complex", "str", "list", "dict", "tuple", "type" ]
-        [ cRange, cMatrix ]
+   [ predefinedModule builtins [ "None", "object", "bool", "int", "float", "str", "list", "dict", "tuple", "type" ]
+        [ cRange, cMatrix, cComplex ]
         [ extern print_ × generalise (callable [ T.object ] T.none)
-        , extern abs_ × generalise (callable [ T.complex ] T.float)
+        , extern abs_ × generalise (callable [ T.UnionTy T.float T.complex ] T.float)
         , extern len × generalise (callable [ T.PrimitiveTy T.Sized ] T.int)
         , extern sorted × generalise (callable [ T.ListTy (var "T") ] (T.ListTy (var "T")))
         , extern min_ × generalise (callable [ T.ListTy (var "T") ] (var "T"))
@@ -131,10 +132,13 @@ abs_ :: ForeignOp
 abs_ =
    ForeignOp ("abs" × ForeignOp' { arity: 1, depOp: fromDepFun depFun })
    where
-   depFun :: forall a. List (Val a) -> MayFail (Val a)
+   depFun :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
    depFun (Val α (Lit (Int n)) : Nil) = Right (Val α (Lit (Int (abs n))))
    depFun (Val α (Lit (Float x)) : Nil) = Right (Val α (Lit (Float (abs x))))
-   depFun (Val α (Lit (Complex x y)) : Nil) = Right (Val α (Lit (Float (N.sqrt (x * x + y * y)))))
+   depFun (Val α (Obj c ((_ × re) : (_ × im) : Nil)) : Nil) | c == cComplex = do
+      x × β <- lmap (toNumber `union1` identity) <$> unpack intOrNumber re
+      y × β' <- lmap (toNumber `union1` identity) <$> unpack intOrNumber im
+      pure (Val (α `add` β `add` β') (Lit (Float (N.sqrt (x * x + y * y)))))
    depFun (Val _ u : Nil) = Left (typeMismatch u "int, float or complex")
    depFun _ = Left "Single argument expected"
 

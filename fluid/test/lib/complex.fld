@@ -11,5 +11,5 @@ w: complex = 3.5 - 1j
   z + w, z - w, z * w, z / (1 + 1j),
   z + 1, 2.5 * z, scale(z, 2),
   z.real, z.imag, conjugate(z), abs(3 + 4j), abs(-2),
-  z == 1 + 2j, z != w, 2 + 0j == 2, 1j * 1j == -1
+  z == 1 + 2j, z != w, 1j * 1j == complex(-1, 0), complex(1.5, -2)
 ]

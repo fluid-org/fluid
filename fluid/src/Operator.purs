@@ -102,10 +102,10 @@ binopOverloads classes op = case op of
    Le -> ordering
    Gt -> ordering
    Ge -> ordering
-   Add -> arithmetic int : arithmetic float : arithmetic complex : both str str : concatList classes : concatTuple classes : Nil
-   Sub -> arithmetic int : arithmetic float : arithmetic complex : Nil
-   Mul -> arithmetic int : arithmetic float : arithmetic complex : repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil
-   Div -> arithmetic float : arithmetic complex : Nil
+   Add -> arithmetic int : arithmetic float : complexArithmetic <> (both str str : concatList classes : concatTuple classes : Nil)
+   Sub -> arithmetic int : arithmetic float : complexArithmetic
+   Mul -> arithmetic int : arithmetic float : complexArithmetic <> (repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil)
+   Div -> arithmetic float : complexArithmetic
    FloorDiv -> arithmetic int : arithmetic float : Nil
    Mod -> arithmetic int : arithmetic float : Nil
    Pow -> powerInt classes : arithmetic float : Nil
@@ -114,6 +114,10 @@ binopOverloads classes op = case op of
 
    both bound result σ τ = whenever (sub σ bound && sub τ bound) ((bound : bound : Nil) × result)
    arithmetic τ = both τ τ
+
+   -- One operand complex and other operand complex or float
+   complexArithmetic = operands complex complex : operands complex float : operands float complex : Nil
+   operands bound bound' σ τ = whenever (sub σ bound && sub τ bound') ((bound : bound' : Nil) × complex)
    ordering = both float bool : both str bool : Nil
 
    membership = membershipList classes : membershipTuple classes : both str bool : membershipDict classes : Nil

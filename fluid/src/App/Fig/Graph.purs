@@ -200,7 +200,6 @@ encodeVal (Val _ u) = case u of
       | x == 0.0 && 1.0 / x < 0.0 -> pure (float "-0")
       | isFinite x -> pure (fromNumber x)
       | otherwise -> pure (float (if isNaN x then "nan" else if x > 0.0 then "inf" else "-inf"))
-   Lit (Complex x y) -> tagged "complex" <<< fromArray <$> traverse (encodeVal <<< Val unit <<< Lit <<< Float) [ x, y ]
    Lit (Str s) -> pure (fromString s)
    Lit (Bool b) -> pure (fromBoolean b)
    Lit None -> pure jsonNull
@@ -261,9 +260,6 @@ decodeVal cs = val
       "-inf" -> pure (Lit (Float (-infinity)))
       "-0" -> pure (Lit (Float ((-1.0) / infinity)))
       s -> Left ("Float " <> s)
-   tagged "complex" json = decode json >>= traverse val >>= case _ of
-      [ Val _ (Lit (Float x)), Val _ (Lit (Float y)) ] -> pure (Lit (Complex x y))
-      _ -> Left "Complex without real and imaginary part"
    tagged "object" json = do
       { "class": c, fields } :: { "class" :: String, fields :: Object Json } <- decode json
       xs <- note ("Class " <> c <> " without field names") (lookup c cs)

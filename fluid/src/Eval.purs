@@ -34,7 +34,7 @@ import Operator (binopSymbol, unopSymbol)
 import Path (Path, Step(..), Vertex, sourceVertex)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (applyBinop, boolean, dropα, int, partFun, string, typeMismatch, unopFun, unpack, unpack')
+import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
 import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
@@ -205,7 +205,7 @@ eval = { stmt, program }
             Val _ (V.Obj c xvs) -> do
                _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
                pure (deliver (singleton (fst r)) (reuseAt (childAt (Field x) r)))
-            _ -> orThrow (applyDepFun (partFun x) ctl (r : Nil))
+            _ -> throw $ "Found " <> prettyP v <> ", expected object"
       Subscript e e' -> do
          r@(_ × v) <- expr inputs e
          r'@(_ × v') <- expr inputs e'

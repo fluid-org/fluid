@@ -30,7 +30,7 @@ illFormed_cases =
    , { file: "self_import.fld", expected_error: "import cycle: 'selfy' -> 'selfy'" }
    , { file: "submodule_name_clash.fld", expected_error: "Duplicate module member: 'clash_pkg' defines 'sub' and also has submodule 'clash_pkg.sub'\nChecking module 'clash_pkg'" }
    , { file: "eq_nan_container.fld", expected_error: "Cannot compare nan with nan in container\nIn ==" }
-   , { file: "complex_order.fld", expected_error: "No overload of < at operand types complex and complex" }
+   , { file: "complex_order.fld", expected_error: "No overload of < at operand types ~builtins.complex and ~builtins.complex" }
    , { file: "complex_div_zero.fld", expected_error: "ZeroDivisionError: division by zero\nIn /" }
    , { file: "matrix_dim_type.fld", expected_error: "Expected type int; given Literal[\"a\"]" }
    , { file: "submodule_self_import.fld", expected_error: "import cycle: 'ssi.b' -> 'ssi.b'" }
