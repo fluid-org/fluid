@@ -338,6 +338,7 @@ instance Pretty (Pair E.Expr) where
 instance Pretty E.Expr where
    pretty (E.Var x) = text x
    pretty (E.Lit ℓ) = pretty ℓ
+   pretty (E.Imaginary y) = text (showPart y <> "j")
    pretty (E.Dictionary ees) = record (pretty <$> ees)
    pretty (E.Constr c es) = prettyConstr (last c) es
    pretty (E.List es) = brackets (prettyList es)

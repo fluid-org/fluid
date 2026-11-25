@@ -35,6 +35,7 @@ import Path (Path, Step(..), Vertex, sourceVertex)
 import Pretty (prettyP)
 import Types (Type(..)) as T
 import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
+import Types.Defs (cComplex)
 import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
@@ -163,7 +164,9 @@ eval = { stmt, program }
    value :: Inputs -> Expr -> m (GVal s)
    value inputs@{ ρ, b } = case _ of
       Var x -> pure (deliver ctl (get x ρ × reuse (envAt b <> singleton (Binding x))))
-      Lit ℓ -> pure (Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty)
+      Lit ℓ -> pure (literal ℓ)
+      Imaginary y -> askClasses <#> \classes ->
+         object classes (controlDep ctl) cComplex (literal (Float 0.0) : literal (Float y) : Nil)
       Dictionary ees -> for ees (\(Pair e e') -> dictEntry inputs e e') <#> \kvs ->
          deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
       DictComp e e' gs -> do
@@ -259,6 +262,7 @@ eval = { stmt, program }
       DocExpr _ e -> reuseAt <$> expr inputs e
       where
       ctl = singleton (ctlAt b)
+      literal ℓ = Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty
 
    -- Positions of key e and value e'
    dictEntry :: Inputs -> Expr -> Expr -> m (Position × Position)
