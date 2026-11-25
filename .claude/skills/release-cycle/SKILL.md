@@ -47,4 +47,4 @@ Managed manually by developer:
 
 ## NPM publishing
 
-Package version tracks milestone (e.g. `fluid 1.0` → `1.0.x`). Every push to milestone branch publishes next patch version once tests pass; see [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).
+Package version names release of completed milestone (e.g. `fluid 1.2` → `1.2.0`). Every push to milestone branch publishes next pre-release (`1.2.0-next.N`) under dist-tag `next` once tests pass; see [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).

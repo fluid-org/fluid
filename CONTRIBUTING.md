@@ -87,7 +87,7 @@ Opens a browser window; check the JavaScript console for test results.
 
 ## Publishing to npm
 
-The `publish-npm` job of the build workflow publishes on every push to the current milestone branch, once the tests pass. It sets the package version to the next patch version after the latest `vX.Y.*` tag, builds in production mode, stages the `article` website, publishes to npm and pushes the tag `vX.Y.Z`. The version in `fluid/package.json` gives the milestone (e.g. `1.1.x` for milestone `fluid 1.1`); the job doesn't update that file.
+The version in `fluid/package.json` names the release of the current milestone once complete (e.g. `1.2.0` for milestone `fluid 1.2`). The `publish-npm` job of the build workflow publishes a pre-release of that version on every push to the milestone branch, once the tests pass. The pre-releases are numbered `1.2.0-next.1`, `1.2.0-next.2` and so on, and carry the dist-tag `next`, so `npm install @fluid-org/fluid@next` installs the most recent pre-release. The job builds in production mode and stages the `article` website; it doesn't change `fluid/package.json` or create a tag.
 
 Authentication is by [trusted publishing](https://docs.npmjs.com/trusted-publishers), which is configured on npmjs.com for the workflow `build.yml` and doesn't need a token.
 

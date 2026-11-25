@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Publish next patch version of milestone to npm, then push version tag; run by publish-npm job of build workflow
+# Publish next pre-release of milestone to npm under next dist-tag; run by build workflow
 set -xe
 cd "$(dirname "$0")/.."
 
-MILESTONE=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
-if [ "$GITHUB_REF_NAME" != "fluid-$MILESTONE" ]; then
-   echo "Branch $GITHUB_REF_NAME is not milestone branch of version $MILESTONE" >&2
+RELEASE=$(node -p "require('./package.json').version")
+if [ "$GITHUB_REF_NAME" != "fluid-${RELEASE%.*}" ]; then
+   echo "Branch $GITHUB_REF_NAME is not milestone branch of version $RELEASE" >&2
    exit 1
 fi
 
-LATEST=$(git tag --list "v$MILESTONE.*" --sort=-v:refname | head -n 1)
-if [ -z "$LATEST" ]; then
-   VERSION="$MILESTONE.0"
-else
-   VERSION="$MILESTONE.$((${LATEST##*.} + 1))"
-fi
+N=$(npm view @fluid-org/fluid versions --json | python3 -c '
+import json, sys
+release = sys.argv[1]
+prefix = release + "-next."
+versions = json.load(sys.stdin)
+if release in versions:
+    sys.exit("Version " + release + " already published")
+print(max([0] + [int(v[len(prefix):]) for v in versions if v.startswith(prefix)]) + 1)
+' "$RELEASE")
 
-npm version "$VERSION" --no-git-tag-version --workspaces-update=false --allow-same-version
+npm version "$RELEASE-next.$N" --no-git-tag-version --workspaces-update=false
 ./script/build-package.sh
 ./script/test-package.sh
-npm publish --workspaces=false --access public
-
-git tag "v$VERSION"
-git push origin "v$VERSION"
+npm publish --workspaces=false --access public --tag next
