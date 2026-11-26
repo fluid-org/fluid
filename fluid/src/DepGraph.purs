@@ -125,7 +125,7 @@ type Dependences c s = Labelling (Restructuring c) × Labelling (Rel c s)
 sourceSupport :: forall c s. Set c Position => Semiring s => Dependences c s -> Position -> Support c s
 sourceSupport (θs × rs) (a × p) = supportAt (get a θs × fromMaybe mempty (lookup a rs)) p
 
--- Every source of given positions
+-- Union of supports at given positions
 sourcesOf :: forall s. Semiring s => Dependences PositionSet s -> Set Position -> PositionSet
 sourcesOf δs qs = foldMap (sourceSupport δs >>> \(Support ps ws) -> ps ∪ foldMap positionSet (keys ws)) qs
 
