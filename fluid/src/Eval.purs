@@ -227,7 +227,7 @@ eval = { stmt, program }
             Val _ (V.Tuple [ Val _ (V.Lit (Int i')), Val _ (V.Lit (Int j')) ]) -> pure (i' × j')
             Val _ u -> throw (typeMismatch u "pair of int")
          check
-            (i' × j' >= 1 × 1)
+            (i' >= 1 && j' >= 1)
             ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
          rss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j ->
             extendInputs inputs (maplet x (index r 0 i) `unionWith_never` maplet y (index r 1 j)) empty >>= flip expr e
@@ -502,7 +502,7 @@ eval = { stmt, program }
                ρ' = closeDefs q p ρ ds <+> args
                ρ'' = ρ <+> (fst <$> ρ')
             V.Prim (ForeignOp (name × ForeignOp' { depOp })) -> do
-               v' <- depOp q (stored <> supplied)'
+               v' <- depOp q (stored <> supplied)
                pure (v' × Tr.PrimitiveOp name q (fst <$> supplied))
             V.Type (T.ClassTy c _) -> do
                classes <- askClasses
