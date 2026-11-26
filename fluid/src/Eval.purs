@@ -24,7 +24,7 @@ import Classes (ClassTable, ancestors, arity, askClasses, checkArity, fieldNames
 import Dict (Dict)
 import Dict (fromFoldable) as D
 import Effect.Exception (Error)
-import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
+import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, bv, fv)
 import File (withClasses)
 import DepGraph (DepGraph, Support, VisibleGraph, addTrace, attachDoc, bindings, construct, controlDep, extend, materialise, reuse, dataDep, tupling)
 import Lattice (DepKind, Raw)
@@ -183,20 +183,39 @@ eval = { stmt, program }
       Dictionary ees -> do
          kvs <- for ees (\(Pair e e') -> dictEntry inputs e e')
          pure
-            ( deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × v) -> reuseAt k × reuseAt v))
-                 × Tr.DictLiteral (kvs <#> \(k × v) -> Pair (fst k) (fst v))
+            (  deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × v) -> reuseAt k × reuseAt v))
+                  × Tr.DictLiteral (kvs <#> \(k × v) -> Pair (fst k) (fst v))
             )
-      DictComp e e' gs -> untraced do
-         r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
-         pure $ deliver ctl $ dictionary (dataDep (fst r)) $
-            elementsAt r <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)
+      DictComp e e' gs -> do
+         r <- qualifiers body inputs gs
+         pure
+            ( deliver ctl (dictionary (dataDep (fst r))
+                 (elementsAt r <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)))
+                 × Tr.DictComp e e' gs (fst r)
+            )
+         where
+         body inputs' = do
+            kv@(k × v) <- dictEntry inputs' e e'
+            pure
+               (  singletonList inputs' (entry kv)
+                     × Tr.DictYield { bindings: qualifierBindings gs inputs', body: Pair (fst k) (fst v) }
+               )
       List es -> do
          rs <- traverse (expr inputs) es
          pure (sequenceOf V.List (controlDep ctl) (reuseAt <$> rs) × Tr.ListLiteral (fst <$> rs))
       Tuple es -> do
          rs <- traverse (expr inputs) es
          pure (sequenceOf V.Tuple (controlDep ctl) (reuseAt <$> rs) × Tr.TupleLiteral (fst <$> rs))
-      ListComp e gs -> untraced $ reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
+      ListComp e gs -> do
+         r <- qualifiers body inputs gs
+         pure (reuseAt r × Tr.ListComp e gs (fst r))
+         where
+         body inputs' = do
+            r <- expr inputs' e
+            pure
+               (  singletonList inputs' (reuseAt r)
+                     × Tr.ListYield { bindings: qualifierBindings gs inputs', body: fst r }
+               )
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
@@ -219,7 +238,7 @@ eval = { stmt, program }
                         [ MatrixRows × reuse (fst (childAt (Element 0) r)), MatrixCols × reuse (fst (childAt (Element 1) r)) ]
                            <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (q × _) -> MatrixElement i j × reuse q)) rss)
                   )
-            ) × Tr.Matrix (fst r) (map (map fst) rss)
+            )  × Tr.Matrix (fst r) (map (map fst) rss)
          )
          where
          -- Index n along dimension k of the matrix with dimensions at position u
@@ -294,8 +313,8 @@ eval = { stmt, program }
          { holds, r } <- condition inputs e
          chosen <- controlledBy (fst r) inputs >>= flip expr (if holds then e1 else e2)
          pure
-            ( reuseAt chosen ×
-                 if holds then Tr.CondTrue (fst r) (fst chosen) e2 else Tr.CondFalse (fst r) e1 (fst chosen)
+            (  reuseAt chosen ×
+                  if holds then Tr.CondTrue (fst r) (fst chosen) e2 else Tr.CondFalse (fst r) e1 (fst chosen)
             )
       DocExpr _ e -> untraced $ reuseAt <$> expr inputs e
       where
@@ -327,17 +346,28 @@ eval = { stmt, program }
    singletonList :: Inputs -> GVal s -> GVal s
    singletonList { b } v = sequenceOf V.List (controlDep (singleton (ctlAt b))) (v : Nil)
 
+   qualifierBindings :: List Qualifier -> Inputs -> Dict (Label Unit)
+   qualifierBindings gs { ρ } = map (\v -> V.Value v) (restrict (bv gs) ρ)
+
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
-   qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m Position
-   qualifiers body inputs gs = elements gs >>= newValue
+   qualifiers
+      :: (Inputs -> m (GVal s × Tr.QualifierTrace (Label Unit) Path))
+      -> Inputs
+      -> List Qualifier
+      -> m Position
+   qualifiers body inputs gs = do
+      v × trace <- elements gs
+      record (v × Tr.QualifierTrace trace)
       where
       -- List of elements, before vertex is allocated
-      elements :: List Qualifier -> m (GVal s)
+      elements :: List Qualifier -> m (GVal s × Tr.QualifierTrace (Label Unit) Path)
       elements Nil = body inputs
       elements (Guard e : gs') = do
          { holds, r: q × _ } <- condition inputs e
-         if holds then reuseAt <$> (controlledBy q inputs >>= \inputs' -> qualifiers body inputs' gs')
-         else pure (Val unit (V.List []) × construct (controlDep (singleton q)) Map.empty)
+         if holds then do
+            rest <- controlledBy q inputs >>= \inputs' -> qualifiers body inputs' gs'
+            pure (reuseAt rest × Tr.GuardPassed q (fst rest))
+         else pure ((Val unit (V.List []) × construct (controlDep (singleton q)) Map.empty) × Tr.GuardFailed q)
       elements (Generator p e : gs') = do
          r@(_ × v) <- expr inputs e
          n <- case elementCount v of
@@ -347,17 +377,27 @@ eval = { stmt, program }
          us <- case traverse (flip elementStep v) (L.take n (L.range 0 n)) of
             Just steps -> pure (flip childAt r <$> steps)
             Nothing -> elementsAt <$> newValue (explode r)
-         rs × ps <- fold <$> for us \u ->
+         --candidates :: (List Position × Set Path) × Maybe Path
+         --List Position: the evaluated cont, or an empty list if the pattern failed
+         --Set Path: ctrl deps retained from a failed pattern match
+         --Maybe Path: deriv reference
+         candidates <- for us \u ->
             case dispatch classes (singleton (p × unit)) u of
-               Nothing × qs -> pure (Nil × qs)
-               Just (ρ' × _) × qs ->
-                  extendInputs inputs ρ' (lengthPositions r ∪ qs) >>= \inputs' -> qualifiers body inputs' gs' <#> \r' -> singleton r' × empty
-         pure (concatOf V.List (controlDep (lengthPositions r ∪ ps)) rs)
+               Nothing × qs -> pure ((Nil × qs) × Nothing)
+               Just (ρ' × _) × qs -> do
+                  rest <- extendInputs inputs ρ' (lengthPositions r ∪ qs) >>= \inputs' -> qualifiers body inputs' gs'
+                  pure ((singleton rest × empty) × Just (fst rest))
+         let rs × ps = fold (fst <$> candidates)
+         pure
+            (  concatOf V.List (controlDep (lengthPositions r ∪ ps)) rs
+                  × Tr.GeneratorTrace (fst r) (snd <$> candidates)
+            )
       elements (Decl p e : gs') = do
          r <- expr inputs e
          classes <- askClasses
          ρ' × ps <- destructure classes p r
-         reuseAt <$> (extendInputs inputs ρ' ps >>= \inputs' -> qualifiers body inputs' gs')
+         rest <- extendInputs inputs ρ' ps >>= \inputs' -> qualifiers body inputs' gs'
+         pure (reuseAt rest × Tr.DeclTrace (fst r) (fst rest))
 
    stmt :: Inputs -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
