@@ -16,7 +16,7 @@ import Dict (Dict)
 import Expr (Binop(BitOr), Pattern(..))
 import Expr as E
 import Lattice (class BotOf, class MeetSemilattice, class Neg, botOf, symmetricDiff)
-import Literal (Literal(..), asFloat, showComplexPart, showFloat)
+import Literal (Literal(..), asFloat, showFloat, showNumber)
 import Pretty.Doc (Doc, empty, expr, indent, inlOrMul, line, render, stmt, stmtOrExpr, text, (<++>), (<+>), (</>))
 import Pretty.Util (assignment, block, braces, brackets, hsep, matrix, number, pair, parens, record, sep, sep', string, vsep)
 import Operator (Operator(..), binopSymbol, prec, unopSymbol)
@@ -153,7 +153,7 @@ instance Pretty Expr where
    pretty (ListComp s qs) = brackets (expr (pretty s) <+> pretty qs)
    pretty (DictComp k s qs) = braces (pretty k <> text ":" <+> expr (pretty s) <+> pretty qs)
    pretty (Paragraph p) = pretty p
-   pretty (Imaginary y) = text (showComplexPart y <> "j")
+   pretty (Imaginary y) = text (showNumber y <> "j")
    pretty (DocExpr p e) = text "@doc" <> parens (pretty p) </> pretty e
 
 instance Pretty (List Qualifier) where
@@ -338,7 +338,7 @@ instance Pretty (Pair E.Expr) where
 instance Pretty E.Expr where
    pretty (E.Var x) = text x
    pretty (E.Lit ℓ) = pretty ℓ
-   pretty (E.Imaginary y) = text (showComplexPart y <> "j")
+   pretty (E.Imaginary y) = text (showNumber y <> "j")
    pretty (E.Dictionary ees) = record (pretty <$> ees)
    pretty (E.Constr c es) = prettyConstr (last c) es
    pretty (E.List es) = brackets (prettyList es)
@@ -431,10 +431,10 @@ instance Highlightable a => Pretty (BaseVal a) where
       | otherwise = record (pretty <$> (toUnfoldable svs))
    pretty (V.Obj c ((_ × Val α (V.Lit ℓ)) : (_ × Val β (V.Lit ℓ')) : Nil))
       | c == cComplex, Just x <- asFloat ℓ, Just y <- asFloat ℓ' =
-           if x == 0.0 && 1.0 / x > 0.0 then highlightIf β (text (showComplexPart y)) <> text "j"
-           else parens $ highlightIf α (text (showComplexPart x))
-              <> text (if String.take 1 (showComplexPart y) == "-" then "" else "+")
-              <> highlightIf β (text (showComplexPart y))
+           if x == 0.0 && 1.0 / x > 0.0 then highlightIf β (text (showNumber y)) <> text "j"
+           else parens $ highlightIf α (text (showNumber x))
+              <> text (if String.take 1 (showNumber y) == "-" then "" else "+")
+              <> highlightIf β (text (showNumber y))
               <> text "j"
    pretty (V.Obj c xvs) = prettyConstr (last c) (snd <$> xvs)
    pretty (V.List vs) = brackets (prettyList vs)

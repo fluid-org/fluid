@@ -44,10 +44,10 @@ asFloat (Int n) = Just (toNumber n)
 asFloat (Float x) = Just x
 asFloat _ = Nothing
 
--- Part of a complex number to 12 significant digits. Trailing zeros are dropped. A very large or small magnitude
--- has an exponent.
-showComplexPart :: Number -> String
-showComplexPart x
+-- Format a number to 12 significant digits. Trailing zeros are dropped. Very large and very small magnitudes
+-- have exponents.
+showNumber :: Number -> String
+showNumber x
    | not (isFinite x) = show x
    | x == 0.0 && 1.0 / x < 0.0 = "-0"
    | otherwise =
@@ -62,8 +62,8 @@ showComplexPart x
         dropZeros m = maybe m dropZeros (stripSuffix (Pattern "0") m)
         dropPoint m = fromMaybe m (stripSuffix (Pattern ".") m)
 
--- Same as showComplexPart, except with ".0" on an integral value without exponent
+-- Same as showNumber, except with ".0" on an integral value without exponent
 showFloat :: Number -> String
 showFloat x = if isFinite x && not (contains (Pattern ".") s || contains (Pattern "e") s) then s <> ".0" else s
    where
-   s = showComplexPart x
+   s = showNumber x
