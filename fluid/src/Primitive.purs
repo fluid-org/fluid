@@ -199,11 +199,11 @@ type ComplexOperand a = a × Val a × Val a
 -- Complex operand, or int or float operand as complex number with constant zero as imaginary part
 complexOperand :: forall a. Semiring a => Val a -> Maybe (ComplexOperand a)
 complexOperand (Val α (Obj c ((_ × x) : (_ × y) : Nil))) | c == cComplex = Just (α × x × y)
-complexOperand (Val α (Lit ℓ)) | Just x <- asFloat ℓ = Just (zero × Val α (Lit (Float x)) × constant 0.0)
+complexOperand (Val α (Lit ℓ)) | Just x <- asFloat ℓ = Just (zero × Val α (Lit (Float x)) × floatVal 0.0)
 complexOperand _ = Nothing
 
-constant :: forall a. Semiring a => Number -> Val a
-constant = Val zero <<< Lit <<< Float
+floatVal :: forall a. Semiring a => Number -> Val a
+floatVal = Val zero <<< Lit <<< Float
 
 complexBinop :: forall a. DepSemiring a => Binop -> ComplexOperand a -> ComplexOperand a -> MayFail (Val a)
 complexBinop op z w = complexArith op z w <#> \(α × x × y) -> complexVal α x y
@@ -250,8 +250,8 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
          power <$>
             if a' > 0.0 then powu one z (Int.floor a')
             else complexArith Div one =<< powu one z (Int.floor (-a'))
-      else if a == 0.0 && b == 0.0 then pure (power (zero × constant 0.0 × constant 0.0))
-      else pure (power (zero × constant (len * N.cos phase) × constant (len * N.sin phase)))
+      else if a == 0.0 && b == 0.0 then pure (power (zero × floatVal 0.0 × floatVal 0.0))
+      else pure (power (zero × floatVal (len * N.cos phase) × floatVal (len * N.sin phase)))
    _ -> error absurd
    where
    result :: Val a -> Val a -> ComplexOperand a
@@ -259,7 +259,7 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
 
    arith op' u u' = binopFun op' (u : u' : Nil)
    complexPart u = fst <$> unpackFloat u
-   one = zero × constant 1.0 × constant 0.0
+   one = zero × floatVal 1.0 × floatVal 0.0
    nan = Val (root x' `add` root y') (Lit (Float N.nan))
 
    -- Multiply r by nth power of p by repeated squaring
