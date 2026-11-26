@@ -280,7 +280,7 @@ applyBinop Add _ r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (concat
 applyBinop Add _ r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (concatOf Tuple mempty (r : r' : Nil))
 applyBinop Mul _ l@(_ × Val _ (List _)) k@(_ × Val _ (Lit (Int n))) = pure (repeatList l k n)
 applyBinop Mul _ k@(_ × Val _ (Lit (Int n))) l@(_ × Val _ (List _)) = pure (repeatList l k n)
-applyBinop op ctl r r' = applyDepFun (binopFun op) Set.empty ctl (r : r' : Nil)
+applyBinop op ps r r' = applyDepFun (binopFun op) Set.empty ps (r : r' : Nil)
 
 -- List at l repeated n times, for the integer n at k
 repeatList :: forall s. Semiring s => ValAt -> ValAt -> Int -> GVal s

@@ -69,18 +69,18 @@ newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict
 newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
    mapWithKey (\x (v × _) -> v × reuse (a × singleton (Binding x))) ρ
 
--- Read dependence of result from its annotations. Root depends on ctl; positions without other support
--- depend on ctl'.
+-- Read the dependence of the result from its annotations. The root depends on ps; a position without other
+-- support depends on ps'.
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Position -> Set Position -> List ValAt -> MayFail (GVal s)
-applyDepFun f ctl ctl' rs = f (arg <$> rs) <#> \v ->
-   erase v × NoReuse ctl × foldl addSupport mempty (positions (paths v))
+applyDepFun f ps ps' rs = f (arg <$> rs) <#> \v ->
+   erase v × NoReuse ps × foldl addSupport mempty (positions (paths v))
    where
    arg :: ValAt -> Val (Lineage Position s)
    arg (q × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q `followedBy` p) one)
 
    addSupport :: Rel (Set Position) s -> Path × Lineage Position s -> Rel (Set Position) s
    addSupport r (p × Lineage (_ × ws)) =
-      r <> ι p (Rel (if Map.isEmpty ws then controlDep ctl' else Support Set.empty ws) Map.empty)
+      r <> ι p (Rel (if Map.isEmpty ws then controlDep ps' else Support Set.empty ws) Map.empty)
 
 -- Step to element i of sequence if that element is a child
 elementStep :: Int -> Raw Val -> Maybe Step

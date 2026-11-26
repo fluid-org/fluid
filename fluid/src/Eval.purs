@@ -163,23 +163,23 @@ eval = { stmt, program }
    -- Value of an expression, before vertex is allocated
    value :: Inputs -> Expr -> m (GVal s)
    value inputs@{ ρ, b } = case _ of
-      Var x -> pure (deliver ctl (get x ρ × reuse (b × singleton (Binding x))))
+      Var x -> pure (deliver ps (get x ρ × reuse (b × singleton (Binding x))))
       Lit ℓ -> pure (literal ℓ)
       Imaginary y -> askClasses <#> \classes ->
-         object classes (controlDep ctl) cComplex (literal (Float 0.0) : literal (Float y) : Nil)
+         object classes (controlDep ps) cComplex (literal (Float 0.0) : literal (Float y) : Nil)
       Dictionary ees -> for ees (\(Pair e e') -> dictEntry inputs e e') <#> \kvs ->
-         deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
+         deliver ps (dictionary (controlDep ps) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
       DictComp e e' gs -> do
          r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
-         pure $ deliver ctl $ dictionary (dataDep (fst r)) $
+         pure $ deliver ps $ dictionary (dataDep (fst r)) $
             elementsAt r <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)
-      List es -> sequenceOf V.List (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
-      Tuple es -> sequenceOf V.Tuple (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
+      List es -> sequenceOf V.List (controlDep ps) <<< map reuseAt <$> traverse (expr inputs) es
+      Tuple es -> sequenceOf V.Tuple (controlDep ps) <<< map reuseAt <$> traverse (expr inputs) es
       ListComp e gs -> reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         object classes (controlDep ctl) c <<< map reuseAt <$> traverse (expr inputs) es
+         object classes (controlDep ps) c <<< map reuseAt <$> traverse (expr inputs) es
       Matrix e (x × y) e' -> do
          r@(_ × v) <- expr inputs e'
          i' × j' <- case v of
@@ -191,7 +191,7 @@ eval = { stmt, program }
          rss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j ->
             extendInputs inputs (maplet x (index r 0 i) `unionWith_never` maplet y (index r 1 j)) empty >>= flip expr e
          pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × child (Element 0) v × child (Element 1) v))) ×
-            construct (controlDep ctl)
+            construct (controlDep ps)
                ( Map.fromFoldable $
                     [ MatrixRows × reuse (fst (childAt (Element 0) r)), MatrixCols × reuse (fst (childAt (Element 1) r)) ]
                        <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (q × _) -> MatrixElement i j × reuse q)) rss)
@@ -201,7 +201,7 @@ eval = { stmt, program }
          index :: ValAt -> Int -> Int -> GVal s
          index u k n = Val unit (V.Lit (Int n)) × construct (controlDep (singleton (fst (childAt (Element k) u)))) Map.empty
       Lambda d -> pure (closure (inputs.c × ε) (b × ε) (restrict (fv d) ρ) empty d)
-      Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
+      Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ps) Map.empty)
       Attribute e x -> do
          r@(_ × v) <- expr inputs e
          case v of
@@ -233,12 +233,12 @@ eval = { stmt, program }
             V.Matrix _, _ -> throw $ "Found " <> prettyP v' <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
          where
-         -- Child u of the value at r, at the index at r'; ps are further control positions
+         -- Child u at index r' of the value at r; qs are further control positions
          subscript :: ValAt -> ValAt -> GVal s -> Set Position -> m (GVal s)
-         subscript r r' u ps = pure (deliver (singleton (fst r) ∪ ps ∪ positionsIn r') u)
+         subscript r r' u qs = pure (deliver (singleton (fst r) ∪ qs ∪ positionsIn r') u)
       ModMember q x -> do
          { modules } <- moduleStore
-         deliver ctl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
+         deliver ps <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
       App e es -> do
          f <- expr inputs e
          rs <- traverse (expr inputs) es
@@ -246,10 +246,10 @@ eval = { stmt, program }
       BinOp e op e' -> do
          r <- expr inputs e
          r' <- expr inputs e'
-         withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ctl r r')
+         withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ps r r')
       UnOp op e -> do
          r <- expr inputs e
-         withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) Set.empty ctl (r : Nil))
+         withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) Set.empty ps (r : Nil))
       And e e' -> do
          { holds, r } <- condition inputs e
          if holds then reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e') else pure (reuseAt r)
@@ -261,8 +261,8 @@ eval = { stmt, program }
          reuseAt <$> (controlledBy (fst r) inputs >>= flip expr (if holds then e1 else e2))
       DocExpr _ e -> reuseAt <$> expr inputs e
       where
-      ctl = singleton (inputs.c × ε)
-      literal ℓ = Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty
+      ps = singleton (inputs.c × ε)
+      literal ℓ = Val unit (V.Lit ℓ) × construct (controlDep ps) Map.empty
 
    -- Positions of key e and value e'
    dictEntry :: Inputs -> Expr -> Expr -> m (ValAt × ValAt)
