@@ -125,16 +125,16 @@ type Dependences c s = Labelling (Restructuring c) × Labelling (Rel c s)
 sourceSupport :: forall c s. Set c Position => Semiring s => Dependences c s -> Position -> Support c s
 sourceSupport (θs × rs) (a × p) = supportAt (get a θs × fromMaybe mempty (lookup a rs)) p
 
--- All sources of given positions as one set of control sources
-supportsAt :: forall s. Semiring s => Dependences PositionSet s -> Set Position -> PositionSet
-supportsAt δs qs = foldMap (sourceSupport δs >>> \(Support ps ws) -> ps ∪ foldMap positionSet (keys ws)) qs
+-- All sources of given positions as control sources, since control weight absorbs the weight of each source
+sourcesOf :: forall s. Semiring s => Dependences PositionSet s -> Set Position -> PositionSet
+sourcesOf δs qs = foldMap (sourceSupport δs >>> \(Support ps ws) -> ps ∪ foldMap positionSet (keys ws)) qs
 
 restructuringAfter :: forall s. Semiring s => Restructuring (Set Position) -> Dependences PositionSet s -> Restructuring PositionSet
-restructuringAfter (Reuse ps (a × p)) δs@(θs × _) = withCtrl (supportsAt δs ps) (pathAfter p (get a θs))
-restructuringAfter (NoReuse ps) δs = NoReuse (supportsAt δs ps)
-restructuringAfter (Tupling ps θs) δs = Tupling (supportsAt δs ps) (flip restructuringAfter δs <$> θs)
+restructuringAfter (Reuse ps (a × p)) δs@(θs × _) = withCtrl (sourcesOf δs ps) (pathAfter p (get a θs))
+restructuringAfter (NoReuse ps) δs = NoReuse (sourcesOf δs ps)
+restructuringAfter (Tupling ps θs) δs = Tupling (sourcesOf δs ps) (flip restructuringAfter δs <$> θs)
 restructuringAfter (ExtendEnv ps θ θs) δs =
-   ExtendEnv (supportsAt δs ps) (restructuringAfter θ δs) (flip restructuringAfter δs <$> θs)
+   ExtendEnv (sourcesOf δs ps) (restructuringAfter θ δs) (flip restructuringAfter δs <$> θs)
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Position) -> Labelling (Rel PositionSet s) -> Rel PositionSet s
 restructuringAfterRel θ rs = case θ of
@@ -149,7 +149,7 @@ restructuringAfterRel θ rs = case θ of
 -- Compose relation with dependence of each source vertex
 relAfter :: forall s. DepSemiring s => Rel (Set Position) s -> Dependences PositionSet s -> Rel PositionSet s
 relAfter (Rel (Support ps ws) rs) δs =
-   Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (sourceSupport δs p)) (Support (supportsAt δs ps) empty) ws)
+   Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (sourceSupport δs p)) (Support (sourcesOf δs ps) empty) ws)
       (Map.mapMaybe (flip relAfter δs >>> nonZero) rs)
 
 compose :: forall s. DepSemiring s => Dependence (Set Position) s -> Dependences PositionSet s -> Dependence PositionSet s
