@@ -8,7 +8,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Number (isFinite, isNaN)
 import Data.Number.Format (precision, toStringWith)
 import Data.Show.Generic (genericShow)
-import Data.String (Pattern(..), contains, split, stripSuffix)
+import Data.String (Pattern(..), contains, length, split, splitAt, stripSuffix)
 import Util (absurd, error)
 
 data Literal
@@ -44,18 +44,19 @@ asFloat (Int n) = Just (toNumber n)
 asFloat (Float x) = Just x
 asFloat _ = Nothing
 
--- Format a number to 12 significant digits. Trailing zeros are dropped. Very large and very small magnitudes
--- have exponents.
+-- Format number to 12 significant digits to hide rounding error; drop trailing zeros
 showNumber :: Number -> String
 showNumber x
-   | not (isFinite x) = show x
+   | isNaN x = "nan"
+   | not (isFinite x) = if x > 0.0 then "inf" else "-inf"
    | x == 0.0 && 1.0 / x < 0.0 = "-0"
    | otherwise =
         case split (Pattern "e") (toStringWith (precision 12) x) of
            [ m ] -> trim m
-           [ m, e ] -> trim m <> "e" <> e
+           [ m, e ] -> trim m <> "e" <> pad (splitAt 1 e)
            _ -> error absurd
         where
+        pad { before: sign, after: digits } = sign <> (if length digits < 2 then "0" else "") <> digits
         trim m
            | contains (Pattern ".") m = dropPoint (dropZeros m)
            | otherwise = m
