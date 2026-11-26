@@ -381,17 +381,14 @@ eval = { stmt, program }
       returns pv = Returns <$> newValue (reuseAt pv)
       assigns ρ' qs = flip Assigns qs <$> newEnv ρ'
 
-   program :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
-   program ρ b ps s = output ρ b ps s >>= \pv -> newValue (reuseAt pv) $> pv
-
    -- Value of the expression which ends a program
-   output :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
-   output ρ b ps (Seq t t') = do
+   program :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
+   program ρ b ps (Seq t t') = do
       pρ × qs <- asAssigns <$> stmt ρ b ps t
       ρ' × b' <- extendEnv ρ b (bindingsAt pρ)
-      output ρ' b' (controlledBy qs ps) t'
-   output ρ b ps (ExprStmt e) = expr ρ b ps e
-   output _ _ _ _ = error absurd
+      program ρ' b' (controlledBy qs ps) t'
+   program ρ b ps (ExprStmt e) = expr ρ b ps e
+   program _ _ _ _ = error absurd
 
    -- Apply function pv to pvs, partially if there are fewer arguments than its arity; apply the result to any
    -- arguments beyond the arity
