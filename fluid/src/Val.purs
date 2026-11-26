@@ -84,7 +84,6 @@ root (Val α _) = α
 data Label a
    = Value (Val a) -- of an expression or returning statement
    | Bindings (Env a) -- introduced by an assigning statement, members of a module, or environment of a premise
-   | Control a -- control input of a premise
 
 value :: forall a. Label a -> Val a
 value (Value v) = v
@@ -96,7 +95,6 @@ instance Paths Val where
 instance Paths Label where
    paths (Value v) = Value (paths v)
    paths (Bindings (Env ρ)) = Bindings (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
-   paths (Control α) = Control (Nil × α)
 
 -- Same as paths, except that each path starts with the reverse of p
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
