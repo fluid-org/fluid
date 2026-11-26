@@ -42,7 +42,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newBindings, newControl, newEnv, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newBindings, newCtl, newEnv, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Returned value, or bindings introduced and any new sources of the control input
 data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Position)
@@ -77,7 +77,7 @@ extendEnv ρ b ρ'
 
 -- Control input dependent on positions ps, or ctl if ps is empty
 controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Set Position -> Position -> m Position
-controlledBy ps ctl = if isEmpty ps then pure ctl else newControl ps
+controlledBy ps ctl = if isEmpty ps then pure ctl else newCtl ps
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
 matches :: forall s. Semiring s => ClassTable -> ValAt -> Pattern -> Maybe (Dict (GVal s)) × List Position
@@ -436,7 +436,7 @@ eval = { stmt, program }
          call = case _ of
             V.Closure (Env ρ) ds (Def xs s) -> do
                b <- newEnv ρ'' (extend p (snd <$> ρ'))
-               ctl <- newControl (singleton q)
+               ctl <- newCtl (singleton q)
                reuseAt <<< asReturns <$> stmt ρ'' b ctl s
                where
                p = q' `followedBy` singleton ClosureEnv
@@ -451,7 +451,7 @@ eval = { stmt, program }
 
 -- Vertex for environment ρ, and control input dependent on nothing
 topLevel :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Vertex × Position)
-topLevel ρ = (×) <$> newEnv (fst <$> ρ) (tupling (bindings (snd <$> ρ))) <*> newControl empty
+topLevel ρ = (×) <$> newEnv (fst <$> ρ) (tupling (bindings (snd <$> ρ))) <*> newCtl empty
 
 -- Evaluate module q at a new vertex; bindings of body override module value of each submodule
 evalModule

@@ -24,17 +24,15 @@ import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, err
 import Util.Map (mapWithKey, toUnfoldable)
 import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), ValAt, Val(..), child, element, elementCount)
 
--- Every position within the value at a position
 positionsIn :: ValAt -> Set Position
 positionsIn (q × v) = Set.fromFoldable ((q `followedBy` _) <<< fst <$> positions (paths v))
 
--- Positions which determine length of sequence at a position; for a range, its root with start and stop
+-- Positions which determine length of the sequence at a position
 lengthPositions :: ValAt -> Set Position
 lengthPositions (q × Val _ (Obj c xvs)) | c == cRange =
    Set.fromFoldable (q : (xvs <#> \(x × _) -> q `followedBy` singleton (Field x)))
 lengthPositions (q × _) = singleton q
 
--- Child at step of the value at a position
 childAt :: Step -> Endo ValAt
 childAt step (p × v) = (p `followedBy` singleton step) × child step v
 
@@ -44,7 +42,6 @@ elementsAt u = (\i -> childAt (Element i) u) <$> L.take n (L.range 0 n)
    where
    n = definitely' (elementCount (snd u))
 
--- Value at a position, as a value which reuses that position
 reuseAt :: forall s. Semiring s => ValAt -> GVal s
 reuseAt (p × v) = v × reuse p
 
@@ -52,17 +49,16 @@ reuseAt (p × v) = v × reuse p
 deliver :: forall s. Set Position -> Endo (GVal s)
 deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
--- Allocate vertex for given value; return root position with raw value
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Allocate vertex for environment ρ with the given dependence
+-- Allocate vertex for environment ρ; new vertex has fresh name unrelated to derivation
 newEnv :: forall m s. MonadState (DepGraph Label s) m => Dict (Raw Val) -> Dependence (Set Position) s -> m Vertex
 newEnv ρ = newVertex (Bindings (Env ρ))
 
--- Allocate vertex for control input dependent on positions ps; return its position
-newControl :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Set Position -> m Position
-newControl ps = newVertex (Control unit) (construct (controlDep ps) Map.empty) <#> (_ × ε)
+-- Allocate vertex for control input dependent on ps; new vertex has fresh name unrelated to derivation
+newCtl :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Set Position -> m Position
+newCtl ps = newVertex (Control unit) (construct (controlDep ps) Map.empty) <#> (_ × ε)
 
 -- Allocate vertex for bindings ρ; return each binding as reuse of its position
 newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Dict (GVal s))
@@ -104,17 +100,17 @@ explode r = sequenceOf List (foldMap dataDep (lengthPositions r)) (flip elementA
    where
    n = definitely' (elementCount (snd r))
 
--- Build sequence from vs with constructor mk; root depends on support
+-- Sequence of vs with root dependent on support
 sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List (GVal s) -> GVal s
 sequenceOf mk support vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
 
--- Concatenate sequences at given positions with constructor mk; root depends on support and each sequence
+-- Concatenate sequences at rs; root depends on support and each sequence
 concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List ValAt -> GVal s
 concatOf mk support rs = sequenceOf mk (support <> foldMap (fst >>> dataDep) rs) $
    rs >>= \r -> deliver (singleton (fst r)) <<< reuseAt <$> elementsAt r
 
--- Dictionary with the given entries; root depends on support
+-- Dictionary of entries kvs with root dependent on support
 dictionary :: forall s. Semiring s => Support (Set Position) s -> List (GVal s × GVal s) -> GVal s
 dictionary support kvs =
    Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \((k × _) × v × _) -> key k × unit × v)))) ×
