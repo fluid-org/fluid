@@ -52,11 +52,11 @@ deliver ps (v × θ × r) = v × withCtrl ps θ × r
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Allocate vertex for environment ρ; new vertex has fresh name unrelated to derivation
+-- Allocate fresh vertex for environment ρ
 newEnv :: forall m s. MonadState (DepGraph Label s) m => Dict (Raw Val) -> Dependence (Set Position) s -> m Vertex
 newEnv ρ = newVertex (Bindings (Env ρ))
 
--- Allocate vertex for control input dependent on ps; new vertex has fresh name unrelated to derivation
+-- Allocate fresh vertex for control input dependent on ps
 newCtl :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Set Position -> m Position
 newCtl ps = newVertex (Control unit) (construct (controlDep ps) Map.empty) <#> (_ × ε)
 
