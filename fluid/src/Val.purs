@@ -262,7 +262,6 @@ valAt g p = value (get p g.vals)
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Position) s
 
--- Value or environment paired with the position which holds it
 type ValAt = Position × Raw Val
 type EnvAt = Position × Raw Env
 
