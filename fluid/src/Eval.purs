@@ -471,7 +471,7 @@ eval = { stmt, program }
             if k < n then
                pure
                   (  (  Val unit (V.Fun (V.Partial u (snd <$> (stored <> supplied)))) × construct (controlDep (singleton q))
-                         (Map.fromFoldable ((PartialFun × reuse q') : mapWithIndex (\i (p × _) -> PartialArg i × reuse p) rs'))
+                         (Map.fromFoldable ((PartialFun × reuse q') : mapWithIndex (\i (p × _) -> PartialArg i × reuse p) (stored <> supplied)))
                      )  × Tr.PartialApplication q (fst <$> supplied)
                   )
             else if k == n then call φ
