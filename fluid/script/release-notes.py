@@ -52,18 +52,30 @@ times = json.loads(output("npm", "view", "--workspaces=false", PACKAGE["name"], 
 published = {v: time[:19] for v, time in times.items() if v.startswith(minor + ".")}
 
 
+# Time of last merge into milestone branch from branches named after each issue
+merged = {}
+for pull in github(f"pulls?state=closed&base={milestone.replace(' ', '-')}&per_page=100"):
+    if pull["merged_at"]:
+        issue_number = pull["head"]["ref"].split("-")[0]
+        merged[issue_number] = max(merged.get(issue_number, ""), pull["merged_at"])
+
+
+def completed(issue):
+    """Time of last merge from issue branch, else time issue closed"""
+    return merged.get(str(issue["number"]), issue["closed_at"])[:19]
+
+
 def heading(issue):
-    """First version published after issue closed, else package version; release once its pre-releases end"""
-    closed = issue["closed_at"][:19]
-    v = next((v for v in sorted(published, key=published.get) if published[v] > closed), version)
+    """First version published after issue completed, else package version; pre-release only while release pending"""
+    v = next((v for v in sorted(published, key=published.get) if published[v] > completed(issue)), version)
     return release(v) if release(v) in published or release(v) == version else v
 
 
-# Completed issues without sub-issues; most recently closed first
+# Completed issues without sub-issues; most recently completed first
 issues = sorted((issue for issue in github(f"issues?milestone={number}&state=closed&per_page=100")
                  if "pull_request" not in issue and issue["state_reason"] == "completed"
                  and not issue["sub_issues_summary"]["total"]),
-                key=lambda issue: issue["closed_at"], reverse=True)
+                key=completed, reverse=True)
 
 if sys.argv[1:] == ["--latest"]:
     lines = render([issue for issue in issues if heading(issue) == version])[1:]
