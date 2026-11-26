@@ -52,13 +52,12 @@ deliver ps (v × θ × r) = v × withCtrl ps θ × r
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Allocate fresh vertex for environment ρ; return vertex, then each binding as reuse of its position
+-- Allocate fresh vertex for environment ρ; return each binding as reuse of its position
 newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Vertex × Dict (GVal s))
 newEnv ρ = newVertex (Environment (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
    a × mapWithKey (\x (v × _) -> v × reuse (a × singleton (Binding x))) ρ
 
--- Position p holds the environment ρ. Allocate a fresh vertex for ρ extended with the bindings ρ', and return
--- the extended environment and vertex.
+-- Allocate fresh vertex for extension by ρ' of environment ρ at position p
 newExtendEnv
    :: forall m s
     . MonadState (DepGraph Label s) m
