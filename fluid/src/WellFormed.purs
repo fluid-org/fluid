@@ -19,7 +19,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.List (List(..), drop, filter, index, take, intersect, length, mapMaybe, null, sort, transpose, updateAt, (:))
 import Data.Foldable (any, lookup) as F
-import Module.Defs (ModuleName, containing, implicitFor, submods)
+import Module.Defs (ModuleName, builtins, containing, submods)
 import Data.List.NonEmpty (NonEmptyList(..), cons, fromList, groupBy, head, last, snoc, toList, uncons)
 import Data.NonEmpty ((:|))
 import Data.Semigroup.Foldable (foldl1, foldr1)
@@ -98,7 +98,7 @@ checkModule q = gets _.modules >>= \modules -> case lookup q modules of
 
 checkImports :: ModuleName -> List S.Import -> CheckM (Cxt × Cxt)
 checkImports enclosing ιs = do
-   cxt <- foldM (\acc q -> (acc ∪ _) <$> checkModule q) empty (implicitFor enclosing)
+   cxt <- checkModule builtins
    cxt' <- foldM (\acc ι -> (acc `extend` _) <$> importBindings enclosing ι) empty ιs
    pure (cxt × cxt')
 

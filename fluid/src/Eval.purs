@@ -29,7 +29,7 @@ import File (withClasses)
 import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, controlDep, materialise, reuse, dataDep, tupling)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
-import Module.Defs (ModuleName, implicit, submods)
+import Module.Defs (ModuleName, builtins, submods)
 import Operator (binopSymbol, unopSymbol)
 import Path (Position, Step(..), Vertex, followedBy, ε)
 import Pretty (prettyP)
@@ -41,7 +41,7 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), EnvAt, ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), EnvAt, ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
 import Val.Dependence (applyDepFun, bindingAt, bindingsAt, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newEnv, newExtendEnv, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Returned value, or environment of bindings introduced and any new control positions
@@ -491,20 +491,15 @@ evalImport enclosing ρ = case _ of
 moduleVal :: forall s. Semiring s => ModuleName -> GVal s
 moduleVal q = Val unit (V.Module q) × construct mempty Map.empty
 
--- Environment with members of implicit modules loaded so far
-implicitEnv :: forall m s. MonadEval s m => m EnvAt
-implicitEnv = do
-   { modules } <- moduleStore
-   case L.mapMaybe (\q -> Map.lookup q modules >>= loadedEnv) implicit of
-      Nil -> newEnv empty
-      pρ : pρs -> foldM (\pρ' -> newExtendEnv pρ' <<< bindingsAt) pρ pρs
+builtinsEnv :: forall m s. HasModuleStore s m => m EnvAt
+builtinsEnv = moduleStore <#> \{ modules } -> definitely' (loadedEnv (get builtins modules))
 
 load :: forall m s. MonadEval s m => ModuleName -> m EnvAt
 load q = do
    { modules } <- moduleStore
    case Map.lookup q modules of
       Just (Loaded pρ) -> pure pρ
-      Just (Parsed body) -> implicitEnv >>= \pρ -> evalModule pρ q body >>= loaded
+      Just (Parsed body) -> builtinsEnv >>= \pρ -> evalModule pρ q body >>= loaded
       Nothing -> newEnv empty >>= loaded
    where
    loaded pρ = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded pρ) s.modules }) $> pρ
@@ -538,6 +533,6 @@ evalProgram ρ classes s =
    withClasses classes do
       { depGraph } <- moduleStore
       out × g <- flip runStateT depGraph do
-         (b × _) × Env ρ' <- implicitEnv >>= flip extendEnvAt ρ
+         (b × _) × Env ρ' <- builtinsEnv >>= flip extendEnvAt ρ
          fst <<< fst <$> eval.program ρ' b empty s
       pure { g, out }

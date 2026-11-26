@@ -2,7 +2,7 @@ module Module.Defs where
 
 import Prelude
 
-import Data.List (List(..), filter, mapMaybe, takeWhile, (:))
+import Data.List (List(..), filter, mapMaybe, (:))
 import Data.List.NonEmpty (NonEmptyList(..), unsnoc)
 import Data.List.NonEmpty (fromList) as NEL
 import Data.Maybe (Maybe(..))
@@ -34,13 +34,6 @@ prelude = NonEmptyList ("fluid" :| "prelude" : Nil)
 
 view :: ModuleName
 view = NonEmptyList ("fluid" :| "view" : Nil)
-
--- Modules in scope without import, each under members of those before it
-implicit :: List ModuleName
-implicit = builtins : Nil
-
-implicitFor :: ModuleName -> List ModuleName
-implicitFor q = takeWhile (_ /= q) implicit
 
 -- Immediate submodules of q in the module table, by simple name.
 submods :: Set ModuleName -> ModuleName -> List (Var × ModuleName)
