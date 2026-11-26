@@ -18,11 +18,11 @@ import Dict (Dict)
 import Dict as D
 import Lattice (class DepSemiring, Lineage(..), Raw, erase)
 import Literal (Literal(..))
-import Path (Path, Position, Step(..), Vertex, followedBy, ε)
+import Path (Path, Position, Step(..), followedBy, ε)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable, (<+>))
-import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), ValAt, Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepFun, DictRep(..), Env(..), EnvAt, GVal, Label(..), ValAt, Val(..), child, element, elementCount)
 
 positionsIn :: ValAt -> Set Position
 positionsIn (q × v) = Set.fromFoldable ((q `followedBy` _) <<< fst <$> positions (paths v))
@@ -52,23 +52,21 @@ deliver ps (v × θ × r) = v × withCtrl ps θ × r
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Allocate fresh vertex for bindings ρ; return each binding as reuse from that vertex
-newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Vertex × Dict (GVal s))
-newEnv ρ = newVertex (Environment (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
-   a × mapWithKey (\x (v × _) -> v × reuse (a × singleton (Binding x))) ρ
-
--- Allocate fresh vertex for environment ρ extended with bindings ρ'; position p holds ρ
-newExtendEnv
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => Dict (Raw Val)
-   -> Position
-   -> Dict (GVal s)
-   -> m (Dict (Raw Val) × Vertex)
-newExtendEnv ρ p ρ' = (ρ'' × _) <$> newVertex (Environment (Env ρ'')) (extend p (snd <$> ρ'))
+-- Allocate fresh vertex for bindings ρ
+newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m EnvAt
+newEnv ρ = newVertex (Environment ρ') (tupling (bindings (snd <$> ρ))) <#> \a -> (a × ε) × ρ'
    where
-   ρ'' = ρ <+> (fst <$> ρ')
+   ρ' = Env (fst <$> ρ)
+
+-- Allocate fresh vertex for the environment at a position extended with bindings ρ'
+newExtendEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => EnvAt -> Dict (GVal s) -> m EnvAt
+newExtendEnv (p × Env ρ) ρ' = newVertex (Environment ρ'') (extend p (snd <$> ρ')) <#> \a -> (a × ε) × ρ''
+   where
+   ρ'' = Env (ρ <+> (fst <$> ρ'))
+
+-- Each binding of the environment at a position, as a value which reuses the position of that binding
+bindingsAt :: forall s. Semiring s => EnvAt -> Dict (GVal s)
+bindingsAt (p × Env ρ) = mapWithKey (\x v -> v × reuse (p `followedBy` singleton (Binding x))) ρ
 
 -- Apply f to the values at rs to compute the support of each result position. Every result position also
 -- depends on ps. Result positions with empty support depend on ps'.

@@ -41,24 +41,19 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newEnv, newExtendEnv, newValue, positionsIn, reuseAt, sequenceOf)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), EnvAt, ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
+import Val.Dependence (applyDepFun, bindingsAt, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newEnv, newExtendEnv, newValue, positionsIn, reuseAt, sequenceOf)
 
--- Returned value, or bindings introduced and any new sources of the control input
-data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Position)
+-- Returned value, or environment of bindings introduced and any new control positions
+data Result = Returns ValAt | Assigns EnvAt (Set Position)
 
-asReturns :: forall s. Result s -> ValAt
+asReturns :: Result -> ValAt
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
-asAssigns :: forall s. Result s -> Dict (GVal s) × Set Position
-asAssigns (Assigns ρ ps) = ρ × ps
+asAssigns :: Result -> EnvAt × Set Position
+asAssigns (Assigns r ps) = r × ps
 asAssigns (Returns _) = error "Assigns expected"
-
--- Result of a statement with result r followed by a statement with result r'
-override :: forall s. Result s -> Result s -> Result s
-override (Assigns ρ ps) (Assigns ρ' ps') = Assigns (ρ <+> ρ') (controlledBy ps' ps)
-override _ r' = r'
 
 -- Environment ρ at vertex b extended with bindings ρ', and vertex of the extended environment
 extendEnv
@@ -71,7 +66,7 @@ extendEnv
    -> m (Dict (Raw Val) × Vertex)
 extendEnv ρ b ρ'
    | isEmpty ρ' = pure (ρ × b)
-   | otherwise = newExtendEnv ρ (b × ε) ρ'
+   | otherwise = newExtendEnv ((b × ε) × Env ρ) ρ' <#> \((b' × _) × Env ρ'') -> ρ'' × b'
 
 controlledBy :: Set Position -> Set Position -> Set Position
 controlledBy qs ps = if isEmpty qs then ps else qs
@@ -148,7 +143,7 @@ closeDefs ps p ρ ds = ds <#> \d ->
 eval
    :: forall m s
     . MonadEval s m
-   => { stmt :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m (Result s)
+   => { stmt :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m Result
       , program :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
       }
 eval = { stmt, program }
@@ -331,56 +326,58 @@ eval = { stmt, program }
          ρ'' × b' <- extendEnv ρ b ρ'
          reuseAt <$> qualifiers body ρ'' b' (controlledBy qs ps) gs'
 
-   stmt :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m (Result s)
-   stmt ρ b ps = result >=> case _ of
-      Returns r -> Returns <$> newValue (reuseAt r)
-      Assigns ρ' qs -> flip Assigns qs <<< snd <$> newEnv ρ'
+   stmt :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m Result
+   stmt ρ b ps = case _ of
+      Return e -> expr ρ b ps e >>= returns
+      If bs s_opt -> go (NEL.toList bs) ps
+         where
+         go Nil ps' = maybe (assigns empty ps') (branch ps') s_opt
+         go (Branch e s' : bs') ps' = do
+            { holds, r: q × _ } <- condition ρ b ps' e
+            if holds then branch (singleton q) s' else go bs' (singleton q)
+
+         branch ps' s' = stmt ρ b ps' s' >>= case _ of
+            Returns r -> returns r
+            Assigns r qs -> flip Assigns (controlledBy qs ps') <$> newExtendEnv r empty
+      Match e bs -> do
+         r <- expr ρ b ps e
+         classes <- askClasses
+         case dispatch classes (NEL.toList bs) r of
+            Nothing × qs -> assigns empty qs
+            Just (ρ' × s') × qs -> do
+               ρ'' × b' <- extendEnv ρ b ρ'
+               stmt ρ'' b' (controlledBy qs ps) s' >>= case _ of
+                  Returns r' -> returns r'
+                  Assigns r' qs' -> assigns (ρ' <+> bindingsAt r') (controlledBy qs' qs)
+      Declare _ -> assigns empty empty
+      Assign p e -> do
+         r <- expr ρ b ps e
+         classes <- askClasses
+         destructure classes p r >>= uncurry assigns
+      DefRegion ds -> assigns (closeDefs ps (b × ε) ρ ds) empty
+      Pass -> assigns empty empty
+      ExprStmt e -> expr ρ b ps e *> assigns empty empty
+      Assert e e_opt -> do
+         { holds, r: q × _ } <- condition ρ b ps e
+         if holds then assigns empty (singleton q)
+         else case e_opt of
+            Nothing -> throw "AssertionError"
+            Just e' -> do
+               _ × Val _ u <- expr ρ b (singleton q) e'
+               throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
+      Dataclass c -> assigns (maplet (last c) (Val unit (V.Fun (V.Type (T.ClassTy c Nil))) × constant)) empty
+      TypeAlias x αs τ -> assigns (maplet x (Val unit (V.TypeAlias αs τ) × constant)) empty
+      Seq s s' -> stmt ρ b ps s >>= case _ of
+         Returns r -> returns r
+         Assigns r qs -> do
+            ρ'' × b' <- extendEnv ρ b (bindingsAt r)
+            stmt ρ'' b' (controlledBy qs ps) s' >>= case _ of
+               Returns r' -> returns r'
+               Assigns r' qs' -> flip Assigns (controlledBy qs' qs) <$> newExtendEnv r (bindingsAt r')
       where
       constant = construct (controlDep ps) Map.empty
-
-      -- Result of a statement, before vertex is allocated
-      result :: Stmt -> m (Result s)
-      result = case _ of
-         Return e -> Returns <$> expr ρ b ps e
-         If bs s_opt -> go (NEL.toList bs) ps
-            where
-            go Nil ps' = maybe (pure (Assigns empty ps')) (branch ps') s_opt
-            go (Branch e s' : bs') ps' = do
-               { holds, r: q × _ } <- condition ρ b ps' e
-               if holds then branch (singleton q) s' else go bs' (singleton q)
-
-            branch ps' s' = override (Assigns empty ps') <$> stmt ρ b ps' s'
-         Match e bs -> do
-            r <- expr ρ b ps e
-            classes <- askClasses
-            case dispatch classes (NEL.toList bs) r of
-               Nothing × qs -> pure (Assigns empty qs)
-               Just (ρ' × s') × qs -> do
-                  ρ'' × b' <- extendEnv ρ b ρ'
-                  override (Assigns ρ' qs) <$> stmt ρ'' b' (controlledBy qs ps) s'
-         Declare _ -> pure (Assigns empty empty)
-         Assign p e -> do
-            r <- expr ρ b ps e
-            classes <- askClasses
-            uncurry Assigns <$> destructure classes p r
-         DefRegion ds -> pure (Assigns (closeDefs ps (b × ε) ρ ds) empty)
-         Pass -> pure (Assigns empty empty)
-         ExprStmt e -> expr ρ b ps e $> Assigns empty empty
-         Assert e e_opt -> do
-            { holds, r: q × _ } <- condition ρ b ps e
-            if holds then pure (Assigns empty (singleton q))
-            else case e_opt of
-               Nothing -> throw "AssertionError"
-               Just e' -> do
-                  _ × Val _ u <- expr ρ b (singleton q) e'
-                  throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
-         Dataclass c -> pure (Assigns (maplet (last c) (Val unit (V.Fun (V.Type (T.ClassTy c Nil))) × constant)) empty)
-         TypeAlias x αs τ -> pure (Assigns (maplet x (Val unit (V.TypeAlias αs τ) × constant)) empty)
-         Seq s s' -> stmt ρ b ps s >>= case _ of
-            r@(Returns _) -> pure r
-            r@(Assigns ρ' qs) -> do
-               ρ'' × b' <- extendEnv ρ b ρ'
-               override r <$> stmt ρ'' b' (controlledBy qs ps) s'
+      returns r = Returns <$> newValue (reuseAt r)
+      assigns ρ' qs = flip Assigns qs <$> newEnv ρ'
 
    program :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
    program ρ b ps s = output ρ b ps s >>= \r -> newValue (reuseAt r) $> r
@@ -388,9 +385,9 @@ eval = { stmt, program }
    -- Value of the expression which ends a program
    output :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
    output ρ b ps (Seq t t') = do
-      ρ' × qs <- asAssigns <$> stmt ρ b ps t
-      ρ'' × b' <- extendEnv ρ b ρ'
-      output ρ'' b' (controlledBy qs ps) t'
+      r × qs <- asAssigns <$> stmt ρ b ps t
+      ρ' × b' <- extendEnv ρ b (bindingsAt r)
+      output ρ' b' (controlledBy qs ps) t'
    output ρ b ps (ExprStmt e) = expr ρ b ps e
    output _ _ _ _ = error absurd
 
@@ -425,7 +422,8 @@ eval = { stmt, program }
          call :: V.Fun Unit -> m (GVal s)
          call = case _ of
             V.Closure (Env ρ) ds (Def xs s) -> do
-               newExtendEnv ρ p ρ' >>= \(ρ'' × b) -> reuseAt <<< asReturns <$> stmt ρ'' b (singleton q) s
+               newExtendEnv (p × Env ρ) ρ' >>= \((b × _) × Env ρ'') ->
+                  reuseAt <<< asReturns <$> stmt ρ'' b (singleton q) s
                where
                p = q' `followedBy` singleton ClosureEnv
                args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
@@ -447,15 +445,15 @@ evalModule
 evalModule ρ0 q (Module ιs s) = do
    ρ <- foldM (evalImport q) ρ0 ιs
    { modules } <- moduleStore
-   ρ' × _ <- asAssigns <$> (newEnv ρ >>= \(b × _) -> eval.stmt (fst <$> ρ) b empty s)
-   snd <$> newEnv (subMods modules <+> unbound <+> ρ')
+   r × _ <- asAssigns <$> (newEnv ρ >>= \((b × _) × _) -> eval.stmt (fst <$> ρ) b empty s)
+   bindingsAt <$> newEnv (subMods modules <+> unbound <+> bindingsAt r)
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
 
 -- Construct members ρ of a predefined module at a new vertex
 predefinedModule :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict (GVal s))
-predefinedModule (Env ρ) = snd <$> newEnv (ρ <#> (_ × construct mempty Map.empty))
+predefinedModule (Env ρ) = bindingsAt <$> newEnv (ρ <#> (_ × construct mempty Map.empty))
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
@@ -540,5 +538,5 @@ evalProgram
 evalProgram ρ classes s =
    withClasses classes do
       { depGraph } <- moduleStore
-      out × g <- flip runStateT depGraph (fst <<< fst <$> (newEnv ρ >>= \(b × _) -> eval.program (fst <$> ρ) b empty s))
+      out × g <- flip runStateT depGraph (fst <<< fst <$> (newEnv ρ >>= \((b × _) × _) -> eval.program (fst <$> ρ) b empty s))
       pure { g, out }

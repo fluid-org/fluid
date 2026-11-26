@@ -265,6 +265,9 @@ type GVal s = Raw Val × Dependence (Set Position) s
 -- Position, then value at that position
 type ValAt = Position × Raw Val
 
+-- Position, then environment at that position
+type EnvAt = Position × Raw Env
+
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
 
