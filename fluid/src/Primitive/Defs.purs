@@ -157,9 +157,9 @@ sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (List _)) : Nil) = sort (elementsAt pv <#> (_ × empty)) <#> \pus ->
-      deliver ps $ sequenceOf List (dataDep (fst pv)) $
-         pus <#> \(pu × qs) -> deliver (singleton (fst pv) ∪ qs) (reuseAt pu)
+   depOp ps (pv@(p × Val _ (List _)) : Nil) = sort (elementsAt pv <#> (_ × empty)) <#> \pus ->
+      deliver ps $ sequenceOf List (dataDep p) $
+         pus <#> \(pu × qs) -> deliver (singleton p ∪ qs) (reuseAt pu)
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
@@ -197,10 +197,10 @@ extremum id op =
    ForeignOp (id × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (List _)) : Nil) = case elementsAt pv of
+   depOp ps (pv@(p × Val _ (List _)) : Nil) = case elementsAt pv of
       Nil -> throw ("ValueError: " <> id <> "() iterable argument is empty")
       pu : pus -> foldM step (pu × empty) pus <#> \(pu' × qs) ->
-         deliver (ps ∪ singleton (fst pv) ∪ qs) (reuseAt pu')
+         deliver (ps ∪ singleton p ∪ qs) (reuseAt pu')
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
@@ -286,9 +286,9 @@ dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (Matrix _)) : Nil) =
-      pure $ deliver ps $ sequenceOf Tuple (dataDep (fst pv)) $
-         deliver (singleton (fst pv)) <<< reuseAt <$> (childAt MatrixRows pv : childAt MatrixCols pv : Nil)
+   depOp ps (pv@(p × Val _ (Matrix _)) : Nil) =
+      pure $ deliver ps $ sequenceOf Tuple (dataDep p) $
+         deliver (singleton p) <<< reuseAt <$> (childAt MatrixRows pv : childAt MatrixCols pv : Nil)
    depOp _ _ = throw "Matrix expected"
 
 matrixUpdate :: ForeignOp
@@ -296,17 +296,17 @@ matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : pv' : pu : Nil)
+   depOp ps (pv@(p × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : pv' : pu : Nil)
       | Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) <- snd pv' =
            let
-              kept step = step × snd (deliver (singleton (fst pv)) (reuseAt (childAt step pv)))
+              kept step = step × snd (deliver (singleton p) (reuseAt (childAt step pv)))
               element i' j' _
                  | i' == i && j' == j = MatrixElement i j × snd (deliver (positionsIn pv') (reuseAt pu))
                  | otherwise = kept (MatrixElement i' j')
               elements = Array.concat (mapWithIndex (mapWithIndex <<< element) vss)
            in
               pure $ deliver ps $ Val unit (Matrix (matrixPut i j (const (snd pu)) r)) ×
-                 construct (dataDep (fst pv)) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> elements))
+                 construct (dataDep p) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> elements))
    depOp _ _ = throw "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -350,9 +350,9 @@ dict_difference =
    ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (Dictionary (DictRep es))) : pv'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
-      pure $ deliver ps $ dictionary (dataDep (fst pv) <> dataDep (fst pv')) $
-         entryAt (Set.fromFoldable [ fst pv, fst pv' ]) pv <$> L.fromFoldable (Map.keys (es \\ es'))
+   depOp ps (pv@(p × Val _ (Dictionary (DictRep es))) : (p' × Val _ (Dictionary (DictRep es'))) : Nil) =
+      pure $ deliver ps $ dictionary (dataDep p <> dataDep p') $
+         entryAt (Set.fromFoldable [ p, p' ]) pv <$> L.fromFoldable (Map.keys (es \\ es'))
    depOp _ _ = throw "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
@@ -360,10 +360,10 @@ dict_disjointUnion =
    ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (Dictionary (DictRep es))) : pv'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
-      pure $ deliver ps $ dictionary (dataDep (fst pv) <> dataDep (fst pv')) $
+   depOp ps (pv@(p × Val _ (Dictionary (DictRep es))) : pv'@(p' × Val _ (Dictionary (DictRep es'))) : Nil) =
+      pure $ deliver ps $ dictionary (dataDep p <> dataDep p') $
          L.fromFoldable (Map.keys (unionWith_never es es')) <#> \k ->
-            if k ∈ es then entryAt (singleton (fst pv)) pv k else entryAt (singleton (fst pv')) pv' k
+            if k ∈ es then entryAt (singleton p) pv k else entryAt (singleton p') pv' k
    depOp _ _ = throw "Dictionaries expected"
 
 get :: ForeignOp
@@ -371,11 +371,10 @@ get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (Lit (Str x))) : pv'@(_ × Val _ (Dictionary (DictRep es))) : Nil) =
+   depOp ps ((p × Val _ (Lit (Str x))) : pv@(p' × Val _ (Dictionary (DictRep es))) : Nil) =
       pure $ deliver ps case lookup x es of
-         Nothing -> Val unit (Lit None) × construct (dataDep (fst pv) <> dataDep (fst pv')) M.empty
-         Just _ ->
-            deliver (Set.fromFoldable [ fst pv, fst pv', fst (childAt (DictKey x) pv') ]) (reuseAt (childAt (DictVal x) pv'))
+         Nothing -> Val unit (Lit None) × construct (dataDep p <> dataDep p') M.empty
+         Just _ -> deliver (Set.fromFoldable [ p, p', fst (childAt (DictKey x) pv) ]) (reuseAt (childAt (DictVal x) pv))
    depOp _ _ = throw "String and dictionary expected"
 
 insert :: ForeignOp
@@ -383,9 +382,9 @@ insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp ps (pv@(_ × Val _ (Dictionary (DictRep es))) : pv'@(_ × Val _ (Lit (Str x))) : pu : Nil) =
-      pure $ deliver ps $ dictionary (dataDep (fst pv)) $
-         (entryAt (singleton (fst pv)) pv <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt pv' × reuseAt pu)
+   depOp ps (pv@(p × Val _ (Dictionary (DictRep es))) : pv'@(_ × Val _ (Lit (Str x))) : pu : Nil) =
+      pure $ deliver ps $ dictionary (dataDep p) $
+         (entryAt (singleton p) pv <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt pv' × reuseAt pu)
    depOp _ _ = throw "Dictionary, key and value expected"
 
 -- Outcome and source positions of comparing the values at two positions

@@ -282,10 +282,10 @@ applyBinop Mul _ pv@(_ × Val _ (List _)) pv'@(_ × Val _ (Lit (Int n))) = pure 
 applyBinop Mul _ pv'@(_ × Val _ (Lit (Int n))) pv@(_ × Val _ (List _)) = pure (repeatList pv pv' n)
 applyBinop op ps pv pv' = applyDepFun (binopFun op) Set.empty ps (pv : pv' : Nil)
 
--- List pv repeated n times, for integer n at pv'
+-- List pv repeated n times, for integer n at p'
 repeatList :: forall s. Semiring s => ValAt -> ValAt -> Int -> GVal s
-repeatList pv pv' n = sequenceOf List (dataDep (fst pv') <> (if n <= 0 then mempty else dataDep (fst pv))) $
-   L.concat (fromFoldable (replicate n (deliver (singleton (fst pv)) <<< reuseAt <$> elementsAt pv)))
+repeatList pv@(p × _) (p' × _) n = sequenceOf List (dataDep p' <> (if n <= 0 then mempty else dataDep p)) $
+   L.concat (fromFoldable (replicate n (deliver (singleton p) <<< reuseAt <$> elementsAt pv)))
 
 type Operand = Int + Number + String
 

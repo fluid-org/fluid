@@ -152,9 +152,9 @@ eval = { stmt, program }
    expr :: Dict (Raw Val) -> Vertex -> Set Position -> Expr -> m ValAt
    expr ρ b ps = case _ of
       e'@(DocExpr e _) -> do
-         pv <- value e' >>= newValue
-         pv' <- extendEnv ρ b (maplet varThis (reuseAt pv)) >>= \(ρ' × b') -> expr ρ' b' ps e
-         attachDoc (fst (fst pv)) (fst (fst pv')) $> pv
+         pv@((a × _) × _) <- value e' >>= newValue
+         (a' × _) × _ <- extendEnv ρ b (maplet varThis (reuseAt pv)) >>= \(ρ' × b') -> expr ρ' b' ps e
+         attachDoc a a' $> pv
       e -> value e >>= newValue
       where
       literal ℓ = Val unit (V.Lit ℓ) × construct (controlDep ps) Map.empty
@@ -169,8 +169,8 @@ eval = { stmt, program }
          Dictionary ees -> for ees (\(Pair e e') -> dictEntry ρ b ps e e') <#> \kvs ->
             deliver ps (dictionary (controlDep ps) (kvs <#> \(pv × pv') -> reuseAt pv × reuseAt pv'))
          DictComp e e' gs -> do
-            pv <- qualifiers (\ρ' b' ps' -> singletonList ps' <<< entry <$> dictEntry ρ' b' ps' e e') ρ b ps gs
-            pure $ deliver ps $ dictionary (dataDep (fst pv)) $
+            pv@(p × _) <- qualifiers (\ρ' b' ps' -> singletonList ps' <<< entry <$> dictEntry ρ' b' ps' e e') ρ b ps gs
+            pure $ deliver ps $ dictionary (dataDep p) $
                elementsAt pv <#> \pv' -> reuseAt (childAt (Element 0) pv') × reuseAt (childAt (Element 1) pv')
          List es -> sequenceOf V.List (controlDep ps) <<< map reuseAt <$> traverse (expr ρ b ps) es
          Tuple es -> sequenceOf V.Tuple (controlDep ps) <<< map reuseAt <$> traverse (expr ρ b ps) es
@@ -203,11 +203,11 @@ eval = { stmt, program }
          Lambda d -> pure (closure ps (b × ε) (restrict (fv d) ρ) empty d)
          Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ps) Map.empty)
          Attribute e x -> do
-            pv@(_ × v) <- expr ρ b ps e
+            pv@(p × v) <- expr ρ b ps e
             case v of
                Val _ (V.Obj c xvs) -> do
                   _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
-                  pure (deliver (singleton (fst pv)) (reuseAt (childAt (Field x) pv)))
+                  pure (deliver (singleton p) (reuseAt (childAt (Field x) pv)))
                _ -> throw $ "Found " <> prettyP v <> ", expected object"
          Subscript e e' -> do
             pv@(_ × v) <- expr ρ b ps e
@@ -235,7 +235,7 @@ eval = { stmt, program }
             where
             -- Child u at index pv' of pv; qs are further control positions
             subscript :: Set Position -> ValAt -> ValAt -> GVal s -> m (GVal s)
-            subscript qs pv pv' u = pure (deliver (singleton (fst pv) ∪ qs ∪ positionsIn pv') u)
+            subscript qs (p × _) pv' u = pure (deliver (singleton p ∪ qs ∪ positionsIn pv') u)
          ModMember q x -> do
             { modules } <- moduleStore
             let pρ@(_ × Env ρ') = definitely' (loadedEnv (get q modules))
@@ -252,14 +252,14 @@ eval = { stmt, program }
             pv <- expr ρ b ps e
             withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) Set.empty ps (pv : Nil))
          And e e' -> do
-            { holds, pv } <- condition ρ b ps e
-            if holds then reuseAt <$> expr ρ b (singleton (fst pv)) e' else pure (reuseAt pv)
+            { holds, pv: pv@(p × _) } <- condition ρ b ps e
+            if holds then reuseAt <$> expr ρ b (singleton p) e' else pure (reuseAt pv)
          Or e e' -> do
-            { holds, pv } <- condition ρ b ps e
-            if holds then pure (reuseAt pv) else reuseAt <$> expr ρ b (singleton (fst pv)) e'
+            { holds, pv: pv@(p × _) } <- condition ρ b ps e
+            if holds then pure (reuseAt pv) else reuseAt <$> expr ρ b (singleton p) e'
          Cond e1 e e2 -> do
-            { holds, pv } <- condition ρ b ps e
-            reuseAt <$> expr ρ b (singleton (fst pv)) (if holds then e1 else e2)
+            { holds, pv: p × _ } <- condition ρ b ps e
+            reuseAt <$> expr ρ b (singleton p) (if holds then e1 else e2)
          DocExpr _ e -> reuseAt <$> expr ρ b ps e
 
    -- Positions of key e and value e'

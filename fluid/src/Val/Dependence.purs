@@ -116,7 +116,7 @@ sequenceOf mk support vs =
 -- Concatenate sequences pvs; root depends on support and each sequence
 concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List ValAt -> GVal s
 concatOf mk support pvs = sequenceOf mk (support <> foldMap (fst >>> dataDep) pvs) $
-   pvs >>= \pv -> deliver (singleton (fst pv)) <<< reuseAt <$> elementsAt pv
+   pvs >>= \pv@(p × _) -> deliver (singleton p) <<< reuseAt <$> elementsAt pv
 
 -- Dictionary of entries kvs with root dependent on support
 dictionary :: forall s. Semiring s => Support (Set Position) s -> List (GVal s × GVal s) -> GVal s
