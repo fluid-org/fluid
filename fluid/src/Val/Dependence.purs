@@ -58,7 +58,7 @@ newEnv ρ = newVertex (Environment ρ') (tupling (bindings (snd <$> ρ))) <#> \a
    where
    ρ' = Env (fst <$> ρ)
 
--- Allocate fresh vertex for the environment at a position extended with bindings ρ'
+-- Extend environment ρ at position p with bindings ρ' at fresh vertex
 newExtendEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => EnvAt -> Dict (GVal s) -> m EnvAt
 newExtendEnv (p × Env ρ) ρ' = newVertex (Environment ρ'') (extend p (snd <$> ρ')) <#> \a -> (a × ε) × ρ''
    where
