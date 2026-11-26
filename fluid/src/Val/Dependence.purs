@@ -70,8 +70,8 @@ newExtendEnv ρ p ρ' = (ρ'' × _) <$> newVertex (Environment (Env ρ'')) (exte
    where
    ρ'' = ρ <+> (fst <$> ρ')
 
--- Read the dependence of the result from its annotations. The root depends on ps; a position without other
--- support depends on ps'.
+-- Apply f to the values at rs to compute the support of each result position. Every result position also
+-- depends on ps. Result positions with empty support depend on ps'.
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Position -> Set Position -> List ValAt -> MayFail (GVal s)
 applyDepFun f ps ps' rs = f (arg <$> rs) <#> \v ->
    erase v × NoReuse ps × foldl addSupport mempty (positions (paths v))
