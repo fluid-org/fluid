@@ -222,24 +222,24 @@ eval = { stmt, program }
             case u, u' of
                V.Dictionary (DictRep d), V.Lit (Str k) -> do
                   _ <- withMsg "Dict lookup" $ lookup k d # orElse ("Key \"" <> k <> "\" not found")
-                  subscript r r' (reuseAt (childAt (DictVal k) r)) (singleton (fst (childAt (DictKey k) r)))
+                  subscript (singleton (fst (childAt (DictKey k) r))) r r' (reuseAt (childAt (DictVal k) r))
                V.Dictionary _, _ -> throw $ "Found " <> prettyP v' <> ", expected str"
                _, V.Lit (Int i) | Just n <- elementCount v -> do
                   let i' = if i < 0 then n + i else i
                   unless (0 <= i' && i' < n) $ throw ("Index " <> show i <> " out of range")
-                  subscript r r' (elementAt i' r) empty
+                  subscript empty r r' (elementAt i' r)
                V.List _, _ -> throw $ "Found " <> prettyP v' <> ", expected int"
                V.Tuple _, _ -> throw $ "Found " <> prettyP v' <> ", expected int"
                V.Lit (Str _), _ -> throw $ "Found " <> prettyP v' <> ", expected int"
                V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
                   unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
-                  subscript r r' (reuseAt (childAt (MatrixElement i j) r)) empty
+                  subscript empty r r' (reuseAt (childAt (MatrixElement i j) r))
                V.Matrix _, _ -> throw $ "Found " <> prettyP v' <> ", expected pair of int"
                _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
             where
             -- Child u at index r' of the value at r; qs are further control positions
-            subscript :: ValAt -> ValAt -> GVal s -> Set Position -> m (GVal s)
-            subscript r r' u qs = pure (deliver (singleton (fst r) ∪ qs ∪ positionsIn r') u)
+            subscript :: Set Position -> ValAt -> ValAt -> GVal s -> m (GVal s)
+            subscript qs r r' u = pure (deliver (singleton (fst r) ∪ qs ∪ positionsIn r') u)
          ModMember q x -> do
             { modules } <- moduleStore
             deliver ps <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
@@ -430,7 +430,7 @@ eval = { stmt, program }
                p = q' `followedBy` singleton ClosureEnv
                args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
                ρ' = closeDefs (singleton q) p ρ ds <+> args
-            V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp q rs'
+            V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp (singleton q) rs'
             V.Type (T.ClassTy c _) ->
                askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs')
             V.Type _ -> error absurd

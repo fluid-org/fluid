@@ -268,13 +268,13 @@ type ValAt = Position × Raw Val
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
 
--- Foreign function of control position and arguments
+-- Foreign function of control positions and arguments
 type DepOp =
    forall m s
     . HasClasses m
    => MonadLoad m
    => DepSemiring s
-   => Position
+   => Set Position
    -> List ValAt
    -> m (GVal s)
 
