@@ -284,7 +284,7 @@ eval = { stmt, program }
       ModMember q x -> untraced do
          { modules } <- moduleStore
          deliver ctl <$> withMsg "Module member" (lookup' x (definitely' (loadedEnv (get q modules))))
-      App e es -> untraced do
+      App e es -> do
          f <- expr inputs e
          rs <- traverse (expr inputs) es
          withMsg ("In " <> funName e) $ apply f rs
@@ -401,7 +401,7 @@ eval = { stmt, program }
 
    stmt :: Inputs -> Stmt -> m (Result s)
    stmt inputs s = result inputs s >>= case _ of
-      Returns r -> Returns <$> newValue (reuseAt r)
+      Returns r -> Returns <$> record (reuseAt r × Tr.StmtTrace (Tr.Returned (fst r)))
       Assigns ρ ps -> flip Assigns ps <$> newBindings ρ
 
    -- Result of a statement, before vertex is allocated
@@ -456,22 +456,30 @@ eval = { stmt, program }
 
    -- Apply f to rs, partially if rs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Position -> List Position -> m (GVal s)
+   apply :: Position -> List Position -> m (GVal s × Tr.ExprTrace (Label Unit) Path)
    apply f@(q × v) rs = case v of
       Val _ (V.Fun (V.Partial _ us)) ->
-         applyFun (childAt PartialFun f) (mapWithIndex (\i _ -> childAt (PartialArg i) f) us <> rs)
-      _ -> applyFun f rs
+         applyFun (childAt PartialFun f) (mapWithIndex (\i _ -> childAt (PartialArg i) f) us) rs
+      _ -> applyFun f Nil rs
       where
-      applyFun :: Position -> List Position -> m (GVal s)
-      applyFun g@(q' × u) rs' = case u of
+      applyFun :: Position -> List Position -> List Position -> m (GVal s × Tr.ExprTrace (Label Unit) Path)
+      --keep stored and newly supplied arguments separate
+      applyFun g@(q' × u) stored supplied = case u of
          Val _ (V.Fun φ) -> do
             n <- arity'
-            let k = length rs'
+            let k = length (stored <> supplied)
             if k < n then
-               pure $ Val unit (V.Fun (V.Partial u (snd <$> rs'))) × construct (controlDep (singleton q))
-                  (Map.fromFoldable ((PartialFun × reuse q') : mapWithIndex (\i (p × _) -> PartialArg i × reuse p) rs'))
+               pure
+                  (  (  Val unit (V.Fun (V.Partial u (snd <$> (stored <> supplied)))) × construct (controlDep (singleton q))
+                         (Map.fromFoldable ((PartialFun × reuse q') : mapWithIndex (\i (p × _) -> PartialArg i × reuse p) rs'))
+                     )  × Tr.PartialApplication q (fst <$> supplied)
+                  )
             else if k == n then call φ
-            else applyFun g (take n rs') >>= newValue >>= \f' -> apply f' (drop n rs')
+            else do
+               let consumed = n - length stored
+               intermG × intermTr <- applyFun g stored (take consumed supplied)
+               intermP <- record (intermG × Tr.ExprTrace intermTr)
+               apply intermP (drop consumed supplied)
             where
             arity' :: m Int
             arity' = case φ of
@@ -482,19 +490,23 @@ eval = { stmt, program }
                V.Partial _ _ -> error absurd
          _ -> throw $ "Found " <> prettyP u <> ", expected function"
          where
-         call :: V.Fun Unit -> m (GVal s)
+         call :: V.Fun Unit -> m (GVal s × Tr.ExprTrace (Label Unit) Path)
          call = case _ of
             V.Closure (Env ρ) ds (Def xs s) -> do
                b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (controlDep (singleton q)) Map.empty)
-               reuseAt <<< asReturns <$> stmt { ρ: ρ'', b } s
+               returned <- asReturns <$> stmt { ρ: ρ'', b } s
+               pure (reuseAt returned × Tr.Application q (fst <$> supplied) (fst returned))
                where
                p = q' <> singleton ClosureEnv
-               args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
+               args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs (stored <> supplied))
                ρ' = closeDefs q p ρ ds <+> args
                ρ'' = ρ <+> (fst <$> ρ')
-            V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp q rs'
-            V.Type (T.ClassTy c _) ->
-               askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs')
+            V.Prim (ForeignOp (name × ForeignOp' { depOp })) -> do
+               v' <- depOp q (stored <> supplied)'
+               pure (v' × Tr.PrimitiveOp name q (fst <$> supplied))
+            V.Type (T.ClassTy c _) -> do
+               classes <- askClasses
+               pure (object classes (controlDep (singleton q)) c (reuseAt <$> (stored <> supplied)) × Tr.ObjectConstructor c (fst <$> supplied))
             V.Type _ -> error absurd
             V.Partial _ _ -> error absurd
 
