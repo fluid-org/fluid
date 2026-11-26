@@ -1,11 +1,5 @@
 {
     "files.insertFinalNewline": false,
     "files.trimFinalNewlines": true,
-    "search.exclude": {
-        "**/.spago": true,
-        "**/output": true,
-        "**/output-es": true,
-        "**/dist": true,
-        "**/node_modules": true
-    }
+    "search.useIgnoreFiles": true
 }
