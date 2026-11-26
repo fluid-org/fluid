@@ -60,9 +60,9 @@ newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 newEnv :: forall m s. MonadState (DepGraph Label s) m => Dict (Raw Val) -> Dependence (Set Position) s -> m Vertex
 newEnv ρ = newVertex (Bindings (Env ρ))
 
--- Allocate vertex for control input with the given dependence
-newControl :: forall m s. MonadState (DepGraph Label s) m => Dependence (Set Position) s -> m Vertex
-newControl = newVertex (Control unit)
+-- Allocate vertex for control input dependent on positions ps; return its position
+newControl :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Set Position -> m Position
+newControl ps = newVertex (Control unit) (construct (controlDep ps) Map.empty) <#> (_ × ε)
 
 -- Allocate vertex for bindings ρ; return each binding as reuse of its position
 newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Dict (GVal s))
