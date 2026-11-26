@@ -17,6 +17,7 @@
   },
   "homepage": "https://f.luid.org",
   "files": [
+    "CHANGELOG.md",
     "dist/fluid/shared",
     "dist/fluid/lib",
     "output-es",

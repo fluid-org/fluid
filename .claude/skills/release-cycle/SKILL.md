@@ -17,7 +17,8 @@ issue branch → milestone branch → staging → release
 - **Issue branches**: named `<issue-number>-<short-description>`, branched from milestone branch; PRs target milestone branch.
 - **Merge to `staging`**: timing decided by developer
 - **[Milestone report](../../../docs/workflow/milestone-report.md)**: generated at merge to `staging`
-- **Release notes**: one line per closed issue of the milestone, giving its title; omit issues that only aggregate others (e.g. a sync to a PurePy version). Classify an issue only as its issue states; otherwise Other.
+- **[Release notes](../../../docs/workflow/milestone-report.md#release-notes)**: generated on publishing to npm
+- **Sub-issues**: release notes omit any issue that has sub-issues (e.g. a sync to a PurePy version)
 
 ## Issue lifecycle
 
