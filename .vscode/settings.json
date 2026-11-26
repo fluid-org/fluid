@@ -1,4 +1,5 @@
 {
     "files.insertFinalNewline": false,
-    "files.trimFinalNewlines": true
+    "files.trimFinalNewlines": true,
+    "search.useIgnoreFiles": true
 }

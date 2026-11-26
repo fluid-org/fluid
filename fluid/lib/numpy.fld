@@ -1,0 +1,2 @@
+def conjugate(z: complex) -> complex:
+  return complex(z.real, -z.imag)

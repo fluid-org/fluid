@@ -24,6 +24,7 @@ import Data.Map as M
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (wrap)
 import Data.Number (fromString)
+import Data.Ord (abs)
 import Data.Number (cos, e, exp, floor, log, pi, round, sin, sqrt, tan) as N
 import Data.Set (Set)
 import Data.Set as Set
@@ -34,8 +35,8 @@ import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
-import Path (Path, Step(..))
-import Types.Defs (cMatrix, cRange, callable, matrix, var)
+import Path (Position, Step(..))
+import Types.Defs (cComplex, cMatrix, cRange, callable, f_imag, f_real, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
 import Cxt (Cxt, CxtEntry(Assigned), generalise)
 import Dict (fromFoldable) as D
@@ -44,19 +45,19 @@ import Effect.Exception (Error)
 import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import DepGraph (Support(..), construct, dataDep, supportAt)
-import Lattice (class BoundedJoinSemilattice, DepKind, Raw, bot)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, DepKind, Raw, bot)
 import Literal (Literal(..), showFloat)
-import Primitive (binopFun, boolean, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
+import Primitive (binopFun, boolean, fromDepFun, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack, unpackFloat)
 import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
 import Pretty (prettyP)
 import Types (Primitive(..), Type(..), baseType) as T
-import Types.Defs (float, int, intPair, none, object, str) as T
+import Types.Defs (complex, float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Set (empty, (∈), (∪))
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Position, Val(..), elementCount, matrixPut)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), ValAt, Val(..), elementCount, matrixPut)
 import Val.Dependence (applyDepFun, childAt, deliver, dictionary, elementsAt, positionsIn, reuseAt, sequenceOf)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
@@ -67,6 +68,7 @@ predefinedClasses :: ClassTable
 predefinedClasses = M.fromFoldable
    [ cRange × { typeParams: Nil, fields: ("start" × int) : ("stop" × int) : Nil, base: Nothing }
    , cMatrix × { typeParams: "T" : Nil, fields: Nil, base: Nothing }
+   , cComplex × { typeParams: Nil, fields: (f_real × T.float) : (f_imag × T.float) : Nil, base: Nothing }
    ]
    where
    int = T.PrimitiveTy T.Int
@@ -74,8 +76,9 @@ predefinedClasses = M.fromFoldable
 predefined :: Map ModuleName (Cxt × Raw Env)
 predefined = M.fromFoldable
    [ predefinedModule builtins [ "None", "object", "bool", "int", "float", "str", "list", "dict", "tuple", "type" ]
-        [ cRange, cMatrix ]
+        [ cRange, cMatrix, cComplex ]
         [ extern print_ × generalise (callable [ T.object ] T.none)
+        , extern abs_ × generalise (callable [ T.UnionTy T.float T.complex ] T.float)
         , extern len × generalise (callable [ T.PrimitiveTy T.Sized ] T.int)
         , extern sorted × generalise (callable [ T.ListTy (var "T") ] (T.ListTy (var "T")))
         , extern min_ × generalise (callable [ T.ListTy (var "T") ] (var "T"))
@@ -125,6 +128,20 @@ predefined = M.fromFoldable
          <> (classes <#> \c -> (last c × Val bot (Fun (Type (T.ClassTy c Nil)))) × Cxt.Type c)
          <> (names <#> \x -> (x × Val bot (Opaque (qual q x))) × Cxt.PredefName)
 
+abs_ :: ForeignOp
+abs_ =
+   ForeignOp ("abs" × ForeignOp' { arity: 1, depOp: fromDepFun depFun })
+   where
+   depFun :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depFun (Val α (Lit (Int n)) : Nil) = Right (Val α (Lit (Int (abs n))))
+   depFun (Val α (Lit (Float x)) : Nil) = Right (Val α (Lit (Float (abs x))))
+   depFun (Val α (Obj c ((_ × re) : (_ × im) : Nil)) : Nil) | c == cComplex = do
+      x × β <- unpackFloat re
+      y × β' <- unpackFloat im
+      pure (Val (α `add` β `add` β') (Lit (Float (N.sqrt (x * x + y * y)))))
+   depFun (Val _ u : Nil) = Left (typeMismatch u "int, float or complex")
+   depFun _ = Left "Single argument expected"
+
 len :: ForeignOp
 len =
    ForeignOp ("len" × ForeignOp' { arity: 1, depOp: fromDepFun depFun })
@@ -140,34 +157,34 @@ sorted =
    ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ctl (l@(_ × Val _ (List _)) : Nil) = sort (elementsAt l <#> (_ × empty)) <#> \us ->
-      deliver (singleton ctl) $ sequenceOf List (dataDep (fst l)) $
-         us <#> \(u × ps) -> deliver (singleton (fst l) ∪ ps) (reuseAt u)
+   depOp ps (pv@(p × Val _ (List _)) : Nil) = sort (elementsAt pv <#> (_ × empty)) <#> \pus ->
+      deliver ps $ sequenceOf List (dataDep p) $
+         pus <#> \(pu × qs) -> deliver (singleton p ∪ qs) (reuseAt pu)
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
-   sort :: forall m. MonadError Error m => List (Position × Set Path) -> m (List (Position × Set Path))
-   sort us
-      | L.length us < 2 = pure us
-      | otherwise = join (merge empty <$> sort (L.take n us) <*> sort (L.drop n us))
+   sort :: forall m. MonadError Error m => List (ValAt × Set Position) -> m (List (ValAt × Set Position))
+   sort pus
+      | L.length pus < 2 = pure pus
+      | otherwise = join (merge empty <$> sort (L.take n pus) <*> sort (L.drop n pus))
            where
-           n = L.length us / 2
+           n = L.length pus / 2
 
    merge
       :: forall m
        . MonadError Error m
-      => Set Path
-      -> List (Position × Set Path)
-      -> List (Position × Set Path)
-      -> m (List (Position × Set Path))
-   merge ps Nil us' = pure (map (ps ∪ _) <$> us')
-   merge ps us Nil = pure (map (ps ∪ _) <$> us)
-   merge ps ((u × qs) : us) ((u' × qs') : us') = compareAt Lt u' u >>= \(b × ps') ->
+      => Set Position
+      -> List (ValAt × Set Position)
+      -> List (ValAt × Set Position)
+      -> m (List (ValAt × Set Position))
+   merge ps Nil pus' = pure (map (ps ∪ _) <$> pus')
+   merge ps pus Nil = pure (map (ps ∪ _) <$> pus)
+   merge ps ((pu × qs) : pus) ((pu' × qs') : pus') = compareAt Lt pu' pu >>= \(b × ps') ->
       let
          ps'' = ps ∪ ps' ∪ qs ∪ qs'
       in
-         if b then ((u' × ps'') : _) <$> merge ps'' ((u × qs) : us) us'
-         else ((u × ps'') : _) <$> merge ps'' us ((u' × qs') : us')
+         if b then ((pu' × ps'') : _) <$> merge ps'' ((pu × qs) : pus) pus'
+         else ((pu × ps'') : _) <$> merge ps'' pus ((pu' × qs') : pus')
 
 min_ :: ForeignOp
 min_ = extremum "min" Lt
@@ -180,15 +197,15 @@ extremum id op =
    ForeignOp (id × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ctl (l@(_ × Val _ (List _)) : Nil) = case elementsAt l of
+   depOp ps (pv@(p × Val _ (List _)) : Nil) = case elementsAt pv of
       Nil -> throw ("ValueError: " <> id <> "() iterable argument is empty")
-      u : us -> foldM step (u × empty) us <#> \(u' × ps) ->
-         deliver (Set.fromFoldable [ ctl, fst l ] ∪ ps) (reuseAt u')
+      pu : pus -> foldM step (pu × empty) pus <#> \(pu' × qs) ->
+         deliver (ps ∪ singleton p ∪ qs) (reuseAt pu')
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
-   step :: forall m. MonadError Error m => Position × Set Path -> Position -> m (Position × Set Path)
-   step (u × ps) u' = compareAt op u' u <#> \(b × ps') -> (if b then u' else u) × (ps ∪ ps')
+   step :: forall m. MonadError Error m => ValAt × Set Position -> ValAt -> m (ValAt × Set Position)
+   step (pu × ps) pu' = compareAt op pu' pu <#> \(b × ps') -> (if b then pu' else pu) × (ps ∪ ps')
 
 exit :: ForeignOp
 exit =
@@ -212,12 +229,12 @@ loadJson =
    ForeignOp ("load_json" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ctl rs
-      | Val _ (Fun (Type τ)) : Val _ (Lit (Str path)) : Nil <- snd <$> rs = do
+   depOp ps pvs
+      | Val _ (Fun (Type τ)) : Val _ (Lit (Str path)) : Nil <- snd <$> pvs = do
            classes <- askClasses
            json <- loadJsonFile path
            v <- orThrow (jsonVal classes τ json)
-           pure (deliver (Set.fromFoldable (ctl : (fst <$> rs))) (v × construct mempty M.empty))
+           pure (deliver (ps ∪ Set.fromFoldable (fst <$> pvs)) (v × construct mempty M.empty))
    depOp _ _ = throw "Type and string expected"
 
 loadJsonFile :: forall m. MonadError Error m => MonadAff m => LoadFile m => String -> m Json
@@ -269,9 +286,9 @@ dims =
    ForeignOp ("dims" × ForeignOp' { arity: 1, depOp })
    where
    depOp :: DepOp
-   depOp ctl (m@(_ × Val _ (Matrix _)) : Nil) =
-      pure $ deliver (singleton ctl) $ sequenceOf Tuple (dataDep (fst m)) $
-         deliver (singleton (fst m)) <<< reuseAt <$> (childAt MatrixRows m : childAt MatrixCols m : Nil)
+   depOp ps (pv@(p × Val _ (Matrix _)) : Nil) =
+      pure $ deliver ps $ sequenceOf Tuple (dataDep p) $
+         deliver (singleton p) <<< reuseAt <$> (childAt MatrixRows pv : childAt MatrixCols pv : Nil)
    depOp _ _ = throw "Matrix expected"
 
 matrixUpdate :: ForeignOp
@@ -279,17 +296,17 @@ matrixUpdate =
    ForeignOp ("matrixUpdate" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp ctl (m@(_ × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : ix : v : Nil)
-      | Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) <- snd ix =
+   depOp ps (pv@(p × Val _ (Matrix r@(MatrixRep (vss × _ × _)))) : pv' : pu : Nil)
+      | Val _ (Tuple [ Val _ (Lit (Int i)), Val _ (Lit (Int j)) ]) <- snd pv' =
            let
-              kept step = step × snd (deliver (singleton (fst m)) (reuseAt (childAt step m)))
+              kept step = step × snd (deliver (singleton p) (reuseAt (childAt step pv)))
               element i' j' _
-                 | i' == i && j' == j = MatrixElement i j × snd (deliver (positionsIn ix) (reuseAt v))
+                 | i' == i && j' == j = MatrixElement i j × snd (deliver (positionsIn pv') (reuseAt pu))
                  | otherwise = kept (MatrixElement i' j')
               elements = Array.concat (mapWithIndex (mapWithIndex <<< element) vss)
            in
-              pure $ deliver (singleton ctl) $ Val unit (Matrix (matrixPut i j (const (snd v)) r)) ×
-                 construct (dataDep (fst m)) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> elements))
+              pure $ deliver ps $ Val unit (Matrix (matrixPut i j (const (snd pu)) r)) ×
+                 construct (dataDep p) (M.fromFoldable ([ kept MatrixRows, kept MatrixCols ] <> elements))
    depOp _ _ = throw "Matrix, pair of integers and value expected"
 
 find_str :: ForeignOp
@@ -333,9 +350,9 @@ dict_difference =
    ForeignOp ("dict_difference" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
-      pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
-         entryAt (Set.fromFoldable [ fst d, fst d' ]) d <$> L.fromFoldable (Map.keys (es \\ es'))
+   depOp ps (pv@(p × Val _ (Dictionary (DictRep es))) : (p' × Val _ (Dictionary (DictRep es'))) : Nil) =
+      pure $ deliver ps $ dictionary (dataDep p <> dataDep p') $
+         entryAt (Set.fromFoldable [ p, p' ]) pv <$> L.fromFoldable (Map.keys (es \\ es'))
    depOp _ _ = throw "Dictionaries expected."
 
 dict_disjointUnion :: ForeignOp
@@ -343,10 +360,10 @@ dict_disjointUnion =
    ForeignOp ("dict_disjointUnion" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ctl (d@(_ × Val _ (Dictionary (DictRep es))) : d'@(_ × Val _ (Dictionary (DictRep es'))) : Nil) =
-      pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d) <> dataDep (fst d')) $
+   depOp ps (pv@(p × Val _ (Dictionary (DictRep es))) : pv'@(p' × Val _ (Dictionary (DictRep es'))) : Nil) =
+      pure $ deliver ps $ dictionary (dataDep p <> dataDep p') $
          L.fromFoldable (Map.keys (unionWith_never es es')) <#> \k ->
-            if k ∈ es then entryAt (singleton (fst d)) d k else entryAt (singleton (fst d')) d' k
+            if k ∈ es then entryAt (singleton p) pv k else entryAt (singleton p') pv' k
    depOp _ _ = throw "Dictionaries expected"
 
 get :: ForeignOp
@@ -354,10 +371,10 @@ get =
    ForeignOp ("get" × ForeignOp' { arity: 2, depOp })
    where
    depOp :: DepOp
-   depOp ctl (k@(_ × Val _ (Lit (Str x))) : d@(_ × Val _ (Dictionary (DictRep es))) : Nil) =
-      pure $ deliver (singleton ctl) case lookup x es of
-         Nothing -> Val unit (Lit None) × construct (dataDep (fst k) <> dataDep (fst d)) M.empty
-         Just _ -> deliver (Set.fromFoldable [ fst k, fst d, fst (childAt (DictKey x) d) ]) (reuseAt (childAt (DictVal x) d))
+   depOp ps ((p × Val _ (Lit (Str x))) : pv@(p' × Val _ (Dictionary (DictRep es))) : Nil) =
+      pure $ deliver ps case lookup x es of
+         Nothing -> Val unit (Lit None) × construct (dataDep p <> dataDep p') M.empty
+         Just _ -> deliver (Set.fromFoldable [ p, p', fst (childAt (DictKey x) pv) ]) (reuseAt (childAt (DictVal x) pv))
    depOp _ _ = throw "String and dictionary expected"
 
 insert :: ForeignOp
@@ -365,21 +382,21 @@ insert =
    ForeignOp ("insert" × ForeignOp' { arity: 3, depOp })
    where
    depOp :: DepOp
-   depOp ctl (d@(_ × Val _ (Dictionary (DictRep es))) : k@(_ × Val _ (Lit (Str x))) : v : Nil) =
-      pure $ deliver (singleton ctl) $ dictionary (dataDep (fst d)) $
-         (entryAt (singleton (fst d)) d <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt k × reuseAt v)
+   depOp ps (pv@(p × Val _ (Dictionary (DictRep es))) : pv'@(_ × Val _ (Lit (Str x))) : pu : Nil) =
+      pure $ deliver ps $ dictionary (dataDep p) $
+         (entryAt (singleton p) pv <$> L.fromFoldable (Set.delete x (Map.keys es))) <> singleton (reuseAt pv' × reuseAt pu)
    depOp _ _ = throw "Dictionary, key and value expected"
 
 -- Outcome and source positions of comparing the values at two positions
-compareAt :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)
-compareAt op u u' = do
-   v × δ <- orThrow (applyDepFun (binopFun op) empty (u : u' : Nil) :: MayFail (GVal DepKind))
+compareAt :: forall m. MonadError Error m => Binop -> ValAt -> ValAt -> m (Boolean × Set Position)
+compareAt op pv pv' = do
+   v × δ <- orThrow (applyDepFun (binopFun op) empty empty (pv : pv' : Nil) :: MayFail (GVal DepKind))
    b × _ <- orThrow (unpack boolean v)
    pure (b × case supportAt δ Nil of Support ps ws -> ps ∪ Map.keys ws)
 
 -- Reuse key and value of a dictionary entry under control of given positions
-entryAt :: forall s. Semiring s => Set Path -> Position -> String -> GVal s × GVal s
-entryAt ps d k = deliver ps (reuseAt (childAt (DictKey k) d)) × deliver ps (reuseAt (childAt (DictVal k) d))
+entryAt :: forall s. Semiring s => Set Position -> ValAt -> String -> GVal s × GVal s
+entryAt ps pv k = deliver ps (reuseAt (childAt (DictKey k) pv)) × deliver ps (reuseAt (childAt (DictVal k) pv))
 
 quot :: ForeignOp
 quot = intBinary "quot" I.quot

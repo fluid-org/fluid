@@ -12,7 +12,7 @@ import Data.Number (pow)
 import Data.String.CodePoints (codePointFromChar)
 import Parse.Parser (lexeme)
 import Parsing (fail)
-import Parsing.Combinators (option, optionMaybe, (<?>), (<??>))
+import Parsing.Combinators (option, optionMaybe, try, (<?>), (<??>))
 import Parsing.Indent (IndentParser)
 import Parsing.String (char)
 import Parsing.String.Basic (oneOf)
@@ -22,6 +22,9 @@ type Parser a = IndentParser String a
 
 float :: Parser Number
 float = lexeme floating <?> "float"
+
+imaginary :: Parser Number
+imaginary = lexeme ((try floating <|> (sign <*> (toNumber <$> decimal))) <* oneOf [ 'j', 'J' ]) <?> "imaginary"
 
 integer :: Parser Int
 integer = lexeme int <?> "integer"

@@ -19,7 +19,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.List (List(..), drop, filter, index, take, intersect, length, mapMaybe, null, sort, transpose, updateAt, (:))
 import Data.Foldable (any, lookup) as F
-import Module.Defs (ModuleName, containing, implicitFor, submods)
+import Module.Defs (ModuleName, builtins, containing, submods)
 import Data.List.NonEmpty (NonEmptyList(..), cons, fromList, groupBy, head, last, snoc, toList, uncons)
 import Data.NonEmpty ((:|))
 import Data.Semigroup.Foldable (foldl1, foldr1)
@@ -29,7 +29,7 @@ import Data.Traversable (for, sequence, traverse)
 import Data.Tuple (fst, snd, uncurry)
 import WellFormed.Shapes (Shape, matchesShapes, shapes)
 import Classes (ClassTable, Instance(..), elemType, equiv, fieldNames, fields, fieldsAt, instanceAt, join, joins, meet, subtype, typeArgs)
-import Types.Defs (bool, cMatrix, cParagraph, cRange, float, int, intPair, matrix, never, none, object, str)
+import Types.Defs (bool, cMatrix, cParagraph, cRange, complex, float, int, intPair, matrix, never, none, object, str)
 import Cxt (CxtEntry(..), Cxt, WfResult(..), classOf, extend, merge, override, resolveName)
 import Dict as D
 import Util.Map (constMap, get, insert, keys, lookup, maplet)
@@ -98,7 +98,7 @@ checkModule q = gets _.modules >>= \modules -> case lookup q modules of
 
 checkImports :: ModuleName -> List S.Import -> CheckM (Cxt × Cxt)
 checkImports enclosing ιs = do
-   cxt <- foldM (\acc q -> (acc ∪ _) <$> checkModule q) empty (implicitFor enclosing)
+   cxt <- checkModule builtins
    cxt' <- foldM (\acc ι -> (acc `extend` _) <$> importBindings enclosing ι) empty ιs
    pure (cxt × cxt')
 
@@ -169,6 +169,7 @@ class Captures a where
 instance Captures S.Expr where
    captures (S.Var _) = empty
    captures (S.Lit _) = empty
+   captures (S.Imaginary _) = empty
    captures (S.Call e _ es xes) = captures e ∪ unions (captures <$> es) ∪ unions ((captures <<< snd) <$> xes)
    captures (S.Dictionary es) =
       unions ((\(k × v) -> captures k ∪ captures v) <$> es)
@@ -404,6 +405,7 @@ annotated cxt Nothing e = synth cxt e
 instance Synth S.Expr (T.Type × E.Expr) where
    synth cxt (S.Var x) = (_ × E.Var x) <$> varType cxt x
    synth _ (S.Lit n@(Float _)) = pure (float × E.Lit n)
+   synth _ (S.Imaginary y) = pure (complex × E.Imaginary y)
    synth _ (S.Lit ℓ) = pure (T.LitTy ℓ × E.Lit ℓ)
    synth cxt (S.Call e ψs es xes) = case className cxt e of
       Just (c × name) -> constr cxt c name ψs es xes

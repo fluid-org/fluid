@@ -10,7 +10,7 @@ import Data.Bifunctor (lmap)
 import Bind (dottedName, pathName, varName)
 import Data.List.NonEmpty (snoc)
 import Data.Either (Either(..), either)
-import Data.Foldable (foldM, for_, intercalate)
+import Data.Foldable (foldM, intercalate)
 import Data.List (List(..), catMaybes, elem, filter, mapMaybe, reverse, takeWhile, (:))
 import Data.List as List
 import Data.List.NonEmpty as NEL
@@ -25,13 +25,13 @@ import Data.Tuple (fst)
 import Classes (ClassTable)
 import Dict (Dict)
 import Effect.Exception (Error)
-import Eval (evalImport, implicitMembers, load, predefinedModule) as Dep
+import Eval (evalImport, predefinedModule) as Dep
 import Expr (Import(..)) as E
 import Literal (Literal(..))
 import Expr (Module, Pattern(..), Stmt, fv)
 import File (class MonadLoad, File(..), FileCxt(..), hasDirectory, loadModuleSource, manifest, modulePath, withClasses)
 import DepGraph (emptyGraph)
-import Module.Defs (ModuleName, containing, implicit, implicitFor, parents)
+import Module.Defs (ModuleName, builtins, containing, parents)
 import Parse (parseModule, parseProgram)
 import Primitive.Defs (predefined, predefinedClasses)
 import WellFormed (CheckM, checkProgram, checkModule, mainModule, runCheckM)
@@ -39,6 +39,7 @@ import SExpr as S
 import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
+import Util.Set (empty)
 import Lattice (DepKind)
 import Val (class MonadProgram, GVal, ModuleState(..), modifyModuleStore)
 
@@ -88,7 +89,7 @@ checkAcyclic edges roots = void (foldM (go Nil) Set.empty roots)
            ("import cycle: " <> intercalate " -> " (quoted <<< dottedName <$> (q : reverse (takeWhile (_ /= q) path)) <> (q : Nil)))
       | otherwise = Set.insert q <$> foldM (go (q : path)) done (findWithDefault Nil q edges)
 
--- Load modules into new dependence graph in module store; return top-level environment
+-- Load modules into new dependence graph in module store; return imported bindings
 loadTopLevel
    :: forall m
     . MonadProgram m
@@ -99,9 +100,7 @@ loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- for predefined \(_ × ρ) -> Loaded <$> Dep.predefinedModule ρ
       modifyModuleStore (_ { modules = Map.union predefined' (Parsed <$> modules) })
-      for_ implicit Dep.load
-      ρ0 <- Dep.implicitMembers
-      foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) ρ0 imports
+      foldM (\ρ (S.Import q f) -> Dep.evalImport mainModule ρ (E.Import q f)) empty imports
    modifyModuleStore (_ { depGraph = depGraph })
    pure inputs
 
@@ -150,7 +149,7 @@ prepModule q = prepModules (S.Import q Nothing : Nil) (checkModule q) <#> \{ mod
 parseModules :: forall m. MonadLoad m => List S.Import -> ExceptT ParseFailure m (Map ModuleName S.Module)
 parseModules imports = do
    deps <- lift (traverse (importDeps mainModule) imports)
-   let roots = implicit <> (deps >>= _.load)
+   let roots = builtins : (deps >>= _.load)
    moduleDeps × mods <- collectModules Set.empty Map.empty Map.empty roots
    lift (orThrow (checkAcyclic moduleDeps (deps >>= _.edges)))
    -- every containing module of loaded module present, and empty if without source file
@@ -187,7 +186,7 @@ parseModules imports = do
          Just src -> do
             mod × _ <- except (lmap (\msg -> ParseFailure (msg <> "\nLoading module " <> quoted (dottedName path))) (parseModule src))
             deps <- lift case mod of S.Module ιs _ -> traverse (importDeps path) ιs
-            pure (mod × (deps >>= _.edges) × (implicitFor path <> (deps >>= _.load)))
+            pure (mod × (deps >>= _.edges) × (deps >>= _.load))
          Nothing -> lift (hasDirectory fluidSrcPaths (File (pathName path))) >>= case _ of
             true -> pure (S.Module Nil S.Pass × Nil × Nil)
             false -> lift (throw ("No module named " <> quoted (dottedName path)))

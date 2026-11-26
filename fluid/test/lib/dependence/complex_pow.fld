@@ -1,0 +1,4 @@
+z: complex = @doc("z") complex(1, 2)
+k: float = @doc("k") 2.0
+
+(z ** k).real

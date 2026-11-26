@@ -34,7 +34,7 @@ import Module.Defs (ModuleName)
 import DepGraph (class Paths, DepGraph, Dependence, Labelling, emptyGraph, paths)
 import Lattice (class BoundedLattice, class DepSemiring, class JoinSemilattice, class MeetSemilattice, DepKind(..), Raw, (∧), (∨))
 import Literal (Literal(..))
-import Path (Path, Step(..), Vertex)
+import Path (Path, Position, Step(..), Vertex)
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -82,9 +82,8 @@ root (Val α _) = α
 
 -- Label of a vertex
 data Label a
-   = Value (Val a) -- of an expression or returning statement
-   | Bindings (Env a) -- introduced by an assigning statement, or members of a module
-   | Inputs a (Env a) -- control position and environment of a premise
+   = Value (Val a)
+   | Environment (Env a)
 
 value :: forall a. Label a -> Val a
 value (Value v) = v
@@ -95,9 +94,7 @@ instance Paths Val where
 
 instance Paths Label where
    paths (Value v) = Value (paths v)
-   paths (Bindings (Env ρ)) = Bindings (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
-   paths (Inputs α (Env ρ)) =
-      Inputs (singleton InputsCtl × α) (Env (mapWithKey (\x -> pathsFrom (Binding x : InputsEnv : Nil)) ρ))
+   paths (Environment (Env ρ)) = Environment (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
 
 -- Same as paths, except that each path starts with the reverse of p
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
@@ -263,33 +260,33 @@ valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
 valAt g p = value (get p g.vals)
 
 -- Value with its dependence on the values of vertices already in the graph
-type GVal s = Raw Val × Dependence (Set Path) s
+type GVal s = Raw Val × Dependence (Set Position) s
 
--- Source position, then value at that position
-type Position = Path × Raw Val
+type ValAt = Position × Raw Val
+type EnvAt = Position × Raw Env
 
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
 
--- Foreign function of control position and arguments
+-- Foreign function of control positions and arguments
 type DepOp =
    forall m s
     . HasClasses m
    => MonadLoad m
    => DepSemiring s
-   => Path
-   -> List Position
+   => Set Position
+   -> List ValAt
    -> m (GVal s)
 
 -- Module parsed but not yet loaded, or loaded with its environment
-data ModuleState s = Parsed Module | Loaded (Dict (GVal s))
+data ModuleState = Parsed Module | Loaded EnvAt
 
-loadedEnv :: forall s. ModuleState s -> Maybe (Dict (GVal s))
+loadedEnv :: ModuleState -> Maybe EnvAt
 loadedEnv (Parsed _) = Nothing
-loadedEnv (Loaded ρ) = Just ρ
+loadedEnv (Loaded pρ) = Just pρ
 
 type ModuleStore s =
-   { modules :: Map ModuleName (ModuleState s)
+   { modules :: Map ModuleName ModuleState
    , depGraph :: DepGraph Label s
    }
 

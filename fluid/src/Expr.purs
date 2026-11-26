@@ -26,6 +26,7 @@ data Unop = Not | Pos | Neg
 data Expr
    = Var Var
    | Lit Literal
+   | Imaginary Number
    | Dictionary (List (Pair Expr)) -- constructor name Dict borks (import of same name)
    | Constr Name (List Expr)
    | List (List Expr)
@@ -100,6 +101,7 @@ class FV a where
 instance FV Expr where
    fv (Var x) = singleton x
    fv (Lit _) = empty
+   fv (Imaginary _) = empty
    fv (Dictionary ees) = unions ((\(Pair e e') -> fv e ∪ fv e') <$> ees)
    fv (Constr _ es) = unions (fv <$> es)
    fv (List es) = unions (fv <$> es)

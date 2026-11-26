@@ -4,7 +4,8 @@ import Prelude hiding (absurd, apply, div, top)
 
 import Bind (Bind)
 import Data.Either (Either(..), either)
-import Data.Foldable (foldl)
+import Data.Foldable (elem, foldl)
+import Data.Maybe (Maybe(..))
 import Data.Int (toNumber)
 import Data.Int as Int
 import Data.Array (replicate)
@@ -16,20 +17,22 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.String (Pattern(..))
 import Data.String as String
+import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import DepGraph (dataDep)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
-import Literal (Literal(..), eqLiteral)
-import Path (Path)
+import Literal (Literal(..), asFloat, eqLiteral)
+import Path (Position)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Util (type (+), type (×), MayFail, absurd, definitely', error, orThrow, singleton, (×))
+import Util.Pair (Pair(..))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
-import Types.Defs (cRange)
-import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), GVal, Position, ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
+import Types.Defs (cComplex, cRange, f_imag, f_real)
+import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), GVal, ValAt, ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
 import Val.Dependence (applyDepFun, concatOf, deliver, elementsAt, reuseAt, sequenceOf)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
@@ -41,6 +44,10 @@ type ToFrom d a =
 
 unpack :: forall d a. ToFrom d a -> Val a -> MayFail (d × a)
 unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
+
+-- Int or float as float
+unpackFloat :: forall a. Val a -> MayFail (Number × a)
+unpackFloat v = first (either toNumber identity) <$> unpack intOrNumber v
 
 -- For values whose shape is known.
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
@@ -133,7 +140,7 @@ boolean =
 -- Need to be careful about type variables escaping higher-rank quantification.
 -- Foreign function with dependence given by f
 fromDepFun :: DepFun -> DepOp
-fromDepFun f ctl rs = orThrow (applyDepFun f (singleton ctl) rs)
+fromDepFun f ps pvs = orThrow (applyDepFun f ps Set.empty pvs)
 
 type Unary i o a =
    { i :: ToFrom i a
@@ -167,25 +174,113 @@ union1 _ g (Right x) = g x
 
 -- Dependence relations of the operators, from the positions their evaluation inspects.
 binopFun :: forall a. DepSemiring a => Binop -> List (Val a) -> MayFail (Val a)
-binopFun op (v : v' : Nil) = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
+binopFun op (v : v' : Nil)
+   | op `elem` [ Add, Sub, Mul, Div, Pow ]
+   , isComplex v || isComplex v'
+   , Just z <- complexOperand v
+   , Just w <- complexOperand v' = complexArith op z w <#> \(α × x × y) -> complexVal α x y
+   | otherwise = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 binopFun _ _ = error absurd
 
 unopFun :: forall a. Ord a => Semiring a => Unop -> List (Val a) -> MayFail (Val a)
+unopFun op (Val α (Obj c ((_ × x) : (_ × y) : Nil)) : Nil) | c == cComplex =
+   complexVal α <$> unopFun op (x : Nil) <*> unopFun op (y : Nil)
 unopFun op (v : Nil) = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 unopFun _ _ = error absurd
 
--- Concatenation and repetition reuse elements of operand sequences
-applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
-applyBinop Add ctl r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (deliver ctl (concatOf List mempty (r : r' : Nil)))
-applyBinop Add ctl r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (deliver ctl (concatOf Tuple mempty (r : r' : Nil)))
-applyBinop Mul ctl l@(_ × Val _ (List _)) k@(_ × Val _ (Lit (Int n))) = pure (deliver ctl (repeatList l k n))
-applyBinop Mul ctl k@(_ × Val _ (Lit (Int n))) l@(_ × Val _ (List _)) = pure (deliver ctl (repeatList l k n))
-applyBinop op ctl r r' = applyDepFun (binopFun op) ctl (r : r' : Nil)
+isComplex :: forall a. Val a -> Boolean
+isComplex (Val _ (Obj c _)) = c == cComplex
+isComplex _ = false
 
--- List at l repeated n times, for the integer n at k
-repeatList :: forall s. Semiring s => Position -> Position -> Int -> GVal s
-repeatList l k n = sequenceOf List (dataDep (fst k) <> (if n <= 0 then mempty else dataDep (fst l))) $
-   L.concat (fromFoldable (replicate n (deliver (singleton (fst l)) <<< reuseAt <$> elementsAt l)))
+complexVal :: forall a. a -> Val a -> Val a -> Val a
+complexVal α x y = Val α (Obj cComplex ((f_real × x) : (f_imag × y) : Nil))
+
+-- Annotation of root with real and imaginary part
+type ComplexOperand a = a × Val a × Val a
+
+-- Complex operand, or int or float operand as complex number with constant zero as imaginary part
+complexOperand :: forall a. Semiring a => Val a -> Maybe (ComplexOperand a)
+complexOperand (Val α (Obj c ((_ × x) : (_ × y) : Nil))) | c == cComplex = Just (α × x × y)
+complexOperand (Val α (Lit ℓ)) | Just x <- asFloat ℓ = Just (zero × Val α (Lit (Float x)) × floatVal 0.0)
+complexOperand _ = Nothing
+
+floatVal :: forall a. Semiring a => Number -> Val a
+floatVal = Val zero <<< Lit <<< Float
+
+-- Apply arithmetic operator to parts of complex operands by CPython algorithms
+complexArith :: forall a. DepSemiring a => Binop -> ComplexOperand a -> ComplexOperand a -> MayFail (ComplexOperand a)
+complexArith op z@(α × x × y) (β × x' × y') = case op of
+   Add -> result <$> arith Add x x' <*> arith Add y y'
+   Sub -> result <$> arith Sub x x' <*> arith Sub y y'
+   Mul -> result <$> join (arith Sub <$> arith Mul x x' <*> arith Mul y y')
+      <*> join (arith Add <$> arith Mul x y' <*> arith Mul y x')
+   Div -> do
+      Pair a b <- traverse complexPart (Pair x' y')
+      if N.abs a >= N.abs b then
+         if a == 0.0 then divisionByZero
+         else do
+            ratio <- arith Div y' x'
+            denom <- arith Add x' =<< arith Mul y' ratio
+            result <$> (flip (arith Div) denom =<< arith Add x =<< arith Mul y ratio)
+               <*> (flip (arith Div) denom =<< arith Sub y =<< arith Mul x ratio)
+      else if N.abs b >= N.abs a then do
+         ratio <- arith Div x' y'
+         denom <- flip (arith Add) y' =<< arith Mul x' ratio
+         result <$> (flip (arith Div) denom =<< flip (arith Add) y =<< arith Mul x ratio)
+            <*> (flip (arith Div) denom =<< flip (arith Sub) x =<< arith Mul y ratio)
+      else pure (result nan nan)
+   Pow -> do
+      Pair a b <- traverse complexPart (Pair x y)
+      Pair a' b' <- traverse complexPart (Pair x' y')
+      let
+         vabs = N.sqrt (a * a + b * b)
+         at = N.atan2 b a
+         len = if b' /= 0.0 then N.pow vabs a' / N.exp (at * b') else N.pow vabs a'
+         phase = if b' /= 0.0 then at * a' + b' * N.log vabs else at * a'
+         γ = foldl add zero (root <$> [ x, y, x', y' ])
+         -- Each part of power depends on every part of base and exponent
+         power (_ × Val _ u × Val _ u') = result (Val γ u) (Val γ u')
+      if a == 0.0 && b == 0.0 && (b' /= 0.0 || a' < 0.0) then
+         Left "ZeroDivisionError: zero to a negative or complex power"
+      else if b' == 0.0 && a' == N.floor a' && N.abs a' <= 100.0 then
+         power <$>
+            if a' > 0.0 then powu one z (Int.floor a')
+            else complexArith Div one =<< powu one z (Int.floor (-a'))
+      else if a == 0.0 && b == 0.0 then pure (power (zero × floatVal 0.0 × floatVal 0.0))
+      else pure (power (zero × floatVal (len * N.cos phase) × floatVal (len * N.sin phase)))
+   _ -> error absurd
+   where
+   result :: Val a -> Val a -> ComplexOperand a
+   result u u' = (α `add` β) × u × u'
+
+   arith op' u u' = binopFun op' (u : u' : Nil)
+   complexPart u = fst <$> unpackFloat u
+   one = zero × floatVal 1.0 × floatVal 0.0
+   nan = Val (root x' `add` root y') (Lit (Float N.nan))
+
+   -- Multiply r by nth power of p by repeated squaring
+   powu :: ComplexOperand a -> ComplexOperand a -> Int -> MayFail (ComplexOperand a)
+   powu r _ 0 = pure r
+   powu r p n = do
+      r' <- if Int.odd n then complexArith Mul r p else pure r
+      p' <- complexArith Mul p p
+      powu r' p' (n / 2)
+
+divisionByZero :: forall a. MayFail a
+divisionByZero = Left "ZeroDivisionError: division by zero"
+
+-- Concatenation and repetition reuse elements of operand sequences
+applyBinop :: forall s. DepSemiring s => Binop -> Set Position -> ValAt -> ValAt -> MayFail (GVal s)
+applyBinop Add _ pv@(_ × Val _ (List _)) pv'@(_ × Val _ (List _)) = pure (concatOf List mempty (pv : pv' : Nil))
+applyBinop Add _ pv@(_ × Val _ (Tuple _)) pv'@(_ × Val _ (Tuple _)) = pure (concatOf Tuple mempty (pv : pv' : Nil))
+applyBinop Mul _ pv@(_ × Val _ (List _)) pv'@(_ × Val _ (Lit (Int n))) = pure (repeatList pv pv' n)
+applyBinop Mul _ pv'@(_ × Val _ (Lit (Int n))) pv@(_ × Val _ (List _)) = pure (repeatList pv pv' n)
+applyBinop op ps pv pv' = applyDepFun (binopFun op) Set.empty ps (pv : pv' : Nil)
+
+-- List pv repeated n times, for integer n at p'
+repeatList :: forall s. Semiring s => ValAt -> ValAt -> Int -> GVal s
+repeatList pv@(p × _) (p' × _) n = sequenceOf List (dataDep p' <> (if n <= 0 then mempty else dataDep p)) $
+   L.concat (fromFoldable (replicate n (deliver (singleton p) <<< reuseAt <$> elementsAt pv)))
 
 type Operand = Int + Number + String
 
@@ -243,7 +338,7 @@ binop op (Val α u) (Val β u') = do
    floorDiv m n = Int.floor (toNumber m / toNumber n)
 
    nonZero :: Operand -> MayFail Unit
-   nonZero y = when (isZero y) (Left "ZeroDivisionError: division by zero")
+   nonZero y = when (isZero y) divisionByZero
 
    isZero :: Operand -> Boolean
    isZero (Left 0) = true
@@ -295,6 +390,10 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
    Lit (Float _), Lit (Bool _) -> undefined unit
    Fun _, Fun _ -> undefined unit
    Obj c _, Obj d _ | c == cRange && d == cRange -> eqElems both (elements v) (elements v')
+   Obj c ((_ × x) : (_ × y) : Nil), Lit ℓ
+      | c == cComplex && isNumber ℓ -> eqElems both (x : y : Nil) (v' : Val β (Lit (Float 0.0)) : Nil)
+   Lit ℓ, Obj c ((_ × x) : (_ × y) : Nil)
+      | c == cComplex && isNumber ℓ -> eqElems both (v : Val α (Lit (Float 0.0)) : Nil) (x : y : Nil)
    Obj c xvs, Obj d yus
       | c == d -> eqElems both (snd <$> xvs) (snd <$> yus)
       | otherwise -> pure (false × both)
@@ -327,6 +426,11 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
 
    elems :: Array (Array (Val a)) -> List (Val a)
    elems = fromFoldable >>> map fromFoldable >>> L.concat
+
+   isNumber :: Literal -> Boolean
+   isNumber (Int _) = true
+   isNumber (Float _) = true
+   isNumber _ = false
 
    sameKind :: Literal -> Literal -> Boolean
    sameKind ℓ ℓ' = case ℓ, ℓ' of

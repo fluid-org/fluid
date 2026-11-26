@@ -24,7 +24,7 @@ import Eval (evalProgram)
 import File (File(..), Folder(..), loadFile, (</>))
 import Lattice (class BoundedJoinSemilattice, 𝔹, bot)
 import Module (prepConfig, throwParseFailure)
-import Test.Benchmark.Util (BenchRow, logTimeWhen)
+import Test.Benchmark.Util (BenchRow, logRow, logTimeWhen)
 import Test.Util (DepSpec, TestSuite, checkEq, checkSelection, depName, fluidSrcPaths, test, testDep)
 import Test.Util.Debug (timing)
 import Util (type (×), orThrow, throw, (!), (×))
@@ -75,7 +75,9 @@ suite specs (n × is_bench) = specs <#> (_.file &&& asTest)
       test (File file) fwd_expect (n × is_bench)
 
 depSuite :: forall m. MonadProgram m => Array DepSpec -> TestSuite m
-depSuite specs = specs >>= \{ file, queries } -> queries <#> \query -> depName file query × testDep (File file) query
+depSuite specs = specs >>= \{ file, queries } -> queries <#> \query ->
+   depName file query ×
+      (testDep (File file) query >>= \row -> when timing.benchmark (logRow (depName file query) row))
 
 selected :: SelStates 𝕊 -> SelStates 𝔹
 selected s = selStates (isInert s) (isPersistent s) (isTransient s)

@@ -4,11 +4,11 @@ import Prelude hiding (absurd)
 
 import Data.Generic.Rep (class Generic)
 import Data.Int (toNumber)
-import Data.Maybe (fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Number (isFinite, isNaN)
 import Data.Number.Format (precision, toStringWith)
 import Data.Show.Generic (genericShow)
-import Data.String (Pattern(..), contains, split, stripSuffix)
+import Data.String (Pattern(..), contains, length, split, splitAt, stripSuffix)
 import Util (absurd, error)
 
 data Literal
@@ -38,22 +38,33 @@ derive instance Generic Literal _
 instance Show Literal where
    show = genericShow
 
--- Float to 12 significant digits, with trailing zeros dropped, ".0" on an integral value and an exponent for a
--- very large or small magnitude
-showFloat :: Number -> String
-showFloat x
-   | not (isFinite x) = show x
+-- Int or float as float
+asFloat :: Literal -> Maybe Number
+asFloat (Int n) = Just (toNumber n)
+asFloat (Float x) = Just x
+asFloat _ = Nothing
+
+-- Format number to 12 significant digits to hide rounding error; drop trailing zeros
+showNumber :: Number -> String
+showNumber x
+   | isNaN x = "nan"
+   | not (isFinite x) = if x > 0.0 then "inf" else "-inf"
+   | x == 0.0 && 1.0 / x < 0.0 = "-0"
    | otherwise =
         case split (Pattern "e") (toStringWith (precision 12) x) of
-           [ m ] -> withPoint (trim m)
-           [ m, e ] -> trim m <> "e" <> e
+           [ m ] -> trim m
+           [ m, e ] -> trim m <> "e" <> pad (splitAt 1 e)
            _ -> error absurd
         where
+        pad { before: sign, after: digits } = sign <> (if length digits < 2 then "0" else "") <> digits
         trim m
            | contains (Pattern ".") m = dropPoint (dropZeros m)
            | otherwise = m
         dropZeros m = maybe m dropZeros (stripSuffix (Pattern "0") m)
         dropPoint m = fromMaybe m (stripSuffix (Pattern ".") m)
-        withPoint m
-           | contains (Pattern ".") m = m
-           | otherwise = m <> ".0"
+
+-- Same as showNumber, except with ".0" on an integral value without exponent
+showFloat :: Number -> String
+showFloat x = if isFinite x && not (contains (Pattern ".") s || contains (Pattern "e") s) then s <> ".0" else s
+   where
+   s = showNumber x

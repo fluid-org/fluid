@@ -27,7 +27,8 @@ import Parse (parseProgram)
 import Path (Path, Vertex)
 import Pretty (class Pretty, compare, prettyP)
 import SExpr (Stmt) as SE
-import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize)
+import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, recordVisibleGraphSize)
+import Test.Util.Debug (timing)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
 import Val (class MonadProgram, Label, Val, ValWithDoc(..), moduleStore, val, valAt)
@@ -43,6 +44,7 @@ test file expect (n × _) = do
    log' ("**** prepConfig")
    config <- throwParseFailure (prepConfig fluidSrc)
    testPretty config.s
+   when timing.benchmark (void (runWriterT (testProperties config expect))) -- load modules before measuring
    _ × res <- runWriterT (replicateM n (testProperties config expect))
    pure $ res `divRow` n
 
@@ -113,18 +115,27 @@ selection depGraph eval vertex δv =
    where
    p = vertexOf depGraph eval vertex
 
-testDep :: forall m. MonadProgram m => File -> Query -> m Unit
+testDep :: forall m. MonadProgram m => File -> Query -> m BenchRow
 testDep file query = do
    fluidSrc <- loadFile fluidSrcPaths file
-   { e, inputs, classes } <- throwParseFailure (prepConfig fluidSrc)
-   { depGraph } <- moduleStore
-   eval <- evalProgram inputs classes e
-   let
-      graph = visibleGraph eval
-      deps × expect = case query of
+   config <- throwParseFailure (prepConfig fluidSrc)
+   when timing.benchmark (void (runWriterT (run config))) -- load modules before measuring
+   _ × row <- runWriterT (replicateM n (run config))
+   pure (row `divRow` n)
+   where
+   n = if timing.benchmark then 10 else 1
+
+   run :: forall m'. MonadProgram m' => MonadWriter BenchRow m' => Config -> m' Unit
+   run { e, inputs, classes } = do
+      { depGraph } <- moduleStore
+      eval <- benchmark "Dep" \_ -> evalProgram inputs classes e
+      graph <- benchmark "Visible" \_ -> pure (visibleGraph eval)
+      deps × expect <- benchmark "Query" \_ -> pure case query of
          Bwd vertex δv expect' -> bwd graph (selection depGraph eval vertex δv) × expect'
          Fwd vertex δv expect' -> fwd graph (selection depGraph eval vertex δv) × expect'
-   withMsg "expect" $ checkPretty expect (showDeps eval deps)
+      recordDepGraphSize eval.g
+      recordVisibleGraphSize graph
+      withMsg "expect" $ checkPretty expect (showDeps eval deps)
 
 -- Persistent selection made by δv on the output.
 selectOn :: forall a. (ObjArg -> Selector Val) -> ObjArg -> Val a -> Val 𝔹

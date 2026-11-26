@@ -1,6 +1,6 @@
 module DepGraph where
 
-import Prelude hiding (absurd, compose)
+import Prelude hiding (compose)
 
 import Control.Monad.ST (for, foreach) as ST
 import Control.Monad.State (class MonadState, execState, gets, modify_)
@@ -20,35 +20,35 @@ import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (fst, snd)
 import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
-import Path (Path, PathSet, Step(..), Vertex(..), members, pathSet, sourceAt, sourceRoot, sourceVertex)
-import Util (class IsEmpty, type (×), Endo, absurd, assert, error, isEmpty, singleton, (!), (×))
+import Path (Path, Position, PositionSet, Step(..), Vertex(..), followedBy, members, positionSet, ε)
+import Util (class IsEmpty, type (×), Endo, assert, isEmpty, singleton, (!), (×))
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
 
--- Labels with a path to each position
+-- Annotate each position with its path
 class Traversable f <= Paths f where
    paths :: forall a. f a -> f (Path × a)
 
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
--- Positions carrying true
+-- Paths of positions annotated with true
 selected :: forall f. Paths f => f Boolean -> Set Path
 selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
 
--- Control sources as a set of type c, then non-zero weight of every other source
-data Support c s = Support c (Map Path s)
+-- Set of control sources, then weights of other sources; zero weights absent
+data Support c s = Support c (Map Position s)
 
-instance (Set c Path, Semiring s) => Semigroup (Support c s) where
+instance (Set c Position, Semiring s) => Semigroup (Support c s) where
    append (Support ps ws) (Support ps' ws') = Support (ps ∪ ps') (unionWith add ws ws')
 
 controlDep :: forall c s. c -> Support c s
 controlDep ps = Support ps empty
 
-dataDep :: forall c s. Set c Path => Semiring s => Path -> Support c s
+dataDep :: forall c s. Set c Position => Semiring s => Position -> Support c s
 dataDep p = Support empty (maplet p one)
 
--- Leave control sources unchanged, since control weight absorbs non-zero w
+-- Scale weights by w; control sources stay, since control weight absorbs non-zero w
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
 scaleSupport w support@(Support ps ws)
    | w == one = support
@@ -57,7 +57,7 @@ scaleSupport w support@(Support ps ws)
 -- Support of target root, then relation into each child; zero relations absent
 data Rel c s = Rel (Support c s) (Map Step (Rel c s))
 
-instance (Set c Path, Semiring s) => Semigroup (Rel c s) where
+instance (Set c Position, Semiring s) => Semigroup (Rel c s) where
    append (Rel support rs) (Rel support' rs') = Rel (support <> support') (unionWith append rs rs')
 
 nonZero :: forall c s. IsEmpty c => Rel c s -> Maybe (Rel c s)
@@ -65,15 +65,15 @@ nonZero r@(Rel support rs)
    | isEmpty support && isEmpty rs = Nothing
    | otherwise = Just r
 
-ι :: forall c s. Set c Path => Semiring s => Path -> Endo (Rel c s)
+ι :: forall c s. Set c Position => Semiring s => Path -> Endo (Rel c s)
 ι p r = foldr (\step r' -> Rel mempty (maybe empty (maplet step) (nonZero r'))) r p
 
-π :: forall c s. Set c Path => Semiring s => Path -> Endo (Rel c s)
+π :: forall c s. Set c Position => Semiring s => Path -> Endo (Rel c s)
 π Nil r = r
 π (step : p) (Rel _ rs) = maybe mempty (π p) (lookup step rs)
 
 data Restructuring c
-   = Reuse c Path
+   = Reuse c Position
    | NoReuse c
    | Tupling c (Map Step (Restructuring c))
    | ExtendEnv c (Restructuring c) (Dict (Restructuring c))
@@ -84,16 +84,16 @@ ctrl (NoReuse ps) = ps
 ctrl (Tupling ps _) = ps
 ctrl (ExtendEnv ps _ _) = ps
 
-withCtrl :: forall c. Set c Path => c -> Endo (Restructuring c)
+withCtrl :: forall c. Set c Position => c -> Endo (Restructuring c)
 withCtrl ps' (Reuse ps p) = Reuse (ps ∪ ps') p
 withCtrl ps' (NoReuse ps) = NoReuse (ps ∪ ps')
 withCtrl ps' (Tupling ps θs) = Tupling (ps ∪ ps') θs
 withCtrl ps' (ExtendEnv ps θ θs) = ExtendEnv (ps ∪ ps') θ θs
 
-pathAfter :: forall c. Set c Path => Path -> Restructuring c -> Restructuring c
+pathAfter :: forall c. Set c Position => Path -> Restructuring c -> Restructuring c
 pathAfter Nil θ = θ
 pathAfter p@(step : p') θ = (if any intoClosure p then identity else withCtrl (ctrl θ)) case θ of
-   Reuse _ q -> Reuse empty (q <> p)
+   Reuse _ q -> Reuse empty (q `followedBy` p)
    NoReuse _ -> NoReuse empty
    Tupling _ θs -> pathAfter p' (get step θs)
    ExtendEnv _ θ' θs -> case step of
@@ -108,59 +108,67 @@ pathAfter p@(step : p') θ = (if any intoClosure p then identity else withCtrl (
 
 type Dependence c s = Restructuring c × Rel c s
 
-reuse :: forall c s. Set c Path => Semiring s => Path -> Dependence c s
+reuse :: forall c s. Set c Position => Semiring s => Position -> Dependence c s
 reuse p = Reuse empty p × mempty
 
-supportAt :: forall c s. Set c Path => Semiring s => Dependence c s -> Path -> Support c s
+supportAt :: forall c s. Set c Position => Semiring s => Dependence c s -> Path -> Support c s
 supportAt (θ × r) q = case pathAfter q θ of
    Reuse ps p -> Support ps (maplet p one)
    θ' -> Support (ctrl θ') empty <> support
    where
    Rel support _ = π q r
 
--- Control sources which hold every source of every position in qs
-supportsAt :: forall s. Semiring s => Dependence PathSet s -> Set Path -> PathSet
-supportsAt δ qs = foldMap (supportAt δ >>> \(Support ps ws) -> ps ∪ foldMap pathSet (keys ws)) qs
+-- Dependence of each source vertex; zero relations absent
+type Dependences c s = Labelling (Restructuring c) × Labelling (Rel c s)
 
-restructuringAfter :: forall s. Semiring s => Restructuring (Set Path) -> Dependence PathSet s -> Restructuring PathSet
-restructuringAfter (Reuse ps p) δ@(θ × _) = withCtrl (supportsAt δ ps) (pathAfter p θ)
-restructuringAfter (NoReuse ps) δ = NoReuse (supportsAt δ ps)
-restructuringAfter (Tupling ps θs) δ = Tupling (supportsAt δ ps) (flip restructuringAfter δ <$> θs)
-restructuringAfter (ExtendEnv ps θ θs) δ = ExtendEnv (supportsAt δ ps) (restructuringAfter θ δ) (flip restructuringAfter δ <$> θs)
+-- Support of a source position in the dependence of its vertex
+sourceSupport :: forall c s. Set c Position => Semiring s => Dependences c s -> Position -> Support c s
+sourceSupport (θs × rs) (a × p) = supportAt (get a θs × fromMaybe mempty (lookup a rs)) p
 
-restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Path) -> Rel PathSet s -> Rel PathSet s
-restructuringAfterRel θ r = case θ of
-   Reuse _ p -> π p r
+-- Every source of given positions
+sourcesOf :: forall s. Semiring s => Dependences PositionSet s -> Set Position -> PositionSet
+sourcesOf δs qs = foldMap (sourceSupport δs >>> \(Support ps ws) -> ps ∪ foldMap positionSet (keys ws)) qs
+
+restructuringAfter :: forall s. Semiring s => Restructuring (Set Position) -> Dependences PositionSet s -> Restructuring PositionSet
+restructuringAfter (Reuse ps (a × p)) δs@(θs × _) = withCtrl (sourcesOf δs ps) (pathAfter p (get a θs))
+restructuringAfter (NoReuse ps) δs = NoReuse (sourcesOf δs ps)
+restructuringAfter (Tupling ps θs) δs = Tupling (sourcesOf δs ps) (flip restructuringAfter δs <$> θs)
+restructuringAfter (ExtendEnv ps θ θs) δs =
+   ExtendEnv (sourcesOf δs ps) (restructuringAfter θ δs) (flip restructuringAfter δs <$> θs)
+
+restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Position) -> Labelling (Rel PositionSet s) -> Rel PositionSet s
+restructuringAfterRel θ rs = case θ of
+   Reuse _ (a × p) -> maybe mempty (π p) (lookup a rs)
    NoReuse _ -> mempty
    Tupling _ θs -> Rel mempty (relsAfter θs)
-   ExtendEnv _ θ' θs -> case restructuringAfterRel θ' r × bindings θs of
-      Rel support rs × θs' -> Rel support (relsAfter θs' ∪ difference rs θs')
+   ExtendEnv _ θ' θs -> case restructuringAfterRel θ' rs × bindings θs of
+      Rel support rs' × θs' -> Rel support (relsAfter θs' ∪ difference rs' θs')
    where
-   relsAfter = Map.mapMaybe (flip restructuringAfterRel r >>> nonZero)
+   relsAfter = Map.mapMaybe (flip restructuringAfterRel rs >>> nonZero)
 
--- Relation after the relation of a dependence
-relAfter :: forall s. DepSemiring s => Rel (Set Path) s -> Dependence PathSet s -> Rel PathSet s
-relAfter (Rel (Support ps ws) rs) δ =
-   Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (supportAt δ p)) (Support (supportsAt δ ps) empty) ws)
-      (Map.mapMaybe (flip relAfter δ >>> nonZero) rs)
+-- Compose relation with dependence of each source vertex
+relAfter :: forall s. DepSemiring s => Rel (Set Position) s -> Dependences PositionSet s -> Rel PositionSet s
+relAfter (Rel (Support ps ws) rs) δs =
+   Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (sourceSupport δs p)) (Support (sourcesOf δs ps) empty) ws)
+      (Map.mapMaybe (flip relAfter δs >>> nonZero) rs)
 
-compose :: forall s. DepSemiring s => Dependence (Set Path) s -> Dependence PathSet s -> Dependence PathSet s
-compose (θ' × r') δ@(_ × r) = restructuringAfter θ' δ × (restructuringAfterRel θ' r <> relAfter r' δ)
+compose :: forall s. DepSemiring s => Dependence (Set Position) s -> Dependences PositionSet s -> Dependence PositionSet s
+compose (θ' × r') δs@(_ × rs) = restructuringAfter θ' δs × (restructuringAfterRel θ' rs <> relAfter r' δs)
 
 bindings :: forall a. Dict a -> Map Step a
 bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Binding x × a)
 
-tupling :: forall c s. Set c Path => Semiring s => Map Step (Dependence c s) -> Dependence c s
+tupling :: forall c s. Set c Position => Semiring s => Map Step (Dependence c s) -> Dependence c s
 tupling δs = Tupling empty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
--- Dependence of value with children δs, or with nothing reused if δs is empty; root depends on support
-construct :: forall c s. Set c Path => Semiring s => Support c s -> Map Step (Dependence c s) -> Dependence c s
+-- Dependence of value constructed from given children; root depends on support
+construct :: forall c s. Set c Position => Semiring s => Support c s -> Map Step (Dependence c s) -> Dependence c s
 construct support δs
    | isEmpty δs = NoReuse empty × Rel support empty
    | otherwise = map (Rel support empty <> _) (tupling δs)
 
--- Dependence of environment at position p with bindings δs added or replaced
-extend :: forall c s. Set c Path => Semiring s => Path -> Dict (Dependence c s) -> Dependence c s
+-- Dependence of environment at a position extended with given bindings
+extend :: forall c s. Set c Position => Semiring s => Position -> Dict (Dependence c s) -> Dependence c s
 extend p δs
    | isEmpty δs = reuse p
    | otherwise = ExtendEnv empty (Reuse empty p) (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
@@ -172,15 +180,15 @@ type DepGraph (f :: Type -> Type) s =
    { size :: Int -- vertices allocated so far
    , vals :: Labelling (f Unit)
    , docs :: Labelling Vertex -- documented vertex ↦ vertex of doc
-   , edges :: Labelling (Set Vertex × Dependence (Set Path) s) -- target ↦ sources and dependence on their values
+   , edges :: Labelling (Set Vertex × Dependence (Set Position) s) -- target ↦ sources and dependence on their values
    }
 
 emptyGraph :: forall f s. DepGraph f s
 emptyGraph = { size: 0, vals: empty, docs: empty, edges: empty }
 
 -- Vertices which hold the source positions
-vertices :: forall s. Dependence (Set Path) s -> Set Vertex
-vertices (θ × r) = Set.map sourceVertex (ofRestructuring θ ∪ ofRel r)
+vertices :: forall s. Dependence (Set Position) s -> Set Vertex
+vertices (θ × r) = Set.map fst (ofRestructuring θ ∪ ofRel r)
    where
    ofRestructuring θ' = ctrl θ' ∪ case θ' of
       Reuse _ p -> singleton p
@@ -189,7 +197,7 @@ vertices (θ × r) = Set.map sourceVertex (ofRestructuring θ ∪ ofRel r)
       ExtendEnv _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
    ofRel (Rel (Support ps ws) rs) = ps ∪ keys ws ∪ foldMap ofRel rs
 
-newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Path) s -> m Vertex
+newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Position) s -> m Vertex
 newVertex v δ = do
    size <- gets _.size
    let a = Vertex size
@@ -202,10 +210,10 @@ attachDoc a b = modify_ \g -> g { docs = insert a b g.docs }
 -- Visible vertices with values; edges left by hiding every other vertex
 type VisibleGraph (f :: Type -> Type) s =
    { vals :: Labelling (f Unit)
-   , edges :: Labelling (Map Path (Support PathSet s)) -- target ↦ position ↦ non-empty support
+   , edges :: Labelling (Map Path (Support PositionSet s)) -- target ↦ position ↦ non-empty support
    }
 
--- Relies on edges running from earlier to later vertices in evaluation order.
+-- Hide every vertex outside the visible set; relies on edges running from earlier to later vertices
 materialise :: forall f s. Paths f => DepSemiring s => DepGraph f s -> Set Vertex -> VisibleGraph f s
 materialise g visible =
    { vals
@@ -214,20 +222,20 @@ materialise g visible =
    where
    vals = filterKeys (_ ∈ visible) g.vals
 
-   -- Compose dependence of a with tupling which holds dependence of each earlier vertex on visible vertices
+   -- Compose dependence of a with dependence of each earlier vertex on visible vertices
    step { θs, rs, edges } (a × (_ × δ)) =
       if a ∈ visible then
-         { θs: free a (insert (EdgeSrc a) (Reuse empty (sourceRoot a)) θs)
+         { θs: free a (insert a (Reuse empty (a × ε)) θs)
          , rs: free a rs
          , edges: insert a (supports a (θ' × r')) edges
          }
-      else { θs: free a (insert (EdgeSrc a) θ' θs), rs: free a (Map.alter (const (nonZero r')) (EdgeSrc a) rs), edges }
+      else { θs: free a (insert a θ' θs), rs: free a (Map.alter (const (nonZero r')) a rs), edges }
       where
-      θ' × r' = compose δ (Tupling empty θs × Rel mempty rs)
+      θ' × r' = compose δ (θs × rs)
 
    -- Free the entry of each vertex which has a as last dependent
-   free :: forall a. Vertex -> Endo (Map Step a)
-   free (Vertex a) xs = foldr (EdgeSrc >>> delete) xs (byLastDependent ! a)
+   free :: forall a. Vertex -> Endo (Labelling a)
+   free (Vertex a) xs = foldr delete xs (byLastDependent ! a)
 
    -- Vertices without dependents count as dependent on themselves
    byLastDependent :: Array (List Vertex)
@@ -238,32 +246,29 @@ materialise g visible =
       ST.for 0 g.size \b -> STA.peek b lastDependent >>= traverse_ \a -> STA.modify a (Vertex b : _) vertices'
       pure vertices'
 
-   supports :: Vertex -> Dependence PathSet s -> Map Path (Support PathSet s)
+   supports :: Vertex -> Dependence PositionSet s -> Map Path (Support PositionSet s)
    supports a δ = Map.filter (not <<< isEmpty) $
       Map.fromFoldable (positions (paths (get a vals)) <#> \(q × _) -> q × supportAt δ q)
 
 -- Control sources of every support
-controlSets :: forall s. Labelling (Map Path (Support PathSet s)) -> Set PathSet
+controlSets :: forall s. Labelling (Map Path (Support PositionSet s)) -> Set PositionSet
 controlSets = foldMap (foldMap \(Support ps _) -> singleton ps)
 
 -- Weights of source positions grouped by source vertex
-bySource :: forall a. Map Path a -> Labelling (Map Path a)
-bySource ws = fromFoldableWith union $
-   (toUnfoldable ws :: List _) <#> case _ of
-      (EdgeSrc a : p) × w -> a × maplet p w
-      _ -> error absurd
+bySource :: forall a. Map Position a -> Labelling (Map Path a)
+bySource ws = fromFoldableWith union ((toUnfoldable ws :: List _) <#> \((a × p) × w) -> a × maplet p w)
 
 -- Restrict every support and target to the positions which satisfy the predicate
 mask :: forall f s. Paths f => (Vertex -> f Unit -> f Boolean) -> VisibleGraph f s -> VisibleGraph f s
-mask keep g = g { edges = mapWithIndex (\b -> filterKeys (sourceAt b >>> (_ ∈ kept)) >>> restrict) g.edges }
+mask keep g = g { edges = mapWithIndex (\b -> filterKeys ((b × _) >>> (_ ∈ kept)) >>> restrict) g.edges }
    where
-   kept :: Set Path
-   kept = foldMapWithIndex (\a v -> Set.map (sourceAt a) (selected (keep a v))) g.vals
+   kept :: Set Position
+   kept = foldMapWithIndex (\a v -> Set.map (a × _) (selected (keep a v))) g.vals
 
-   restrict :: Endo (Map Path (Support PathSet s))
+   restrict :: Endo (Map Path (Support PositionSet s))
    restrict = map (\(Support ps ws) -> Support (get ps restricted) (filterKeys (_ ∈ kept) ws)) >>> Map.filter (not <<< isEmpty)
 
-   restricted :: Map PathSet PathSet
+   restricted :: Map PositionSet PositionSet
    restricted = Set.toMap (controlSets g.edges) # mapWithIndex \ps _ -> filter (_ ∈ kept) ps
 
 -- Add weights at a vertex.
@@ -283,34 +288,33 @@ fromSparse g wss = g.vals # mapWithIndex \a v ->
 bwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 bwd g selection = fromSparse g (foldr step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
-   step :: Vertex × Map Path (Support PathSet s) -> Endo (Labelling (Map Path s))
+   step :: Vertex × Map Path (Support PositionSet s) -> Endo (Labelling (Map Path s))
    step (b × supports) wss = case lookup b wss of
       Nothing -> wss
       Just ws -> foldlWithIndex addAt wss (bySource (weights (foldlWithIndex (from supports) mempty ws)))
 
-   weights :: Support PathSet s -> Map Path s
+   weights :: Support PositionSet s -> Map Position s
    weights (Support ps ws) = unionWith add (Set.toMap (members ps) $> ctrlWeight) ws
 
-   from :: Map Path (Support PathSet s) -> Path -> Support PathSet s -> s -> Support PathSet s
+   from :: Map Path (Support PositionSet s) -> Path -> Support PositionSet s -> s -> Support PositionSet s
    from supports q support w = maybe support (scaleSupport w >>> (support <> _)) (lookup q supports)
 
 -- Dependence of the positions of each visible vertex on the selection.
 fwd :: forall f s. Paths f => DepSemiring s => VisibleGraph f s -> Labelling (Set Path) -> Labelling (f s)
 fwd g selection = fromSparse g (foldl step (unitWeights selection) (toUnfoldable g.edges :: List _))
    where
-   step :: Labelling (Map Path s) -> Vertex × Map Path (Support PathSet s) -> Labelling (Map Path s)
+   step :: Labelling (Map Path s) -> Vertex × Map Path (Support PositionSet s) -> Labelling (Map Path s)
    step wss (b × supports) = addAt b wss (Map.mapMaybe weight supports)
       where
-      weightAt :: Path -> s
-      weightAt (EdgeSrc a : p) = fromMaybe zero (lookup a wss >>= lookup p)
-      weightAt _ = error absurd
+      weightAt :: Position -> s
+      weightAt (a × p) = fromMaybe zero (lookup a wss >>= lookup p)
 
       -- Whether each set of control sources has a member with non-zero weight
-      reached :: Map PathSet Boolean
+      reached :: Map PositionSet Boolean
       reached = Set.toMap (controlSets (maplet b supports)) # mapWithIndex \ps _ ->
          any (weightAt >>> (_ /= zero)) (members ps)
 
-      weight :: Support PathSet s -> Maybe s
+      weight :: Support PositionSet s -> Maybe s
       weight (Support ps ws) = if w == zero then Nothing else Just w
          where
          w = foldlWithIndex (\p w' x -> w' + weightAt p * x) (if get ps reached then ctrlWeight else zero) ws
@@ -318,11 +322,11 @@ fwd g selection = fromSparse g (foldl step (unitWeights selection) (toUnfoldable
 -- ======================
 -- boilerplate
 -- ======================
-instance (Set c Path, Semiring s) => Monoid (Support c s) where
+instance (Set c Position, Semiring s) => Monoid (Support c s) where
    mempty = Support empty empty
 
 instance IsEmpty c => IsEmpty (Support c s) where
    isEmpty (Support ps ws) = isEmpty ps && isEmpty ws
 
-instance (Set c Path, Semiring s) => Monoid (Rel c s) where
+instance (Set c Position, Semiring s) => Monoid (Rel c s) where
    mempty = Rel mempty empty

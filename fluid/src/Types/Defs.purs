@@ -26,6 +26,9 @@ int = PrimitiveTy Int
 float :: Type
 float = PrimitiveTy Float
 
+complex :: Type
+complex = ClassTy cComplex Nil
+
 str :: Type
 str = PrimitiveTy Str
 
@@ -70,12 +73,15 @@ cSegment = qual view "Segment" :: Name
 cStackedBar = qual view "StackedBar" :: Name
 cNonEmpty = qual prelude "NonEmpty" :: Name -- Tree
 cRange = qual builtins "range" :: Name
+cComplex = qual builtins "complex" :: Name
 cMatrix = qual builtins "Matrix" :: Name
 cText = qual view "Text" :: Name
 cLink = qual view "Link" :: Name
 
 -- Field names used internally by rendering layer.
 f_caption = "caption" :: FieldName
+f_real = "real" :: FieldName
+f_imag = "imag" :: FieldName
 f_fragments = "fragments" :: FieldName
 f_label = "label" :: FieldName
 f_text = "text" :: FieldName

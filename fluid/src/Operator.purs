@@ -15,7 +15,7 @@ import Expr (Binop(..), Unop(..))
 import Literal as L
 import Parsing.Expr (Assoc(..))
 import Types (Type(..), baseType)
-import Types.Defs (bool, float, int, str)
+import Types.Defs (bool, complex, float, int, str)
 import Util (type (×), definitely', whenever, (×))
 
 data Operator = Binary Binop | Unary Unop | AndOp | OrOp
@@ -93,8 +93,8 @@ least classes os = snd <$> find (\(σs × _) -> all (\(τs × _) -> and (zipWith
 
 binopOverloads :: ClassTable -> Binop -> List (Type -> Type -> Maybe Overload)
 binopOverloads classes op = case op of
-   Eq -> equality classes : Nil
-   Ne -> equality classes : Nil
+   Eq -> equality classes : complexEquality
+   Ne -> equality classes : complexEquality
    In -> membership
    NotIn -> membership
    BitOr -> Nil
@@ -102,18 +102,26 @@ binopOverloads classes op = case op of
    Le -> ordering
    Gt -> ordering
    Ge -> ordering
-   Add -> arithmetic int : arithmetic float : both str str : concatList classes : concatTuple classes : Nil
-   Sub -> arithmetic int : arithmetic float : Nil
-   Mul -> arithmetic int : arithmetic float : repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil
-   Div -> arithmetic float : Nil
+   Add -> arithmetic int : arithmetic float : complexArithmetic
+      <> (both str str : concatList classes : concatTuple classes : Nil)
+   Sub -> arithmetic int : arithmetic float : complexArithmetic
+   Mul -> arithmetic int : arithmetic float : complexArithmetic
+      <> (repeatStr classes : reflected repeatStr classes : repeatList classes : reflected repeatList classes : Nil)
+   Div -> arithmetic float : complexArithmetic
    FloorDiv -> arithmetic int : arithmetic float : Nil
    Mod -> arithmetic int : arithmetic float : Nil
-   Pow -> powerInt classes : arithmetic float : Nil
+   Pow -> powerInt classes : arithmetic float : complexArithmetic
    where
    sub σ τ = subtype classes σ τ
 
    both bound result σ τ = whenever (sub σ bound && sub τ bound) ((bound : bound : Nil) × result)
    arithmetic τ = both τ τ
+
+   -- One operand complex and other operand complex or float
+   complexArithmetic =
+      operands complex complex complex : operands complex float complex : operands float complex complex : Nil
+   complexEquality = operands complex float bool : operands float complex bool : Nil
+   operands bound bound' result σ τ = whenever (sub σ bound && sub τ bound') ((bound : bound' : Nil) × result)
    ordering = both float bool : both str bool : Nil
 
    membership = membershipList classes : membershipTuple classes : both str bool : membershipDict classes : Nil
@@ -161,8 +169,8 @@ powerInt _ _ _ = Nothing
 unopOverloads :: ClassTable -> Unop -> List (Type -> Maybe Overload)
 unopOverloads classes op = case op of
    Not -> sign bool : Nil
-   Pos -> sign int : sign float : Nil
-   Neg -> sign int : sign float : Nil
+   Pos -> sign int : sign float : sign complex : Nil
+   Neg -> sign int : sign float : sign complex : Nil
    where
    sign τ σ = whenever (subtype classes σ τ) ((τ : Nil) × τ)
 

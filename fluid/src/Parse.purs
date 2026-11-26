@@ -23,7 +23,7 @@ import Data.String.CodeUnits as SCU
 import Data.Tuple (uncurry)
 import Data.Traversable (foldr)
 import Literal (Literal(..))
-import Parse.Number (float, integer)
+import Parse.Number (float, imaginary, integer)
 import Parse.Parser (Parser, align, block, braces, brackets, close, commas, context, delim, fields, parens, reserved, reservedOperator, stringLiteral, trailingCommas, variable, whitespace)
 import Parsing (ParseError(..), Position(..), consume, fail, runParserT)
 import Parsing.Combinators (choice, lookAhead, many, many1, notFollowedBy, option, optionMaybe, sepBy1, try, (<?>))
@@ -370,6 +370,7 @@ expr = context "expr" $ cond <?> "expression"
             <|> lambda
             <|> dict
             <|> paragraph
+            <|> try (imaginary <#> Imaginary)
             <|> lit
             <|> var
             <|> parensExpr
