@@ -369,17 +369,26 @@ eval = { stmt, program }
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
       Dataclass c -> assigns (maplet (last c) (Val unit (V.Fun (V.Type (T.ClassTy c Nil))) × constant)) empty
       TypeAlias x αs τ -> assigns (maplet x (Val unit (V.TypeAlias αs τ) × constant)) empty
-      Seq s s' -> stmt ρ b ps s >>= case _ of
-         Returns pv -> returns pv
-         Assigns pρ qs -> do
-            ρ'' × b' <- extendEnv ρ b (bindingsAt pρ)
-            stmt ρ'' b' (controlledBy qs ps) s' >>= case _ of
-               Returns pv -> returns pv
-               Assigns pρ' qs' -> flip Assigns (controlledBy qs' qs) <$> newExtendEnv pρ (bindingsAt pρ')
+      s@(Seq _ _) -> block empty empty ρ b ps s
       where
       constant = construct (controlDep ps) Map.empty
-      returns pv = Returns <$> newValue (reuseAt pv)
-      assigns ρ' qs = flip Assigns qs <$> newEnv ρ'
+
+   -- Evaluate rest of a block in turn; earlier statements of the block have bindings ρ' and control positions qs
+   block :: Dict (GVal s) -> Set Position -> Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m Result
+   block ρ' qs ρ b ps (Seq s s') = stmt ρ b ps s >>= case _ of
+      Returns pv -> returns pv
+      Assigns pρ qs' -> do
+         ρ'' × b' <- extendEnv ρ b (bindingsAt pρ)
+         block (ρ' <+> bindingsAt pρ) (controlledBy qs' qs) ρ'' b' (controlledBy qs' ps) s'
+   block ρ' qs ρ b ps s = stmt ρ b ps s >>= case _ of
+      Returns pv -> returns pv
+      Assigns pρ qs' -> assigns (ρ' <+> bindingsAt pρ) (controlledBy qs' qs)
+
+   returns :: ValAt -> m Result
+   returns pv = Returns <$> newValue (reuseAt pv)
+
+   assigns :: Dict (GVal s) -> Set Position -> m Result
+   assigns ρ qs = flip Assigns qs <$> newEnv ρ
 
    -- Value of the expression which ends a program
    program :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m ValAt
