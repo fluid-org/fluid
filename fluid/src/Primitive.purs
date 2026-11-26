@@ -17,6 +17,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.String (Pattern(..))
 import Data.String as String
+import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import DepGraph (dataDep)
 import Dict (Dict)
@@ -27,6 +28,7 @@ import Path (Position)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Util (type (+), type (×), MayFail, absurd, definitely', error, orThrow, singleton, (×))
+import Util.Pair (Pair(..))
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cComplex, cRange, f_imag, f_real)
@@ -213,8 +215,7 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
    Mul -> result <$> join (arith Sub <$> arith Mul x x' <*> arith Mul y y')
       <*> join (arith Add <$> arith Mul x y' <*> arith Mul y x')
    Div -> do
-      a <- complexPart x'
-      b <- complexPart y'
+      Pair a b <- traverse complexPart (Pair x' y')
       if N.abs a >= N.abs b then
          if a == 0.0 then divisionByZero
          else do
@@ -229,10 +230,8 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
             <*> (flip (arith Div) denom =<< flip (arith Sub) x =<< arith Mul y ratio)
       else pure (result nan nan)
    Pow -> do
-      a <- complexPart x
-      b <- complexPart y
-      a' <- complexPart x'
-      b' <- complexPart y'
+      Pair a b <- traverse complexPart (Pair x y)
+      Pair a' b' <- traverse complexPart (Pair x' y')
       let
          vabs = N.sqrt (a * a + b * b)
          at = N.atan2 b a
