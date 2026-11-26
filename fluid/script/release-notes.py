@@ -66,7 +66,7 @@ def completed(issue):
 
 
 def heading(issue):
-    """First version published after issue completed, else package version; pre-release only while release pending"""
+    """First version published after issue completed, else package version; pre-release while release pending"""
     v = next((v for v in sorted(published, key=published.get) if published[v] > completed(issue)), version)
     return release(v) if release(v) in published or release(v) == version else v
 
