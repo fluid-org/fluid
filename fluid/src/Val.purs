@@ -282,14 +282,14 @@ type DepOp =
    -> m (GVal s)
 
 -- Module parsed but not yet loaded, or loaded with its environment
-data ModuleState s = Parsed Module | Loaded (Dict (GVal s))
+data ModuleState = Parsed Module | Loaded EnvAt
 
-loadedEnv :: forall s. ModuleState s -> Maybe (Dict (GVal s))
+loadedEnv :: ModuleState -> Maybe EnvAt
 loadedEnv (Parsed _) = Nothing
-loadedEnv (Loaded ρ) = Just ρ
+loadedEnv (Loaded r) = Just r
 
 type ModuleStore s =
-   { modules :: Map ModuleName (ModuleState s)
+   { modules :: Map ModuleName ModuleState
    , depGraph :: DepGraph Label s
    }
 

@@ -2,6 +2,7 @@ module Val.Dependence where
 
 import Prelude hiding (absurd)
 
+import Bind (Var)
 import Control.Monad.State (class MonadState)
 import Data.Array (fromFoldable) as A
 import Data.Foldable (foldMap, foldl)
@@ -21,7 +22,7 @@ import Literal (Literal(..))
 import Path (Path, Position, Step(..), followedBy, ε)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
-import Util.Map (mapWithKey, toUnfoldable, (<+>))
+import Util.Map (get, mapWithKey, toUnfoldable, (<+>))
 import Val (BaseVal(..), DepFun, DictRep(..), Env(..), EnvAt, GVal, Label(..), ValAt, Val(..), child, element, elementCount)
 
 positionsIn :: ValAt -> Set Position
@@ -64,9 +65,13 @@ newExtendEnv (p × Env ρ) ρ' = newVertex (Environment ρ'') (extend p (snd <$>
    where
    ρ'' = Env (ρ <+> (fst <$> ρ'))
 
+-- Binding of x in the environment at a position
+bindingAt :: Var -> EnvAt -> ValAt
+bindingAt x (p × Env ρ) = (p `followedBy` singleton (Binding x)) × get x ρ
+
 -- Each binding of the environment at a position, as a value which reuses the position of that binding
 bindingsAt :: forall s. Semiring s => EnvAt -> Dict (GVal s)
-bindingsAt (p × Env ρ) = mapWithKey (\x v -> v × reuse (p `followedBy` singleton (Binding x))) ρ
+bindingsAt r@(_ × Env ρ) = mapWithKey (\x _ -> reuseAt (bindingAt x r)) ρ
 
 -- Apply f to the values at rs to compute the support of each result position. Every result position also
 -- depends on ps. Result positions with empty support depend on ps'.
