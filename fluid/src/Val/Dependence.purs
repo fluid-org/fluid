@@ -69,7 +69,6 @@ newExtendEnv (p × Env ρ) ρ' = newVertex (Environment ρ'') (extend p (snd <$>
 bindingAt :: Var -> EnvAt -> ValAt
 bindingAt x (p × Env ρ) = (p `followedBy` singleton (Binding x)) × get x ρ
 
--- Each binding of the environment at a position, as a value which reuses the position of that binding
 bindingsAt :: forall s. Semiring s => EnvAt -> Dict (GVal s)
 bindingsAt pρ@(_ × Env ρ) = mapWithKey (\x _ -> reuseAt (bindingAt x pρ)) ρ
 
