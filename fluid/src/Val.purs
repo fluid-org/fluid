@@ -286,7 +286,7 @@ data ModuleState = Parsed Module | Loaded EnvAt
 
 loadedEnv :: ModuleState -> Maybe EnvAt
 loadedEnv (Parsed _) = Nothing
-loadedEnv (Loaded r) = Just r
+loadedEnv (Loaded pρ) = Just pρ
 
 type ModuleStore s =
    { modules :: Map ModuleName ModuleState

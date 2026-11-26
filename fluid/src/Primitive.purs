@@ -138,7 +138,7 @@ boolean =
 -- Need to be careful about type variables escaping higher-rank quantification.
 -- Foreign function with dependence given by f
 fromDepFun :: DepFun -> DepOp
-fromDepFun f ps rs = orThrow (applyDepFun f ps Set.empty rs)
+fromDepFun f ps pvs = orThrow (applyDepFun f ps Set.empty pvs)
 
 type Unary i o a =
    { i :: ToFrom i a
@@ -276,16 +276,16 @@ divisionByZero = Left "ZeroDivisionError: division by zero"
 
 -- Concatenation and repetition reuse elements of operand sequences
 applyBinop :: forall s. DepSemiring s => Binop -> Set Position -> ValAt -> ValAt -> MayFail (GVal s)
-applyBinop Add _ r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (concatOf List mempty (r : r' : Nil))
-applyBinop Add _ r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (concatOf Tuple mempty (r : r' : Nil))
-applyBinop Mul _ l@(_ × Val _ (List _)) k@(_ × Val _ (Lit (Int n))) = pure (repeatList l k n)
-applyBinop Mul _ k@(_ × Val _ (Lit (Int n))) l@(_ × Val _ (List _)) = pure (repeatList l k n)
-applyBinop op ps r r' = applyDepFun (binopFun op) Set.empty ps (r : r' : Nil)
+applyBinop Add _ pv@(_ × Val _ (List _)) pv'@(_ × Val _ (List _)) = pure (concatOf List mempty (pv : pv' : Nil))
+applyBinop Add _ pv@(_ × Val _ (Tuple _)) pv'@(_ × Val _ (Tuple _)) = pure (concatOf Tuple mempty (pv : pv' : Nil))
+applyBinop Mul _ pv@(_ × Val _ (List _)) pv'@(_ × Val _ (Lit (Int n))) = pure (repeatList pv pv' n)
+applyBinop Mul _ pv'@(_ × Val _ (Lit (Int n))) pv@(_ × Val _ (List _)) = pure (repeatList pv pv' n)
+applyBinop op ps pv pv' = applyDepFun (binopFun op) Set.empty ps (pv : pv' : Nil)
 
--- List at l repeated n times, for the integer n at k
+-- List pv repeated n times, for integer n at pv'
 repeatList :: forall s. Semiring s => ValAt -> ValAt -> Int -> GVal s
-repeatList l k n = sequenceOf List (dataDep (fst k) <> (if n <= 0 then mempty else dataDep (fst l))) $
-   L.concat (fromFoldable (replicate n (deliver (singleton (fst l)) <<< reuseAt <$> elementsAt l)))
+repeatList pv pv' n = sequenceOf List (dataDep (fst pv') <> (if n <= 0 then mempty else dataDep (fst pv))) $
+   L.concat (fromFoldable (replicate n (deliver (singleton (fst pv)) <<< reuseAt <$> elementsAt pv)))
 
 type Operand = Int + Number + String
 

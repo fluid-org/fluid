@@ -39,9 +39,9 @@ childAt step (p × v) = (p `followedBy` singleton step) × child step v
 
 -- Elements of the list or tuple at a position
 elementsAt :: ValAt -> List ValAt
-elementsAt u = (\i -> childAt (Element i) u) <$> L.take n (L.range 0 n)
+elementsAt pv = (\i -> childAt (Element i) pv) <$> L.take n (L.range 0 n)
    where
-   n = definitely' (elementCount (snd u))
+   n = definitely' (elementCount (snd pv))
 
 reuseAt :: forall s. Semiring s => ValAt -> GVal s
 reuseAt (p × v) = v × reuse p
@@ -71,12 +71,12 @@ bindingAt x (p × Env ρ) = (p `followedBy` singleton (Binding x)) × get x ρ
 
 -- Each binding of the environment at a position, as a value which reuses the position of that binding
 bindingsAt :: forall s. Semiring s => EnvAt -> Dict (GVal s)
-bindingsAt r@(_ × Env ρ) = mapWithKey (\x _ -> reuseAt (bindingAt x r)) ρ
+bindingsAt pρ@(_ × Env ρ) = mapWithKey (\x _ -> reuseAt (bindingAt x pρ)) ρ
 
--- Apply f to the values at rs to compute the support of each result position. Every result position also
+-- Apply f to pvs to compute the support of each result position. Every result position also
 -- depends on ps. Result positions with empty support depend on ps'.
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Position -> Set Position -> List ValAt -> MayFail (GVal s)
-applyDepFun f ps ps' rs = f (arg <$> rs) <#> \v ->
+applyDepFun f ps ps' pvs = f (arg <$> pvs) <#> \v ->
    erase v × NoReuse ps × foldl addSupport mempty (positions (paths v))
    where
    arg :: ValAt -> Val (Lineage Position s)
@@ -94,29 +94,29 @@ elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely'
 elementStep _ _ = Nothing
 
 elementAt :: forall s. DepSemiring s => Int -> ValAt -> GVal s
-elementAt i r = case elementStep i (snd r) of
-   Just step -> reuseAt (childAt step r)
-   Nothing -> definitelyRight (applyDepFun elementOf Set.empty Set.empty (singleton r))
+elementAt i pv = case elementStep i (snd pv) of
+   Just step -> reuseAt (childAt step pv)
+   Nothing -> definitelyRight (applyDepFun elementOf Set.empty Set.empty (singleton pv))
    where
    elementOf :: forall a. List (Val a) -> MayFail (Val a)
    elementOf (v : Nil) = pure (element i v)
    elementOf _ = error absurd
 
--- String or range at position r as list of elements
+-- String or range pv as list of elements
 explode :: forall s. DepSemiring s => ValAt -> GVal s
-explode r = sequenceOf List (foldMap dataDep (lengthPositions r)) (flip elementAt r <$> L.take n (L.range 0 n))
+explode pv = sequenceOf List (foldMap dataDep (lengthPositions pv)) (flip elementAt pv <$> L.take n (L.range 0 n))
    where
-   n = definitely' (elementCount (snd r))
+   n = definitely' (elementCount (snd pv))
 
 -- Sequence of vs with root dependent on support
 sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List (GVal s) -> GVal s
 sequenceOf mk support vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
 
--- Concatenate sequences at rs; root depends on support and each sequence
+-- Concatenate sequences pvs; root depends on support and each sequence
 concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List ValAt -> GVal s
-concatOf mk support rs = sequenceOf mk (support <> foldMap (fst >>> dataDep) rs) $
-   rs >>= \r -> deliver (singleton (fst r)) <<< reuseAt <$> elementsAt r
+concatOf mk support pvs = sequenceOf mk (support <> foldMap (fst >>> dataDep) pvs) $
+   pvs >>= \pv -> deliver (singleton (fst pv)) <<< reuseAt <$> elementsAt pv
 
 -- Dictionary of entries kvs with root dependent on support
 dictionary :: forall s. Semiring s => Support (Set Position) s -> List (GVal s × GVal s) -> GVal s
