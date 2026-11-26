@@ -64,10 +64,9 @@ extendEnv
    -> Vertex
    -> Dict (GVal s)
    -> m (Dict (Raw Val) × Vertex)
-extendEnv ρ b ρ' = extendEnvAt ((b × ε) × Env ρ) ρ' <#> \((b' × _) × Env ρ'') -> ρ'' × b'
-
-extendEnvAt :: forall m s. MonadState (DepGraph Label s) m => Semiring s => EnvAt -> Dict (GVal s) -> m EnvAt
-extendEnvAt pρ ρ' = if isEmpty ρ' then pure pρ else newExtendEnv pρ ρ'
+extendEnv ρ b ρ'
+   | isEmpty ρ' = pure (ρ × b)
+   | otherwise = newExtendEnv ((b × ε) × Env ρ) ρ' <#> \((b' × _) × Env ρ'') -> ρ'' × b'
 
 controlledBy :: Set Position -> Set Position -> Set Position
 controlledBy qs ps = if isEmpty qs then ps else qs
@@ -442,13 +441,13 @@ eval = { stmt, program }
             V.Type _ -> error absurd
             V.Partial _ _ -> error absurd
 
--- Evaluate module q from environment pρ; bindings of body override module value of each submodule
+-- Evaluate module q from given environment; bindings of body override module value of each submodule
 evalModule :: forall m s. MonadEval s m => EnvAt -> ModuleName -> Module -> m EnvAt
-evalModule pρ q (Module ιs s) = do
-   (b × _) × Env ρ <- foldM (evalImport q) empty ιs >>= extendEnvAt pρ
+evalModule ((b × _) × Env ρ) q (Module ιs s) = do
+   ρ' × b' <- foldM (evalImport q) empty ιs >>= extendEnv ρ b
    { modules } <- moduleStore
-   pρ' × _ <- asAssigns <$> eval.stmt ρ b empty s
-   newEnv (subMods modules <+> unbound <+> bindingsAt pρ')
+   pρ × _ <- asAssigns <$> eval.stmt ρ' b' empty s
+   newEnv (subMods modules <+> unbound <+> bindingsAt pρ)
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
@@ -533,6 +532,7 @@ evalProgram ρ classes s =
    withClasses classes do
       { depGraph } <- moduleStore
       out × g <- flip runStateT depGraph do
-         (b × _) × Env ρ' <- builtinsEnv >>= flip extendEnvAt ρ
-         fst <<< fst <$> eval.program ρ' b empty s
+         (b × _) × Env ρ' <- builtinsEnv
+         ρ'' × b' <- extendEnv ρ' b ρ
+         fst <<< fst <$> eval.program ρ'' b' empty s
       pure { g, out }
