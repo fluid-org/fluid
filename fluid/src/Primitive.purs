@@ -22,7 +22,7 @@ import DepGraph (dataDep)
 import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
-import Literal (Literal(..), eqLiteral)
+import Literal (Literal(..), asFloat, eqLiteral)
 import Path (Position)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
@@ -199,8 +199,7 @@ type ComplexOperand a = a × Val a × Val a
 -- Complex operand, or int or float operand as complex number with constant zero as imaginary part
 complexOperand :: forall a. Semiring a => Val a -> Maybe (ComplexOperand a)
 complexOperand (Val α (Obj c ((_ × x) : (_ × y) : Nil))) | c == cComplex = Just (α × x × y)
-complexOperand (Val α (Lit (Int n))) = Just (zero × Val α (Lit (Float (toNumber n))) × constant 0.0)
-complexOperand x@(Val _ (Lit (Float _))) = Just (zero × x × constant 0.0)
+complexOperand (Val α (Lit ℓ)) | Just x <- asFloat ℓ = Just (zero × Val α (Lit (Float x)) × constant 0.0)
 complexOperand _ = Nothing
 
 constant :: forall a. Semiring a => Number -> Val a
@@ -217,8 +216,8 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
    Mul -> result <$> join (arith Sub <$> arith Mul x x' <*> arith Mul y y')
       <*> join (arith Add <$> arith Mul x y' <*> arith Mul y x')
    Div -> do
-      a <- part x'
-      b <- part y'
+      a <- complexPart x'
+      b <- complexPart y'
       if N.abs a >= N.abs b then
          if a == 0.0 then divisionByZero
          else do
@@ -233,10 +232,10 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
             <*> (flip (arith Div) denom =<< flip (arith Sub) x =<< arith Mul y ratio)
       else pure (result nan nan)
    Pow -> do
-      a <- part x
-      b <- part y
-      a' <- part x'
-      b' <- part y'
+      a <- complexPart x
+      b <- complexPart y
+      a' <- complexPart x'
+      b' <- complexPart y'
       let
          vabs = N.sqrt (a * a + b * b)
          at = N.atan2 b a
@@ -259,7 +258,7 @@ complexArith op z@(α × x × y) (β × x' × y') = case op of
    result u u' = (α `add` β) × u × u'
 
    arith op' u u' = binopFun op' (u : u' : Nil)
-   part u = fst <$> unpackFloat u
+   complexPart u = fst <$> unpackFloat u
    one = zero × constant 1.0 × constant 0.0
    nan = Val (root x' `add` root y') (Lit (Float N.nan))
 
