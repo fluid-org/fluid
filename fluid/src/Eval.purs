@@ -189,10 +189,11 @@ eval = { stmt, program }
       List es -> untraced $ sequenceOf V.List (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
       Tuple es -> untraced $ sequenceOf V.Tuple (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
       ListComp e gs -> untraced $ reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
-      Constr c es -> untraced do
+      Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
-         object classes (controlDep ctl) c <<< map reuseAt <$> traverse (expr inputs) es
+         args <- traverse (expr inputs) es
+         pure (object classes (controlDep ctl) c (reuseAt <$> args) × Tr.ObjectConstructor c (fst <$> args))
       Matrix e (x × y) e' -> untraced do
          r@(_ × v) <- expr inputs e'
          i' × j' <- case v of
@@ -213,22 +214,22 @@ eval = { stmt, program }
          -- Index n along dimension k of the matrix with dimensions at position u
          index :: Position -> Int -> Int -> GVal s
          index u k n = Val unit (V.Lit (Int n)) × construct (controlDep (singleton (fst (childAt (Element k) u)))) Map.empty
-      Lambda d -> untraced $ pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
+      Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d × Tr.Lambda d)
       Type τ -> untraced $ pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
-      Attribute e x -> untraced do
+      Attribute e x -> do
          r@(_ × v) <- expr inputs e
          case v of
             Val _ (V.Obj c xvs) -> do
                _ <- elemIndex x (fst <$> xvs) # orElse (quoted (dottedName c) <> " does not have field " <> quoted x)
-               pure (deliver (singleton (fst r)) (reuseAt (childAt (Field x) r)))
+               pure (deliver (singleton (fst r)) (reuseAt (childAt (Field x) r)) × Tr.Attribute x (fst r))
             _ -> throw $ "Found " <> prettyP v <> ", expected object"
-      Subscript e e' -> untraced do
+      Subscript e e' -> do
          r@(_ × v) <- expr inputs e
          r'@(_ × v') <- expr inputs e'
          let
             Val _ u = v
             Val _ u' = v'
-         case u, u' of
+         selected <- case u, u' of
             V.Dictionary (DictRep d), V.Lit (Str k) -> do
                _ <- withMsg "Dict lookup" $ lookup k d # orElse ("Key \"" <> k <> "\" not found")
                subscript r r' (reuseAt (childAt (DictVal k) r)) (singleton (fst (childAt (DictKey k) r)))
@@ -245,6 +246,7 @@ eval = { stmt, program }
                subscript r r' (reuseAt (childAt (MatrixElement i j) r)) empty
             V.Matrix _, _ -> throw $ "Found " <> prettyP v' <> ", expected pair of int"
             _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
+         pure (selected × Tr.Subscript (fst r) (fst r'))
          where
          -- Child u of the value at r, at the index at r'; ps are further control positions
          subscript :: Position -> Position -> GVal s -> Set Path -> m (GVal s)
@@ -256,22 +258,34 @@ eval = { stmt, program }
          f <- expr inputs e
          rs <- traverse (expr inputs) es
          withMsg ("In " <> funName e) $ apply f rs
-      BinOp e op e' -> untraced do
+      BinOp e op e' -> do
          r <- expr inputs e
          r' <- expr inputs e'
-         withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ctl r r')
-      UnOp op e -> untraced do
+         v <- withMsg ("In " <> binopSymbol op) $ orThrow (applyBinop op ctl r r')
+         pure (v × Tr.Binary op (fst r) (fst r'))
+      UnOp op e -> do
          r <- expr inputs e
-         withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) ctl (r : Nil))
-      And e e' -> untraced do
+         v <- withMsg ("In " <> unopSymbol op) $ orThrow (applyDepFun (unopFun op) ctl (r : Nil))
+         pure (v × Tr.Unary op (fst r))
+      And e e' -> do
          { holds, r } <- condition inputs e
-         if holds then reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e') else pure (reuseAt r)
-      Or e e' -> untraced do
+         if holds then do
+            right <- controlledBy (fst r) inputs >>= flip expr e'
+            pure (reuseAt right × Tr.AndFull (fst r) (fst right))
+         else pure (reuseAt r × Tr.AndShort (fst r) e')
+      Or e e' -> do
          { holds, r } <- condition inputs e
-         if holds then pure (reuseAt r) else reuseAt <$> (controlledBy (fst r) inputs >>= flip expr e')
-      Cond e1 e e2 -> untraced do
+         if holds then pure (reuseAt r × Tr.OrShort (fst r) e')
+         else do
+            right <- controlledBy (fst r) inputs >>= flip expr e'
+            pure (reuseAt right × Tr.OrFull (fst r) (fst right))
+      Cond e1 e e2 -> do
          { holds, r } <- condition inputs e
-         reuseAt <$> (controlledBy (fst r) inputs >>= flip expr (if holds then e1 else e2))
+         chosen <- controlledBy (fst r) inputs >>= flip expr (if holds then e1 else e2)
+         pure
+            ( reuseAt chosen ×
+                 if holds then Tr.CondTrue (fst r) (fst chosen) e2 else Tr.CondFalse (fst r) e1 (fst chosen)
+            )
       DocExpr _ e -> untraced $ reuseAt <$> expr inputs e
       where
       ctl = singleton (ctlAt b)
