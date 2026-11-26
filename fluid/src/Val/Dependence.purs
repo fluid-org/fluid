@@ -56,24 +56,13 @@ deliver ps (v × θ × r) = v × withCtrl ps θ × r
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Position of the environment at inputs vertex b
-envAt :: Vertex -> Position
-envAt b = b × singleton InputsEnv
+-- Allocate vertex for environment ρ with the given dependence
+newEnv :: forall m s. MonadState (DepGraph Label s) m => Dict (Raw Val) -> Dependence (Set Position) s -> m Vertex
+newEnv ρ = newVertex (Bindings (Env ρ))
 
--- Control position at inputs vertex b
-ctlAt :: Vertex -> Position
-ctlAt b = b × singleton InputsCtl
-
--- Allocate inputs vertex for environment ρ with dependence δ; control position has dependence δ'
-newInputs
-   :: forall m s
-    . MonadState (DepGraph Label s) m
-   => Semiring s
-   => Dict (Raw Val)
-   -> Dependence (Set Position) s
-   -> Dependence (Set Position) s
-   -> m Vertex
-newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InputsEnv × δ, InputsCtl × δ' ]))
+-- Allocate vertex for control input with the given dependence
+newControl :: forall m s. MonadState (DepGraph Label s) m => Dependence (Set Position) s -> m Vertex
+newControl = newVertex (Control unit)
 
 -- Allocate vertex for bindings ρ; return each binding as reuse of its position
 newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Dict (GVal s))

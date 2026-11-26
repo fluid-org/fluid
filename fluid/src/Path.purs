@@ -38,11 +38,9 @@ import Util.Set (class Set, empty, filter, size, union, (∈), (∪))
 
 newtype Vertex = Vertex Int
 
--- Step to child of value; values include families of values such as environments
+-- Step to child of value or environment
 data Step
-   = InputsEnv
-   | InputsCtl
-   | Binding Var
+   = Binding Var
    | Field Var
    | Element Int -- of list or tuple
    | DictKey String
@@ -92,8 +90,6 @@ interned = unsafePerformEffect $ toEffect do
 
 -- Equal exactly for equal steps
 stepKey :: Step -> String
-stepKey InputsEnv = "e"
-stepKey InputsCtl = "c"
 stepKey (Binding x) = "b" <> sized x
 stepKey (Field x) = "f" <> sized x
 stepKey (Element i) = "i" <> show i

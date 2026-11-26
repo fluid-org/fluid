@@ -31,7 +31,7 @@ import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
-import Path (Position, Step(..), Vertex, followedBy)
+import Path (Position, Step(..), Vertex, followedBy, ε)
 import Pretty (prettyP)
 import Types (Type(..)) as T
 import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
@@ -42,10 +42,10 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newBindings, newControl, newEnv, newValue, positionsIn, reuseAt, sequenceOf)
 
--- Environment, and inputs vertex which holds environment
-type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
+-- Environment, vertex which holds environment, and vertex of control input
+type Inputs = { ρ :: Dict (Raw Val), b :: Vertex, c :: Vertex }
 
 -- Returned value, or bindings introduced and any new sources of the control input
 data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Position)
@@ -65,12 +65,12 @@ override _ r' = r'
 
 -- Extend environment of inputs with bindings; non-empty set of positions replaces sources of control input
 extendInputs :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Position -> m Inputs
-extendInputs inputs@{ ρ, b } ρ' ps
-   | isEmpty ρ' && isEmpty ps = pure inputs
-   | otherwise = newInputs ρ'' (extend (envAt b) (snd <$> ρ')) ctl <#> { ρ: ρ'', b: _ }
-        where
-        ρ'' = ρ <+> (fst <$> ρ')
-        ctl = if isEmpty ps then reuse (ctlAt b) else construct (controlDep ps) Map.empty
+extendInputs { ρ, b, c } ρ' ps = do
+   b' <- if isEmpty ρ' then pure b else newEnv ρ'' (extend (b × ε) (snd <$> ρ'))
+   c' <- if isEmpty ps then pure c else newControl (construct (controlDep ps) Map.empty)
+   pure { ρ: ρ'', b: b', c: c' }
+   where
+   ρ'' = ρ <+> (fst <$> ρ')
 
 -- Inputs of a premise with control input dependent on position q
 controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Position -> Inputs -> m Inputs
@@ -163,7 +163,7 @@ eval = { stmt, program }
    -- Value of an expression, before vertex is allocated
    value :: Inputs -> Expr -> m (GVal s)
    value inputs@{ ρ, b } = case _ of
-      Var x -> pure (deliver ctl (get x ρ × reuse (envAt b `followedBy` singleton (Binding x))))
+      Var x -> pure (deliver ctl (get x ρ × reuse (b × singleton (Binding x))))
       Lit ℓ -> pure (literal ℓ)
       Imaginary y -> askClasses <#> \classes ->
          object classes (controlDep ctl) cComplex (literal (Float 0.0) : literal (Float y) : Nil)
@@ -200,7 +200,7 @@ eval = { stmt, program }
          -- Index n along dimension k of the matrix with dimensions at position u
          index :: ValAt -> Int -> Int -> GVal s
          index u k n = Val unit (V.Lit (Int n)) × construct (controlDep (singleton (fst (childAt (Element k) u)))) Map.empty
-      Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
+      Lambda d -> pure (closure (inputs.c × ε) (b × ε) (restrict (fv d) ρ) empty d)
       Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
       Attribute e x -> do
          r@(_ × v) <- expr inputs e
@@ -261,7 +261,7 @@ eval = { stmt, program }
          reuseAt <$> (controlledBy (fst r) inputs >>= flip expr (if holds then e1 else e2))
       DocExpr _ e -> reuseAt <$> expr inputs e
       where
-      ctl = singleton (ctlAt b)
+      ctl = singleton (inputs.c × ε)
       literal ℓ = Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty
 
    -- Positions of key e and value e'
@@ -288,7 +288,7 @@ eval = { stmt, program }
       pure { holds, r }
 
    singletonList :: Inputs -> GVal s -> GVal s
-   singletonList { b } v = sequenceOf V.List (controlDep (singleton (ctlAt b))) (v : Nil)
+   singletonList { c } v = sequenceOf V.List (controlDep (singleton (c × ε))) (v : Nil)
 
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
    qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m ValAt
@@ -333,13 +333,13 @@ eval = { stmt, program }
       Return e -> Returns <$> expr inputs e
       If bs s_opt -> go (NEL.toList bs) inputs
          where
-         go Nil inputs' = maybe (pure (Assigns empty (singleton (ctlAt inputs'.b)))) (branch inputs') s_opt
+         go Nil inputs' = maybe (pure (Assigns empty (singleton (inputs'.c × ε)))) (branch inputs') s_opt
          go (Branch e s' : bs') inputs' = do
             { holds, r: q × _ } <- condition inputs' e
             inputs'' <- controlledBy q inputs'
             if holds then branch inputs'' s' else go bs' inputs''
 
-         branch inputs' s' = override (Assigns empty (singleton (ctlAt inputs'.b))) <$> stmt inputs' s'
+         branch inputs' s' = override (Assigns empty (singleton (inputs'.c × ε))) <$> stmt inputs' s'
       Match e bs -> do
          r <- expr inputs e
          classes <- askClasses
@@ -351,7 +351,7 @@ eval = { stmt, program }
          r <- expr inputs e
          classes <- askClasses
          uncurry Assigns <$> destructure classes p r
-      DefRegion ds -> pure (Assigns (closeDefs (ctlAt b) (envAt b) ρ ds) empty)
+      DefRegion ds -> pure (Assigns (closeDefs (inputs.c × ε) (b × ε) ρ ds) empty)
       Pass -> pure (Assigns empty empty)
       ExprStmt e -> expr inputs e $> Assigns empty empty
       Assert e e_opt -> do
@@ -368,7 +368,7 @@ eval = { stmt, program }
          r@(Returns _) -> pure r
          r@(Assigns ρ' ps) -> override r <$> (extendInputs inputs ρ' ps >>= flip stmt s')
       where
-      constant = construct (controlDep (singleton (ctlAt b))) Map.empty
+      constant = construct (controlDep (singleton (inputs.c × ε))) Map.empty
 
    program :: Inputs -> Stmt -> m ValAt
    program inputs s = output inputs s >>= \r -> newValue (reuseAt r) $> r
@@ -408,8 +408,9 @@ eval = { stmt, program }
          call :: V.Fun Unit -> m (GVal s)
          call = case _ of
             V.Closure (Env ρ) ds (Def xs s) -> do
-               b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (controlDep (singleton q)) Map.empty)
-               reuseAt <<< asReturns <$> stmt { ρ: ρ'', b } s
+               b <- newEnv ρ'' (extend p (snd <$> ρ'))
+               c <- newControl (construct (controlDep (singleton q)) Map.empty)
+               reuseAt <<< asReturns <$> stmt { ρ: ρ'', b, c } s
                where
                p = q' `followedBy` singleton ClosureEnv
                args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
@@ -421,9 +422,12 @@ eval = { stmt, program }
             V.Type _ -> error absurd
             V.Partial _ _ -> error absurd
 
--- Inputs vertex for environment ρ; control position depends on nothing
+-- Inputs for environment ρ; control input depends on nothing
 topLevel :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m Inputs
-topLevel ρ = newInputs (fst <$> ρ) (tupling (bindings (snd <$> ρ))) (construct mempty Map.empty) <#> { ρ: fst <$> ρ, b: _ }
+topLevel ρ = do
+   b <- newEnv (fst <$> ρ) (tupling (bindings (snd <$> ρ)))
+   c <- newControl (construct mempty Map.empty)
+   pure { ρ: fst <$> ρ, b, c }
 
 -- Evaluate module q at a new vertex; bindings of body override module value of each submodule
 evalModule
