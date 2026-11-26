@@ -372,7 +372,7 @@ eval = { stmt, program }
       where
       constant = construct (controlDep ps) Map.empty
 
-   -- Evaluate rest of a block in turn; earlier statements of the block have bindings ρ' and control positions qs
+   -- Evaluate remaining statements of block; statements already evaluated gave bindings ρ' and control positions qs
    block :: Dict (GVal s) -> Set Position -> Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m Result
    block ρ' qs ρ b ps (Seq s s') = stmt ρ b ps s >>= case _ of
       Returns pv -> returns pv
