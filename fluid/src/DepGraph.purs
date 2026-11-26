@@ -25,18 +25,18 @@ import Util (class IsEmpty, type (×), Endo, assert, isEmpty, singleton, (!), (�
 import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
 
--- Labels with a path to each position
+-- Annotate each position with its path
 class Traversable f <= Paths f where
    paths :: forall a. f a -> f (Path × a)
 
 positions :: forall f a. Traversable f => f a -> List a
 positions = traverse (\a -> modify_ (a : _)) >>> flip execState Nil >>> L.reverse
 
--- Positions carrying true
+-- Paths of positions annotated with true
 selected :: forall f. Paths f => f Boolean -> Set Path
 selected v = Set.fromFoldable (L.mapMaybe (\(p × b) -> if b then Just p else Nothing) (positions (paths v)))
 
--- Control sources as a set of type c, then non-zero weight of every other source
+-- Set of control sources, then weights of other sources; zero weights absent
 data Support c s = Support c (Map Position s)
 
 instance (Set c Position, Semiring s) => Semigroup (Support c s) where
@@ -48,7 +48,7 @@ controlDep ps = Support ps empty
 dataDep :: forall c s. Set c Position => Semiring s => Position -> Support c s
 dataDep p = Support empty (maplet p one)
 
--- Leave control sources unchanged, since control weight absorbs non-zero w
+-- Scale weights by w; control sources stay, since control weight absorbs non-zero w
 scaleSupport :: forall c s. Eq s => Semiring s => s -> Endo (Support c s)
 scaleSupport w support@(Support ps ws)
    | w == one = support
@@ -146,7 +146,7 @@ restructuringAfterRel θ rs = case θ of
    where
    relsAfter = Map.mapMaybe (flip restructuringAfterRel rs >>> nonZero)
 
--- Relation after the relations of the dependences
+-- Compose relation with dependence of each source vertex
 relAfter :: forall s. DepSemiring s => Rel (Set Position) s -> Dependences PositionSet s -> Rel PositionSet s
 relAfter (Rel (Support ps ws) rs) δs =
    Rel (foldlWithIndex (\p support w -> support <> scaleSupport w (sourceSupport δs p)) (Support (supportsAt δs ps) empty) ws)
@@ -161,13 +161,13 @@ bindings ρ = Map.fromFoldable ((toUnfoldable ρ :: List _) <#> \(x × a) -> Bin
 tupling :: forall c s. Set c Position => Semiring s => Map Step (Dependence c s) -> Dependence c s
 tupling δs = Tupling empty (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) δs)
 
--- Dependence of value with children δs, or with nothing reused if δs is empty; root depends on support
+-- Dependence of value constructed from given children; root depends on support
 construct :: forall c s. Set c Position => Semiring s => Support c s -> Map Step (Dependence c s) -> Dependence c s
 construct support δs
    | isEmpty δs = NoReuse empty × Rel support empty
    | otherwise = map (Rel support empty <> _) (tupling δs)
 
--- Dependence of environment at position p with bindings δs added or replaced
+-- Dependence of environment at a position extended with given bindings
 extend :: forall c s. Set c Position => Semiring s => Position -> Dict (Dependence c s) -> Dependence c s
 extend p δs
    | isEmpty δs = reuse p
@@ -213,7 +213,7 @@ type VisibleGraph (f :: Type -> Type) s =
    , edges :: Labelling (Map Path (Support PositionSet s)) -- target ↦ position ↦ non-empty support
    }
 
--- Relies on edges running from earlier to later vertices in evaluation order.
+-- Hide every vertex outside the visible set; relies on edges running from earlier to later vertices
 materialise :: forall f s. Paths f => DepSemiring s => DepGraph f s -> Set Vertex -> VisibleGraph f s
 materialise g visible =
    { vals
