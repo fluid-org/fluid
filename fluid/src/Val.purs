@@ -34,7 +34,7 @@ import Module.Defs (ModuleName)
 import DepGraph (class Paths, DepGraph, Dependence, Labelling, emptyGraph, paths)
 import Lattice (class BoundedLattice, class DepSemiring, class JoinSemilattice, class MeetSemilattice, DepKind(..), Raw, (∧), (∨))
 import Literal (Literal(..))
-import Path (Path, Step(..), Vertex)
+import Path (Path, Position, Step(..), Vertex)
 import Types as T
 import Pretty.Doc (Doc, text)
 import Util (MayFail, class IsEmpty, type (×), Endo, absurd, definitely', error, isEmpty, shapeMismatch, singleton, unsafeUpdateAt, (!), (×), (∩), (≜))
@@ -263,10 +263,10 @@ valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
 valAt g p = value (get p g.vals)
 
 -- Value with its dependence on the values of vertices already in the graph
-type GVal s = Raw Val × Dependence (Set Path) s
+type GVal s = Raw Val × Dependence (Set Position) s
 
--- Source position, then value at that position
-type ValAt = Path × Raw Val
+-- Position, then value at that position
+type ValAt = Position × Raw Val
 
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
@@ -277,7 +277,7 @@ type DepOp =
     . HasClasses m
    => MonadLoad m
    => DepSemiring s
-   => Path
+   => Position
    -> List ValAt
    -> m (GVal s)
 

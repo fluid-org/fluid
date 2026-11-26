@@ -35,7 +35,7 @@ import Data.String.Regex.Flags (noFlags)
 import Data.Traversable (traverse)
 import Data.Tuple (fst, snd)
 import Classes (ClassTable, askClasses, fields)
-import Path (Path, Step(..))
+import Path (Position, Step(..))
 import Types.Defs (cComplex, cMatrix, cRange, callable, f_imag, f_real, matrix, var)
 import Cxt (CxtEntry(..)) as Cxt
 import Cxt (Cxt, CxtEntry(Assigned), generalise)
@@ -163,7 +163,7 @@ sorted =
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
-   sort :: forall m. MonadError Error m => List (ValAt × Set Path) -> m (List (ValAt × Set Path))
+   sort :: forall m. MonadError Error m => List (ValAt × Set Position) -> m (List (ValAt × Set Position))
    sort us
       | L.length us < 2 = pure us
       | otherwise = join (merge empty <$> sort (L.take n us) <*> sort (L.drop n us))
@@ -173,10 +173,10 @@ sorted =
    merge
       :: forall m
        . MonadError Error m
-      => Set Path
-      -> List (ValAt × Set Path)
-      -> List (ValAt × Set Path)
-      -> m (List (ValAt × Set Path))
+      => Set Position
+      -> List (ValAt × Set Position)
+      -> List (ValAt × Set Position)
+      -> m (List (ValAt × Set Position))
    merge ps Nil us' = pure (map (ps ∪ _) <$> us')
    merge ps us Nil = pure (map (ps ∪ _) <$> us)
    merge ps ((u × qs) : us) ((u' × qs') : us') = compareAt Lt u' u >>= \(b × ps') ->
@@ -204,7 +204,7 @@ extremum id op =
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
-   step :: forall m. MonadError Error m => ValAt × Set Path -> ValAt -> m (ValAt × Set Path)
+   step :: forall m. MonadError Error m => ValAt × Set Position -> ValAt -> m (ValAt × Set Position)
    step (u × ps) u' = compareAt op u' u <#> \(b × ps') -> (if b then u' else u) × (ps ∪ ps')
 
 exit :: ForeignOp
@@ -388,14 +388,14 @@ insert =
    depOp _ _ = throw "Dictionary, key and value expected"
 
 -- Outcome and source positions of comparing the values at two positions
-compareAt :: forall m. MonadError Error m => Binop -> ValAt -> ValAt -> m (Boolean × Set Path)
+compareAt :: forall m. MonadError Error m => Binop -> ValAt -> ValAt -> m (Boolean × Set Position)
 compareAt op u u' = do
    v × δ <- orThrow (applyDepFun (binopFun op) empty empty (u : u' : Nil) :: MayFail (GVal DepKind))
    b × _ <- orThrow (unpack boolean v)
    pure (b × case supportAt δ Nil of Support ps ws -> ps ∪ Map.keys ws)
 
 -- Reuse key and value of a dictionary entry under control of given positions
-entryAt :: forall s. Semiring s => Set Path -> ValAt -> String -> GVal s × GVal s
+entryAt :: forall s. Semiring s => Set Position -> ValAt -> String -> GVal s × GVal s
 entryAt ps d k = deliver ps (reuseAt (childAt (DictKey k) d)) × deliver ps (reuseAt (childAt (DictVal k) d))
 
 quot :: ForeignOp

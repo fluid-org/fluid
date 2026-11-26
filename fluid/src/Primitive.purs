@@ -23,7 +23,7 @@ import Dict (Dict)
 import Expr (Binop(..), Unop(..))
 import Lattice (class BoundedJoinSemilattice, class DepSemiring, bot, erase)
 import Literal (Literal(..), eqLiteral)
-import Path (Path)
+import Path (Position)
 import Partial.Unsafe (unsafePartial)
 import Pretty (prettyP)
 import Util (type (+), type (×), MayFail, absurd, definitely', error, orThrow, singleton, (×))
@@ -275,7 +275,7 @@ divisionByZero :: forall a. MayFail a
 divisionByZero = Left "ZeroDivisionError: division by zero"
 
 -- Concatenation and repetition reuse elements of operand sequences
-applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> ValAt -> ValAt -> MayFail (GVal s)
+applyBinop :: forall s. DepSemiring s => Binop -> Set Position -> ValAt -> ValAt -> MayFail (GVal s)
 applyBinop Add _ r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (concatOf List mempty (r : r' : Nil))
 applyBinop Add _ r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (concatOf Tuple mempty (r : r' : Nil))
 applyBinop Mul _ l@(_ × Val _ (List _)) k@(_ × Val _ (Lit (Int n))) = pure (repeatList l k n)

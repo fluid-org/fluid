@@ -31,7 +31,7 @@ import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
-import Path (Path, Step(..), Vertex, sourceVertex)
+import Path (Position, Step(..), Vertex, followedBy)
 import Pretty (prettyP)
 import Types (Type(..)) as T
 import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
@@ -48,13 +48,13 @@ import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionar
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
 
 -- Returned value, or bindings introduced and any new sources of the control input
-data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Path)
+data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Position)
 
 asReturns :: forall s. Result s -> ValAt
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
-asAssigns :: forall s. Result s -> Dict (GVal s) × Set Path
+asAssigns :: forall s. Result s -> Dict (GVal s) × Set Position
 asAssigns (Assigns ρ ps) = ρ × ps
 asAssigns (Returns _) = error "Assigns expected"
 
@@ -64,7 +64,7 @@ override (Assigns ρ ps) (Assigns ρ' ps') = Assigns (ρ <+> ρ') (if isEmpty ps
 override _ r' = r'
 
 -- Extend environment of inputs with bindings; non-empty set of positions replaces sources of control input
-extendInputs :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Path -> m Inputs
+extendInputs :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Position -> m Inputs
 extendInputs inputs@{ ρ, b } ρ' ps
    | isEmpty ρ' && isEmpty ps = pure inputs
    | otherwise = newInputs ρ'' (extend (envAt b) (snd <$> ρ')) ctl <#> { ρ: ρ'', b: _ }
@@ -73,11 +73,11 @@ extendInputs inputs@{ ρ, b } ρ' ps
         ctl = if isEmpty ps then reuse (ctlAt b) else construct (controlDep ps) Map.empty
 
 -- Inputs of a premise with control input dependent on position q
-controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Path -> Inputs -> m Inputs
+controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Position -> Inputs -> m Inputs
 controlledBy q inputs = extendInputs inputs empty (singleton q)
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
-matches :: forall s. Semiring s => ClassTable -> ValAt -> Pattern -> Maybe (Dict (GVal s)) × List Path
+matches :: forall s. Semiring s => ClassTable -> ValAt -> Pattern -> Maybe (Dict (GVal s)) × List Position
 matches _ u (PVar x)
    | x == varAnon = Just empty × Nil
    | otherwise = Just (maplet x (reuseAt u)) × Nil
@@ -97,7 +97,7 @@ matches classes u@(q × Val _ v) p = second (q : _) case v, p of
    V.Tuple vs, PTuple ps | A.length vs == length ps -> matchesMany classes (elementsAt u) ps
    _, _ -> Nothing × Nil
 
-matchesMany :: forall s. Semiring s => ClassTable -> List ValAt -> List Pattern -> Maybe (Dict (GVal s)) × List Path
+matchesMany :: forall s. Semiring s => ClassTable -> List ValAt -> List Pattern -> Maybe (Dict (GVal s)) × List Position
 matchesMany _ Nil Nil = Just empty × Nil
 matchesMany classes (u : us) (p : ps) = case matches classes u p of
    Nothing × qs -> Nothing × qs
@@ -107,33 +107,33 @@ matchesMany classes (u : us) (p : ps) = case matches classes u p of
 matchesMany _ _ _ = error absurd
 
 -- Bindings of the first matching case; also every position inspected in trying the cases
-dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> ValAt -> Maybe (Dict (GVal s) × b) × Set Path
+dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> ValAt -> Maybe (Dict (GVal s) × b) × Set Position
 dispatch classes cases u = second Set.fromFoldable (go cases)
    where
-   go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List Path
+   go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List Position
    go Nil = Nothing × Nil
    go ((p × b) : cases') = case matches classes u p of
       Just ρ × qs -> Just (ρ × b) × qs
       Nothing × qs -> second (qs <> _) (go cases')
 
 -- dispatch on a single pattern, which must match.
-destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> ValAt -> m (Dict (GVal s) × Set Path)
+destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> ValAt -> m (Dict (GVal s) × Set Position)
 destructure classes p u = case dispatch classes (singleton (p × unit)) u of
    Just (ρ × _) × qs -> pure (ρ × qs)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP (snd u) <> " does not match " <> prettyP p)
 
-object :: forall s. Semiring s => ClassTable -> Support (Set Path) s -> Name -> List (GVal s) -> GVal s
+object :: forall s. Semiring s => ClassTable -> Support (Set Position) s -> Name -> List (GVal s) -> GVal s
 object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst <$> vs))) ×
    construct support (Map.fromFoldable (zip (Field <$> fieldNames classes c) (snd <$> vs)))
 
 -- Closure which captures ρ from the environment at position p; root depends on control position ctl
-closure :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
+closure :: forall s. Semiring s => Position -> Position -> Dict (Raw Val) -> Dict Def -> Def -> GVal s
 closure ctl p ρ ds d = Val unit (V.Fun (V.Closure (Env ρ) ds d)) ×
    construct (controlDep (singleton ctl)) (maplet ClosureEnv (tupling (bindings (mapWithKey captured ρ))))
    where
-   captured x _ = reuse (p <> singleton (Binding x))
+   captured x _ = reuse (p `followedBy` singleton (Binding x))
 
-closeDefs :: forall s. Semiring s => Path -> Path -> Dict (Raw Val) -> Dict Def -> Dict (GVal s)
+closeDefs :: forall s. Semiring s => Position -> Position -> Dict (Raw Val) -> Dict Def -> Dict (GVal s)
 closeDefs ctl p ρ ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
@@ -157,13 +157,13 @@ eval = { stmt, program }
    expr inputs e'@(DocExpr e _) = do
       r <- value inputs e' >>= newValue
       doc <- extendInputs inputs (maplet varThis (reuseAt r)) empty >>= flip expr e
-      attachDoc (sourceVertex (fst r)) (sourceVertex (fst doc)) $> r
+      attachDoc (fst (fst r)) (fst (fst doc)) $> r
    expr inputs e = value inputs e >>= newValue
 
    -- Value of an expression, before vertex is allocated
    value :: Inputs -> Expr -> m (GVal s)
    value inputs@{ ρ, b } = case _ of
-      Var x -> pure (deliver ctl (get x ρ × reuse (envAt b <> singleton (Binding x))))
+      Var x -> pure (deliver ctl (get x ρ × reuse (envAt b `followedBy` singleton (Binding x))))
       Lit ℓ -> pure (literal ℓ)
       Imaginary y -> askClasses <#> \classes ->
          object classes (controlDep ctl) cComplex (literal (Float 0.0) : literal (Float y) : Nil)
@@ -234,7 +234,7 @@ eval = { stmt, program }
             _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
          where
          -- Child u of the value at r, at the index at r'; ps are further control positions
-         subscript :: ValAt -> ValAt -> GVal s -> Set Path -> m (GVal s)
+         subscript :: ValAt -> ValAt -> GVal s -> Set Position -> m (GVal s)
          subscript r r' u ps = pure (deliver (singleton (fst r) ∪ ps ∪ positionsIn r') u)
       ModMember q x -> do
          { modules } <- moduleStore
@@ -411,7 +411,7 @@ eval = { stmt, program }
                b <- newInputs ρ'' (extend p (snd <$> ρ')) (construct (controlDep (singleton q)) Map.empty)
                reuseAt <<< asReturns <$> stmt { ρ: ρ'', b } s
                where
-               p = q' <> singleton ClosureEnv
+               p = q' `followedBy` singleton ClosureEnv
                args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
                ρ' = closeDefs q p ρ ds <+> args
                ρ'' = ρ <+> (fst <$> ρ')
@@ -529,5 +529,5 @@ evalProgram
 evalProgram ρ classes s =
    withClasses classes do
       { depGraph } <- moduleStore
-      out × g <- flip runStateT depGraph (sourceVertex <<< fst <$> (topLevel ρ >>= flip eval.program s))
+      out × g <- flip runStateT depGraph (fst <<< fst <$> (topLevel ρ >>= flip eval.program s))
       pure { g, out }
