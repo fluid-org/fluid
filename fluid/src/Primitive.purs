@@ -176,7 +176,7 @@ binopFun op (v : v' : Nil)
    | op `elem` [ Add, Sub, Mul, Div, Pow ]
    , isComplex v || isComplex v'
    , Just z <- complexOperand v
-   , Just w <- complexOperand v' = complexBinop op z w
+   , Just w <- complexOperand v' = complexArith op z w <#> \(α × x × y) -> complexVal α x y
    | otherwise = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 binopFun _ _ = error absurd
 
@@ -204,9 +204,6 @@ complexOperand _ = Nothing
 
 floatVal :: forall a. Semiring a => Number -> Val a
 floatVal = Val zero <<< Lit <<< Float
-
-complexBinop :: forall a. DepSemiring a => Binop -> ComplexOperand a -> ComplexOperand a -> MayFail (Val a)
-complexBinop op z w = complexArith op z w <#> \(α × x × y) -> complexVal α x y
 
 -- Apply arithmetic operator to parts of complex operands by CPython algorithms
 complexArith :: forall a. DepSemiring a => Binop -> ComplexOperand a -> ComplexOperand a -> MayFail (ComplexOperand a)
