@@ -46,26 +46,26 @@ elementsAt pv = (\i -> childAt (Element i) pv) <$> L.take n (L.range 0 n)
 reuseAt :: forall s. Semiring s => ValAt -> GVal s
 reuseAt (p × v) = v × reuse p
 
--- Add control dependence on each of ps to every position outside a function value
+-- Add control dependence on given positions to every position outside a function value
 deliver :: forall s. Set Position -> Endo (GVal s)
 deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Allocate fresh vertex for bindings ρ
+-- Allocate fresh vertex for given bindings
 newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m EnvAt
 newEnv ρ = newVertex (Environment ρ') (tupling (bindings (snd <$> ρ))) <#> \a -> (a × ε) × ρ'
    where
    ρ' = Env (fst <$> ρ)
 
--- Extend environment ρ at position p with bindings ρ' at fresh vertex
+-- Extend environment at a position with given bindings; extended environment gets fresh vertex
 newExtendEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => EnvAt -> Dict (GVal s) -> m EnvAt
 newExtendEnv (p × Env ρ) ρ' = newVertex (Environment ρ'') (extend p (snd <$> ρ')) <#> \a -> (a × ε) × ρ''
    where
    ρ'' = Env (ρ <+> (fst <$> ρ'))
 
--- Binding of x in the environment at a position
+-- Binding of a variable in the environment at a position
 bindingAt :: Var -> EnvAt -> ValAt
 bindingAt x (p × Env ρ) = (p `followedBy` singleton (Binding x)) × get x ρ
 
@@ -73,8 +73,8 @@ bindingAt x (p × Env ρ) = (p `followedBy` singleton (Binding x)) × get x ρ
 bindingsAt :: forall s. Semiring s => EnvAt -> Dict (GVal s)
 bindingsAt pρ@(_ × Env ρ) = mapWithKey (\x _ -> reuseAt (bindingAt x pρ)) ρ
 
--- Apply f to pvs to compute the support of each result position. Every result position also
--- depends on ps. Result positions with empty support depend on ps'.
+-- Apply function to compute the support of each result position. Every result position also depends on ps.
+-- Result positions with empty support depend on ps'.
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Position -> Set Position -> List ValAt -> MayFail (GVal s)
 applyDepFun f ps ps' pvs = f (arg <$> pvs) <#> \v ->
    erase v × NoReuse ps × foldl addSupport mempty (positions (paths v))
@@ -86,7 +86,7 @@ applyDepFun f ps ps' pvs = f (arg <$> pvs) <#> \v ->
    addSupport r (p × Lineage (_ × ws)) =
       r <> ι p (Rel (if Map.isEmpty ws then controlDep ps' else Support Set.empty ws) Map.empty)
 
--- Step to element i of sequence if that element is a child
+-- Step to given element of sequence if that element is a child
 elementStep :: Int -> Raw Val -> Maybe Step
 elementStep i (Val _ (List _)) = Just (Element i)
 elementStep i (Val _ (Tuple _)) = Just (Element i)
@@ -102,23 +102,23 @@ elementAt i pv = case elementStep i (snd pv) of
    elementOf (v : Nil) = pure (element i v)
    elementOf _ = error absurd
 
--- String or range pv as list of elements
+-- String or range as list of elements
 explode :: forall s. DepSemiring s => ValAt -> GVal s
 explode pv = sequenceOf List (foldMap dataDep (lengthPositions pv)) (flip elementAt pv <$> L.take n (L.range 0 n))
    where
    n = definitely' (elementCount (snd pv))
 
--- Sequence of vs with root dependent on support
+-- Sequence with root dependent on support
 sequenceOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List (GVal s) -> GVal s
 sequenceOf mk support vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
 
--- Concatenate sequences pvs; root depends on support and each sequence
+-- Concatenate sequences; root depends on support and each sequence
 concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Position) s -> List ValAt -> GVal s
 concatOf mk support pvs = sequenceOf mk (support <> foldMap (fst >>> dataDep) pvs) $
    pvs >>= \pv@(p × _) -> deliver (singleton p) <<< reuseAt <$> elementsAt pv
 
--- Dictionary of entries kvs with root dependent on support
+-- Dictionary with root dependent on support
 dictionary :: forall s. Semiring s => Support (Set Position) s -> List (GVal s × GVal s) -> GVal s
 dictionary support kvs =
    Val unit (Dictionary (DictRep (D.fromFoldable (kvs <#> \((k × _) × v × _) -> key k × unit × v)))) ×
