@@ -506,7 +506,7 @@ eval = { stmt, program }
                pure (v' × Tr.PrimitiveOp name q (fst <$> supplied))
             V.Type (T.ClassTy c _) -> do
                classes <- askClasses
-               pure (object classes (controlDep (singleton q)) c (reuseAt <$> (stored <> supplied)) × Tr.ObjectConstructor c (fst <$> supplied))
+               pure (object classes (controlDep (singleton q)) c (reuseAt <$> (stored <> supplied)) × Tr.ObjectConstructor c (fst <$> (stored <> supplied)))
             V.Type _ -> error absurd
             V.Partial _ _ -> error absurd
 
