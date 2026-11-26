@@ -180,21 +180,29 @@ eval = { stmt, program }
    value inputs@{ ρ, b } = case _ of
       Var x -> pure (deliver ctl (get x ρ × reuse (envAt b <> singleton (Binding x))) × Tr.Variable x)
       Lit ℓ -> pure ((Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty) × Tr.Literal ℓ)
-      Dictionary ees -> untraced $ for ees (\(Pair e e') -> dictEntry inputs e e') <#> \kvs ->
-         deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × r) -> reuseAt k × reuseAt r))
+      Dictionary ees -> do
+         kvs <- for ees (\(Pair e e') -> dictEntry inputs e e')
+         pure
+            ( deliver ctl (dictionary (controlDep ctl) (kvs <#> \(k × v) -> reuseAt k × reuseAt v))
+                 × Tr.DictLiteral (kvs <#> \(k × v) -> Pair (fst k) (fst v))
+            )
       DictComp e e' gs -> untraced do
          r <- qualifiers (\inputs' -> singletonList inputs' <<< entry <$> dictEntry inputs' e e') inputs gs
          pure $ deliver ctl $ dictionary (dataDep (fst r)) $
             elementsAt r <#> \kv -> reuseAt (childAt (Element 0) kv) × reuseAt (childAt (Element 1) kv)
-      List es -> untraced $ sequenceOf V.List (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
-      Tuple es -> untraced $ sequenceOf V.Tuple (controlDep ctl) <<< map reuseAt <$> traverse (expr inputs) es
+      List es -> do
+         rs <- traverse (expr inputs) es
+         pure (sequenceOf V.List (controlDep ctl) (reuseAt <$> rs) × Tr.ListLiteral (fst <$> rs))
+      Tuple es -> do
+         rs <- traverse (expr inputs) es
+         pure (sequenceOf V.Tuple (controlDep ctl) (reuseAt <$> rs) × Tr.TupleLiteral (fst <$> rs))
       ListComp e gs -> untraced $ reuseAt <$> qualifiers (\inputs' -> expr inputs' e <#> (reuseAt >>> singletonList inputs')) inputs gs
       Constr c es -> do
          classes <- askClasses
          checkArity c (length es) classes
          args <- traverse (expr inputs) es
          pure (object classes (controlDep ctl) c (reuseAt <$> args) × Tr.ObjectConstructor c (fst <$> args))
-      Matrix e (x × y) e' -> untraced do
+      Matrix e (x × y) e' -> do
          r@(_ × v) <- expr inputs e'
          i' × j' <- case v of
             Val _ (V.Tuple [ Val _ (V.Lit (Int i')), Val _ (V.Lit (Int j')) ]) -> pure (i' × j')
@@ -204,12 +212,15 @@ eval = { stmt, program }
             ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
          rss <- for (A.range 0 (i' - 1)) \i -> for (A.range 0 (j' - 1)) \j ->
             extendInputs inputs (maplet x (index r 0 i) `unionWith_never` maplet y (index r 1 j)) empty >>= flip expr e
-         pure $ Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × child (Element 0) v × child (Element 1) v))) ×
-            construct (controlDep ctl)
-               ( Map.fromFoldable $
-                    [ MatrixRows × reuse (fst (childAt (Element 0) r)), MatrixCols × reuse (fst (childAt (Element 1) r)) ]
-                       <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (q × _) -> MatrixElement i j × reuse q)) rss)
-               )
+         pure (  
+            ( Val unit (V.Matrix (MatrixRep ((map snd <$> rss) × child (Element 0) v × child (Element 1) v))) ×
+               construct (controlDep ctl)
+                  ( Map.fromFoldable $
+                        [ MatrixRows × reuse (fst (childAt (Element 0) r)), MatrixCols × reuse (fst (childAt (Element 1) r)) ]
+                           <> A.concat (mapWithIndex (\i -> mapWithIndex (\j (q × _) -> MatrixElement i j × reuse q)) rss)
+                  )
+            ) × Tr.Matrix (fst r) (map (map fst) rss)
+         )
          where
          -- Index n along dimension k of the matrix with dimensions at position u
          index :: Position -> Int -> Int -> GVal s
