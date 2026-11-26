@@ -26,7 +26,7 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (withClasses)
-import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, controlDep, extend, materialise, reuse, dataDep, tupling)
+import DepGraph (DepGraph, Support, VisibleGraph, attachDoc, bindings, construct, controlDep, materialise, reuse, dataDep, tupling)
 import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
@@ -42,7 +42,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newBindings, newEnv, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newEnv, newExtendEnv, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Returned value, or bindings introduced and any new sources of the control input
 data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Position)
@@ -71,9 +71,7 @@ extendEnv
    -> m (Dict (Raw Val) × Vertex)
 extendEnv ρ b ρ'
    | isEmpty ρ' = pure (ρ × b)
-   | otherwise = (ρ'' × _) <$> newEnv ρ'' (extend (b × ε) (snd <$> ρ'))
-        where
-        ρ'' = ρ <+> (fst <$> ρ')
+   | otherwise = newExtendEnv ρ (b × ε) ρ'
 
 controlledBy :: Set Position -> Set Position -> Set Position
 controlledBy qs ps = if isEmpty qs then ps else qs
@@ -336,7 +334,7 @@ eval = { stmt, program }
    stmt :: Dict (Raw Val) -> Vertex -> Set Position -> Stmt -> m (Result s)
    stmt ρ b ps = result >=> case _ of
       Returns r -> Returns <$> newValue (reuseAt r)
-      Assigns ρ' qs -> flip Assigns qs <$> newBindings ρ'
+      Assigns ρ' qs -> flip Assigns qs <<< snd <$> newEnv ρ'
       where
       constant = construct (controlDep ps) Map.empty
 
@@ -427,21 +425,16 @@ eval = { stmt, program }
          call :: V.Fun Unit -> m (GVal s)
          call = case _ of
             V.Closure (Env ρ) ds (Def xs s) -> do
-               b <- newEnv ρ'' (extend p (snd <$> ρ'))
-               reuseAt <<< asReturns <$> stmt ρ'' b (singleton q) s
+               newExtendEnv ρ p ρ' >>= \(ρ'' × b) -> reuseAt <<< asReturns <$> stmt ρ'' b (singleton q) s
                where
                p = q' `followedBy` singleton ClosureEnv
                args = foldl (\ρ1 (x × r) -> if x == varAnon then ρ1 else ρ1 `unionWith_never` maplet x (reuseAt r)) empty (zip xs rs')
                ρ' = closeDefs (singleton q) p ρ ds <+> args
-               ρ'' = ρ <+> (fst <$> ρ')
             V.Prim (ForeignOp (_ × ForeignOp' { depOp })) -> depOp q rs'
             V.Type (T.ClassTy c _) ->
                askClasses <#> \classes -> object classes (controlDep (singleton q)) c (reuseAt <$> rs')
             V.Type _ -> error absurd
             V.Partial _ _ -> error absurd
-
-topLevel :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m Vertex
-topLevel ρ = newEnv (fst <$> ρ) (tupling (bindings (snd <$> ρ)))
 
 -- Evaluate module q at a new vertex; bindings of body override module value of each submodule
 evalModule
@@ -454,15 +447,15 @@ evalModule
 evalModule ρ0 q (Module ιs s) = do
    ρ <- foldM (evalImport q) ρ0 ιs
    { modules } <- moduleStore
-   ρ' × _ <- asAssigns <$> (topLevel ρ >>= \b -> eval.stmt (fst <$> ρ) b empty s)
-   newBindings (subMods modules <+> unbound <+> ρ')
+   ρ' × _ <- asAssigns <$> (newEnv ρ >>= \(b × _) -> eval.stmt (fst <$> ρ) b empty s)
+   snd <$> newEnv (subMods modules <+> unbound <+> ρ')
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
 
 -- Construct members ρ of a predefined module at a new vertex
 predefinedModule :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict (GVal s))
-predefinedModule (Env ρ) = newBindings (ρ <#> (_ × construct mempty Map.empty))
+predefinedModule (Env ρ) = snd <$> newEnv (ρ <#> (_ × construct mempty Map.empty))
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
@@ -547,5 +540,5 @@ evalProgram
 evalProgram ρ classes s =
    withClasses classes do
       { depGraph } <- moduleStore
-      out × g <- flip runStateT depGraph (fst <<< fst <$> (topLevel ρ >>= \b -> eval.program (fst <$> ρ) b empty s))
+      out × g <- flip runStateT depGraph (fst <<< fst <$> (newEnv ρ >>= \(b × _) -> eval.program (fst <$> ρ) b empty s))
       pure { g, out }
