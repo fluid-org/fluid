@@ -41,16 +41,16 @@ import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_n
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), Position, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
 import Val.Dependence (applyDepFun, childAt, concatOf, ctlAt, deliver, dictionary, elementAt, elementsAt, elementStep, envAt, explode, lengthPositions, newBindings, newInputs, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Environment, and inputs vertex which holds environment
 type Inputs = { ρ :: Dict (Raw Val), b :: Vertex }
 
 -- Returned value, or bindings introduced and any new sources of the control input
-data Result s = Returns Position | Assigns (Dict (GVal s)) (Set Path)
+data Result s = Returns ValAt | Assigns (Dict (GVal s)) (Set Path)
 
-asReturns :: forall s. Result s -> Position
+asReturns :: forall s. Result s -> ValAt
 asReturns (Returns r) = r
 asReturns (Assigns _ _) = error "Returns expected"
 
@@ -77,7 +77,7 @@ controlledBy :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Pat
 controlledBy q inputs = extendInputs inputs empty (singleton q)
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
-matches :: forall s. Semiring s => ClassTable -> Position -> Pattern -> Maybe (Dict (GVal s)) × List Path
+matches :: forall s. Semiring s => ClassTable -> ValAt -> Pattern -> Maybe (Dict (GVal s)) × List Path
 matches _ u (PVar x)
    | x == varAnon = Just empty × Nil
    | otherwise = Just (maplet x (reuseAt u)) × Nil
@@ -97,7 +97,7 @@ matches classes u@(q × Val _ v) p = second (q : _) case v, p of
    V.Tuple vs, PTuple ps | A.length vs == length ps -> matchesMany classes (elementsAt u) ps
    _, _ -> Nothing × Nil
 
-matchesMany :: forall s. Semiring s => ClassTable -> List Position -> List Pattern -> Maybe (Dict (GVal s)) × List Path
+matchesMany :: forall s. Semiring s => ClassTable -> List ValAt -> List Pattern -> Maybe (Dict (GVal s)) × List Path
 matchesMany _ Nil Nil = Just empty × Nil
 matchesMany classes (u : us) (p : ps) = case matches classes u p of
    Nothing × qs -> Nothing × qs
@@ -107,7 +107,7 @@ matchesMany classes (u : us) (p : ps) = case matches classes u p of
 matchesMany _ _ _ = error absurd
 
 -- Bindings of the first matching case; also every position inspected in trying the cases
-dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> Position -> Maybe (Dict (GVal s) × b) × Set Path
+dispatch :: forall s b. Semiring s => ClassTable -> List (Pattern × b) -> ValAt -> Maybe (Dict (GVal s) × b) × Set Path
 dispatch classes cases u = second Set.fromFoldable (go cases)
    where
    go :: List (Pattern × b) -> Maybe (Dict (GVal s) × b) × List Path
@@ -117,7 +117,7 @@ dispatch classes cases u = second Set.fromFoldable (go cases)
       Nothing × qs -> second (qs <> _) (go cases')
 
 -- dispatch on a single pattern, which must match.
-destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> Position -> m (Dict (GVal s) × Set Path)
+destructure :: forall m s. MonadError Error m => Semiring s => ClassTable -> Pattern -> ValAt -> m (Dict (GVal s) × Set Path)
 destructure classes p u = case dispatch classes (singleton (p × unit)) u of
    Just (ρ × _) × qs -> pure (ρ × qs)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP (snd u) <> " does not match " <> prettyP p)
@@ -149,11 +149,11 @@ eval
    :: forall m s
     . MonadEval s m
    => { stmt :: Inputs -> Stmt -> m (Result s)
-      , program :: Inputs -> Stmt -> m Position
+      , program :: Inputs -> Stmt -> m ValAt
       }
 eval = { stmt, program }
    where
-   expr :: Inputs -> Expr -> m Position
+   expr :: Inputs -> Expr -> m ValAt
    expr inputs e'@(DocExpr e _) = do
       r <- value inputs e' >>= newValue
       doc <- extendInputs inputs (maplet varThis (reuseAt r)) empty >>= flip expr e
@@ -198,7 +198,7 @@ eval = { stmt, program }
                )
          where
          -- Index n along dimension k of the matrix with dimensions at position u
-         index :: Position -> Int -> Int -> GVal s
+         index :: ValAt -> Int -> Int -> GVal s
          index u k n = Val unit (V.Lit (Int n)) × construct (controlDep (singleton (fst (childAt (Element k) u)))) Map.empty
       Lambda d -> pure (closure (ctlAt b) (envAt b) (restrict (fv d) ρ) empty d)
       Type τ -> pure (Val unit (V.Fun (V.Type τ)) × construct (controlDep ctl) Map.empty)
@@ -234,7 +234,7 @@ eval = { stmt, program }
             _, _ -> throw $ "Found " <> prettyP v <> ", expected list, tuple, str, dict or matrix"
          where
          -- Child u of the value at r, at the index at r'; ps are further control positions
-         subscript :: Position -> Position -> GVal s -> Set Path -> m (GVal s)
+         subscript :: ValAt -> ValAt -> GVal s -> Set Path -> m (GVal s)
          subscript r r' u ps = pure (deliver (singleton (fst r) ∪ ps ∪ positionsIn r') u)
       ModMember q x -> do
          { modules } <- moduleStore
@@ -265,14 +265,14 @@ eval = { stmt, program }
       literal ℓ = Val unit (V.Lit ℓ) × construct (controlDep ctl) Map.empty
 
    -- Positions of key e and value e'
-   dictEntry :: Inputs -> Expr -> Expr -> m (Position × Position)
+   dictEntry :: Inputs -> Expr -> Expr -> m (ValAt × ValAt)
    dictEntry inputs e e' = do
       k <- expr inputs e
       _ <- orThrow (unpack string (snd k))
       (k × _) <$> expr inputs e'
 
    -- Tuple of key and value
-   entry :: Position × Position -> GVal s
+   entry :: ValAt × ValAt -> GVal s
    entry (k × r) = sequenceOf V.Tuple mempty (reuseAt k : reuseAt r : Nil)
 
    funName :: Expr -> String
@@ -281,7 +281,7 @@ eval = { stmt, program }
    funName _ = "unknown"
 
    -- Evaluate e as a Boolean at position r
-   condition :: Inputs -> Expr -> m { holds :: Boolean, r :: Position }
+   condition :: Inputs -> Expr -> m { holds :: Boolean, r :: ValAt }
    condition inputs e = do
       r <- expr inputs e
       holds × _ <- orThrow (unpack boolean (snd r))
@@ -291,7 +291,7 @@ eval = { stmt, program }
    singletonList { b } v = sequenceOf V.List (controlDep (singleton (ctlAt b))) (v : Nil)
 
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
-   qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m Position
+   qualifiers :: (Inputs -> m (GVal s)) -> Inputs -> List Qualifier -> m ValAt
    qualifiers body inputs gs = elements gs >>= newValue
       where
       -- List of elements, before vertex is allocated
@@ -370,7 +370,7 @@ eval = { stmt, program }
       where
       constant = construct (controlDep (singleton (ctlAt b))) Map.empty
 
-   program :: Inputs -> Stmt -> m Position
+   program :: Inputs -> Stmt -> m ValAt
    program inputs s = output inputs s >>= \r -> newValue (reuseAt r) $> r
       where
       output inputs' (Seq t t') = asAssigns <$> stmt inputs' t >>= \(ρ × ps) -> extendInputs inputs' ρ ps >>= flip output t'
@@ -379,13 +379,13 @@ eval = { stmt, program }
 
    -- Apply f to rs, partially if rs is shorter than the arity of f; apply the result to any arguments beyond
    -- the arity
-   apply :: Position -> List Position -> m (GVal s)
+   apply :: ValAt -> List ValAt -> m (GVal s)
    apply f@(q × v) rs = case v of
       Val _ (V.Fun (V.Partial _ us)) ->
          applyFun (childAt PartialFun f) (mapWithIndex (\i _ -> childAt (PartialArg i) f) us <> rs)
       _ -> applyFun f rs
       where
-      applyFun :: Position -> List Position -> m (GVal s)
+      applyFun :: ValAt -> List ValAt -> m (GVal s)
       applyFun g@(q' × u) rs' = case u of
          Val _ (V.Fun φ) -> do
             n <- arity'

@@ -22,29 +22,29 @@ import Path (Path, Step(..), Vertex, sourceAt, sourceRoot)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable)
-import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), Position, Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), ValAt, Val(..), child, element, elementCount)
 
 -- Every position within the value at a position
-positionsIn :: Position -> Set Path
+positionsIn :: ValAt -> Set Path
 positionsIn (q × v) = Set.fromFoldable ((q <> _) <<< fst <$> positions (paths v))
 
 -- Positions which determine length of sequence at a position; for a range, its root with start and stop
-lengthPositions :: Position -> Set Path
+lengthPositions :: ValAt -> Set Path
 lengthPositions (q × Val _ (Obj c xvs)) | c == cRange = Set.fromFoldable (q : (xvs <#> \(x × _) -> q <> singleton (Field x)))
 lengthPositions (q × _) = singleton q
 
 -- Child at step of the value at a position
-childAt :: Step -> Endo Position
+childAt :: Step -> Endo ValAt
 childAt step (p × v) = (p <> singleton step) × child step v
 
 -- Elements of the list or tuple at a position
-elementsAt :: Position -> List Position
+elementsAt :: ValAt -> List ValAt
 elementsAt u = (\i -> childAt (Element i) u) <$> L.take n (L.range 0 n)
    where
    n = definitely' (elementCount (snd u))
 
 -- Value at a position, as a value which reuses that position
-reuseAt :: forall s. Semiring s => Position -> GVal s
+reuseAt :: forall s. Semiring s => ValAt -> GVal s
 reuseAt (p × v) = v × reuse p
 
 -- Add control dependence on each of ps to every position outside a function value
@@ -52,7 +52,7 @@ deliver :: forall s. Set Path -> Endo (GVal s)
 deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
 -- Allocate vertex for given value; return root position with raw value
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m Position
+newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> sourceRoot a × v
 
 -- Position of the environment at inputs vertex b
@@ -81,11 +81,11 @@ newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd
 
 -- Read dependence of result from its annotations. Root depends on ctl; positions without other support
 -- depend on ctl'.
-applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> Set Path -> List Position -> MayFail (GVal s)
+applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> Set Path -> List ValAt -> MayFail (GVal s)
 applyDepFun f ctl ctl' rs = f (arg <$> rs) <#> \v ->
    erase v × NoReuse ctl × foldl addSupport mempty (positions (paths v))
    where
-   arg :: Position -> Val (Lineage Path s)
+   arg :: ValAt -> Val (Lineage Path s)
    arg (q × v) = paths v <#> \(p × _) -> Lineage (zero × Map.singleton (q <> p) one)
 
    addSupport :: Rel (Set Path) s -> Path × Lineage Path s -> Rel (Set Path) s
@@ -99,7 +99,7 @@ elementStep i (Val _ (Tuple _)) = Just (Element i)
 elementStep i (Val _ (Dictionary (DictRep d))) = Just (DictKey (fst (definitely' (toUnfoldable d L.!! i))))
 elementStep _ _ = Nothing
 
-elementAt :: forall s. DepSemiring s => Int -> Position -> GVal s
+elementAt :: forall s. DepSemiring s => Int -> ValAt -> GVal s
 elementAt i r = case elementStep i (snd r) of
    Just step -> reuseAt (childAt step r)
    Nothing -> definitelyRight (applyDepFun elementOf Set.empty Set.empty (singleton r))
@@ -109,7 +109,7 @@ elementAt i r = case elementStep i (snd r) of
    elementOf _ = error absurd
 
 -- String or range at position r as list of elements
-explode :: forall s. DepSemiring s => Position -> GVal s
+explode :: forall s. DepSemiring s => ValAt -> GVal s
 explode r = sequenceOf List (foldMap dataDep (lengthPositions r)) (flip elementAt r <$> L.take n (L.range 0 n))
    where
    n = definitely' (elementCount (snd r))
@@ -120,7 +120,7 @@ sequenceOf mk support vs =
    Val unit (mk (A.fromFoldable (fst <$> vs))) × construct support (Map.fromFoldable (mapWithIndex (\i (_ × δ) -> Element i × δ) vs))
 
 -- Concatenate sequences at given positions with constructor mk; root depends on support and each sequence
-concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List Position -> GVal s
+concatOf :: forall s. Semiring s => (Array (Raw Val) -> Raw BaseVal) -> Support (Set Path) s -> List ValAt -> GVal s
 concatOf mk support rs = sequenceOf mk (support <> foldMap (fst >>> dataDep) rs) $
    rs >>= \r -> deliver (singleton (fst r)) <<< reuseAt <$> elementsAt r
 

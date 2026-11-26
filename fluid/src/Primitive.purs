@@ -30,7 +30,7 @@ import Util (type (+), type (×), MayFail, absurd, definitely', error, orThrow, 
 import Util.Map (keys, lookup, values)
 import Util.Set ((∪))
 import Types.Defs (cComplex, cRange, f_imag, f_real)
-import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), GVal, Position, ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
+import Val (BaseVal(..), DepFun, DepOp, DictRep(..), ForeignOp(..), GVal, ValAt, ForeignOp'(..), Fun(..), MatrixRep(..), Val(..), elements, root)
 import Val.Dependence (applyDepFun, concatOf, deliver, elementsAt, reuseAt, sequenceOf)
 
 -- Mediate between wrapped values and underlying datatype d. Wasn't able to make a typeclass version
@@ -275,7 +275,7 @@ divisionByZero :: forall a. MayFail a
 divisionByZero = Left "ZeroDivisionError: division by zero"
 
 -- Concatenation and repetition reuse elements of operand sequences
-applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> Position -> Position -> MayFail (GVal s)
+applyBinop :: forall s. DepSemiring s => Binop -> Set Path -> ValAt -> ValAt -> MayFail (GVal s)
 applyBinop Add _ r@(_ × Val _ (List _)) r'@(_ × Val _ (List _)) = pure (concatOf List mempty (r : r' : Nil))
 applyBinop Add _ r@(_ × Val _ (Tuple _)) r'@(_ × Val _ (Tuple _)) = pure (concatOf Tuple mempty (r : r' : Nil))
 applyBinop Mul _ l@(_ × Val _ (List _)) k@(_ × Val _ (Lit (Int n))) = pure (repeatList l k n)
@@ -283,7 +283,7 @@ applyBinop Mul _ k@(_ × Val _ (Lit (Int n))) l@(_ × Val _ (List _)) = pure (re
 applyBinop op ctl r r' = applyDepFun (binopFun op) Set.empty ctl (r : r' : Nil)
 
 -- List at l repeated n times, for the integer n at k
-repeatList :: forall s. Semiring s => Position -> Position -> Int -> GVal s
+repeatList :: forall s. Semiring s => ValAt -> ValAt -> Int -> GVal s
 repeatList l k n = sequenceOf List (dataDep (fst k) <> (if n <= 0 then mempty else dataDep (fst l))) $
    L.concat (fromFoldable (replicate n (deliver (singleton (fst l)) <<< reuseAt <$> elementsAt l)))
 

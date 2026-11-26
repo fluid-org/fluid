@@ -266,7 +266,7 @@ valAt g p = value (get p g.vals)
 type GVal s = Raw Val × Dependence (Set Path) s
 
 -- Source position, then value at that position
-type Position = Path × Raw Val
+type ValAt = Path × Raw Val
 
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
@@ -278,7 +278,7 @@ type DepOp =
    => MonadLoad m
    => DepSemiring s
    => Path
-   -> List Position
+   -> List ValAt
    -> m (GVal s)
 
 -- Module parsed but not yet loaded, or loaded with its environment

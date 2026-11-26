@@ -57,7 +57,7 @@ import Types.Defs (complex, float, int, intPair, none, object, str) as T
 import Util.Map (lookup, unionWith_never, (\\))
 import Util.Set (empty, (∈), (∪))
 import Util.Map as Map
-import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), Position, Val(..), elementCount, matrixPut)
+import Val (BaseVal(..), DepOp, DictRep(..), Env, ForeignOp(..), ForeignOp'(..), Fun(..), GVal, MatrixRep(..), ValAt, Val(..), elementCount, matrixPut)
 import Val.Dependence (applyDepFun, childAt, deliver, dictionary, elementsAt, positionsIn, reuseAt, sequenceOf)
 
 extern :: forall a. BoundedJoinSemilattice a => ForeignOp -> Bind (Val a)
@@ -163,7 +163,7 @@ sorted =
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
-   sort :: forall m. MonadError Error m => List (Position × Set Path) -> m (List (Position × Set Path))
+   sort :: forall m. MonadError Error m => List (ValAt × Set Path) -> m (List (ValAt × Set Path))
    sort us
       | L.length us < 2 = pure us
       | otherwise = join (merge empty <$> sort (L.take n us) <*> sort (L.drop n us))
@@ -174,9 +174,9 @@ sorted =
       :: forall m
        . MonadError Error m
       => Set Path
-      -> List (Position × Set Path)
-      -> List (Position × Set Path)
-      -> m (List (Position × Set Path))
+      -> List (ValAt × Set Path)
+      -> List (ValAt × Set Path)
+      -> m (List (ValAt × Set Path))
    merge ps Nil us' = pure (map (ps ∪ _) <$> us')
    merge ps us Nil = pure (map (ps ∪ _) <$> us)
    merge ps ((u × qs) : us) ((u' × qs') : us') = compareAt Lt u' u >>= \(b × ps') ->
@@ -204,7 +204,7 @@ extremum id op =
    depOp _ ((_ × Val _ u) : Nil) = throw (typeMismatch u "list")
    depOp _ _ = throw "Single argument expected"
 
-   step :: forall m. MonadError Error m => Position × Set Path -> Position -> m (Position × Set Path)
+   step :: forall m. MonadError Error m => ValAt × Set Path -> ValAt -> m (ValAt × Set Path)
    step (u × ps) u' = compareAt op u' u <#> \(b × ps') -> (if b then u' else u) × (ps ∪ ps')
 
 exit :: ForeignOp
@@ -388,14 +388,14 @@ insert =
    depOp _ _ = throw "Dictionary, key and value expected"
 
 -- Outcome and source positions of comparing the values at two positions
-compareAt :: forall m. MonadError Error m => Binop -> Position -> Position -> m (Boolean × Set Path)
+compareAt :: forall m. MonadError Error m => Binop -> ValAt -> ValAt -> m (Boolean × Set Path)
 compareAt op u u' = do
    v × δ <- orThrow (applyDepFun (binopFun op) empty empty (u : u' : Nil) :: MayFail (GVal DepKind))
    b × _ <- orThrow (unpack boolean v)
    pure (b × case supportAt δ Nil of Support ps ws -> ps ∪ Map.keys ws)
 
 -- Reuse key and value of a dictionary entry under control of given positions
-entryAt :: forall s. Semiring s => Set Path -> Position -> String -> GVal s × GVal s
+entryAt :: forall s. Semiring s => Set Path -> ValAt -> String -> GVal s × GVal s
 entryAt ps d k = deliver ps (reuseAt (childAt (DictKey k) d)) × deliver ps (reuseAt (childAt (DictVal k) d))
 
 quot :: ForeignOp
