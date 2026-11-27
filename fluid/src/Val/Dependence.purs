@@ -13,7 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (fst, snd)
-import DepGraph (bindings, construct, controlDep, dataDep, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), tupling, withCtrl, ι)
+import DepGraph (construct, controlDep, dataDep, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), withCtrl, ι)
 import Dict (Dict)
 import Dict as D
 import Lattice (class DepSemiring, Lineage(..), Raw, erase)
@@ -51,11 +51,6 @@ deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
-
--- Allocate vertex for environment independent of other vertices
-newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict ValAt)
-newEnv γ@(Env ρ) = newVertex (Environment γ) (tupling (bindings (ρ <#> const (construct mempty Map.empty))))
-   <#> \a -> bindingsAt (a × ε) γ
 
 -- Each binding of environment at given position
 bindingsAt :: Position -> Raw Env -> Dict ValAt

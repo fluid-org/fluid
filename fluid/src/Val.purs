@@ -81,20 +81,16 @@ root :: forall a. Val a -> a
 root (Val α _) = α
 
 -- Label of a vertex
-data Label a
-   = Value (Val a)
-   | Environment (Env a)
+data Label a = Value (Val a)
 
 value :: forall a. Label a -> Val a
 value (Value v) = v
-value _ = error absurd
 
 instance Paths Val where
    paths = pathsFrom Nil
 
 instance Paths Label where
    paths (Value v) = Value (paths v)
-   paths (Environment (Env ρ)) = Environment (Env (mapWithKey (\x -> pathsFrom (singleton (Binding x))) ρ))
 
 -- Same as paths, except that each path starts with the reverse of p
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)

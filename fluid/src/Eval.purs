@@ -42,7 +42,7 @@ import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..), value) as V
 import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
-import Val.Dependence (applyDepFun, bindingsAt, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newEnv, newValue, positionsIn, reuseAt, sequenceOf)
+import Val.Dependence (applyDepFun, bindingsAt, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Returned value, or bindings introduced and any new control positions
 data Result = Returns ValAt | Assigns (Dict ValAt) (Set Position)
@@ -431,8 +431,9 @@ evalModule ρ q (Module ιs s) = do
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
 
+-- Allocate input vertex for each member of predefined module
 predefinedModule :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict ValAt)
-predefinedModule = newEnv
+predefinedModule (Env ρ) = traverse (\v -> newValue (v × construct mempty Map.empty)) ρ
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport
