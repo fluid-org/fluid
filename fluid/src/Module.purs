@@ -40,12 +40,11 @@ import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
 import Util.Set (empty)
-import Lattice (DepKind)
-import Val (class MonadProgram, GVal, ModuleState(..), modifyModuleStore)
+import Val (class MonadProgram, ModuleState(..), ValAt, modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
-type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict (GVal DepKind), classes :: ClassTable }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict ValAt, classes :: ClassTable }
 
 -- Message for source of program or module that fails to parse
 newtype ParseFailure = ParseFailure String
@@ -95,7 +94,7 @@ loadTopLevel
     . MonadProgram m
    => Map ModuleName Module
    -> List S.Import
-   -> m (Dict (GVal DepKind))
+   -> m (Dict ValAt)
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- for predefined \(_ × ρ) -> Loaded <$> Dep.predefinedModule ρ

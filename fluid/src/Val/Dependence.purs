@@ -2,7 +2,6 @@ module Val.Dependence where
 
 import Prelude hiding (absurd)
 
-import Bind (Var)
 import Control.Monad.State (class MonadState)
 import Data.Array (fromFoldable) as A
 import Data.Foldable (foldMap, foldl)
@@ -14,7 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (fst, snd)
-import DepGraph (bindings, construct, controlDep, dataDep, DepGraph, extend, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), tupling, withCtrl, ι)
+import DepGraph (bindings, construct, controlDep, dataDep, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), tupling, withCtrl, ι)
 import Dict (Dict)
 import Dict as D
 import Lattice (class DepSemiring, Lineage(..), Raw, erase)
@@ -22,8 +21,8 @@ import Literal (Literal(..))
 import Path (Path, Position, Step(..), followedBy, ε)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
-import Util.Map (get, mapWithKey, toUnfoldable, (<+>))
-import Val (BaseVal(..), DepFun, DictRep(..), Env(..), EnvAt, GVal, Label(..), ValAt, Val(..), child, element, elementCount)
+import Util.Map (mapWithKey, toUnfoldable)
+import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), ValAt, Val(..), child, element, elementCount)
 
 positionsIn :: ValAt -> Set Position
 positionsIn (q × v) = Set.fromFoldable ((q `followedBy` _) <<< fst <$> positions (paths v))
@@ -53,24 +52,14 @@ deliver ps (v × θ × r) = v × withCtrl ps θ × r
 newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
 
--- Allocate fresh vertex for given bindings
-newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m EnvAt
-newEnv ρ = newVertex (Environment ρ') (tupling (bindings (snd <$> ρ))) <#> \a -> (a × ε) × ρ'
-   where
-   ρ' = Env (fst <$> ρ)
+-- Allocate vertex for environment independent of other vertices
+newEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict ValAt)
+newEnv γ@(Env ρ) = newVertex (Environment γ) (tupling (bindings (ρ <#> const (construct mempty Map.empty))))
+   <#> \a -> bindingsAt (a × ε) γ
 
--- Extend environment at a position with given bindings; extended environment gets fresh vertex
-newExtendEnv :: forall m s. MonadState (DepGraph Label s) m => Semiring s => EnvAt -> Dict (GVal s) -> m EnvAt
-newExtendEnv (p × Env ρ) ρ' = newVertex (Environment ρ'') (extend p (snd <$> ρ')) <#> \a -> (a × ε) × ρ''
-   where
-   ρ'' = Env (ρ <+> (fst <$> ρ'))
-
--- Binding of a variable in the environment at a position
-bindingAt :: Var -> EnvAt -> ValAt
-bindingAt x (p × Env ρ) = (p `followedBy` singleton (Binding x)) × get x ρ
-
-bindingsAt :: forall s. Semiring s => EnvAt -> Dict (GVal s)
-bindingsAt pρ@(_ × Env ρ) = mapWithKey (\x _ -> reuseAt (bindingAt x pρ)) ρ
+-- Each binding of environment at given position
+bindingsAt :: Position -> Raw Env -> Dict ValAt
+bindingsAt p (Env ρ) = mapWithKey (\x v -> (p `followedBy` singleton (Binding x)) × v) ρ
 
 -- Apply function to compute the support of each result position. Every result position also depends on ps.
 -- Result positions with empty support depend on ps'.
