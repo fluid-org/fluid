@@ -3,18 +3,19 @@
 import json
 import pathlib
 import subprocess
+from typing import Any
 
 PACKAGE = json.loads((pathlib.Path(__file__).resolve().parents[1] / "package.json").read_text())
 KINDS = ["Features", "Bug fixes", "Other"]
 
 
-def github(path: str) -> list[dict]:
+def github(path: str) -> list[dict[str, Any]]:
     command = ["gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/" + path]
     pages = json.loads(subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True).stdout)
     return [result for page in pages for result in page]
 
 
-def kind(issue: dict) -> str:
+def kind(issue: dict[str, Any]) -> str:
     issue_type = (issue.get("type") or {}).get("name")
     if issue_type == "Problem":
         return "Bug fixes"

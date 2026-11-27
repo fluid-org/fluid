@@ -37,7 +37,7 @@ jobs:
         echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
     - uses: astral-sh/setup-uv@v10.2.0
     - name: type-check Python scripts
-      run: uvx mypy@2.4.1 --scripts-are-modules fluid/script/*.py
+      run: uvx mypy@2.4.1 --strict --scripts-are-modules fluid/script/*.py
     - name: test
       run: |
         yarn install
