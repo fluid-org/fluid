@@ -4,7 +4,7 @@ A pure functional dialect of Python, based on [PurePy](https://github.com/pure-p
 
 [![build](https://github.com/fluid-org/fluid/actions/workflows/build.yml/badge.svg)](https://github.com/fluid-org/fluid/actions/workflows/build.yml)
 [![version](https://img.shields.io/github/package-json/v/fluid-org/fluid/release?filename=fluid%2Fpackage.json&label=version)](https://github.com/fluid-org/fluid/blob/release/fluid/package.json)
-[![PurePy](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/fluid-org/fluid/release/fluid/test/spec-compliance.json)](https://github.com/fluid-org/fluid/blob/release/fluid/test/spec-gaps.txt)
+[![PurePy](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffluid-org%2Ffluid%2Frelease%2Ffluid%2Ftest%2Fspec-compliance.json)](https://github.com/fluid-org/fluid/blob/release/fluid/test/spec-gaps.txt)
 
 ## Getting started
 
