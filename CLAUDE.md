@@ -24,4 +24,3 @@ Before writing code, prose, commits, issues or pull requests, load the `conventi
 - Branching, milestones, deployment and publishing: `release-cycle` skill
 - Building and testing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Issue state machine and invariants: [docs/workflow/issue-lifecycle.md](docs/workflow/issue-lifecycle.md)
-- Milestone reports: [docs/workflow/milestone-report.md](docs/workflow/milestone-report.md)
