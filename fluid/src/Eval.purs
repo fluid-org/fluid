@@ -380,8 +380,8 @@ eval = { stmt, program }
    program ρ ps (ExprStmt e) = expr ρ ps e
    program _ _ _ = error absurd
 
-   -- Apply function pv to pvs, partially if there are fewer arguments than its arity; apply the result to any
-   -- arguments beyond the arity
+   -- Apply function, partially if there are fewer arguments than its arity; apply the result to any arguments
+   -- beyond the arity
    apply :: ValAt -> List ValAt -> m (GVal s)
    apply pv@(q × v) pvs = case v of
       Val _ (V.Fun (V.Partial _ us)) ->
