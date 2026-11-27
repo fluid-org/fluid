@@ -41,17 +41,17 @@ import Util.Map (get, lookup, lookup', maplet, restrict, unionWith_never, (<+>),
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), EnvAt, ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
 import Val.Dependence (applyDepFun, bindingsAt, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Returned value, or bindings introduced and any new control positions
-data Result = Returns ValAt | Assigns (Dict ValAt) (Set Position)
+data Result = Returns ValAt | Assigns EnvAt (Set Position)
 
 asReturns :: Result -> ValAt
 asReturns (Returns pv) = pv
 asReturns (Assigns _ _) = error "Returns expected"
 
-asAssigns :: Result -> Dict ValAt × Set Position
+asAssigns :: Result -> EnvAt × Set Position
 asAssigns (Assigns ρ ps) = ρ × ps
 asAssigns (Returns _) = error "Assigns expected"
 
@@ -59,7 +59,7 @@ controlledBy :: Set Position -> Set Position -> Set Position
 controlledBy qs ps = if isEmpty qs then ps else qs
 
 -- Variables bound if the pattern matches the value at a position; also each inspected position
-matches :: ClassTable -> ValAt -> Pattern -> Maybe (Dict ValAt) × List Position
+matches :: ClassTable -> ValAt -> Pattern -> Maybe EnvAt × List Position
 matches _ pv (PVar x)
    | x == varAnon = Just empty × Nil
    | otherwise = Just (maplet x pv) × Nil
@@ -79,7 +79,7 @@ matches classes pv@(q × Val _ v) p = second (q : _) case v, p of
    V.Tuple vs, PTuple ps | A.length vs == length ps -> matchesMany classes (elementsAt pv) ps
    _, _ -> Nothing × Nil
 
-matchesMany :: ClassTable -> List ValAt -> List Pattern -> Maybe (Dict ValAt) × List Position
+matchesMany :: ClassTable -> List ValAt -> List Pattern -> Maybe EnvAt × List Position
 matchesMany _ Nil Nil = Just empty × Nil
 matchesMany classes (pv : pvs) (p : ps) = case matches classes pv p of
    Nothing × qs -> Nothing × qs
@@ -89,17 +89,17 @@ matchesMany classes (pv : pvs) (p : ps) = case matches classes pv p of
 matchesMany _ _ _ = error absurd
 
 -- Bindings of the first matching case; also every position inspected in trying the cases
-dispatch :: forall b. ClassTable -> List (Pattern × b) -> ValAt -> Maybe (Dict ValAt × b) × Set Position
+dispatch :: forall b. ClassTable -> List (Pattern × b) -> ValAt -> Maybe (EnvAt × b) × Set Position
 dispatch classes cases pv = second Set.fromFoldable (go cases)
    where
-   go :: List (Pattern × b) -> Maybe (Dict ValAt × b) × List Position
+   go :: List (Pattern × b) -> Maybe (EnvAt × b) × List Position
    go Nil = Nothing × Nil
    go ((p × b) : cases') = case matches classes pv p of
       Just ρ × qs -> Just (ρ × b) × qs
       Nothing × qs -> second (qs <> _) (go cases')
 
 -- dispatch on a single pattern, which must match.
-destructure :: forall m. MonadError Error m => ClassTable -> Pattern -> ValAt -> m (Dict ValAt × Set Position)
+destructure :: forall m. MonadError Error m => ClassTable -> Pattern -> ValAt -> m (EnvAt × Set Position)
 destructure classes p pv = case dispatch classes (singleton (p × unit)) pv of
    Just (ρ × _) × qs -> pure (ρ × qs)
    Nothing × _ -> throw ("Pattern mismatch: " <> prettyP (snd pv) <> " does not match " <> prettyP p)
@@ -109,11 +109,11 @@ object classes support c vs = Val unit (V.Obj c (zip (fieldNames classes c) (fst
    construct support (Map.fromFoldable (zip (Field <$> fieldNames classes c) (snd <$> vs)))
 
 -- Closure which captures ρ, reusing position of each binding; root depends on control positions ps
-closure :: forall s. Semiring s => Set Position -> Dict ValAt -> Dict Def -> Def -> GVal s
+closure :: forall s. Semiring s => Set Position -> EnvAt -> Dict Def -> Def -> GVal s
 closure ps ρ ds d = Val unit (V.Fun (V.Closure (Env (snd <$> ρ)) ds d)) ×
    construct (controlDep ps) (maplet ClosureEnv (tupling (bindings (reuse <<< fst <$> ρ))))
 
-closeDefs :: forall s. Semiring s => Set Position -> Dict ValAt -> Dict Def -> Dict (GVal s)
+closeDefs :: forall s. Semiring s => Set Position -> EnvAt -> Dict Def -> Dict (GVal s)
 closeDefs ps ρ ds = ds <#> \d ->
    let
       ds' = ds `forDefs` d
@@ -128,12 +128,12 @@ closeDefs ps ρ ds = ds <#> \d ->
 eval
    :: forall m s
     . MonadEval s m
-   => { stmt :: Dict ValAt -> Set Position -> Stmt -> m Result
-      , program :: Dict ValAt -> Set Position -> Stmt -> m ValAt
+   => { stmt :: EnvAt -> Set Position -> Stmt -> m Result
+      , program :: EnvAt -> Set Position -> Stmt -> m ValAt
       }
 eval = { stmt, program }
    where
-   expr :: Dict ValAt -> Set Position -> Expr -> m ValAt
+   expr :: EnvAt -> Set Position -> Expr -> m ValAt
    expr ρ ps = case _ of
       e'@(DocExpr e _) -> do
          pv@((a × _) × _) <- value e' >>= newValue
@@ -248,7 +248,7 @@ eval = { stmt, program }
          DocExpr _ e -> reuseAt <$> expr ρ ps e
 
    -- Positions of key e and value e'
-   dictEntry :: Dict ValAt -> Set Position -> Expr -> Expr -> m (ValAt × ValAt)
+   dictEntry :: EnvAt -> Set Position -> Expr -> Expr -> m (ValAt × ValAt)
    dictEntry ρ ps e e' = do
       pv <- expr ρ ps e
       _ <- orThrow (unpack string (snd pv))
@@ -264,7 +264,7 @@ eval = { stmt, program }
    funName _ = "unknown"
 
    -- Evaluate e as a Boolean
-   condition :: Dict ValAt -> Set Position -> Expr -> m { holds :: Boolean, pv :: ValAt }
+   condition :: EnvAt -> Set Position -> Expr -> m { holds :: Boolean, pv :: ValAt }
    condition ρ ps e = do
       pv <- expr ρ ps e
       holds × _ <- orThrow (unpack boolean (snd pv))
@@ -275,8 +275,8 @@ eval = { stmt, program }
 
    -- Evaluate qualifiers gs and return list of elements; body returns list of one element
    qualifiers
-      :: (Dict ValAt -> Set Position -> m (GVal s))
-      -> Dict ValAt
+      :: (EnvAt -> Set Position -> m (GVal s))
+      -> EnvAt
       -> Set Position
       -> List Qualifier
       -> m ValAt
@@ -310,7 +310,7 @@ eval = { stmt, program }
          ρ' × qs <- destructure classes p pv
          reuseAt <$> qualifiers body (ρ <+> ρ') (controlledBy qs ps) gs'
 
-   stmt :: Dict ValAt -> Set Position -> Stmt -> m Result
+   stmt :: EnvAt -> Set Position -> Stmt -> m Result
    stmt ρ ps = case _ of
       Return e -> expr ρ ps e >>= returns
       If bs s_opt -> go (NEL.toList bs) ps
@@ -356,7 +356,7 @@ eval = { stmt, program }
       constant = construct (controlDep ps) Map.empty
 
    -- Evaluate remaining statements of block; statements already evaluated gave bindings ρ' and control positions qs
-   block :: Dict ValAt -> Set Position -> Dict ValAt -> Set Position -> Stmt -> m Result
+   block :: EnvAt -> Set Position -> EnvAt -> Set Position -> Stmt -> m Result
    block ρ' qs ρ ps (Seq s s') = stmt ρ ps s >>= case _ of
       Returns pv -> returns pv
       Assigns ρ'' qs' -> block (ρ' <+> ρ'') (controlledBy qs' qs) (ρ <+> ρ'') (controlledBy qs' ps) s'
@@ -367,11 +367,11 @@ eval = { stmt, program }
    returns :: ValAt -> m Result
    returns pv = Returns <$> newValue (reuseAt pv)
 
-   assigns :: Dict ValAt -> Set Position -> m Result
+   assigns :: EnvAt -> Set Position -> m Result
    assigns ρ qs = pure (Assigns ρ qs)
 
    -- Value of the expression which ends a program
-   program :: Dict ValAt -> Set Position -> Stmt -> m ValAt
+   program :: EnvAt -> Set Position -> Stmt -> m ValAt
    program ρ ps (Seq t t') = do
       ρ' × qs <- asAssigns <$> stmt ρ ps t
       program (ρ <+> ρ') (controlledBy qs ps) t'
@@ -421,7 +421,7 @@ eval = { stmt, program }
             V.Partial _ _ -> error absurd
 
 -- Evaluate module q from given environment; bindings of body override module value of each submodule
-evalModule :: forall m s. MonadEval s m => Dict ValAt -> ModuleName -> Module -> m (Dict ValAt)
+evalModule :: forall m s. MonadEval s m => EnvAt -> ModuleName -> Module -> m EnvAt
 evalModule ρ q (Module ιs s) = do
    ρ' <- foldM (evalImport q) empty ιs
    { modules } <- moduleStore
@@ -432,7 +432,7 @@ evalModule ρ q (Module ιs s) = do
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
 
 -- Allocate input vertex for each member of predefined module
-predefinedModule :: forall m s. MonadState (DepGraph Val s) m => Semiring s => Raw Env -> m (Dict ValAt)
+predefinedModule :: forall m s. MonadState (DepGraph Val s) m => Semiring s => Raw Env -> m EnvAt
 predefinedModule (Env ρ) = traverse (\v -> newValue (v × construct mempty Map.empty)) ρ
 
 -- Bind imported members, and names of imported modules to module values.
@@ -440,9 +440,9 @@ evalImport
    :: forall m s
     . MonadEval s m
    => ModuleName
-   -> Dict ValAt
+   -> EnvAt
    -> Import
-   -> m (Dict ValAt)
+   -> m EnvAt
 evalImport enclosing ρ = case _ of
    Import q Nothing -> do
       _ <- load q
@@ -469,10 +469,10 @@ evalImport enclosing ρ = case _ of
 moduleVal :: forall s. Semiring s => ModuleName -> GVal s
 moduleVal q = Val unit (V.Module q) × construct mempty Map.empty
 
-builtinsEnv :: forall m s. HasModuleStore s m => m (Dict ValAt)
+builtinsEnv :: forall m s. HasModuleStore s m => m EnvAt
 builtinsEnv = moduleStore <#> \{ modules } -> definitely' (loadedEnv (get builtins modules))
 
-load :: forall m s. MonadEval s m => ModuleName -> m (Dict ValAt)
+load :: forall m s. MonadEval s m => ModuleName -> m EnvAt
 load q = do
    { modules } <- moduleStore
    case Map.lookup q modules of
@@ -501,7 +501,7 @@ documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val 
 evalProgram
    :: forall m
     . MonadProgram m
-   => Dict ValAt -- imported bindings
+   => EnvAt -- imported bindings
    -> ClassTable
    -> Stmt
    -> m Eval

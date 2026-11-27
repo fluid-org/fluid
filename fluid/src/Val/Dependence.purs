@@ -14,7 +14,6 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (fst, snd)
 import DepGraph (construct, controlDep, dataDep, DepGraph, newVertex, paths, positions, Rel(..), Restructuring(..), reuse, Support(..), withCtrl, ι)
-import Dict (Dict)
 import Dict as D
 import Lattice (class DepSemiring, Lineage(..), Raw, erase)
 import Literal (Literal(..))
@@ -22,7 +21,7 @@ import Path (Path, Position, Step(..), followedBy, ε)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable)
-import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, ValAt, Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepFun, DictRep(..), Env(..), EnvAt, GVal, ValAt, Val(..), child, element, elementCount)
 
 positionsIn :: ValAt -> Set Position
 positionsIn (q × v) = Set.fromFoldable ((q `followedBy` _) <<< fst <$> positions (paths v))
@@ -53,7 +52,7 @@ newValue :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m ValAt
 newValue (v × δ) = newVertex v δ <#> \a -> (a × ε) × v
 
 -- Each binding of environment at given position
-bindingsAt :: Position -> Raw Env -> Dict ValAt
+bindingsAt :: Position -> Raw Env -> EnvAt
 bindingsAt p (Env ρ) = mapWithKey (\x v -> (p `followedBy` singleton (Binding x)) × v) ρ
 
 -- Apply function to compute the support of each result position. Every result position also depends on ps.

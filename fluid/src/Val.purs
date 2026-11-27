@@ -250,6 +250,7 @@ valAt g p = get p g.vals
 type GVal s = Raw Val × Dependence (Set Position) s
 
 type ValAt = Position × Raw Val
+type EnvAt = Dict ValAt
 
 -- Function on annotated values; dependence left to the annotations
 type DepFun = forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
@@ -265,9 +266,9 @@ type DepOp =
    -> m (GVal s)
 
 -- Module parsed but not yet loaded, or loaded with its members
-data ModuleState = Parsed Module | Loaded (Dict ValAt)
+data ModuleState = Parsed Module | Loaded EnvAt
 
-loadedEnv :: ModuleState -> Maybe (Dict ValAt)
+loadedEnv :: ModuleState -> Maybe EnvAt
 loadedEnv (Parsed _) = Nothing
 loadedEnv (Loaded ρ) = Just ρ
 

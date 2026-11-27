@@ -23,7 +23,6 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (fst)
 import Classes (ClassTable)
-import Dict (Dict)
 import Effect.Exception (Error)
 import Eval (evalImport, predefinedModule) as Dep
 import Expr (Import(..)) as E
@@ -40,11 +39,11 @@ import Types (Primitive(..)) as T
 import Util (MayFail, type (×), orThrow, quoted, throw, whenever, (×))
 import Util.Map (constMap, findWithDefault, mapWithKey, restrict)
 import Util.Set (empty)
-import Val (class MonadProgram, ModuleState(..), ValAt, modifyModuleStore)
+import Val (class MonadProgram, EnvAt, ModuleState(..), modifyModuleStore)
 
 type DependencyGraph = Map ModuleName (List ModuleName)
 
-type Config = { s :: S.Stmt, e :: Stmt, inputs :: Dict ValAt, classes :: ClassTable }
+type Config = { s :: S.Stmt, e :: Stmt, inputs :: EnvAt, classes :: ClassTable }
 
 -- Message for source of program or module that fails to parse
 newtype ParseFailure = ParseFailure String
@@ -94,7 +93,7 @@ loadTopLevel
     . MonadProgram m
    => Map ModuleName Module
    -> List S.Import
-   -> m (Dict ValAt)
+   -> m EnvAt
 loadTopLevel modules imports = do
    inputs × depGraph <- flip runStateT emptyGraph do
       predefined' <- for predefined \(_ × ρ) -> Loaded <$> Dep.predefinedModule ρ
