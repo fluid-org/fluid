@@ -17,10 +17,11 @@ if jq -e --arg v "$RELEASE" 'index($v)' <<< "$VERSIONS" > /dev/null; then
    exit 0
 fi
 
-# Field $1 of milestone
-milestone() {
-   gh api "repos/{owner}/{repo}/milestones?state=all&per_page=100" \
-      --jq ".[] | select(.title == \"fluid $MINOR\") | .$1"
+# For each open milestone item in organisation, print repository; $1 is issue or pull-request
+open() {
+   gh api -X GET search/issues -f per_page=100 \
+      -f q="org:$GITHUB_REPOSITORY_OWNER milestone:\"fluid $MINOR\" state:open is:$1" \
+      --jq '.items[].repository_url | split("/")[-1]'
 }
 
 # Publish as version $1, with remaining arguments as options of npm publish
@@ -34,9 +35,11 @@ publish() {
 }
 
 if [ "$GITHUB_REF_NAME" = release ]; then
-   OPEN=$(milestone open_issues)
-   if [ "$OPEN" != 0 ]; then
-      echo "Milestone fluid $MINOR has $OPEN open issues" >&2
+   ISSUES=$(open issue)
+   PULLS=$(open pull-request)
+   if [ -n "$ISSUES$PULLS" ]; then
+      echo "Milestone fluid $MINOR has open issues or pull requests in:" >&2
+      printf '%s\n' $ISSUES $PULLS | sort | uniq -c >&2
       exit 1
    fi
    if [ -z "$SLACK_WEBHOOK_URL" ]; then
@@ -47,7 +50,9 @@ if [ "$GITHUB_REF_NAME" = release ]; then
    git tag "v$RELEASE"
    git push origin "v$RELEASE"
    tail -n +3 CHANGELOG.md | gh release create "v$RELEASE" --verify-tag --title "fluid $RELEASE" --notes-file -
-   gh api -X PATCH "repos/{owner}/{repo}/milestones/$(milestone number)" -f state=closed
+   NUMBER=$(gh api "repos/{owner}/{repo}/milestones?state=all&per_page=100" \
+      --jq ".[] | select(.title == \"fluid $MINOR\") | .number")
+   gh api -X PATCH "repos/{owner}/{repo}/milestones/$NUMBER" -f state=closed
    python3 script/notify-slack.py
 elif [ "$GITHUB_REF_NAME" = "fluid-$MINOR" ]; then
    N=$(jq --arg p "$PRERELEASE" '[.[] | select(startswith($p)) | ltrimstr($p) | tonumber] | max + 1' \
