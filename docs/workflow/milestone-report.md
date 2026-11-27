@@ -1,6 +1,4 @@
-# Milestone Reports
-
-## Milestone report
+# Milestone report
 
 Inward-facing audit trail and metrics. Audience: development team.
 
