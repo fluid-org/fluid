@@ -26,4 +26,4 @@ To get Python syntax highlighting for `.fld` files, add to `settings.json`:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for developer setup, building, testing, and the development workflow.
+See [CONTRIBUTING.md](https://github.com/fluid-org/fluid/blob/release/CONTRIBUTING.md) for developer setup, building, testing, and the development workflow.

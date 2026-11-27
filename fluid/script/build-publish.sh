@@ -27,6 +27,7 @@ milestone() {
 publish() {
    npm version "$1" --no-git-tag-version --workspaces-update=false
    python3 script/release-notes.py > CHANGELOG.md
+   cp ../README.md .
    ./script/build-package.sh
    ./script/test-package.sh
    npm publish --workspaces=false --access public "${@:2}"

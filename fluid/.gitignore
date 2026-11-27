@@ -4,6 +4,7 @@
 .spago
 build/
 CHANGELOG.md
+README.md
 dist/
 output/
 output-es/
