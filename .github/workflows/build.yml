@@ -19,7 +19,7 @@ jobs:
   publish-npm:
     runs-on: ubuntu-22.04
     needs: build
-    if: github.event_name == 'push' && (startsWith(github.ref_name, 'fluid-') || github.ref_name == 'release')
+    if: github.event_name != 'pull_request' && (startsWith(github.ref_name, 'fluid-') || github.ref_name == 'release')
     concurrency: publish-npm
     permissions:
       id-token: write
