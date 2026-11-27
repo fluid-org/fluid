@@ -408,8 +408,8 @@ eval = { stmt, program }
          where
          call :: V.Fun Unit -> m (GVal s)
          call = case _ of
-            V.Closure γ ds (Def xs s) -> do
-               ρ_ds <- traverse newValue (closeDefs (singleton q) ρ ds)
+            V.Closure γ ds d@(Def xs s) -> do
+               ρ_ds <- traverse newValue (restrict (fv d) (closeDefs (singleton q) ρ ds))
                reuseAt <<< asReturns <$> stmt (ρ <+> ρ_ds <+> args) (singleton q) s
                where
                ρ = bindingsAt (q' `followedBy` singleton ClosureEnv) γ
