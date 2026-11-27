@@ -2,7 +2,7 @@ module Eval where
 
 import Prelude hiding (absurd, apply)
 
-import Bind (Name, dottedName, prefixOf, varAnon, varThis)
+import Bind (Name, Var, dottedName, prefixOf, varAnon, varThis)
 import Control.Monad.Error.Class (class MonadError)
 import Control.Monad.State (class MonadState, runStateT)
 import Data.Array as A
@@ -37,7 +37,7 @@ import Types (Type(..)) as T
 import Primitive (applyBinop, boolean, dropα, int, string, typeMismatch, unopFun, unpack, unpack')
 import Types.Defs (cComplex)
 import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
-import Util.Map (get, lookup, lookup', maplet, restrict, unionWith_never, (<+>), (\\))
+import Util.Map (get, keys, lookup, lookup', maplet, restrict, unionWith_never, (<+>), (\\))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
 import Val (BaseVal(..), Fun(..)) as V
@@ -113,12 +113,14 @@ closure :: forall s. Semiring s => Set Position -> EnvAt -> Dict Def -> Def -> G
 closure ps ρ ds d = Val unit (V.Fun (V.Closure (Env (snd <$> ρ)) ds d)) ×
    construct (controlDep ps) (maplet ClosureEnv (tupling (bindings (reuse <<< fst <$> ρ))))
 
-closeDefs :: forall s. Semiring s => Set Position -> EnvAt -> Dict Def -> Dict (GVal s)
-closeDefs ps ρ ds = ds <#> \d ->
+-- Bind each definition in xs to its closure at new vertex; closure root depends on control positions ps
+closeDefs
+   :: forall m s. MonadState (DepGraph Val s) m => Semiring s => Set Position -> EnvAt -> Dict Def -> Set Var -> m EnvAt
+closeDefs ps ρ ds xs = for (restrict xs ds) \d ->
    let
       ds' = ds `forDefs` d
    in
-      closure ps (restrict (fv ds' ∪ fv d) ρ) ds' d
+      newValue (closure ps (restrict (fv ds' ∪ fv d) ρ) ds' d)
 
 -- ======================
 -- Evaluation
@@ -337,7 +339,7 @@ eval = { stmt, program }
          pv <- expr ρ ps e
          classes <- askClasses
          destructure classes p pv >>= uncurry assigns
-      DefRegion ds -> traverse newValue (closeDefs ps ρ ds) >>= flip assigns empty
+      DefRegion ds -> closeDefs ps ρ ds (keys ds) >>= flip assigns empty
       Pass -> assigns empty empty
       ExprStmt e -> expr ρ ps e *> assigns empty empty
       Assert e e_opt -> do
@@ -409,7 +411,7 @@ eval = { stmt, program }
          call :: V.Fun Unit -> m (GVal s)
          call = case _ of
             V.Closure γ ds d@(Def xs s) -> do
-               ρ_ds <- traverse newValue (restrict (fv d) (closeDefs (singleton q) ρ ds))
+               ρ_ds <- closeDefs (singleton q) ρ ds (fv d)
                reuseAt <<< asReturns <$> stmt (ρ <+> ρ_ds <+> args) (singleton q) s
                where
                ρ = bindingsAt (q' `followedBy` singleton ClosureEnv) γ
