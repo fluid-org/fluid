@@ -72,7 +72,7 @@ parseFileArgs = ado
 parseBuildArgs :: Parser BuildArgs
 parseBuildArgs = ado
    out <- strOption (long "out" <> short 'o' <> help "Directory for figure graphs")
-   timing <- switch (long "timing" <> help "Print times of evaluation and materialisation")
+   timing <- switch (long "timing" <> help "Print times of evaluation and materialisation, and number of vertices")
    specs <- some (strArgument (metavar "SPEC" <> help "JSON file of figure options"))
    in { specs, out, timing }
 
@@ -111,7 +111,9 @@ dispatchCommand (Build { specs, out, timing }) = do
          (_ × times) <$> orThrow (encodeFigGraph fig)
       writeTextFile UTF8 (concat [ out, basenameWithoutExt spec ".json" <> ".json" ]) (stringify graph)
       when timing $ log $
-         spec <> ": evaluate " <> show times.evaluate <> " ms, materialise " <> show times.materialise <> " ms"
+         spec <> ": evaluate " <> show times.evaluate <> " ms, materialise " <> show times.materialise <> " ms, "
+            <> show times.vertices
+            <> " vertices"
    where
    decode :: forall a. DecodeJson a => Json -> Aff a
    decode = decodeJson >>> lmap printJsonDecodeError >>> orThrow

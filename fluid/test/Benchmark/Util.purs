@@ -96,7 +96,6 @@ recordDepGraphSize g =
       Reuse _ _ -> 0
       NoReuse _ -> 0
       Tupling _ θs -> sum (ofRestructuring <$> θs)
-      ExtendEnv _ θ' θs -> ofRestructuring θ' + sum (ofRestructuring <$> θs)
 
    ofRel (Rel (Support ps _) rs) = Set.size ps + sum (ofRel <$> rs)
    dataSources (Rel (Support _ ws) rs) = Map.size ws + sum (dataSources <$> rs)

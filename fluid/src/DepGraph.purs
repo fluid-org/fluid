@@ -22,7 +22,7 @@ import Dict (Dict)
 import Lattice (class DepSemiring, ctrlWeight)
 import Path (Path, Position, PositionSet, Step(..), Vertex(..), followedBy, members, positionSet, ε)
 import Util (class IsEmpty, type (×), Endo, assert, isEmpty, singleton, (!), (×))
-import Util.Map (delete, difference, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
+import Util.Map (delete, filterKeys, get, insert, keys, lookup, maplet, toUnfoldable)
 import Util.Set (class Set, empty, filter, union, (∈), (∪))
 
 -- Annotate each position with its path
@@ -76,19 +76,16 @@ data Restructuring c
    = Reuse c Position
    | NoReuse c
    | Tupling c (Map Step (Restructuring c))
-   | ExtendEnv c (Restructuring c) (Dict (Restructuring c))
 
 ctrl :: forall c. Restructuring c -> c
 ctrl (Reuse ps _) = ps
 ctrl (NoReuse ps) = ps
 ctrl (Tupling ps _) = ps
-ctrl (ExtendEnv ps _ _) = ps
 
 withCtrl :: forall c. Set c Position => c -> Endo (Restructuring c)
 withCtrl ps' (Reuse ps p) = Reuse (ps ∪ ps') p
 withCtrl ps' (NoReuse ps) = NoReuse (ps ∪ ps')
 withCtrl ps' (Tupling ps θs) = Tupling (ps ∪ ps') θs
-withCtrl ps' (ExtendEnv ps θ θs) = ExtendEnv (ps ∪ ps') θ θs
 
 pathAfter :: forall c. Set c Position => Path -> Restructuring c -> Restructuring c
 pathAfter Nil θ = θ
@@ -96,9 +93,6 @@ pathAfter p@(step : p') θ = (if any intoClosure p then identity else withCtrl (
    Reuse _ q -> Reuse empty (q `followedBy` p)
    NoReuse _ -> NoReuse empty
    Tupling _ θs -> pathAfter p' (get step θs)
-   ExtendEnv _ θ' θs -> case step of
-      Binding x | Just θ'' <- lookup x θs -> pathAfter p' θ''
-      _ -> pathAfter p θ'
    where
    intoClosure :: Step -> Boolean
    intoClosure ClosureEnv = true
@@ -133,16 +127,12 @@ restructuringAfter :: forall s. Semiring s => Restructuring (Set Position) -> De
 restructuringAfter (Reuse ps (a × p)) δs@(θs × _) = withCtrl (sourcesOf δs ps) (pathAfter p (get a θs))
 restructuringAfter (NoReuse ps) δs = NoReuse (sourcesOf δs ps)
 restructuringAfter (Tupling ps θs) δs = Tupling (sourcesOf δs ps) (flip restructuringAfter δs <$> θs)
-restructuringAfter (ExtendEnv ps θ θs) δs =
-   ExtendEnv (sourcesOf δs ps) (restructuringAfter θ δs) (flip restructuringAfter δs <$> θs)
 
 restructuringAfterRel :: forall s. Semiring s => Restructuring (Set Position) -> Labelling (Rel PositionSet s) -> Rel PositionSet s
 restructuringAfterRel θ rs = case θ of
    Reuse _ (a × p) -> maybe mempty (π p) (lookup a rs)
    NoReuse _ -> mempty
    Tupling _ θs -> Rel mempty (relsAfter θs)
-   ExtendEnv _ θ' θs -> case restructuringAfterRel θ' rs × bindings θs of
-      Rel support rs' × θs' -> Rel support (relsAfter θs' ∪ difference rs' θs')
    where
    relsAfter = Map.mapMaybe (flip restructuringAfterRel rs >>> nonZero)
 
@@ -167,12 +157,6 @@ construct support δs
    | isEmpty δs = NoReuse empty × Rel support empty
    | otherwise = map (Rel support empty <> _) (tupling δs)
 
--- Dependence of environment at a position extended with given bindings
-extend :: forall c s. Set c Position => Semiring s => Position -> Dict (Dependence c s) -> Dependence c s
-extend p δs
-   | isEmpty δs = reuse p
-   | otherwise = ExtendEnv empty (Reuse empty p) (fst <$> δs) × Rel mempty (Map.mapMaybe (snd >>> nonZero) (bindings δs))
-
 type Labelling a = Map Vertex a
 
 -- Vertices labelled by values of shape f; at most one edge into each vertex
@@ -194,7 +178,6 @@ vertices (θ × r) = Set.map fst (ofRestructuring θ ∪ ofRel r)
       Reuse _ p -> singleton p
       NoReuse _ -> empty
       Tupling _ θs -> foldMap ofRestructuring θs
-      ExtendEnv _ θ'' θs -> ofRestructuring θ'' ∪ foldMap ofRestructuring θs
    ofRel (Rel (Support ps ws) rs) = ps ∪ keys ws ∪ foldMap ofRel rs
 
 newVertex :: forall f s m. MonadState (DepGraph f s) m => f Unit -> Dependence (Set Position) s -> m Vertex

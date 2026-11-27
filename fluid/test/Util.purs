@@ -31,7 +31,7 @@ import Test.Benchmark.Util (BenchRow, benchmark, divRow, recordDepGraphSize, rec
 import Test.Util.Debug (timing)
 import Util (type (×), AffError, EffectError, assertWith, check, error, log', throw, throwLeft, withMsg, (!), (×))
 import Util.Map (get, maplet)
-import Val (class MonadProgram, Label, Val, ValWithDoc(..), moduleStore, val, valAt)
+import Val (class MonadProgram, Val, ValWithDoc(..), moduleStore, val, valAt)
 
 type TestSuite m = Array (String × m Unit)
 
@@ -83,7 +83,7 @@ depName file = case _ of
       Doc vertex -> "doc of " <> name vertex
 
 -- depGraph holds the vertices created by loading the modules, before the program ran.
-vertexOf :: forall s. DepGraph Label s -> Eval -> VertexSpec -> Vertex
+vertexOf :: forall s. DepGraph Val s -> Eval -> VertexSpec -> Vertex
 vertexOf depGraph eval@{ g: g@{ docs }, out } = case _ of
    Output -> out
    Input x -> case documentedAs g x of
@@ -105,7 +105,7 @@ showDeps { g: { docs }, out } deps = joinWith "\n" (documented <> output)
 
 selection
    :: forall s
-    . DepGraph Label s
+    . DepGraph Val s
    -> Eval
    -> VertexSpec
    -> (ObjArg -> Selector Val)
