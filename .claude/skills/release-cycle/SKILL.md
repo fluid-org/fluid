@@ -19,7 +19,7 @@ issue branch → milestone branch → staging → release
 
 ## Issue lifecycle
 
-Select an issue from the current milestone. Branch, implement, test ([CONTRIBUTING.md](../../../CONTRIBUTING.md#testing)), then open, review and merge a pull request per the `conventions:github` skill. The state machine and invariants are in [issue-lifecycle.md](../../../docs/workflow/issue-lifecycle.md).
+Select issue from current milestone; branch, implement, test ([CONTRIBUTING.md](../../../CONTRIBUTING.md#testing)), PR, review and merge per `conventions:github` skill. State machine and invariants: [issue-lifecycle.md](../../../docs/workflow/issue-lifecycle.md).
 
 ## Milestone population
 
