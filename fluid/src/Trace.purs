@@ -39,6 +39,7 @@ data ExprTrace v a
    | Subscript a a
    | ObjectConstructor Name (List a)
    | Attribute Var a
+   | DocExpr a a
    | ValueLeaf v
 
 --Nothing marks a failed generator pattern
@@ -69,7 +70,7 @@ data StmtTrace a
    | TypeAlias Var (List Var) T.Type
    | SeqFull a a
    | SeqReturned a Stmt
-   
+
 
 derive instance Foldable (ExprTrace v)
 derive instance Foldable (QualifierTrace v)

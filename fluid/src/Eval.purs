@@ -154,11 +154,13 @@ eval
 eval = { stmt, program }
    where
    expr :: Inputs -> Expr -> m Position
-   expr inputs e'@(DocExpr e _) = do
-      v × trace <- value inputs e'
-      r <- record (v × Tr.ExprTrace trace)
-      doc <- extendInputs inputs (maplet varThis (reuseAt r)) empty >>= flip expr e
-      attachDoc (sourceVertex (fst r)) (sourceVertex (fst doc)) $> r
+   expr inputs (DocExpr doc body) = do
+      rBody <- expr inputs body
+      r <- newValue (reuseAt rBody) --new position to label with Tr.DocExpr
+      rDoc <- extendInputs inputs (maplet varThis (reuseAt r)) empty >>= flip expr doc
+      addTrace (sourceVertex (fst r)) (Tr.ExprTrace (Tr.DocExpr (fst rBody) (fst rDoc)))
+      attachDoc (sourceVertex (fst r)) (sourceVertex (fst rDoc))
+      pure r
    expr inputs e = do
       v × trace <- value inputs e
       record (v × Tr.ExprTrace trace)
@@ -316,7 +318,7 @@ eval = { stmt, program }
             (  reuseAt chosen ×
                   if holds then Tr.CondTrue (fst r) (fst chosen) e2 else Tr.CondFalse (fst r) e1 (fst chosen)
             )
-      DocExpr _ e -> untraced $ reuseAt <$> expr inputs e
+      DocExpr _ _ -> error absurd --should be covered by expr inputs e'@(DocExpr e _)
       where
       ctl = singleton (ctlAt b)
 
