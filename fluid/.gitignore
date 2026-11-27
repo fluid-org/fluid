@@ -3,6 +3,7 @@
 .psc-ide-port
 .spago
 build/
+CHANGELOG.md
 dist/
 output/
 output-es/

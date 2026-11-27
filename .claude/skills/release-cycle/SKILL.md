@@ -16,12 +16,10 @@ issue branch → milestone branch → staging → release
 - **Milestone branches**: named to match milestone (e.g. `fluid-1.0`).
 - **Issue branches**: named `<issue-number>-<short-description>`, branched from milestone branch; PRs target milestone branch.
 - **Merge to `staging`**: timing decided by developer
-- **[Milestone report](../../../docs/workflow/milestone-report.md)**: generated at merge to `staging`
-- **Release notes**: one line per closed issue of the milestone, giving its title; omit issues that only aggregate others (e.g. a sync to a PurePy version). Classify an issue only as its issue states; otherwise Other.
 
 ## Issue lifecycle
 
-Select issue from current milestone; branch, implement, test ([CONTRIBUTING.md](../../../CONTRIBUTING.md#testing)), PR, review and merge per `conventions:github` skill. After merging: update milestone report if issue is complete. State machine and invariants: [issue-lifecycle.md](../../../docs/workflow/issue-lifecycle.md).
+Select issue from current milestone; branch, implement, test ([CONTRIBUTING.md](../../../CONTRIBUTING.md#testing)), PR, review and merge per `conventions:github` skill. State machine and invariants: [issue-lifecycle.md](../../../docs/workflow/issue-lifecycle.md).
 
 ## Milestone population
 
@@ -30,7 +28,7 @@ When all issues in milestone are done, paused, or awaiting decision, populate wi
 1. **Planned issues first** — already prioritised by developer.
 2. **Proposed issues** — prefer low-hanging fruit, thematic fit, test coverage.
 
-Adding to milestone bumps Proposed → Planned. Can be done autonomously. Afterwards run the project integrity check (`script/check-project-integrity.sh`) to verify invariants.
+After adding issue to milestone, set Status to `Planned`.
 
 ## Deployment
 
@@ -42,9 +40,5 @@ Managed manually by developer:
 1. Create `staging` from `release` if absent
 2. Merge milestone branch to `staging` (triggers deploy to GitHub Pages, f.luid.org)
 3. Test live site
-4. Merge `staging` to `release` if site works
+4. Merge `staging` to `release` if site works (releases milestone)
 5. Reset `staging` to `release` if site is broken
-
-## NPM publishing
-
-On creating a milestone branch, set the package version to `X.Y.Z-next.0`, where `X.Y.Z` is the release of the completed milestone (e.g. `1.2.0-next.0` for `fluid 1.2`). Every push to the milestone branch then publishes the next pre-release (`1.2.0-next.N`) under the dist-tag `next`, once the tests pass. To release a completed milestone, run the build workflow on the milestone branch with `release` selected. See [CONTRIBUTING.md](../../../CONTRIBUTING.md#publishing-to-npm).
