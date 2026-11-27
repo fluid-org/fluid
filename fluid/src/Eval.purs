@@ -170,7 +170,7 @@ eval = { stmt, program }
                Val _ (V.Tuple [ Val _ (V.Lit (Int i')), Val _ (V.Lit (Int j')) ]) -> pure (i' × j')
                Val _ u -> throw (typeMismatch u "pair of int")
             check
-               (i' × j' >= 1 × 1)
+               (i' >= 1 && j' >= 1)
                ("array must be at least (" <> show (1 × 1) <> "); got (" <> show (i' × j') <> ")")
             is <- for (A.range 0 (i' - 1)) (newValue <<< index pv 0)
             js <- for (A.range 0 (j' - 1)) (newValue <<< index pv 1)
