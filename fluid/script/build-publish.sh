@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Publish milestone to npm with its release notes, then announce in Slack; run by build workflow
+# Publish milestone to npm with its release notes; run by build workflow
 # Without argument: publish next pre-release under dist-tag "next"
-# With argument "release": publish completed milestone, then commit and tag its version and create GitHub release
+# With argument "release": publish completed milestone, then commit and tag its version, create GitHub release
+# and announce in Slack
 set -xe
 cd "$(dirname "$0")/.."
 
@@ -47,7 +48,7 @@ if [ "$1" = release ]; then
    git push --atomic origin "HEAD:refs/heads/$GITHUB_REF_NAME" "v$RELEASE"
    python3 script/release-notes.py --latest |
       gh release create "v$RELEASE" --verify-tag --title "fluid $RELEASE" --notes-file -
+   python3 script/notify-slack.py
 else
    publish "$RELEASE-next.$N" --tag next
 fi
-python3 script/notify-slack.py

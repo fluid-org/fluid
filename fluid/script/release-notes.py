@@ -1,4 +1,4 @@
-"""Print milestone release notes up to package version as Markdown; with --latest, that version alone"""
+"""Print milestone release notes up to package version as Markdown; with --latest, latest release alone"""
 
 import json
 import pathlib
@@ -47,10 +47,9 @@ version = PACKAGE["version"]
 minor = ".".join(version.split(".")[:2])
 milestone = f"{PACKAGE['name'].split('/')[-1]} {minor}"
 [number] = [m["number"] for m in github("milestones?state=all&per_page=100") if m["title"] == milestone]
-# Time of publication to the second, as issues record time of closing
+# Time each release was published, to the second, as issues record time of closing
 times = json.loads(output("npm", "view", "--workspaces=false", PACKAGE["name"], "time", "--json"))
-published = {v: time[:19] for v, time in times.items() if v.startswith(minor + ".")}
-
+published = {v: time[:19] for v, time in times.items() if v.startswith(minor + ".") and v == release(v)}
 
 # Time of last merge into milestone branch from branches named after each issue
 merged = {}
@@ -66,9 +65,9 @@ def completed(issue):
 
 
 def heading(issue):
-    """First version published after issue completed, else package version; pre-release while release pending"""
-    v = next((v for v in sorted(published, key=published.get) if published[v] > completed(issue)), version)
-    return release(v) if release(v) in published or release(v) == version else v
+    """First release published after issue completed, else release of package version"""
+    return next((v for v in sorted(published, key=published.get) if published[v] > completed(issue)),
+                release(version))
 
 
 # Completed issues without sub-issues; most recently completed first
@@ -78,7 +77,7 @@ issues = sorted((issue for issue in github(f"issues?milestone={number}&state=clo
                 key=completed, reverse=True)
 
 if sys.argv[1:] == ["--latest"]:
-    lines = render([issue for issue in issues if heading(issue) == version])[1:]
+    lines = render([issue for issue in issues if heading(issue) == release(version)])[1:]
 else:
     lines = [f"# {milestone}"]
     for h in dict.fromkeys(map(heading, issues)):
