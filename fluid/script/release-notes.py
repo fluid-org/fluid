@@ -8,14 +8,13 @@ PACKAGE = json.loads((pathlib.Path(__file__).resolve().parents[1] / "package.jso
 KINDS = ["Features", "Bug fixes", "Other"]
 
 
-def github(query):
-    """Query repository; return results from every page"""
-    command = ["gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/" + query]
+def github(path: str) -> list[dict]:
+    command = ["gh", "api", "--paginate", "--slurp", "repos/{owner}/{repo}/" + path]
     pages = json.loads(subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True).stdout)
     return [result for page in pages for result in page]
 
 
-def kind(issue):
+def kind(issue: dict) -> str:
     issue_type = (issue.get("type") or {}).get("name")
     if issue_type == "Problem":
         return "Bug fixes"

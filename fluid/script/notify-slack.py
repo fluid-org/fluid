@@ -12,7 +12,7 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent
 PACKAGE = json.loads((SCRIPTS.parent / "package.json").read_text())
 
 
-def markdown_to_slack(line):
+def markdown_to_slack(line: str) -> str:
     line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     line = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"<\2|\1>", line)
     return re.sub(r"^- ", "• ", re.sub(r"^#+ (.*)$", r"*\1*", line))
