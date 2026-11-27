@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Publish package to npm with its release notes; run by build workflow
 # On milestone branch: publish next pre-release under dist-tag "next"
-# On release branch: publish milestone unless already published, then tag it, create GitHub release,
-# close milestone and announce in Slack
+# On release branch: publish milestone unless already published
+# After publishing milestone: tag commit, create GitHub release, close milestone, announce in Slack
 set -xe
 cd "$(dirname "$0")/.."
 
