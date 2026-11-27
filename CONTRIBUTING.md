@@ -85,16 +85,6 @@ yarn workspace @fluid-org/fluid test-browser
 
 Opens a browser window; check the JavaScript console for test results.
 
-## Publishing to npm
-
-On creating a milestone branch, set the version in `fluid/package.json` to `X.Y.Z-next.0`, where `X.Y.Z` is the release of the milestone once complete (e.g. `1.2.0-next.0` for milestone `fluid 1.2`). The `publish-npm` job of the build workflow publishes a pre-release of `X.Y.Z` on every push to the milestone branch, once the tests pass. The pre-releases are numbered `1.2.0-next.1`, `1.2.0-next.2` and so on, and carry the dist-tag `next`, so `npm install @fluid-org/fluid@next` installs the most recent pre-release. The job builds in production mode and stages the `article` website. Publishing a pre-release doesn't change `fluid/package.json` or create a tag.
-
-Every published version includes `CHANGELOG.md`, the [release notes](docs/workflow/milestone-report.md#release-notes) of the milestone up to that version.
-
-To release a completed milestone, run the build workflow on the milestone branch with `release` selected. Once the tests pass, the job publishes `X.Y.Z` under the dist-tag `latest`, commits that version and the release notes of the milestone to the milestone branch, tags the commit `vX.Y.Z` and creates a GitHub release with the notes of that release. The job then announces the release in Slack with those notes, if the repository secret `SLACK_WEBHOOK_URL` holds an incoming webhook. Later pushes to the branch publish nothing until the version is set to the next pre-release (e.g. `1.2.1-next.0` for a patch release).
-
-Authentication is by [trusted publishing](https://docs.npmjs.com/trusted-publishers), which is configured on npmjs.com for the workflow `build.yml` and doesn't need a token.
-
 ## VS Code
 
 - Install the [PureScript IDE](https://marketplace.visualstudio.com/items?itemName=nwolverson.ide-purescript) extension

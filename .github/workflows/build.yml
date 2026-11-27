@@ -11,11 +11,6 @@ on:
     - 'old/**'
     - '**.md'
   workflow_dispatch:
-    inputs:
-      release:
-        description: Release completed milestone (milestone branch only)
-        type: boolean
-        default: false
 
 jobs:
   build:
@@ -24,12 +19,12 @@ jobs:
   publish-npm:
     runs-on: ubuntu-22.04
     needs: build
-    if: startsWith(github.ref_name, 'fluid-') && (github.event_name == 'push' || inputs.release)
+    if: github.event_name == 'push' && (startsWith(github.ref_name, 'fluid-') || github.ref_name == 'release')
     concurrency: publish-npm
     permissions:
       id-token: write
       contents: write
-      issues: read
+      issues: write
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
@@ -49,7 +44,7 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       run: |
         yarn install
-        fluid/script/build-publish.sh ${{ inputs.release && 'release' || '' }}
+        fluid/script/build-publish.sh
 
   deploy-fluid-org:
     runs-on: ubuntu-22.04

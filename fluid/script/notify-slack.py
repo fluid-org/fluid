@@ -1,4 +1,4 @@
-"""Announce package version in Slack with its release notes; without SLACK_WEBHOOK_URL, print announcement"""
+"""Announce package version in Slack with release notes; without SLACK_WEBHOOK_URL, print announcement"""
 
 import json
 import os
@@ -20,10 +20,10 @@ def mrkdwn(line):
 
 
 name, version = PACKAGE["name"], PACKAGE["version"]
-notes = subprocess.run([sys.executable, SCRIPTS / "release-notes.py", "--latest"],
+notes = subprocess.run([sys.executable, SCRIPTS / "release-notes.py"],
                        check=True, stdout=subprocess.PIPE, text=True).stdout
 text = "\n".join([f"<https://www.npmjs.com/package/{name}/v/{version}|{name} {version}> published", ""]
-                 + [mrkdwn(line) for line in notes.splitlines()]).strip()
+                 + [mrkdwn(line) for line in notes.splitlines()[2:]]).strip()
 webhook = os.environ.get("SLACK_WEBHOOK_URL")
 if webhook:
     urllib.request.urlopen(urllib.request.Request(
