@@ -83,9 +83,9 @@ dep_cases =
      }
    , { file: "dependence/doc_this.fld"
      , queries:
-          [ Bwd (Doc Output) (\arg -> arg cParagraph f_fragments (listElement 2 select))
-               "⸨1⸩\n⸨2⸩\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
-          , Fwd (Input "x") (\_ -> select) "⸨1⸩\n2\n@doc(Paragraph([\"Sum\", \"is\", ⸨3⸩])) ⸨3⸩"
+          [ Bwd (Doc Output) (\arg -> arg cParagraph f_fragments (listElement 1 select))
+               "⸨1⸩\n⸨2⸩\n@doc(Paragraph([\"Sum is \", ⸨3⸩])) ⸨3⸩"
+          , Fwd (Input "x") (\_ -> select) "⸨1⸩\n2\n@doc(Paragraph([\"Sum is \", ⸨3⸩])) ⸨3⸩"
           ]
      }
    , { file: "dependence/matrix/matmul.fld"
@@ -167,7 +167,12 @@ dep_cases =
      }
    , { file: "dependence/divide.fld"
      , queries:
-          [ Bwd Output (\_ -> select) "⸨362⸩\n⸨9⸩\n⸨40.22222222222222⸩"
+          [ Bwd Output (\_ -> select) "⸨362⸩\n⸨9⸩\n⸨40.2222222222⸩"
+          ]
+     }
+   , { file: "dependence/sorted.fld"
+     , queries:
+          [ Bwd Output (\_ -> listElement 0 select) "[⟪3⟫, ⸨1⸩, ⟪2⟫]\n[⸨1⸩, 2, 3]"
           ]
      }
    , { file: "dependence/multiply.fld"
@@ -305,6 +310,88 @@ dep_cases =
                14, 9, 20, 8, 1,
                4, 10, 3, 7, 19,
                3, 11, 15, 2, 9
+               """
+          ]
+     }
+   , { file: "dependence/convolution/intermediate.fld"
+     , queries:
+          [ Bwd (Intermediate 4) (\_ -> matrixElement 1 1 select)
+               """
+               ⟪-2, -1, 0,
+               -1, ⸨1⸩, 1,
+               0, 1, 2⟫
+               ⟪15, 13, 6,
+               12, ⸨5⸩, 15,
+               14, 9, 20⟫
+               0, 0, 0,
+               0, 15, 13,
+               0, 12, 10
+               0, 0, 0,
+               -15, 13, 6,
+               0, 5, 30
+               0, 0, 0,
+               -13, 6, 0,
+               0, 15, 0
+               0, -15, 0,
+               0, 12, 5,
+               0, 14, 18
+               -30, -13, 0,
+               -12, ⸨5⸩, 15,
+               0, 9, 40
+               -26, -6, 0,
+               -5, 15, 0,
+               0, 20, 0
+               0, -12, 0,
+               0, 14, 9,
+               0, 0, 0
+               -24, -5, 0,
+               -14, 9, 20,
+               0, 0, 0
+               -10, -15, 0,
+               -9, 20, 0,
+               0, 0, 0
+               5, 4, 0,
+               3, 1, 0,
+               1, -1, -1
+               """
+          , Fwd (Intermediate 4) (\_ -> matrixElement 1 1 select)
+               """
+               -2, -1, 0,
+               -1, 1, 1,
+               0, 1, 2
+               15, 13, 6,
+               12, 5, 15,
+               14, 9, 20
+               0, 0, 0,
+               0, 15, 13,
+               0, 12, 10
+               0, 0, 0,
+               -15, 13, 6,
+               0, 5, 30
+               0, 0, 0,
+               -13, 6, 0,
+               0, 15, 0
+               0, -15, 0,
+               0, 12, 5,
+               0, 14, 18
+               -30, -13, 0,
+               -12, ⸨5⸩, 15,
+               0, 9, 40
+               -26, -6, 0,
+               -5, 15, 0,
+               0, 20, 0
+               0, -12, 0,
+               0, 14, 9,
+               0, 0, 0
+               -24, -5, 0,
+               -14, 9, 20,
+               0, 0, 0
+               -10, -15, 0,
+               -9, 20, 0,
+               0, 0, 0
+               5, 4, 0,
+               3, ⸨1⸩, 0,
+               1, -1, -1
                """
           ]
      }

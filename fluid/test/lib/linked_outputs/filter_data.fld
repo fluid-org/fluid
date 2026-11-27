@@ -1,4 +1,0 @@
-xs: list[int] = [8, 4, 7, 3]
-n: int = 5
-ys: list[int] = [6, 1, 9]
-m: int = 2

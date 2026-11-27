@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
-ORG="${1:?organisation}"
-REPO="${2:?repository}"
-PROJECT="${3:?project number}"
-ACTIVE="${4:?comma-separated Statuses whose issues must have a milestone}"
+if [ $# -ne 4 ]; then
+  echo "Usage: $0 <organisation> <repository> <project number> <comma-separated Statuses whose issues must have a milestone>" >&2
+  exit 1
+fi
+
+ORG="$1"
+REPO="$2"
+PROJECT="$3"
+ACTIVE="$4"
 ERRORS=0
 
 echo "Checking project integrity for $ORG/$REPO (project $PROJECT)..."
@@ -50,6 +55,18 @@ CLOSED_ISSUES=$(gh api graphql --paginate -f org="$ORG" -f repo="$REPO" -f query
   }
 ' --jq '[.data.repository.issues.nodes[]]')
 
+OPEN_ISSUES=$(gh api graphql --paginate -f org="$ORG" -f repo="$REPO" -f query='
+  query($endCursor: String, $org: String!, $repo: String!) {
+    repository(owner: $org, name: $repo) {
+      issues(first: 100, states: OPEN, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { number title }
+      }
+    }
+  }
+' --jq '[.data.repository.issues.nodes[]]')
+
+ON_BOARD=$(echo "$ALL_ITEMS" | jq -cs 'add | map(.content.number)')
 CLOSED_MILESTONES=$(gh api "repos/$ORG/$REPO/milestones?state=closed" --jq '[.[].title]')
 ACTIVE_STATUSES=$(jq -cn --arg s "$ACTIVE" '$s | split(",") | map(ltrimstr(" ") | rtrimstr(" "))')
 
@@ -67,6 +84,10 @@ check() {
     ERRORS=$((ERRORS + 1))
   done < <(echo "$items" | jq -r ".[] | $filter | $fmt")
 }
+
+check "Every open issue is on the project board" "$OPEN_ISSUES" \
+  'select(.number as $n | '"$ON_BOARD"' | index($n) | not)' \
+  '"#\(.number) (\(.title)): not on project board"'
 
 check "Every open issue has a Status" "$ALL_ITEMS" \
   'select(.content.state == "OPEN" and .fieldValueByName == null)' \

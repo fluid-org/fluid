@@ -43,9 +43,8 @@ unpack toFrom (Val α v) = toFrom.unpack v <#> (_ × α)
 unpack' :: forall d a. ToFrom d a -> Val a -> d × a
 unpack' toFrom = unpack toFrom >>> either error identity
 
--- Datum without its annotation.
-unpackVal :: forall d a. ToFrom d a -> Val a -> d
-unpackVal toFrom = unpack' toFrom >>> fst
+dropα :: forall d a. d × a -> d
+dropα = fst
 
 pack :: forall d a. ToFrom d a -> d × a -> Val a
 pack toFrom (v × α) = Val α (toFrom.pack v)
@@ -166,6 +165,8 @@ binopRel op v v' = binop op v v' <#> \(u × αs) -> Val (foldl add zero αs) u
 unopRel :: forall a. Ord a => Semiring a => Unop -> Val a -> MayFail (Val a)
 unopRel op v = unop op v <#> \(u × αs) -> Val (foldl add zero αs) u
 
+type Operand = Int + Number + String
+
 binop :: forall a. Ord a => Binop -> Val a -> Val a -> MayFail (BaseVal a × Set a)
 binop Eq v v'
    | bothNan v v' = pure (Lit (Bool false) × vertices2 v v')
@@ -186,13 +187,13 @@ binop Mul (Val α (Lit (Int n))) (Val β (Lit (Str w))) = pure (repeatStr w β n
 binop Mul (Val α (List vs)) (Val β (Lit (Int n))) = pure (repeatList vs α n β)
 binop Mul (Val α (Lit (Int n))) (Val β (List vs)) = pure (repeatList vs β n α)
 binop op (Val α u) (Val β u') = do
-   x <- operand u
-   y <- operand u'
+   x <- intOrNumberOrString.unpack u
+   y <- intOrNumberOrString.unpack u'
    case op of
-      Lt -> compare (<) x y
-      Le -> compare (<=) x y
-      Gt -> compare (>) x y
-      Ge -> compare (>=) x y
+      Lt -> comparison (_ == LT) x y
+      Le -> comparison (_ /= GT) x y
+      Gt -> comparison (_ == GT) x y
+      Ge -> comparison (_ /= LT) x y
       Add -> (_ × both) <$> arith (+) (+) x y
       Sub -> (_ × both) <$> arith (-) (-) x y
       Mul -> (_ × zeroDeps x y) <$> arith (*) (*) x y
@@ -213,21 +214,10 @@ binop op (Val α u) (Val β u') = do
       | isZero y = Set.singleton β
       | otherwise = both
 
-   operand :: BaseVal a -> MayFail Operand
-   operand (Lit (Int n)) = pure (Left n)
-   operand (Lit (Float r)) = pure (Right (Left r))
-   operand (Lit (Str w)) = pure (Right (Right w))
-   operand u'' = Left (typeMismatch u'' "int, float or str")
-
-   float :: Operand -> MayFail Number
-   float (Left n) = pure (toNumber n)
-   float (Right (Left r)) = pure r
-   float (Right (Right w)) = Left (typeMismatch (Lit (Str w)) "int or float")
-
-   compare :: (forall b. Ord b => b -> b -> Boolean) -> Operand -> Operand -> MayFail (BaseVal a × Set a)
-   compare f (Right (Right w)) (Right (Right w')) = pure (Lit (Bool (f w w')) × both)
-   compare f (Left m) (Left n) = pure (Lit (Bool (f m n)) × both)
-   compare f x y = (\r r' -> Lit (Bool (f r r')) × both) <$> float x <*> float y
+   comparison :: (Ordering -> Boolean) -> Operand -> Operand -> MayFail (BaseVal a × Set a)
+   comparison f x y
+      | isNan x || isNan y = pure (Lit (Bool false) × both)
+      | otherwise = ordering x y <#> \o -> Lit (Bool (f o)) × both
 
    arith :: (Int -> Int -> Int) -> (Number -> Number -> Number) -> Operand -> Operand -> MayFail (BaseVal a)
    arith f _ (Left m) (Left n) = pure (Lit (Int (f m n)))
@@ -244,7 +234,19 @@ binop op (Val α u) (Val β u') = do
    isZero (Right (Left 0.0)) = true
    isZero _ = false
 
-type Operand = Int + Number + String
+   isNan :: Operand -> Boolean
+   isNan (Right (Left r)) = N.isNaN r
+   isNan _ = false
+
+   float :: Operand -> MayFail Number
+   float (Left n) = pure (toNumber n)
+   float (Right (Left r)) = pure r
+   float (Right (Right w)) = Left (typeMismatch (Lit (Str w)) "int or float")
+
+   ordering :: Operand -> Operand -> MayFail Ordering
+   ordering (Right (Right w)) (Right (Right w')) = pure (compare w w')
+   ordering (Left m) (Left n) = pure (compare m n)
+   ordering x y = compare <$> float x <*> float y
 
 bothNan :: forall a. Val a -> Val a -> Boolean
 bothNan (Val _ (Lit (Float r))) (Val _ (Lit (Float r'))) = N.isNaN r && N.isNaN r'
@@ -307,7 +309,7 @@ eqOp v@(Val α u) v'@(Val β u') = case u, u' of
 
    eqMatrix :: MatrixRep a -> MatrixRep a -> MayFail (Boolean × Set a)
    eqMatrix (MatrixRep (vss × i × j)) (MatrixRep (vss' × i' × j')) =
-      if unpackVal int i == unpackVal int i' && unpackVal int j == unpackVal int j' then eqElems αs (elems vss) (elems vss')
+      if dropα (unpack' int i) == dropα (unpack' int i') && dropα (unpack' int j) == dropα (unpack' int j') then eqElems αs (elems vss) (elems vss')
       else pure (false × αs)
       where
       αs = both ∪ Set.fromFoldable (root <$> [ i, j, i', j' ])

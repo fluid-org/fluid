@@ -1,10 +1,25 @@
 from typing import Callable
 from dataclasses import dataclass
-from fluid.stats import likelihood_map
-from table1_data import tableData, likelihoods
+from fluid.stats import Likelihood, likelihood_map
 
 from fluid.view import MultiView
 from fluid.prelude import fsum, max, min
+
+@dataclass
+class Projection:
+  scenario: str
+  bestEstNear: float
+  lowNear: float
+  highNear: float
+  bestEstMid: float
+  lowMid: float
+  highMid: float
+  bestEstLate: float
+  lowLate: float
+  highLate: float
+
+tableData: list[Projection] = @doc("tableData") load_json(list[Projection], "../../dataset/SPM/explainable-table.json")
+likelihoods: list[Likelihood] = @doc("likelihoods") load_json(list[Likelihood], "../../dataset/SPM/likelihoods.json")
 
 @dataclass
 class Scenario:

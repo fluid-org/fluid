@@ -7,4 +7,4 @@ class Model:
   acc: float
   param: int
 
-tableData: list[Model] = load_json(list[Model], "../dataset/scigen/_1805_02474v1_10.json")
+tableData: list[Model] = @doc("tableData") load_json(list[Model], "../dataset/scigen/_1805_02474v1_10.json")

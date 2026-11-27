@@ -1,36 +1,12 @@
 from typing import Callable
 from dataclasses import dataclass
 from math import floor, ceil
-from fluid.prelude import drop, filter, maximum, minimum
+from fluid.prelude import filter, maximum, minimum
 
 @dataclass
 class Likelihood:
   prob: float
   msg: str
-
-def split[A](xs: list[A]) -> tuple[list[A], list[A]]:
-  return (
-    [xs[i] for i in range(0, len(xs)) if i % 2 == 0],
-    [xs[i] for i in range(0, len(xs)) if i % 2 == 1]
-  )
-
-def merge(xs: list[float], ys: list[float]) -> list[float]:
-  def go(i: int, j: int) -> list[float]:
-    if i == len(xs):
-      return drop(j, ys)
-    if j == len(ys):
-      return drop(i, xs)
-    if xs[i] < ys[j]:
-      return [xs[i]] + go(i + 1, j)
-    return [ys[j]] + go(i, j + 1)
-  return go(0, 0)
-
-# Retire with sorted primitive (#1607)
-def mergesort(xs: list[float]) -> list[float]:
-  if len(xs) < 2:
-    return xs
-  ys, zs = split(xs)
-  return merge(mergesort(ys), mergesort(zs))
 
 def find_quantile(q: float, p: float, xs: list[float]) -> float:
   rank: float = (p / q) * (len(xs) - 1)

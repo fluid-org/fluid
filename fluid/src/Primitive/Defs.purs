@@ -40,11 +40,12 @@ import Dict (fromFoldable) as D
 import Effect.Aff.Class (class MonadAff)
 import Effect.Exception (Error)
 import Eval (apply) as Dep
+import Expr (Binop(..))
 import File (class LoadFile, File(..), loadFileFromPath)
 import DepGraph (zeros)
-import Lattice (class BoundedJoinSemilattice, Raw, bot, ctrlWeight)
-import Literal (Literal(..))
-import Primitive (int, intOrNumber, number, string, typeMismatch, unary, union1)
+import Lattice (class BoundedJoinSemilattice, class DepSemiring, Raw, bot, ctrlWeight)
+import Literal (Literal(..), showFloat)
+import Primitive (binopRel, boolean, int, intOrNumber, number, string, typeMismatch, unary, union1, unpack)
 import Util (MayFail, cons, type (+), type (×), definitely, definitely', orElse, orThrow, quoted, quotedList, singleton, throw, whenever, (×))
 import Module.Defs (ModuleName, builtins, dataclasses, math, sys, typing)
 import Foreign.Object (keys, lookup) as O
@@ -74,6 +75,7 @@ predefined = M.fromFoldable
         [ cRange, cMatrix ]
         [ extern print_ × generalise (callable [ T.object ] T.none)
         , extern len × generalise (callable [ T.PrimitiveTy T.Sized ] T.int)
+        , extern sorted × generalise (callable [ T.ListTy (var "T") ] (T.ListTy (var "T")))
         , unary "round" { i: intOrNumber, o: int, fwd: identity `union1` round } × generalise (callable [ T.float ] T.int)
         , extern dims × generalise (callable [ matrix (var "T") ] T.intPair)
         , extern loadJson × generalise (callable [ T.TypeTy (var "T"), T.str ] (var "T"))
@@ -131,6 +133,33 @@ len =
       Just n -> Right (Val α (Lit (Int n)))
       Nothing -> Left (typeMismatch u "Sized")
    depRel _ = Left "Single argument expected"
+
+sorted :: ForeignOp
+sorted =
+   ForeignOp ("sorted" × ForeignOp' { arity: 1, depOp: pureRel depRel })
+   where
+   depRel :: forall a. DepSemiring a => List (Val a) -> MayFail (Val a)
+   depRel (Val α (List vs) : Nil) = sort (L.fromFoldable vs) <#> \vs' -> Val α (List (Array.fromFoldable vs'))
+   depRel (Val _ u : Nil) = Left (typeMismatch u "list")
+   depRel _ = Left "Single argument expected"
+
+   sort :: forall a. DepSemiring a => List (Val a) -> MayFail (List (Val a))
+   sort vs
+      | L.length vs < 2 = pure vs
+      | otherwise = join (merge zero <$> sort (L.take n vs) <*> sort (L.drop n vs))
+           where
+           n = L.length vs / 2
+
+   merge :: forall a. DepSemiring a => a -> List (Val a) -> List (Val a) -> MayFail (List (Val a))
+   merge β Nil vs' = pure (withCtrl β <$> vs')
+   merge β vs Nil = pure (withCtrl β <$> vs)
+   merge β (v : vs) (v' : vs') = binopRel Lt v' v >>= unpack boolean >>= \(b × γ) -> take b (β + γ)
+      where
+      take true β' = (withCtrl β' v' : _) <$> merge β' (v : vs) vs'
+      take false β' = (withCtrl β' v : _) <$> merge β' vs (v' : vs')
+
+   withCtrl :: forall a. DepSemiring a => a -> Val a -> Val a
+   withCtrl β (Val α u) = Val (α + ctrlWeight * β) u
 
 exit :: ForeignOp
 exit =
@@ -369,4 +398,4 @@ round x = definitely "round of non-finite or out-of-range number" (Int.fromNumbe
    r = if x - N.floor x == 0.5 then 2.0 * N.round (x / 2.0) else N.round x
 
 numToStr :: Int + Number -> String
-numToStr = show `union1` show
+numToStr = show `union1` showFloat

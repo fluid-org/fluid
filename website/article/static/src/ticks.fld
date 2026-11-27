@@ -1,0 +1,36 @@
+from fluid.view import Dimensions, LineChart, LinePlot, MultiView, Point, TickLabels, Default, Scales, Auto, Fixed, Ticks, AxisTicks, AutoFormat, Count, Decimals, Every
+
+co2: list[tuple[float, float]] = [(1958.2027, 315.71), (1965.0411, 320.04), (1970.125, 325.68), (1975.375, 331.15), (1980.2083, 338.29), (1985.5417, 345.8), (1990.0417, 353.94), (1995.7083, 361.88), (2000.2917, 369.5), (2005.625, 379.28), (2010.0417, 388.45), (2015.375, 401.3), (2020.125, 413.42), (2024.9167, 422.38)]
+
+monthly: list[tuple[float, float]] = [(2024.0, 0.62), (2024.0833, 0.55), (2024.1667, 0.71), (2024.25, 0.84), (2024.3333, 0.97), (2024.4167, 1.12), (2024.5, 1.31), (2024.5833, 1.24), (2024.6667, 1.06), (2024.75, 0.93), (2024.8333, 0.78), (2024.9167, 0.69)]
+
+def chart(caption: str, data: list[tuple[float, float]], scales: Scales, ticks: Ticks) -> LineChart:
+  return LineChart(
+    size=Dimensions(width=450, height=285),
+    tickLabels=TickLabels(x=Default(), y=Default()),
+    caption=caption,
+    scales=scales,
+    ticks=ticks,
+    plots=[LinePlot(name="Series", points=[Point(x=x, y=y) for (x, y) in data])]
+  )
+
+MultiView([
+  chart(
+    "x every 10 to 0 places, y every 25 to 0 places",
+    co2,
+    Scales(x=Auto(), y=Fixed(300, 450)),
+    Ticks(x=AxisTicks(Every(10), Decimals(0)), y=AxisTicks(Every(25), Decimals(0)))
+  ),
+  chart(
+    "x every 0.25 to 2 places, y every 0.25 to 2 places",
+    monthly,
+    Scales(x=Auto(), y=Auto()),
+    Ticks(x=AxisTicks(Every(0.25), Decimals(2)), y=AxisTicks(Every(0.25), Decimals(2)))
+  ),
+  chart(
+    "x count 5, y count 4 to 0 places",
+    co2,
+    Scales(x=Auto(), y=Auto()),
+    Ticks(x=AxisTicks(Count(5), AutoFormat()), y=AxisTicks(Count(4), Decimals(0)))
+  )
+])

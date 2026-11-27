@@ -1,0 +1,5 @@
+smallImage: Matrix[int] = @doc("smallImage") [| [
+    [15, 13, 6],
+    [12, 5, 15],
+    [14, 9, 20]
+  ][i][j] for (i, j) in (3, 3) |]

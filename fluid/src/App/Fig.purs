@@ -12,8 +12,8 @@ import App.View.Util.D3 (remove, rootSelect)
 import Bind (Var)
 import Classes (class HasClasses)
 import Control.Apply (lift2)
-import Data.Array as A
-import Data.Foldable (elem, or)
+import Dict (fromFoldable) as D
+import Data.Foldable (or)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
@@ -21,18 +21,18 @@ import Data.Newtype (unwrap)
 import Data.Profunctor.Strong (first, second)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Traversable (for_, sequence_)
+import Data.Traversable (for, for_, sequence_)
 import Data.Tuple (fst)
 import Effect (Effect)
-import Eval (evalProgram, visible)
+import Eval (documentedAs, evalProgram, visible)
 import File (class MonadLoad, File(..))
-import DepGraph (ConjugatePair, DepGraph, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
+import DepGraph (ConjugatePair, Deriv, Labelling, Pos, dimap, mask, materialise, queries, selected)
 import Lattice (DepKind(..), 𝔹, botOf, erase)
 import Module (prepConfig, throwParseFailure)
 import Pretty (prettyP)
 import Test.Util.Debug (tracing)
-import Util (type (×), Endo, spyWhen, (×))
-import Util.Map (get, insert, lookup, mapWithKey, restrict, values)
+import Util (type (×), Endo, quoted, spyWhen, throw, (×))
+import Util.Map (get, insert, lookup, mapWithKey, values)
 import Util.Set ((\\), (∈), (∪))
 import Val (class HasModuleStore, EnvWithDocs(..), Val, ValWithDoc, dataPositions, unval, unvals, val, withDoc)
 
@@ -140,13 +140,6 @@ drawFile :: File × String -> Effect Unit
 drawFile (File fileName × src) =
    addEditorView (codeMirrorDiv fileName) >>= loadCode src
 
--- Vertex shown as one value with the vertex of its doc, if any.
--- Vertex of a top-level variable ↦ vertex of its defining expression.
-definedBy :: forall s. DepGraph Val s -> Deriv -> Maybe Deriv
-definedBy g q = case A.fromFoldable <<< Map.keys <$> Map.lookup q g.edges of
-   Just [ p ] -> Just p
-   _ -> Nothing
-
 -- Queries over Boolean selections.
 boolean
    :: ConjugatePair (Labelling (Set Pos)) (Labelling (Val DepKind))
@@ -157,15 +150,19 @@ loadFig :: forall m. HasClasses m => HasModuleStore m => MonadLoad m => Options 
 loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
    config@{ s } <- throwParseFailure (prepConfig fluidSrc)
    eval@{ g: g@{ docs }, root } <- evalProgram config.inputs config.classes config.e
+   -- Each input is the value documented with its name, shown without that doc
+   ins <- D.fromFoldable <$> for inputs \x -> case documentedAs g x of
+      [ p ] -> pure (x × (p × Nothing))
+      _ -> throw ("No unique value documented " <> quoted x)
    let
       out = withDoc g root
-      ins = restrict (Set.fromFoldable inputs) eval.inputs <#> \q -> q × (definedBy g q >>= (_ `Map.lookup` docs))
-      shown = Set.fromFoldable (A.cons root (A.mapMaybe (definedBy g) (A.fromFoldable (values (fst <$> ins)))))
+      inputVertices = Set.fromFoldable (fst <$> values ins)
+      shown = Set.insert root inputVertices
       ιs =
          if query then mapWithIndex (\p d -> p × Just d) (Map.filterKeys (not <<< (_ ∈ shown)) docs)
          else Map.empty
 
-      graph = materialise g (visible eval ∪ Set.fromFoldable (values eval.inputs))
+      graph = materialise g (visible eval)
       everything = map (const true) <$> graph.vals
       nothing = map (const false) <$> graph.vals
       ignored = unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
@@ -181,7 +178,7 @@ loadFig options@{ inputs, linking, query, ignoreInputs } fluidSrc = do
          -> { fwd :: Labelling (Val 𝔹), bwd :: Labelling (Val 𝔹) }
       inert { fwd, bwd } =
          { bwd: map not <$> bwd (unval out (val everything out))
-         , fwd: map not <$> fwd (Map.filterKeys (_ `elem` eval.inputs) everything)
+         , fwd: map not <$> fwd (Map.filterKeys (_ ∈ inputVertices) everything)
          }
       inertMasked = inert masked
       inertUnmasked = inert unmasked

@@ -29,14 +29,14 @@ import Dict (fromFoldable) as D
 import Effect.Exception (Error)
 import Expr (Branch(..), Def(..), Expr(..), Import(..), Module(..), Pattern(..), Qualifier(..), Stmt(..), assigns, fv)
 import File (class MonadLoad, withClasses)
-import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, zeros)
+import DepGraph (DepGraph, Rel, Deriv, Pos, attachDoc, deriv, valAt, zeros)
 import Lattice (class DepSemiring, DepKind, Lineage, Raw, ctrlWeight)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
 import Pretty (prettyP)
 import Types (Type(..)) as T
-import Primitive (binop, binopRel, boolean, int, string, typeMismatch, unop, unopRel, unpack, unpackVal)
+import Primitive (binop, binopRel, boolean, dropα, int, string, typeMismatch, unop, unopRel, unpack, unpack')
 import Util (type (×), absurd, check, definitely', definitelyRight, error, orElse, orThrow, quoted, singleton, throw, withMsg, (×))
 import Util.Map (get, lookup, lookup', mapWithKey, maplet, restrict, unionWith_never, (<+>))
 import Util.Pair (Pair(..))
@@ -204,7 +204,7 @@ eval inputs = case _ of
          V.Tuple _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Lit (Str _), _ -> throw $ "Found " <> prettyP v'.val <> ", expected int"
          V.Matrix (MatrixRep (_ × m × n)), V.Tuple [ Val _ (V.Lit (Int i)), Val _ (V.Lit (Int j)) ] -> do
-            unless (0 <= i && i < unpackVal int m && 0 <= j && j < unpackVal int n) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
+            unless (0 <= i && i < dropα (unpack' int m) && 0 <= j && j < dropα (unpack' int n)) $ throw ("Index (" <> show i <> ", " <> show j <> ") out of range")
             subscript v v' (matrixElement i j) root
          V.Matrix _, _ -> throw $ "Found " <> prettyP v'.val <> ", expected pair of int"
          _, _ -> throw $ "Found " <> prettyP v.val <> ", expected list, tuple, str, dict or matrix"
@@ -480,13 +480,16 @@ load q = do
 
 type Eval =
    { g :: DepGraph Val (Lineage (Deriv × Pos) DepKind)
-   , inputs :: Dict Deriv
    , root :: Deriv
    }
 
 -- Documented vertices, their docs and the root.
 visible :: Eval -> Set Deriv
 visible { g, root } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) ∪ Set.singleton root
+
+-- Vertices documented with the name x.
+documentedAs :: forall s. DepGraph Val s -> String -> Array Deriv
+documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val unit (V.Lit (Str x))) g.docs))
 
 evalProgram
    :: forall m
@@ -503,4 +506,4 @@ evalProgram inputs classes s =
       p × g <- flip runStateT depGraph do
          env <- traverse gvalAt inputs
          fst <<< asReturns <$> evalStmt { ctrl: Nil, env } s
-      pure { g, inputs, root: p }
+      pure { g, root: p }

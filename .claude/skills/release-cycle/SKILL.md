@@ -29,7 +29,7 @@ When all issues in milestone are done, paused, or awaiting decision, populate wi
 1. **Planned issues first** — already prioritised by developer.
 2. **Proposed issues** — prefer low-hanging fruit, thematic fit, test coverage.
 
-Adding to milestone bumps Proposed → Planned. Can be done autonomously. Afterwards run `./script/check-project-integrity.sh` to verify invariants.
+Adding to milestone bumps Proposed → Planned. Can be done autonomously. Afterwards run the project integrity check (`script/check-project-integrity.sh`) to verify invariants.
 
 ## Deployment
 

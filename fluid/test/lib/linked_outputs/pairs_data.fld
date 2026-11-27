@@ -1,1 +1,0 @@
-data: tuple[int, int] = 3, 7

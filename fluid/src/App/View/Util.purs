@@ -4,9 +4,9 @@ import Prelude
 
 import App.Util (SelState, SelStates, Selectable, Selection, SelectionType, Selector, SetSel, 𝕊, classes, selClasses, selClassesFor)
 import App.Util.Selector (ObjArg, dictVal)
-import App.View.Util.D3 (create, on, setAttrs)
+import App.View.Util.D3 (create, on, setAttrs, setStyles)
 import App.View.Util.D3 as D3
-import Bind (Var)
+import Bind (Var, (↦))
 import Data.Argonaut.Decode (class DecodeJson, JsonDecodeError(..))
 import Data.Argonaut.Decode.Decoders (decodeString)
 import Data.Either (Either(..))
@@ -81,6 +81,7 @@ registerMouseListeners :: (Event -> Effect Unit) -> D3.Selection -> Effect Unit
 registerMouseListeners handler element = do
    click <- eventListener \event -> when (mouseButton event == 0) (handler event)
    hover <- eventListener handler
+   void $ element # setStyles [ "cursor" ↦ "pointer" ]
    void $ element # on (EventType "mousedown") click
    void $ element # on (EventType "mouseenter") hover
    void $ element # on (EventType "mouseleave") hover

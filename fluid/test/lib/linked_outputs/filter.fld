@@ -1,3 +1,6 @@
-from linked_outputs.filter_data import xs, n, ys, m
+xs: list[int] = @doc("xs") [8, 4, 7, 3]
+n: int = @doc("n") 5
+ys: list[int] = @doc("ys") [6, 1, 9]
+m: int = @doc("m") 2
 
 [x for x in xs if x > n], [y for y in ys if y > m]

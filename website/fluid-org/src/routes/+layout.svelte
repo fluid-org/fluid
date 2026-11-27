@@ -5,6 +5,7 @@
 	import '@fontsource/fira-code/400.css';
 
 	import { page } from '$app/state';
+	import { version } from '@fluid-org/fluid';
 	import favicon from '$lib/assets/image/favicon.ico';
 	import FluidLogo from '$lib/assets/image/fluid.png';
 	import { headerLinks } from '$lib/config/nav';
@@ -13,6 +14,7 @@
 </script>
 
 <svelte:head>
+	<meta name="generator" content="Fluid {version}" />
 	<link rel="icon" href={favicon} />
 </svelte:head>
 

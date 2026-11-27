@@ -1,5 +1,5 @@
-from fluid.stats import mergesort, qcut
+from fluid.stats import qcut
 from dataset.ssp126 import ssp126
 
-data: list[float] = mergesort([x.changed for x in ssp126])
+data: list[float] = sorted([x.changed for x in ssp126])
 qcut(data, [5, 50, 95])

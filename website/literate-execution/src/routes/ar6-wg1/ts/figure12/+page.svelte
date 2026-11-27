@@ -5,7 +5,7 @@
 
 	const spec = {
 		fluidSrcPath: ['.', '../../../lib'],
-		inputs: ['hydroData_agg'],
+		inputs: [],
 		query: false,
 		linking: true
 	};

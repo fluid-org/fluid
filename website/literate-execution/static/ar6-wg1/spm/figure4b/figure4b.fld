@@ -1,8 +1,26 @@
+from dataclasses import dataclass
 from fluid.stats import find_percentile, cut
-from figure4b_data import Emission, ssp126Source, ssp126preds, ssp245Source, ssp245preds
 
 from fluid.view import BarChart, Dimensions, MultiView, Segment, StackedBar, TickLabels, Default, Link
 from fluid.prelude import fsum, map, maximum, minimum
+
+@dataclass
+class Emission:
+  type: str
+  emissions: float
+
+@dataclass
+class Prediction:
+  model: str
+  period: str
+  world: float
+  world_historical: float
+  changed: float
+
+ssp126Source: list[Emission] = @doc("ssp126Source") load_json(list[Emission], "../../dataset/SPM/ssp126.json")
+ssp126preds: list[Prediction] = @doc("ssp126preds") load_json(list[Prediction], "../../dataset/SPM/ssp126preds.json")
+ssp245Source: list[Emission] = @doc("ssp245Source") load_json(list[Emission], "../../dataset/SPM/ssp245.json")
+ssp245preds: list[Prediction] = @doc("ssp245preds") load_json(list[Prediction], "../../dataset/SPM/ssp245preds.json")
 
 def stackedBarHeight(stackedBar: StackedBar) -> float:
   return fsum([segment.z for segment in stackedBar.segments])
@@ -49,7 +67,7 @@ nonco2: list[StackedBar] = map(get("Non-CO2"), [ssp126, ssp245])
 MultiView([
   ssp126,
   ssp245,
-  f"""Within each scenario bar plot, the bars represent: {Link(totals, "total warming (°C)")} ,
-      {Link(co2s, "warming from CO2 (°C) ")} and from
+  f"""Within each scenario bar plot, the bars represent: {Link(totals, "total warming (°C)")},
+      {Link(co2s, "warming from CO2 (°C)")} and from
       {Link(map(stackedBarHeight, nonco2), "Non-CO2 GHG's (°C)")}."""
 ])
