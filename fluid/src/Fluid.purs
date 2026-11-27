@@ -41,9 +41,10 @@ import Options.Applicative (Parser, command, execParser, fullDesc, header, help,
 import Options.Applicative.Builder (info)
 import Parse (parseModule, parseProgram)
 import Pretty (prettyP)
+import Pretty.Trace (renderTrace)
 import Expr (Module) as E
 import SExpr (Import(..)) as S
-import Util (type (×), orElse, orThrow, withMsg, (×))
+import Util (type (×), orElse, orThrow, throw, withMsg, (×))
 import Val (valAt)
 
 type FileArgs =
@@ -59,7 +60,7 @@ type BuildArgs =
    , timing :: Boolean
    }
 
-data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Build BuildArgs | Manifest (NonEmptyList String)
+data Command = Parse_ FileArgs | Check FileArgs | Evaluate FileArgs | Trace FileArgs | Build BuildArgs | Manifest (NonEmptyList String)
 
 parseFileArgs :: Parser FileArgs
 parseFileArgs = ado
@@ -84,6 +85,7 @@ commandParser = subparser
    ( command "parse" (info (Parse_ <$> parseFileArgs) (progDesc "Parse a file and print it back"))
         <> command "check" (info (Check <$> parseFileArgs) (progDesc "Check a file statically, with the exit codes of a PurePy checker"))
         <> command "evaluate" (info (Evaluate <$> parseFileArgs) (progDesc "Check and evaluate a file, printing its value; exit 1 on failure"))
+        <> command "trace" (info ((Trace <$> parseFileArgs) <**> helper) (progDesc "Evaluate a program and print its recorded rule graph"))
         <> command "build" (info (Build <$> parseBuildArgs) (progDesc "Write the figure graph of each figure"))
         <> command "manifest" (info (Manifest <$> parseManifest) (progDesc "Write manifest.json into each directory with .fld files beneath it"))
    )
@@ -98,6 +100,12 @@ dispatchCommand (Check args) = report args (stages args (const (pure Nothing)))
 dispatchCommand (Evaluate args) = report args $ stages args case _ of
    AsProgram { e, inputs, classes } -> evalProgram inputs classes e <#> \{ g, out } -> Just (prettyP (valAt g out))
    AsModule q { modules, classes } -> withClasses classes (loadTopLevel modules (S.Import q Nothing : Nil)) $> Nothing
+
+dispatchCommand (Trace args) = report args $ stages args case _ of
+   AsProgram { e, inputs, classes } -> do
+      ev <- evalProgram inputs classes e
+      pure (Just (renderTrace ev))
+   AsModule _ _ -> throw "Tracing modules is not supported"
 dispatchCommand (Build { specs, out, timing }) = do
    mkdir' out { recursive: true, mode: permsAll }
    for_ specs \spec -> withMsg spec do
