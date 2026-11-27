@@ -171,7 +171,7 @@ def intersperse[A](xs: list[A], sep: A) -> list[A]:
   return [y for i in range(0, len(xs)) for y in ([xs[i]] if i == 0 else [sep, xs[i]])]
 
 # sum, fsum, max, min, fmax, fmin: one type each, pending protocols
-# (pure-py/pure-py-spec#233); retire with Python's builtins.
+# (purepy-org/purepy-spec#233); retire with Python's builtins.
 def sum(xs: list[int]) -> int:
   return foldr(lambda x, y: x + y, 0, xs)
 
@@ -193,7 +193,7 @@ def drop[A](n: int, xs: list[A]) -> list[A]:
   return [xs[i] for i in range(max(n, 0), len(xs))]
 
 # Partial; requires k to be in the map. Keyed at int, as equality is undefined at a type variable;
-# retire with pure-py/pure-py-spec#233.
+# retire with purepy-org/purepy-spec#233.
 def lookup[V](k: int, kvs: list[tuple[int, V]]) -> V:
   match find(lambda (k_, _): k == k_, kvs):
     case None:

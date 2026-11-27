@@ -7,7 +7,7 @@ set -e -o pipefail
 cd "$(dirname "$0")/.."
 
 REF=$(cat purepy-version)
-WHEEL=https://github.com/pure-py/pure-py-spec/releases/download/$REF/purepy-${REF#v}-py3-none-any.whl
+WHEEL=https://github.com/purepy-org/purepy-spec/releases/download/$REF/purepy-${REF#v}-py3-none-any.whl
 GAPS=test/spec-gaps.txt
 EXTENSIONS=test/spec-extensions.txt
 KNOWN=$(mktemp)

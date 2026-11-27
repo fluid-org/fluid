@@ -2,8 +2,7 @@ module Test.Specs.IllFormed where
 
 import Test.Util.Suite (IllFormedSpec)
 
--- Spec-derived (PurePy corpus): each entry corresponds to a test in
--- pure-py-spec/test/ill-formed/semantic.
+-- Spec-derived (PurePy corpus): each entry corresponds to test in corpus
 -- Fluid-specific ill-formed cases (no PurePy correspondent).
 illFormed_cases :: Array IllFormedSpec
 illFormed_cases =

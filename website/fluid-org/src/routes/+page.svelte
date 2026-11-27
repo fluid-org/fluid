@@ -17,7 +17,7 @@
 		<a href="https://github.com/fluid-org/fluid-article">fluid-article</a> template repository.</p>
 
 		<h3 class="title">Pure functional programming, Pythonic syntax</h3>
-		<p>Fluid is based on <a href="https://github.com/pure-py/pure-py-spec">PurePy</a>,
+		<p>Fluid is based on <a href="https://github.com/purepy-org/purepy-spec">PurePy</a>,
 		a pure (side-effect free) subset of Python. Fluid programs use familiar Python syntax
 		(list comprehensions, dictionaries, lambdas) in a purely functional setting.</p>
 

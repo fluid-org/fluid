@@ -1,6 +1,6 @@
 ## Fluid
 
-A pure functional dialect of Python, based on [PurePy](https://github.com/pure-py/pure-py-spec), with a dependency-tracking runtime for creating interactive outputs linked to data.
+A pure functional dialect of Python based on [PurePy](https://github.com/purepy-org/purepy-spec), with a dependency-tracking runtime for creating interactive outputs linked to data.
 
 [![build](https://github.com/fluid-org/fluid/actions/workflows/build.yml/badge.svg)](https://github.com/fluid-org/fluid/actions/workflows/build.yml)
 [![version](https://img.shields.io/github/package-json/v/fluid-org/fluid/release?filename=fluid%2Fpackage.json&label=version)](https://github.com/fluid-org/fluid/blob/release/fluid/package.json)
