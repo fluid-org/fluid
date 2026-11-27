@@ -74,10 +74,17 @@ newInputs
    -> m Vertex
 newInputs ρ δ δ' = newVertex (Inputs unit (Env ρ)) (tupling (Map.fromFoldable [ InputsEnv × δ, InputsCtl × δ' ]))
 
--- Allocate vertex for bindings ρ; return each binding as reuse of its position
-newBindings :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Dict (GVal s) -> m (Dict (GVal s))
-newBindings ρ = newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ))) <#> \a ->
-   mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
+--allocate bindings vertex; return vertex and each binding as reuse of its position
+newBindings
+   :: forall m s
+    . MonadState (DepGraph Label s) m
+   => Semiring s
+   => Dict (GVal s)
+   -> m (Vertex × Dict (GVal s))
+newBindings ρ = do
+   a <- newVertex (Bindings (Env (fst <$> ρ))) (tupling (bindings (snd <$> ρ)))
+   let ρ' = mapWithKey (\x (v × _) -> v × reuse (sourceAt a (singleton (Binding x)))) ρ
+   pure (a × ρ')
 
 -- Read dependence of result from its annotations and given control positions
 applyDepFun :: forall s. DepSemiring s => DepFun -> Set Path -> List Position -> MayFail (GVal s)

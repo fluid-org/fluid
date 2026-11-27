@@ -31,7 +31,7 @@ import Lattice (DepKind, Raw)
 import Literal (Literal(..), eqLiteral)
 import Module.Defs (ModuleName, implicit, submods)
 import Operator (binopSymbol, unopSymbol)
-import Path (Path, Step(..), Vertex, sourceVertex)
+import Path (Path, Step(..), Vertex, sourceRoot, sourceVertex)
 import Pretty (prettyP)
 import Trace as Tr
 import Types (Type(..)) as T
@@ -58,10 +58,10 @@ asAssigns :: forall s. Result s -> Dict (GVal s) × Set Path
 asAssigns (Assigns ρ ps) = ρ × ps
 asAssigns (Returns _) = error "Assigns expected"
 
--- Result of a statement with result r followed by a statement with result r'
+-- Result of a statement with result res followed by a statement with result res'
 override :: forall s. Result s -> Result s -> Result s
 override (Assigns ρ ps) (Assigns ρ' ps') = Assigns (ρ <+> ρ') (if isEmpty ps' then ps else ps')
-override _ r' = r'
+override _ res = res
 
 -- Extend environment of inputs with bindings; non-empty set of positions replaces sources of control input
 extendInputs :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Inputs -> Dict (GVal s) -> Set Path -> m Inputs
@@ -400,50 +400,85 @@ eval = { stmt, program }
          pure (reuseAt rest × Tr.DeclTrace (fst r) (fst rest))
 
    stmt :: Inputs -> Stmt -> m (Result s)
-   stmt inputs s = result inputs s >>= case _ of
-      Returns r -> Returns <$> record (reuseAt r × Tr.StmtTrace (Tr.Returned (fst r)))
-      Assigns ρ ps -> flip Assigns ps <$> newBindings ρ
+   stmt inputs s = snd <$> stmtWithPath inputs s
+
+   stmtWithPath :: Inputs -> Stmt -> m (Path × Result s)
+   stmtWithPath inputs s = do
+      res × trace <- result inputs s
+      case res of
+         Returns rExpr -> do
+            rStmt <- record (reuseAt rExpr × Tr.StmtTrace trace)
+            pure (fst rStmt × Returns rStmt)
+         --continue execution with bindings ρ and control paths ps
+         Assigns ρ ps -> do
+            --say ρ: {x->v,[EdgeSrc b]}, ie x maps to v producing vertex b 
+            --vertex a stores ρ and for every binding x, adds a dep edge to vertex b
+            --then ρ': {x->v,[EdgeSrc a, Binding "x"]} 
+            a × ρ' <- newBindings ρ
+            addTrace a (Tr.StmtTrace trace)
+            pure (sourceRoot a × Assigns ρ' ps)
 
    -- Result of a statement, before vertex is allocated
-   result :: Inputs -> Stmt -> m (Result s)
+   result :: Inputs -> Stmt -> m (Result s × Tr.StmtTrace Path)
    result inputs@{ ρ, b } = case _ of
-      Return e -> Returns <$> expr inputs e
-      If bs s_opt -> go (NEL.toList bs) inputs
+      Return e -> do
+         r <- expr inputs e
+         pure (Returns r × Tr.Return (fst r))
+      --bs is NEList branches, s_opt is Maybe else branch
+      --helper function accumulates passed cond derivs
+      If bs s_opt -> go Nil (NEL.toList bs) inputs
          where
-         go Nil inputs' = maybe (pure (Assigns empty (singleton (ctlAt inputs'.b)))) (branch inputs') s_opt
-         go (Branch e s' : bs') inputs' = do
+         go conds Nil inputs' = maybe
+            (pure (Assigns empty (singleton (ctlAt inputs'.b)) × Tr.IfSkipped conds))
+            (branch conds inputs') s_opt
+         go conds (Branch e s' : bs') inputs' = do
             { holds, r: q × _ } <- condition inputs' e
-            inputs'' <- controlledBy q inputs'
-            if holds then branch inputs'' s' else go bs' inputs''
-
-         branch inputs' s' = override (Assigns empty (singleton (ctlAt inputs'.b))) <$> stmt inputs' s'
+            inputs'' <- controlledBy q inputs' 
+            if holds then branch (conds <> singleton q) inputs'' s'
+            else go (conds <> singleton q) bs' inputs''
+         branch conds inputs' s' = do
+            p × res <- stmtWithPath inputs' s'
+            pure (override (Assigns empty (singleton (ctlAt inputs'.b))) res × Tr.IfTaken conds p)
       Match e bs -> do
          r <- expr inputs e
          classes <- askClasses
-         case dispatch classes (NEL.toList bs) r of
-            Nothing × ps -> pure (Assigns empty ps)
-            Just (ρ' × s') × ps -> override (Assigns ρ' ps) <$> (extendInputs inputs ρ' ps >>= flip stmt s')
-      Declare _ -> pure (Assigns empty empty)
+         case dispatch classes (map (\(p × s') -> p × (p × s')) (NEL.toList bs)) r of
+            Nothing × ps -> pure (Assigns empty ps × Tr.MatchFailed (fst r))
+            Just (ρ' × (p × s')) × ps -> do
+               chosen × res <- extendInputs inputs ρ' ps >>= flip stmtWithPath s'
+               pure (override (Assigns ρ' ps) res × Tr.MatchTaken (fst r) p chosen)
+      Declare x -> pure (Assigns empty empty × Tr.Declare x)
       Assign p e -> do
          r <- expr inputs e
          classes <- askClasses
-         uncurry Assigns <$> destructure classes p r
-      DefRegion ds -> pure (Assigns (closeDefs (ctlAt b) (envAt b) ρ ds) empty)
-      Pass -> pure (Assigns empty empty)
-      ExprStmt e -> expr inputs e $> Assigns empty empty
+         res <- uncurry Assigns <$> destructure classes p r
+         pure (res × Tr.Assign p (fst r))
+      DefRegion ds -> pure (Assigns (closeDefs (ctlAt b) (envAt b) ρ ds) empty × Tr.DefRegion ds)
+      Pass -> pure (Assigns empty empty × Tr.Pass)
+      --run e with result value discarded
+      ExprStmt e -> do
+         r <- expr inputs e
+         pure (Assigns empty empty × Tr.ExprStmt (fst r))
       Assert e e_opt -> do
          { holds, r: q × _ } <- condition inputs e
-         if holds then pure (Assigns empty (singleton q))
+         if holds then pure (Assigns empty (singleton q) × Tr.AssertPassed q)
          else case e_opt of
             Nothing -> throw "AssertionError"
             Just e' -> do
                _ × Val _ u <- controlledBy q inputs >>= flip expr e'
                throw ("AssertionError: " <> either (\_ -> prettyP u) identity (string.unpack u))
-      Dataclass c -> pure (Assigns (maplet (last c) (Val unit (V.Fun (V.Type (T.ClassTy c Nil))) × constant)) empty)
-      TypeAlias x αs τ -> pure (Assigns (maplet x (Val unit (V.TypeAlias αs τ) × constant)) empty)
-      Seq s s' -> stmt inputs s >>= case _ of
-         r@(Returns _) -> pure r
-         r@(Assigns ρ' ps) -> override r <$> (extendInputs inputs ρ' ps >>= flip stmt s')
+      Dataclass c -> pure
+         (  Assigns (maplet (last c) (Val unit (V.Fun (V.Type (T.ClassTy c Nil))) × constant)) empty
+               × Tr.Dataclass c
+         )
+      TypeAlias x αs τ -> pure ( Assigns (maplet x (Val unit (V.TypeAlias αs τ) × constant)) empty × Tr.TypeAlias x αs τ )
+      Seq s s' -> do
+         p × res <- stmtWithPath inputs s
+         case res of
+            Returns _ -> pure (res × Tr.SeqReturned p s')
+            Assigns ρ' ps -> do
+               p' × res' <- extendInputs inputs ρ' ps >>= flip stmtWithPath s'
+               pure (override res res' × Tr.SeqFull p p')
       where
       constant = construct (controlDep (singleton (ctlAt b))) Map.empty
 
@@ -526,14 +561,17 @@ evalModule ρ0 q (Module ιs s) = do
    ρ <- foldM (evalImport q) ρ0 ιs
    { modules } <- moduleStore
    ρ' × _ <- asAssigns <$> (topLevel ρ >>= flip eval.stmt s)
-   newBindings (subMods modules <+> unbound <+> ρ')
+   _ × members <- newBindings (subMods modules <+> unbound <+> ρ')
+   pure members
    where
    subMods modules = moduleVal <$> D.fromFoldable (submods (Map.keys modules) q)
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
 
 -- Construct members ρ of a predefined module at a new vertex
 predefinedModule :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict (GVal s))
-predefinedModule (Env ρ) = newBindings (ρ <#> (_ × construct mempty Map.empty))
+predefinedModule (Env ρ) = do
+   _ × members <- newBindings (ρ <#> (_ × construct mempty Map.empty))
+   pure members
 
 -- Bind imported members, and names of imported modules to module values.
 evalImport

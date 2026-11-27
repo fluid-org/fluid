@@ -5,16 +5,15 @@ import Data.Foldable (class Foldable, foldMap)
 import Data.List (List, singleton)
 import Data.Maybe (Maybe)
 import Dict (Dict)
-import Expr (Binop, Def, Expr, Qualifier, Unop)
+import Expr (Binop, Def, Expr, Pattern, Qualifier, Stmt, Unop)
 import Literal (Literal)
+import Types as T
 import Util.Pair (Pair)
 
 data Trace v a
    = ExprTrace (ExprTrace v a)
    | QualifierTrace (QualifierTrace v a)
    | StmtTrace (StmtTrace a)
-
-data StmtTrace a = Returned a --for now
 
 data ExprTrace v a
    = Variable Var
@@ -53,6 +52,24 @@ data QualifierTrace v a
 
 --bindings for display
 type CompYield v b = { bindings :: Dict v, body :: b }
+
+data StmtTrace a
+   = Return a
+   | IfTaken (List a) a
+   | IfSkipped (List a)
+   | MatchTaken a Pattern a
+   | MatchFailed a
+   | Declare Var
+   | Assign Pattern a
+   | DefRegion (Dict Def)
+   | Pass
+   | ExprStmt a
+   | AssertPassed a
+   | Dataclass Name
+   | TypeAlias Var (List Var) T.Type
+   | SeqFull a a
+   | SeqReturned a Stmt
+   
 
 derive instance Foldable (ExprTrace v)
 derive instance Foldable (QualifierTrace v)
