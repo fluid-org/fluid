@@ -31,7 +31,7 @@ import Dict as D
 import Expr (Def, Module, fv)
 import File (class MonadLoad)
 import Module.Defs (ModuleName)
-import DepGraph (class Paths, DepGraph, Dependence, Labelling, emptyGraph, paths)
+import DepGraph (class Paths, DepGraph, Dependence, Labelling, emptyGraph)
 import Lattice (class BoundedLattice, class DepSemiring, class JoinSemilattice, class MeetSemilattice, DepKind(..), Raw, (∧), (∨))
 import Literal (Literal(..))
 import Path (Path, Position, Step(..), Vertex)
@@ -80,17 +80,8 @@ newtype ForeignOp = ForeignOp (String × ForeignOp') -- string is unique identif
 root :: forall a. Val a -> a
 root (Val α _) = α
 
--- Label of a vertex
-data Label a = Value (Val a)
-
-value :: forall a. Label a -> Val a
-value (Value v) = v
-
 instance Paths Val where
    paths = pathsFrom Nil
-
-instance Paths Label where
-   paths (Value v) = Value (paths v)
 
 -- Same as paths, except that each path starts with the reverse of p
 pathsFrom :: forall a. Path -> Val a -> Val (Path × a)
@@ -252,8 +243,8 @@ unvals :: forall a. Dict VertexWithDoc -> EnvWithDocs a -> Labelling (Val a)
 unvals ps (EnvWithDocs vs) = Map.unions (values (intersectionWith unval ps vs))
 
 -- Value at the vertex of an expression or returning statement
-valAt :: forall s. DepGraph Label s -> Vertex -> Raw Val
-valAt g p = value (get p g.vals)
+valAt :: forall s. DepGraph Val s -> Vertex -> Raw Val
+valAt g p = get p g.vals
 
 -- Value with its dependence on the values of vertices already in the graph
 type GVal s = Raw Val × Dependence (Set Position) s
@@ -282,7 +273,7 @@ loadedEnv (Loaded ρ) = Just ρ
 
 type ModuleStore s =
    { modules :: Map ModuleName ModuleState
-   , depGraph :: DepGraph Label s
+   , depGraph :: DepGraph Val s
    }
 
 emptyModuleStore :: forall s. ModuleStore s
@@ -297,7 +288,7 @@ class
    ( HasClasses m
    , HasModuleStore s m
    , MonadLoad m
-   , MonadState (DepGraph Label s) m
+   , MonadState (DepGraph Val s) m
    , DepSemiring s
    ) <=
    MonadEval s m
@@ -307,7 +298,7 @@ instance
    ( HasClasses m
    , HasModuleStore s m
    , MonadLoad m
-   , MonadState (DepGraph Label s) m
+   , MonadState (DepGraph Val s) m
    , DepSemiring s
    ) =>
    MonadEval s m
@@ -328,17 +319,14 @@ derive instance Functor ValWithDoc
 derive instance Functor EnvWithDocs
 derive instance Functor Fun
 derive instance Functor BaseVal
-derive instance Functor Label
 derive instance Traversable Val
 derive instance Traversable BaseVal
-derive instance Traversable Label
 derive instance Traversable Fun
 derive instance Traversable Env
 derive instance Traversable ValWithDoc
 derive instance Traversable EnvWithDocs
 derive instance Foldable Val
 derive instance Foldable BaseVal
-derive instance Foldable Label
 derive instance Foldable Fun
 derive instance Foldable Env
 derive instance Foldable ValWithDoc

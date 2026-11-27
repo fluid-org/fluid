@@ -22,7 +22,7 @@ import Path (Path, Position, Step(..), followedBy, ε)
 import Types.Defs (cRange)
 import Util (type (×), Endo, MayFail, absurd, definitely', definitelyRight, error, singleton, (×))
 import Util.Map (mapWithKey, toUnfoldable)
-import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, Label(..), ValAt, Val(..), child, element, elementCount)
+import Val (BaseVal(..), DepFun, DictRep(..), Env(..), GVal, ValAt, Val(..), child, element, elementCount)
 
 positionsIn :: ValAt -> Set Position
 positionsIn (q × v) = Set.fromFoldable ((q `followedBy` _) <<< fst <$> positions (paths v))
@@ -49,8 +49,8 @@ reuseAt (p × v) = v × reuse p
 deliver :: forall s. Set Position -> Endo (GVal s)
 deliver ps (v × θ × r) = v × withCtrl ps θ × r
 
-newValue :: forall m s. MonadState (DepGraph Label s) m => GVal s -> m ValAt
-newValue (v × δ) = newVertex (Value v) δ <#> \a -> (a × ε) × v
+newValue :: forall m s. MonadState (DepGraph Val s) m => GVal s -> m ValAt
+newValue (v × δ) = newVertex v δ <#> \a -> (a × ε) × v
 
 -- Each binding of environment at given position
 bindingsAt :: Position -> Raw Env -> Dict ValAt

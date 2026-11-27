@@ -40,8 +40,8 @@ import Util (type (×), absurd, check, definitely', error, isEmpty, orElse, orTh
 import Util.Map (get, lookup, lookup', maplet, restrict, unionWith_never, (<+>), (\\))
 import Util.Pair (Pair(..))
 import Util.Set (empty, (∪))
-import Val (BaseVal(..), Fun(..), value) as V
-import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, Label, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
+import Val (BaseVal(..), Fun(..)) as V
+import Val (class HasModuleStore, class MonadEval, class MonadProgram, ModuleState(..), loadedEnv, DictRep(..), Env(..), ForeignOp(..), ForeignOp'(..), GVal, MatrixRep(..), ValAt, Val(..), elementCount, forDefs, modifyModuleStore, moduleStore, child, valAt)
 import Val.Dependence (applyDepFun, bindingsAt, childAt, concatOf, deliver, dictionary, elementAt, elementsAt, elementStep, explode, lengthPositions, newValue, positionsIn, reuseAt, sequenceOf)
 
 -- Returned value, or bindings introduced and any new control positions
@@ -432,7 +432,7 @@ evalModule ρ q (Module ιs s) = do
    unbound = D.fromFoldable (L.fromFoldable (assigns s) <#> (_ × (Val unit V.Unbound × construct mempty Map.empty)))
 
 -- Allocate input vertex for each member of predefined module
-predefinedModule :: forall m s. MonadState (DepGraph Label s) m => Semiring s => Raw Env -> m (Dict ValAt)
+predefinedModule :: forall m s. MonadState (DepGraph Val s) m => Semiring s => Raw Env -> m (Dict ValAt)
 predefinedModule (Env ρ) = traverse (\v -> newValue (v × construct mempty Map.empty)) ρ
 
 -- Bind imported members, and names of imported modules to module values.
@@ -483,7 +483,7 @@ load q = do
    loaded ρ = modifyModuleStore (\s -> s { modules = Map.insert q (Loaded ρ) s.modules }) $> ρ
 
 type Eval =
-   { g :: DepGraph Label DepKind
+   { g :: DepGraph Val DepKind
    , out :: Vertex
    }
 
@@ -492,12 +492,10 @@ visible { g, out } = Map.keys g.docs ∪ Set.fromFoldable (Map.values g.docs) �
 
 -- Graph of the visible vertices, which are labelled by values
 visibleGraph :: Eval -> VisibleGraph Val DepKind
-visibleGraph r = graph { vals = V.value <$> graph.vals }
-   where
-   graph = materialise r.g (visible r)
+visibleGraph r = materialise r.g (visible r)
 
 -- Vertices documented with the name x.
-documentedAs :: forall s. DepGraph Label s -> String -> Array Vertex
+documentedAs :: forall s. DepGraph Val s -> String -> Array Vertex
 documentedAs g x = A.fromFoldable (Map.keys (Map.filter (\d -> valAt g d == Val unit (V.Lit (Str x))) g.docs))
 
 evalProgram
