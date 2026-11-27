@@ -1,4 +1,4 @@
-"""Announce package version in Slack with release notes; without SLACK_WEBHOOK_URL, print announcement"""
+"""Announce package version in Slack with release notes; with --print, print announcement instead"""
 
 import json
 import os
@@ -23,11 +23,10 @@ notes = subprocess.run([sys.executable, SCRIPTS / "release-notes.py"],
                        check=True, stdout=subprocess.PIPE, text=True).stdout
 text = "\n".join([f"<https://www.npmjs.com/package/{name}/v/{version}|{name} {version}> published", ""]
                  + [markdown_to_slack(line) for line in notes.splitlines()[2:]]).strip()
-webhook = os.environ.get("SLACK_WEBHOOK_URL")
-if webhook:
+if sys.argv[1:] == ["--print"]:
+    print(text)
+else:
     urllib.request.urlopen(urllib.request.Request(
-        webhook,
+        os.environ["SLACK_WEBHOOK_URL"],
         json.dumps({"text": text, "unfurl_links": False}).encode(),
         {"Content-Type": "application/json"}))
-else:
-    print(text)

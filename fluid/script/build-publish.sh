@@ -38,6 +38,10 @@ if [ "$GITHUB_REF_NAME" = release ]; then
       echo "Milestone fluid $MINOR has $OPEN open issues" >&2
       exit 1
    fi
+   if [ -z "$SLACK_WEBHOOK_URL" ]; then
+      echo "SLACK_WEBHOOK_URL not set" >&2
+      exit 1
+   fi
    publish "$RELEASE"
    git tag "v$RELEASE"
    git push origin "v$RELEASE"
