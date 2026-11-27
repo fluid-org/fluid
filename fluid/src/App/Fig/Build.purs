@@ -49,8 +49,8 @@ optionsFromJson spec@{ ignoreInputs, linking, rowFilter } =
    , rowFilter
    }
 
--- Times in milliseconds; evaluation includes loading of modules
-type Timing = { evaluate :: Number, materialise :: Number }
+-- Times in milliseconds (evaluation includes loading of modules); dependence graph size in vertices
+type Timing = { evaluate :: Number, materialise :: Number, vertices :: Int }
 
 figGraph :: forall m. MonadProgram m => Options -> String -> m FigGraph
 figGraph options fluidSrc = fst <$> figGraphTimed options fluidSrc
@@ -84,7 +84,7 @@ figGraphTimed { linking, ignoreInputs, rowFilter } fluidSrc = do
       , ignored: selected <$> unvals ins (sel𝔹 ignoreInputs (EnvWithDocs (ins <#> val everything)))
       , linking
       , rowFilter
-      } × { evaluate: evaluated - started, materialise: materialised - evaluated }
+      } × { evaluate: evaluated - started, materialise: materialised - evaluated, vertices: g.size }
    where
    clock = liftEffect (now <#> unInstant >>> unwrap)
 
